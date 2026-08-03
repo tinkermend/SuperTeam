@@ -1090,6 +1090,8 @@ type ProjectDemand struct {
 	CoordinationMode string `json:"coordination_mode"`
 	// 需求级场景模板 key；解析顺序：需求显式 > 项目默认 > generic 兜底
 	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
+	// Demand this one continues (single parent). NULL for a chain head. Chain traversal is indexed by idx_project_demands_tenant_continues.
+	ContinuesDemandID uuid.NullUUID `json:"continues_demand_id"`
 }
 
 // 治理约束豁免记录：人类负责人对单个需求豁免某条模板约束的决策留痕，重规划治理评估器消费

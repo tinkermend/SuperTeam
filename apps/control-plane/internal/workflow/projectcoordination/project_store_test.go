@@ -6107,6 +6107,45 @@ func (r *projectStoreMemoryRepository) ArchiveProject(ctx context.Context, tenan
 	return r.projectRecord, nil
 }
 
+func (r *projectStoreMemoryRepository) UnarchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
+	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
+		return project.Project{}, project.ErrProjectNotFound
+	}
+	if r.projectRecord.Status != project.ProjectStatusArchived {
+		return project.Project{}, project.ErrProjectNotFound
+	}
+	r.projectRecord.Status = project.ProjectStatusRunning
+	r.projectRecord.ArchivedAt = nil
+	return r.projectRecord, nil
+}
+
+func (r *projectStoreMemoryRepository) GetProjectTaskStatusCounts(ctx context.Context, tenantID, projectID uuid.UUID) (project.ProjectTaskSummary, error) {
+	summary := project.ProjectTaskSummary{}
+	for _, task := range r.tasks {
+		if task.TenantID != tenantID || task.ProjectID != projectID || task.DismissedAt != nil {
+			continue
+		}
+		summary.TotalTasks++
+		switch strings.ToLower(strings.TrimSpace(task.Status)) {
+		case "completed", "done", "success":
+			summary.CompletedTasks++
+		case "failed":
+			summary.FailedTasks++
+		case "cancelled":
+			summary.CancelledTasks++
+		case "waiting_human":
+			summary.PendingHumanTasks++
+			summary.ActiveTasks++
+		case "running":
+			summary.RunningTasks++
+			summary.ActiveTasks++
+		default:
+			summary.ActiveTasks++
+		}
+	}
+	return summary, nil
+}
+
 func (r *projectStoreMemoryRepository) CreateAcceptanceRecordWithEvent(ctx context.Context, req project.CreateAcceptanceRecordWithEventRequest) (project.ProjectAcceptanceRecordWriteResult, error) {
 	event := project.ProjectEvent{ID: uuid.New(), TenantID: req.Event.TenantID, ProjectID: req.Event.ProjectID, EventType: req.Event.EventType}
 	r.events = append(r.events, event)
@@ -8123,4 +8162,35 @@ func TestHumanizePlanningFailureReason(t *testing.T) {
 			t.Fatalf("raw %q: expected %q, got %q", tc.raw, tc.want, got)
 		}
 	}
+}
+
+// 人工 recovery 替换任务必须继承会话血缘根。替换一个**原始任务**时源 metadata
+// 里本就没有 revision_root_task_id,只 clone 会让根解析回落到替换任务自身 id ——
+// 人主动重试反而开新会话、丢掉上下文。三种源形态都要落在同一条根上。
+func TestRecoveryPlannerMetadataInheritsSessionLineageRoot(t *testing.T) {
+	decisionID := uuid.New()
+	action := FailureRecoveryAction{Action: "retry"}
+
+	t.Run("原始任务:根即自身", func(t *testing.T) {
+		source := project.ProjectTask{ID: uuid.New()}
+		metadata := recoveryPlannerMetadata(source, decisionID, action)
+		require.Equal(t, source.ID.String(), metadata["revision_root_task_id"])
+	})
+
+	t.Run("已有根:原样继承", func(t *testing.T) {
+		rootID := uuid.New()
+		source := project.ProjectTask{
+			ID:              uuid.New(),
+			PlannerMetadata: map[string]any{"revision_root_task_id": rootID.String()},
+		}
+		metadata := recoveryPlannerMetadata(source, decisionID, action)
+		require.Equal(t, rootID.String(), metadata["revision_root_task_id"])
+	})
+
+	t.Run("revision 任务:取被修订者", func(t *testing.T) {
+		predecessorID := uuid.New()
+		source := project.ProjectTask{ID: uuid.New(), RevisionOfTaskID: &predecessorID}
+		metadata := recoveryPlannerMetadata(source, decisionID, action)
+		require.Equal(t, predecessorID.String(), metadata["revision_root_task_id"])
+	})
 }

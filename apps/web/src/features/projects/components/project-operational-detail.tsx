@@ -137,6 +137,7 @@ type ProjectOperationalDetailProps = {
   initialTab?: ProjectDetailSection | string;
   isArchived?: boolean;
   onArchiveProject: () => void;
+  onUnarchiveProject?: () => void;
   onDeleteProject?: () => void;
   onRecloneWorkspace?: () => void;
   onMarkWorkspaceReady?: () => void;
@@ -205,6 +206,7 @@ export function ProjectOperationalDetail({
   initialTab = "workbench",
   isArchived,
   onArchiveProject,
+  onUnarchiveProject,
   onDeleteProject,
   onRecloneWorkspace,
   onMarkWorkspaceReady,
@@ -303,6 +305,13 @@ export function ProjectOperationalDetail({
   );
   const canArchive =
     !isArchived &&
+    (project.allowed_actions === undefined
+      ? true
+      : project.allowed_actions.includes("project.archive"));
+  // 恢复与归档共用 project.archive 权限；已归档时展示恢复入口。
+  const canUnarchive =
+    Boolean(isArchived) &&
+    Boolean(onUnarchiveProject) &&
     (project.allowed_actions === undefined
       ? true
       : project.allowed_actions.includes("project.archive"));
@@ -420,6 +429,12 @@ export function ProjectOperationalDetail({
                   <DropdownMenuItem onSelect={onArchiveProject}>
                     <Archive />
                     归档项目
+                  </DropdownMenuItem>
+                ) : null}
+                {canUnarchive ? (
+                  <DropdownMenuItem onSelect={onUnarchiveProject}>
+                    <Archive />
+                    恢复项目
                   </DropdownMenuItem>
                 ) : null}
                 {showReclone ? (
@@ -2067,6 +2082,10 @@ export function projectEventDisplay(event: ProjectEvent) {
     "project.archived": {
       summary: "项目已归档关闭。",
       title: "项目已归档"
+},
+    "project.unarchived": {
+      summary: "项目已从归档恢复，可继续提交需求与配置。",
+      title: "项目已恢复"
 },
     "project.artifact.linked": {
       summary: "新的项目工件已关联。",

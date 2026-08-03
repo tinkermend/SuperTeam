@@ -43,6 +43,20 @@ func newDossierFixture(t *testing.T) *dossierFixture {
 		DisplayNameSnapshot: &ownerName,
 		Status:              "active",
 	})
+	// 提交需求有「项目至少含一个 active 数字员工」的硬门禁,夹具必须配一名,
+	// 否则 newDossierFixture 里的 SubmitDemand 直接失败、整组卷宗用例全红。
+	executorID := uuid.New()
+	executorName := "执行员工"
+	repo.members[projectID] = append(repo.members[projectID], ProjectMember{
+		ID:                  uuid.New(),
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		PrincipalType:       PrincipalTypeDigitalEmployee,
+		PrincipalID:         executorID,
+		ProjectRole:         ProjectRoleExecutor,
+		DisplayNameSnapshot: &executorName,
+		Status:              "active",
+	})
 	service, err := NewService(repo)
 	if err != nil {
 		t.Fatalf("new service: %v", err)

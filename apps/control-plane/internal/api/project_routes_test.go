@@ -1494,6 +1494,13 @@ func (s *routeProjectService) ArchiveProject(ctx context.Context, tenantID, proj
 	return &projectValue, nil
 }
 
+func (s *routeProjectService) UnarchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*project.Project, error) {
+	projectValue := routeProject(tenantID, projectID, actorUserID)
+	projectValue.Status = project.ProjectStatusRunning
+	projectValue.ArchivedAt = nil
+	return &projectValue, nil
+}
+
 func (s *routeProjectService) GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*project.ProjectDeletePreview, error) {
 	if s.deletePreviewErr != nil {
 		return nil, s.deletePreviewErr
@@ -1596,6 +1603,11 @@ func (s *routeProjectService) SubmitDemand(ctx context.Context, req project.Subm
 	s.submitDemandReq = req
 	demand := project.ProjectDemand{ID: uuid.New(), TenantID: req.TenantID, ProjectID: req.ProjectID, SubmittedByUserID: req.SubmittedByUserID, Title: req.Title, SourceType: req.SourceType, SourceRefs: req.SourceRefs, Attachments: req.Attachments, Status: project.ProjectDemandStatusRecorded}
 	return &demand, nil
+}
+
+func (s *routeProjectService) ContinueProjectDemand(ctx context.Context, req project.ContinueDemandRequest) (*project.ProjectDemand, error) {
+	parent := req.DemandID
+	return &project.ProjectDemand{ID: uuid.New(), TenantID: req.TenantID, ContinuesDemandID: &parent}, nil
 }
 
 func (s *routeProjectService) CloseDemand(ctx context.Context, req project.CloseDemandRequest) (*project.ProjectDemand, error) {

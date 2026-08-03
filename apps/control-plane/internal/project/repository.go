@@ -24,6 +24,8 @@ type Repository interface {
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
+	// UnarchiveProject 将 archived 项目恢复为 running 并清空 archived_at；非归档行返回 ErrProjectNotFound。
+	UnarchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
 	TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (Project, error)
 	AreAllProjectDemandsTerminal(ctx context.Context, tenantID, projectID uuid.UUID) (bool, error)
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
@@ -68,6 +70,13 @@ type Repository interface {
 	GetRouteDecisionByCoordinationJob(ctx context.Context, tenantID, coordinationJobID uuid.UUID) (RouteDecision, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (ProjectTaskGraph, error)
 	ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]ProjectTask, error)
+	// ListProjectDemandContinuationChain 返回该 demand 所属接续链的全部成员,
+	// 链头在前(spec 2026-08-01-demand-continuation-design §4.1)。从链上任一
+	// 成员出发都返回同一条链。maxDepth 是环与畸形数据的兜底上限。
+	ListProjectDemandContinuationChain(ctx context.Context, tenantID, demandID uuid.UUID, maxDepth int32) ([]ProjectDemand, error)
+	// CountProjectDemandContinuationDepth 返回该 demand 距链头的代数(链头为 0),
+	// 写入期用它拦「链太深」。
+	CountProjectDemandContinuationDepth(ctx context.Context, tenantID, demandID uuid.UUID, maxDepth int32) (int32, error)
 	RecordProjectTaskResult(ctx context.Context, req RecordProjectTaskResultRequest) (ProjectTaskResult, error)
 	ListProjectTaskResults(ctx context.Context, req ListProjectTaskResultsRequest) ([]ProjectTaskResult, error)
 	LinkProjectTaskLatestResult(ctx context.Context, tenantID, projectID, projectTaskID, resultID uuid.UUID) (ProjectTask, error)

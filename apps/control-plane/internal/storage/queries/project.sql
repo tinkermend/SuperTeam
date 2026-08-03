@@ -500,6 +500,17 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid
 RETURNING *;
 
+-- name: UnarchiveProject :one
+-- 归档回拨：仅 status=archived 的行生效；清 archived_at，回到 running（「已就绪」）。
+UPDATE projects
+SET status = 'running',
+    archived_at = NULL,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'archived'
+RETURNING *;
+
 -- name: TransitionProjectStatus :one
 -- Forward-guarded project status transition: only applied when the current status
 -- is in from_statuses. No matching row (wrong current status) yields no rows so the
@@ -798,7 +809,8 @@ INSERT INTO project_demands (
     status,
     created_event_id,
     coordination_mode,
-    scenario_template_key
+    scenario_template_key,
+    continues_demand_id
 ) VALUES (
     sqlc.arg('tenant_id')::uuid,
     sqlc.arg('project_id')::uuid,
@@ -813,8 +825,100 @@ INSERT INTO project_demands (
     sqlc.arg('status')::varchar,
     sqlc.narg('created_event_id')::uuid,
     sqlc.arg('coordination_mode')::varchar,
-    sqlc.narg('scenario_template_key')::text
+    sqlc.narg('scenario_template_key')::text,
+    sqlc.narg('continues_demand_id')::uuid
 ) RETURNING *;
+
+-- name: ListProjectDemandContinuationChain :many
+-- 一条接续链的全部 demand，时间正序（链头在前）。从任意成员出发都返回同一条链：
+-- 先沿 continues_demand_id 上溯到链头，再从链头向下展开后代。
+-- depth 上限由调用方传入（spec §5.2 D3：数据被手工改出环时必须能停）。
+WITH RECURSIVE ancestors AS (
+    SELECT d.id, d.continues_demand_id, 0 AS depth
+    FROM project_demands d
+    WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND d.id = sqlc.arg('demand_id')::uuid
+    UNION ALL
+    SELECT parent.id, parent.continues_demand_id, a.depth + 1
+    FROM project_demands parent
+    JOIN ancestors a ON parent.id = a.continues_demand_id
+    WHERE parent.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND a.depth < sqlc.arg('max_depth')::int
+), head AS (
+    SELECT id FROM ancestors ORDER BY depth DESC LIMIT 1
+), chain AS (
+    SELECT d.id, 0 AS depth
+    FROM project_demands d
+    JOIN head h ON h.id = d.id
+    WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+    UNION ALL
+    SELECT child.id, c.depth + 1
+    FROM project_demands child
+    JOIN chain c ON child.continues_demand_id = c.id
+    WHERE child.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND c.depth < sqlc.arg('max_depth')::int
+)
+SELECT d.*, c.depth AS chain_depth
+FROM project_demands d
+JOIN chain c ON c.id = d.id
+ORDER BY c.depth ASC, d.created_at ASC;
+
+-- name: CountProjectDemandContinuationDepth :one
+-- 从该 demand 上溯到链头的代数（链头返回 0）。写入期用它拦"链太深"。
+WITH RECURSIVE ancestors AS (
+    SELECT d.id, d.continues_demand_id, 0 AS depth
+    FROM project_demands d
+    WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND d.id = sqlc.arg('demand_id')::uuid
+    UNION ALL
+    SELECT parent.id, parent.continues_demand_id, a.depth + 1
+    FROM project_demands parent
+    JOIN ancestors a ON parent.id = a.continues_demand_id
+    WHERE parent.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND a.depth < sqlc.arg('max_depth')::int
+)
+SELECT COALESCE(MAX(depth), 0)::int AS depth FROM ancestors;
+
+-- name: ResolveTaskLineageRootFromDemandChain :one
+-- 接续场景的会话血缘根（spec §5.1 第 3 条 / §5.2 D1–D7）：
+-- 从本任务所属 demand 沿 continues_demand_id **逐代上溯**，在每一代里找同一个
+-- digital_employee 的任务，取最近一条的血缘根。
+--
+-- D1 排序钉死：先按代数（距离近的一代优先），同代内 created_at DESC, id DESC。
+-- D2 逐代：靠 depth 排序天然实现，不会跳过中间代。
+-- D3 depth 上限由调用方传入，成环也能停。
+-- D4 返回的是那条任务自己的**根**（planner_metadata > revision_of > 自身 id），
+--    不是它的 id —— 会话是按根存的。
+-- D5 employee 完全相等才匹配；换人查不到，调用方落回任务自身 id。
+-- D6 整个上溯是这一条查询，不在 Go 里循环往返。
+-- D7 未定人的任务不参与匹配（assigned_digital_employee_id IS NOT NULL）。
+WITH RECURSIVE ancestors AS (
+    SELECT d.continues_demand_id AS demand_id, 1 AS depth
+    FROM project_demands d
+    WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND d.id = sqlc.arg('demand_id')::uuid
+      AND d.continues_demand_id IS NOT NULL
+    UNION ALL
+    SELECT parent.continues_demand_id, a.depth + 1
+    FROM project_demands parent
+    JOIN ancestors a ON parent.id = a.demand_id
+    WHERE parent.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND parent.continues_demand_id IS NOT NULL
+      AND a.depth < sqlc.arg('max_depth')::int
+)
+SELECT COALESCE(
+    NULLIF(t.planner_metadata->>'revision_root_task_id', ''),
+    NULLIF(t.revision_of_task_id::text, ''),
+    t.id::text
+)::uuid AS root_task_id
+FROM ancestors a
+JOIN project_tasks t
+  ON t.demand_id = a.demand_id
+ AND t.tenant_id = sqlc.arg('tenant_id')::uuid
+ AND t.assigned_digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+WHERE t.assigned_digital_employee_id IS NOT NULL
+ORDER BY a.depth ASC, t.created_at DESC, t.id DESC
+LIMIT 1;
 
 -- name: ListProjectDemands :many
 SELECT * FROM project_demands
@@ -887,7 +991,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 -- Minimal projection for resolving a task's session-lineage root (see
 -- employee.PgRunRepository.ResolveProjectTaskLineageRoot): only the two
 -- fields that participate in root resolution, not the full row.
-SELECT revision_of_task_id, planner_metadata
+SELECT revision_of_task_id, planner_metadata, demand_id
 FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;

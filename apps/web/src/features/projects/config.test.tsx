@@ -303,19 +303,6 @@ function createConfigFetcher(
     if (url.pathname === "/api/auth/users" && method === "GET") {
       return jsonResponse({ items: [] });
     }
-    if (url.pathname === "/api/v1/projects/project-1/tasks" && method === "GET") {
-      return jsonResponse([
-        {
-          id: "task-history-1",
-          project_id: "project-1",
-          requires_human_approval: false,
-          status: "completed",
-          summary: "完成验收材料整理",
-          tenant_id: "tenant-1",
-          title: "整理历史任务"
-},
-      ]);
-    }
     if (
       url.pathname === "/api/v1/projects/project-1/config-revisions" &&
       method === "GET"
@@ -452,7 +439,10 @@ describe("ProjectConfigView", () => {
     await expect
       .element(screen.getByRole("heading", { name: "客户接入验收" }))
       .toBeInTheDocument();
-    await expect.element(screen.getByRole("tab", { name: "任务历史" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "概览" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "成员" })).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "协调策略" })).toBeInTheDocument();
+    expect(screen.container.querySelector('[role="tab"][value="history"]')).toBeNull();
     const container = screen.container;
     expect(container.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThan(
       0,
@@ -622,7 +612,7 @@ describe("ProjectConfigView", () => {
       .toBeDisabled();
   });
 
-  it("renders humanized members and task history as v3 work surfaces", async () => {
+  it("renders humanized members as work surfaces without task history", async () => {
     const fetcher = createConfigFetcher();
     const screen = await renderConfig(fetcher);
 
@@ -642,11 +632,9 @@ describe("ProjectConfigView", () => {
     await expect
       .element(screen.getByRole("button", { name: "添加数字员工" }))
       .toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("tab", { name: "任务历史" }));
-
-    expect(screen.container.querySelector('[data-slot="data-table"]')).toBeTruthy();
-    await expect.element(screen.getByText("整理历史任务")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("tab", { name: "任务历史" }))
+      .not.toBeInTheDocument();
   });
 
   it("adds a digital employee from the picker dialog", async () => {

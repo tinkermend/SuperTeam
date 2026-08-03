@@ -39,7 +39,12 @@ var (
 	ErrProjectTaskGraphPending      = errors.New("project task graph pending implementation")
 	ErrInvalidProjectEvidence       = errors.New("invalid project evidence")
 	ErrInvalidProjectAcceptance     = errors.New("invalid project acceptance")
-	ErrProjectArchiveBlocked        = errors.New("project archive blocked")
+	// ErrProjectArchiveBlocked:归档硬门禁——仍有未完结 project_task 时拒绝归档
+	// （终态=completed/done/success/failed/cancelled；dismissed 不计）。
+	// 文案直接中文:handler 409 原样下发。
+	ErrProjectArchiveBlocked = errors.New("项目仍有未完结任务，无法归档")
+	// ErrProjectNotArchived:对非归档项目执行恢复时返回。
+	ErrProjectNotArchived = errors.New("项目未归档，无需恢复")
 	ErrUnauthorizedProjectTeamScope = errors.New("unauthorized project team scope")
 	ErrProjectRuntimeNodesRequired  = errors.New("project requires at least one runtime node")
 	// ErrProjectTaskNoEligibleOnlineNode means the project's runtime node
@@ -196,6 +201,7 @@ const (
 	ProjectEventCreated         ProjectEventType = "project.created"
 	ProjectEventConfigChanged   ProjectEventType = "project.config.changed"
 	ProjectEventArchived        ProjectEventType = "project.archived"
+	ProjectEventUnarchived      ProjectEventType = "project.unarchived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
 
 	ProjectEventRuntimePlacementUpdated          ProjectEventType = "project.runtime_placement.updated"
@@ -1290,6 +1296,10 @@ type ProjectDemand struct {
 	// overriding the project's default; nil falls back to the project's
 	// ScenarioTemplateKey (and ultimately the generic fallback).
 	ScenarioTemplateKey *string
+	// ContinuesDemandID 是接续血缘(spec 2026-08-01-demand-continuation-design)：
+	// 本单接着哪一单做。nil = 链头。原单终态永不回退，接续一律新开一单接链，
+	// 因此「一单」的用户身份是这条链,不是单行。
+	ContinuesDemandID *uuid.UUID
 }
 
 type DemandLaunchDetail struct {
@@ -1721,6 +1731,9 @@ type SubmitProjectDemandRequest struct {
 	// ScenarioTemplateKey binds this demand to a scenario template; nil
 	// means fall back to the project's default (and generic beyond that).
 	ScenarioTemplateKey *string
+	// ContinuesDemandID 非空表示这是一条接续单，接在该 demand 之后。
+	// 服务端在 ContinueProjectDemand 里填，普通提需求路径恒为 nil。
+	ContinuesDemandID *uuid.UUID
 }
 
 type CreateEvidenceRefServiceRequest struct {

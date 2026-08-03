@@ -10,7 +10,6 @@ import {
   Bot,
   Check,
   ChevronDown,
-  ClipboardList,
   ExternalLink,
   GitBranch,
   Plus,
@@ -42,10 +41,6 @@ import {
   StatusPill,
   Button,
   EmptyState,
-  DataTable,
-  Td,
-  Th,
-  Tr,
   WorkSurface,
   type Tone,
   SoftTabs,
@@ -66,24 +61,21 @@ import {
   getProjectConfig,
   getProjectConfigRevision,
   listProjectConfigRevisions,
-  listProjectTasks,
   replaceProjectMembers,
   updateProjectConfig,
   type ProjectConfig,
   type ProjectConfigRevision,
   type ProjectMember,
   type ProjectMemberInput,
-  type ProjectTask,
   type UpdateProjectConfigInput
 } from "@/lib/api/projects";
 import {
   principalTypeLabel,
   projectRoleLabel,
   projectStatusLabel,
-  statusLabel as genericStatusLabel,
-  taskStatusLabel
+  statusLabel as genericStatusLabel
 } from "@/lib/status-labels";
-import { compareIsoDesc, formatDateTime, formatRelativeTime } from "@/lib/format-time";
+import { formatDateTime } from "@/lib/format-time";
 import { ProjectManagementShell } from "./project-management-shell";
 import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
@@ -133,17 +125,12 @@ export function ProjectConfigView({
     queryKey: ["project-config", projectId],
     queryFn: () => getProjectConfig(apiOptions, projectId),
     placeholderData: keepPreviousData
-});
-  const tasksQuery = useQuery({
-    queryKey: ["project-tasks", projectId],
-    queryFn: () => listProjectTasks(apiOptions, projectId, { limit: 20 }),
-    placeholderData: keepPreviousData
-});
+  });
   const configRevisionsQuery = useQuery({
     queryKey: ["project-config-revisions", projectId],
     queryFn: () => listProjectConfigRevisions(apiOptions, projectId, { limit: 20 }),
     placeholderData: keepPreviousData
-});
+  });
   const employeesQuery = useQuery({
     queryKey: ["digital-employees"],
     queryFn: () => listDigitalEmployees(apiOptions),
@@ -530,7 +517,6 @@ export function ProjectConfigView({
               <ProjectConfigTab value="overview">概览</ProjectConfigTab>
               <ProjectConfigTab value="members">成员</ProjectConfigTab>
               <ProjectConfigTab value="coordination">协调策略</ProjectConfigTab>
-              <ProjectConfigTab value="history">任务历史</ProjectConfigTab>
             </SoftTabsList>
 
             <SoftTabsContent value="overview">
@@ -575,12 +561,9 @@ export function ProjectConfigView({
                         updateDraft((current) => ({
                           ...current,
                           goal: event.target.value
-}))
+                        }))
                       }
                     />
-                  </Field>
-                  <Field label="协调线程">
-                    <Input readOnly value={config.coordination_workflow.workflow_id} />
                   </Field>
                   <Field label="描述">
                     <Textarea
@@ -590,7 +573,7 @@ export function ProjectConfigView({
                         updateDraft((current) => ({
                           ...current,
                           description: event.target.value
-}))
+                        }))
                       }
                     />
                   </Field>
@@ -645,10 +628,6 @@ export function ProjectConfigView({
                   updateDraft((current) => ({ ...current, coordinationPolicy: value }))
                 }
               />
-            </SoftTabsContent>
-
-            <SoftTabsContent value="history">
-              <TaskHistoryPanel tasks={tasksQuery.data ?? []} />
             </SoftTabsContent>
           </SoftTabs>
         </div>
@@ -1381,68 +1360,3 @@ function AddDigitalEmployeesDialog({
   );
 }
 
-function TaskHistoryPanel({ tasks }: { tasks: ProjectTask[] }) {
-  const orderedTasks = [...tasks].sort((left, right) =>
-    compareIsoDesc(left.updated_at ?? left.created_at, right.updated_at ?? right.created_at),
-  );
-
-  return (
-    <WorkSurface>
-      <div className="flex items-center justify-between gap-3 border-b border-line p-4">
-        <div className="flex items-center gap-2">
-          <ClipboardList className="size-4 text-brand" />
-          <h3 className="font-semibold text-ink">任务历史</h3>
-        </div>
-        <StatusPill tone="mute">{tasks.length} 条</StatusPill>
-      </div>
-      <DataTable>
-        <thead>
-          <tr>
-            <Th>任务</Th>
-            <Th>状态</Th>
-            <Th>更新</Th>
-            <Th>摘要</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {orderedTasks.length === 0 ? (
-            <tr>
-              <Td colSpan={4}>
-                <EmptyState title="暂无任务历史" />
-              </Td>
-            </tr>
-          ) : (
-            orderedTasks.map((task) => {
-              const activityAt = task.updated_at ?? task.created_at;
-              return (
-              <Tr key={task.id}>
-                <Td className="min-w-[220px]">
-                  <p className="truncate font-bold text-ink">{task.title}</p>
-                  <p className="mt-0.5 truncate font-mono text-[12px] text-ink-3">
-                    {task.id}
-                  </p>
-                </Td>
-                <Td>
-                  <StatusPill tone="info">{taskStatusLabel(task.status)}</StatusPill>
-                </Td>
-                <Td className="whitespace-nowrap tabular-nums text-xs text-ink-2">
-                  {activityAt ? (
-                    <time dateTime={activityAt} title={formatDateTime(activityAt)}>
-                      {formatRelativeTime(activityAt)}
-                    </time>
-                  ) : (
-                    "—"
-                  )}
-                </Td>
-                <Td className="min-w-[320px] whitespace-normal text-ink-2">
-                  <p className="line-clamp-2">{task.summary || "暂无摘要"}</p>
-                </Td>
-              </Tr>
-              );
-            })
-          )}
-        </tbody>
-      </DataTable>
-    </WorkSurface>
-  );
-}

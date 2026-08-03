@@ -729,6 +729,36 @@ func (q *Queries) CompleteProjectPlanDecompositionClaim(ctx context.Context, arg
 	return i, err
 }
 
+const CountProjectDemandContinuationDepth = `-- name: CountProjectDemandContinuationDepth :one
+WITH RECURSIVE ancestors AS (
+    SELECT d.id, d.continues_demand_id, 0 AS depth
+    FROM project_demands d
+    WHERE d.tenant_id = $1::uuid
+      AND d.id = $2::uuid
+    UNION ALL
+    SELECT parent.id, parent.continues_demand_id, a.depth + 1
+    FROM project_demands parent
+    JOIN ancestors a ON parent.id = a.continues_demand_id
+    WHERE parent.tenant_id = $1::uuid
+      AND a.depth < $3::int
+)
+SELECT COALESCE(MAX(depth), 0)::int AS depth FROM ancestors
+`
+
+type CountProjectDemandContinuationDepthParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	DemandID uuid.UUID `json:"demand_id"`
+	MaxDepth int32     `json:"max_depth"`
+}
+
+// 从该 demand 上溯到链头的代数（链头返回 0）。写入期用它拦"链太深"。
+func (q *Queries) CountProjectDemandContinuationDepth(ctx context.Context, arg CountProjectDemandContinuationDepthParams) (int32, error) {
+	row := q.db.QueryRow(ctx, CountProjectDemandContinuationDepth, arg.TenantID, arg.DemandID, arg.MaxDepth)
+	var depth int32
+	err := row.Scan(&depth)
+	return depth, err
+}
+
 const CountProjectDemandsByTerminality = `-- name: CountProjectDemandsByTerminality :one
 SELECT
     COUNT(*)::integer AS total_count,
@@ -1186,7 +1216,8 @@ INSERT INTO project_demands (
     status,
     created_event_id,
     coordination_mode,
-    scenario_template_key
+    scenario_template_key,
+    continues_demand_id
 ) VALUES (
     $1::uuid,
     $2::uuid,
@@ -1201,8 +1232,9 @@ INSERT INTO project_demands (
     $11::varchar,
     $12::uuid,
     $13::varchar,
-    $14::text
-) RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key
+    $14::text,
+    $15::uuid
+) RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key, continues_demand_id
 `
 
 type CreateProjectDemandParams struct {
@@ -1220,6 +1252,7 @@ type CreateProjectDemandParams struct {
 	CreatedEventID      uuid.NullUUID `json:"created_event_id"`
 	CoordinationMode    string        `json:"coordination_mode"`
 	ScenarioTemplateKey pgtype.Text   `json:"scenario_template_key"`
+	ContinuesDemandID   uuid.NullUUID `json:"continues_demand_id"`
 }
 
 func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDemandParams) (ProjectDemand, error) {
@@ -1238,6 +1271,7 @@ func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDema
 		arg.CreatedEventID,
 		arg.CoordinationMode,
 		arg.ScenarioTemplateKey,
+		arg.ContinuesDemandID,
 	)
 	var i ProjectDemand
 	err := row.Scan(
@@ -1258,6 +1292,7 @@ func (q *Queries) CreateProjectDemand(ctx context.Context, arg CreateProjectDema
 		&i.UpdatedAt,
 		&i.CoordinationMode,
 		&i.ScenarioTemplateKey,
+		&i.ContinuesDemandID,
 	)
 	return i, err
 }
@@ -3349,7 +3384,7 @@ func (q *Queries) GetProjectDeletePreviewCounts(ctx context.Context, arg GetProj
 }
 
 const GetProjectDemand = `-- name: GetProjectDemand :one
-SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key FROM project_demands
+SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key, continues_demand_id FROM project_demands
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -3380,6 +3415,7 @@ func (q *Queries) GetProjectDemand(ctx context.Context, arg GetProjectDemandPara
 		&i.UpdatedAt,
 		&i.CoordinationMode,
 		&i.ScenarioTemplateKey,
+		&i.ContinuesDemandID,
 	)
 	return i, err
 }
@@ -4046,7 +4082,7 @@ func (q *Queries) GetProjectTaskRunRuntimeNodeID(ctx context.Context, arg GetPro
 }
 
 const GetProjectTaskSessionLineage = `-- name: GetProjectTaskSessionLineage :one
-SELECT revision_of_task_id, planner_metadata
+SELECT revision_of_task_id, planner_metadata, demand_id
 FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
@@ -4060,6 +4096,7 @@ type GetProjectTaskSessionLineageParams struct {
 type GetProjectTaskSessionLineageRow struct {
 	RevisionOfTaskID uuid.NullUUID `json:"revision_of_task_id"`
 	PlannerMetadata  []byte        `json:"planner_metadata"`
+	DemandID         uuid.NullUUID `json:"demand_id"`
 }
 
 // Minimal projection for resolving a task's session-lineage root (see
@@ -4068,7 +4105,7 @@ type GetProjectTaskSessionLineageRow struct {
 func (q *Queries) GetProjectTaskSessionLineage(ctx context.Context, arg GetProjectTaskSessionLineageParams) (GetProjectTaskSessionLineageRow, error) {
 	row := q.db.QueryRow(ctx, GetProjectTaskSessionLineage, arg.TenantID, arg.ID)
 	var i GetProjectTaskSessionLineageRow
-	err := row.Scan(&i.RevisionOfTaskID, &i.PlannerMetadata)
+	err := row.Scan(&i.RevisionOfTaskID, &i.PlannerMetadata, &i.DemandID)
 	return i, err
 }
 
@@ -5347,8 +5384,111 @@ func (q *Queries) ListProjectDeleteTaskBlockers(ctx context.Context, arg ListPro
 	return items, nil
 }
 
+const ListProjectDemandContinuationChain = `-- name: ListProjectDemandContinuationChain :many
+WITH RECURSIVE ancestors AS (
+    SELECT d.id, d.continues_demand_id, 0 AS depth
+    FROM project_demands d
+    WHERE d.tenant_id = $1::uuid
+      AND d.id = $2::uuid
+    UNION ALL
+    SELECT parent.id, parent.continues_demand_id, a.depth + 1
+    FROM project_demands parent
+    JOIN ancestors a ON parent.id = a.continues_demand_id
+    WHERE parent.tenant_id = $1::uuid
+      AND a.depth < $3::int
+), head AS (
+    SELECT id FROM ancestors ORDER BY depth DESC LIMIT 1
+), chain AS (
+    SELECT d.id, 0 AS depth
+    FROM project_demands d
+    JOIN head h ON h.id = d.id
+    WHERE d.tenant_id = $1::uuid
+    UNION ALL
+    SELECT child.id, c.depth + 1
+    FROM project_demands child
+    JOIN chain c ON child.continues_demand_id = c.id
+    WHERE child.tenant_id = $1::uuid
+      AND c.depth < $3::int
+)
+SELECT d.id, d.tenant_id, d.project_id, d.submitted_by_user_id, d.title, d.content, d.source_type, d.source_refs, d.attachments, d.priority, d.risk_level, d.status, d.created_event_id, d.created_at, d.updated_at, d.coordination_mode, d.scenario_template_key, d.continues_demand_id, c.depth AS chain_depth
+FROM project_demands d
+JOIN chain c ON c.id = d.id
+ORDER BY c.depth ASC, d.created_at ASC
+`
+
+type ListProjectDemandContinuationChainParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	DemandID uuid.UUID `json:"demand_id"`
+	MaxDepth int32     `json:"max_depth"`
+}
+
+type ListProjectDemandContinuationChainRow struct {
+	ID                  uuid.UUID          `json:"id"`
+	TenantID            uuid.UUID          `json:"tenant_id"`
+	ProjectID           uuid.UUID          `json:"project_id"`
+	SubmittedByUserID   uuid.UUID          `json:"submitted_by_user_id"`
+	Title               string             `json:"title"`
+	Content             pgtype.Text        `json:"content"`
+	SourceType          string             `json:"source_type"`
+	SourceRefs          []byte             `json:"source_refs"`
+	Attachments         []byte             `json:"attachments"`
+	Priority            pgtype.Text        `json:"priority"`
+	RiskLevel           pgtype.Text        `json:"risk_level"`
+	Status              string             `json:"status"`
+	CreatedEventID      uuid.NullUUID      `json:"created_event_id"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	CoordinationMode    string             `json:"coordination_mode"`
+	ScenarioTemplateKey pgtype.Text        `json:"scenario_template_key"`
+	ContinuesDemandID   uuid.NullUUID      `json:"continues_demand_id"`
+	ChainDepth          int32              `json:"chain_depth"`
+}
+
+// 一条接续链的全部 demand，时间正序（链头在前）。从任意成员出发都返回同一条链：
+// 先沿 continues_demand_id 上溯到链头，再从链头向下展开后代。
+// depth 上限由调用方传入（spec §5.2 D3：数据被手工改出环时必须能停）。
+func (q *Queries) ListProjectDemandContinuationChain(ctx context.Context, arg ListProjectDemandContinuationChainParams) ([]ListProjectDemandContinuationChainRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectDemandContinuationChain, arg.TenantID, arg.DemandID, arg.MaxDepth)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectDemandContinuationChainRow{}
+	for rows.Next() {
+		var i ListProjectDemandContinuationChainRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.SubmittedByUserID,
+			&i.Title,
+			&i.Content,
+			&i.SourceType,
+			&i.SourceRefs,
+			&i.Attachments,
+			&i.Priority,
+			&i.RiskLevel,
+			&i.Status,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationMode,
+			&i.ScenarioTemplateKey,
+			&i.ContinuesDemandID,
+			&i.ChainDepth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectDemands = `-- name: ListProjectDemands :many
-SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key FROM project_demands
+SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key, continues_demand_id FROM project_demands
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
 ORDER BY created_at DESC
@@ -5394,6 +5534,7 @@ func (q *Queries) ListProjectDemands(ctx context.Context, arg ListProjectDemands
 			&i.UpdatedAt,
 			&i.CoordinationMode,
 			&i.ScenarioTemplateKey,
+			&i.ContinuesDemandID,
 		); err != nil {
 			return nil, err
 		}
@@ -8693,6 +8834,69 @@ func (q *Queries) ResolveProjectDecisionRequest(ctx context.Context, arg Resolve
 	return i, err
 }
 
+const ResolveTaskLineageRootFromDemandChain = `-- name: ResolveTaskLineageRootFromDemandChain :one
+WITH RECURSIVE ancestors AS (
+    SELECT d.continues_demand_id AS demand_id, 1 AS depth
+    FROM project_demands d
+    WHERE d.tenant_id = $1::uuid
+      AND d.id = $3::uuid
+      AND d.continues_demand_id IS NOT NULL
+    UNION ALL
+    SELECT parent.continues_demand_id, a.depth + 1
+    FROM project_demands parent
+    JOIN ancestors a ON parent.id = a.demand_id
+    WHERE parent.tenant_id = $1::uuid
+      AND parent.continues_demand_id IS NOT NULL
+      AND a.depth < $4::int
+)
+SELECT COALESCE(
+    NULLIF(t.planner_metadata->>'revision_root_task_id', ''),
+    NULLIF(t.revision_of_task_id::text, ''),
+    t.id::text
+)::uuid AS root_task_id
+FROM ancestors a
+JOIN project_tasks t
+  ON t.demand_id = a.demand_id
+ AND t.tenant_id = $1::uuid
+ AND t.assigned_digital_employee_id = $2::uuid
+WHERE t.assigned_digital_employee_id IS NOT NULL
+ORDER BY a.depth ASC, t.created_at DESC, t.id DESC
+LIMIT 1
+`
+
+type ResolveTaskLineageRootFromDemandChainParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	DemandID          uuid.UUID `json:"demand_id"`
+	MaxDepth          int32     `json:"max_depth"`
+}
+
+// 接续场景的会话血缘根（spec §5.1 第 3 条 / §5.2 D1–D7）：
+// 从本任务所属 demand 沿 continues_demand_id **逐代上溯**，在每一代里找同一个
+// digital_employee 的任务，取最近一条的血缘根。
+//
+// D1 排序钉死：先按代数（距离近的一代优先），同代内 created_at DESC, id DESC。
+// D2 逐代：靠 depth 排序天然实现，不会跳过中间代。
+// D3 depth 上限由调用方传入，成环也能停。
+// D4 返回的是那条任务自己的**根**（planner_metadata > revision_of > 自身 id），
+//
+//	不是它的 id —— 会话是按根存的。
+//
+// D5 employee 完全相等才匹配；换人查不到，调用方落回任务自身 id。
+// D6 整个上溯是这一条查询，不在 Go 里循环往返。
+// D7 未定人的任务不参与匹配（assigned_digital_employee_id IS NOT NULL）。
+func (q *Queries) ResolveTaskLineageRootFromDemandChain(ctx context.Context, arg ResolveTaskLineageRootFromDemandChainParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, ResolveTaskLineageRootFromDemandChain,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.DemandID,
+		arg.MaxDepth,
+	)
+	var root_task_id uuid.UUID
+	err := row.Scan(&root_task_id)
+	return root_task_id, err
+}
+
 const RestoreProjectTaskAfterDispatchStartFailure = `-- name: RestoreProjectTaskAfterDispatchStartFailure :one
 UPDATE project_tasks
 SET status = $1::varchar,
@@ -9686,6 +9890,59 @@ func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionPro
 	return i, err
 }
 
+const UnarchiveProject = `-- name: UnarchiveProject :one
+UPDATE projects
+SET status = 'running',
+    archived_at = NULL,
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+  AND status = 'archived'
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit
+`
+
+type UnarchiveProjectParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+// 归档回拨：仅 status=archived 的行生效；清 archived_at，回到 running（「已就绪」）。
+func (q *Queries) UnarchiveProject(ctx context.Context, arg UnarchiveProjectParams) (Project, error) {
+	row := q.db.QueryRow(ctx, UnarchiveProject, arg.TenantID, arg.ID)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TeamID,
+		&i.Name,
+		&i.Description,
+		&i.Goal,
+		&i.Status,
+		&i.HumanOwnerUserID,
+		&i.CoordinationWorkflowID,
+		&i.CoordinationStatus,
+		&i.CoordinationPolicy,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RepoUrl,
+		&i.RepoDefaultBranch,
+		&i.RepoGitCredentialRef,
+		&i.RepoScope,
+		&i.RepoBindingStatus,
+		&i.DeletedAt,
+		&i.ScenarioTemplateKey,
+		&i.HumanOwnerUserIds,
+		&i.WorkspaceReadyStatus,
+		&i.PrimaryRuntimeNodeID,
+		&i.WorkspaceReadyError,
+		&i.WorkspaceReadyAt,
+		&i.DirectoryName,
+		&i.BudgetTokenLimit,
+	)
+	return i, err
+}
+
 const UpdateProject = `-- name: UpdateProject :one
 UPDATE projects
 SET
@@ -9798,7 +10055,7 @@ SET status = $1::varchar,
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
-RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key
+RETURNING id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key, continues_demand_id
 `
 
 type UpdateProjectDemandStatusParams struct {
@@ -9828,6 +10085,7 @@ func (q *Queries) UpdateProjectDemandStatus(ctx context.Context, arg UpdateProje
 		&i.UpdatedAt,
 		&i.CoordinationMode,
 		&i.ScenarioTemplateKey,
+		&i.ContinuesDemandID,
 	)
 	return i, err
 }

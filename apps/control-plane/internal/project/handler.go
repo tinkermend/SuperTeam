@@ -31,6 +31,7 @@ type HandlerService interface {
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error)
+	UnarchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error)
 	GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectDeletePreview, error)
 	DeleteProject(ctx context.Context, req DeleteProjectRequest) error
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
@@ -46,6 +47,7 @@ type HandlerService interface {
 	ListDemandAcceptanceCriteriaDetail(ctx context.Context, tenantID, demandID uuid.UUID) (*DemandAcceptanceCriteriaDetail, error)
 	SignDemandCriterionVerdict(ctx context.Context, req SignDemandCriterionVerdictRequest) (*SignDemandCriterionVerdictResult, error)
 	CloseDemand(ctx context.Context, req CloseDemandRequest) (*ProjectDemand, error)
+	ContinueProjectDemand(ctx context.Context, req ContinueDemandRequest) (*ProjectDemand, error)
 	GetProjectTaskGraph(ctx context.Context, req GetProjectTaskGraphRequest) (*ProjectTaskGraph, error)
 	ListProjectTaskLiveness(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskLiveness, error)
 	GetOverview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectOverview, error)
@@ -508,6 +510,19 @@ func (h *HTTPHandler) ArchiveProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, projectResponseFromDomain(*project))
 }
 
+func (h *HTTPHandler) UnarchiveProject(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	project, err := service.UnarchiveProject(r.Context(), tenantID, projectID, actorID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectResponseFromDomain(*project))
+}
+
 func (h *HTTPHandler) GetProjectDeletePreview(w http.ResponseWriter, r *http.Request) {
 	tenantID, _, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectDelete)
 	if !ok {
@@ -953,6 +968,41 @@ func (h *HTTPHandler) CloseDemand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, demandResponseFromDomain(*demand))
+}
+
+// ContinueDemand 在一条已结束的需求之后新开一单并接上血缘链。
+// 鉴权与提交需求同级：接续本质上就是提一条新需求，只是带了血缘。
+func (h *HTTPHandler) ContinueDemand(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDemandSubmit)
+	if !ok {
+		return
+	}
+	demandID, err := uuid.Parse(chi.URLParam(r, "demandId"))
+	if err != nil {
+		writeHandlerError(w, ErrInvalidProject)
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body continueDemandBody
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	demand, err := service.ContinueProjectDemand(r.Context(), ContinueDemandRequest{
+		TenantID:    tenantID,
+		DemandID:    demandID,
+		ActorUserID: actorID,
+		Title:       body.Title,
+		Content:     body.Content,
+		Attachments: body.Attachments,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, demandResponseFromDomain(*demand))
 }
 
 func (h *HTTPHandler) ListRouteDecisions(w http.ResponseWriter, r *http.Request) {
@@ -1946,7 +1996,9 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrProjectArchived):
 		// F8/F7(§5.7)：已归档项目拒收新需求/写操作,给中文文案而非英文 sentinel。
 		http.Error(w, "项目已归档，无法提交新需求或执行该操作。", http.StatusConflict)
-	case errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict), errors.Is(err, ErrProjectTaskNotDismissible):
+	case errors.Is(err, ErrProjectNotArchived),
+		errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict), errors.Is(err, ErrProjectTaskNotDismissible),
+		errors.Is(err, ErrDemandNotSettled), errors.Is(err, ErrContinuationChainTooDeep):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		// 500 兜底不能吞错误细节——留一条服务端日志供排障（响应体仍不泄露内部信息）。
@@ -2150,6 +2202,12 @@ type signDemandCriterionVerdictBody struct {
 
 type closeDemandBody struct {
 	Reason string `json:"reason,omitempty"`
+}
+
+type continueDemandBody struct {
+	Title       string `json:"title,omitempty"`
+	Content     string `json:"content"`
+	Attachments []any  `json:"attachments,omitempty"`
 }
 
 type signDemandCriterionVerdictResponse struct {
@@ -2898,6 +2956,7 @@ type projectDemandResponse struct {
 	Reviewer            *reviewerPreferenceResponse `json:"reviewer"`
 	CoordinationMode    string                      `json:"coordination_mode"`
 	ScenarioTemplateKey *string                     `json:"scenario_template_key,omitempty"`
+	ContinuesDemandID   *string                     `json:"continues_demand_id,omitempty"`
 	CreatedAt           string                      `json:"created_at"`
 	UpdatedAt           string                      `json:"updated_at"`
 }
@@ -2919,6 +2978,7 @@ type demandLaunchDetailResponse struct {
 type demandDossierResponse struct {
 	Demand            projectDemandResponse            `json:"demand"`
 	Project           demandDossierProjectResponse     `json:"project"`
+	Lineage           demandDossierLineageResponse     `json:"lineage"`
 	EffectivePlaybook demandDossierPlaybookResponse    `json:"effective_playbook"`
 	Signals           demandDossierSignalsResponse     `json:"signals"`
 	PendingActions    []demandDossierPendingActionRes  `json:"pending_actions"`
@@ -2927,6 +2987,28 @@ type demandDossierResponse struct {
 	HandoffSummary    demandDossierHandoffSummaryRes   `json:"handoff_summary"`
 	Acceptance        *demandDossierAcceptanceResponse `json:"acceptance,omitempty"`
 	SiblingPending    []demandDossierSiblingPendingRes `json:"sibling_pending,omitempty"`
+}
+
+type demandDossierLineageResponse struct {
+	ContinuesDemandID *string                            `json:"continues_demand_id,omitempty"`
+	ChainPosition     int                                `json:"chain_position"`
+	ChainLength       int                                `json:"chain_length"`
+	Chain             []demandDossierChainItemResponse   `json:"chain"`
+	ContinueDemand    demandContinueAvailabilityResponse `json:"continue_demand"`
+}
+
+type demandDossierChainItemResponse struct {
+	DemandID  string `json:"demand_id"`
+	Title     string `json:"title"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+	IsCurrent bool   `json:"is_current"`
+}
+
+type demandContinueAvailabilityResponse struct {
+	Available     bool   `json:"available"`
+	ReasonCode    string `json:"reason_code"`
+	ReasonMessage string `json:"reason_message,omitempty"`
 }
 
 type demandDossierProjectResponse struct {
@@ -4087,8 +4169,33 @@ func demandResponseFromDomain(demand ProjectDemand) projectDemandResponse {
 		Reviewer:            reviewerPreferenceResponseFromDomain(demand.ReviewerPreference),
 		CoordinationMode:    demand.CoordinationMode,
 		ScenarioTemplateKey: demand.ScenarioTemplateKey,
+		ContinuesDemandID:   stringPtr(demand.ContinuesDemandID),
 		CreatedAt:           timeValue(demand.CreatedAt),
 		UpdatedAt:           timeValue(demand.UpdatedAt),
+	}
+}
+
+func demandDossierLineageResponseFromDomain(lineage DemandDossierLineage) demandDossierLineageResponse {
+	chain := make([]demandDossierChainItemResponse, 0, len(lineage.Chain))
+	for _, item := range lineage.Chain {
+		chain = append(chain, demandDossierChainItemResponse{
+			DemandID:  item.DemandID.String(),
+			Title:     item.Title,
+			Status:    item.Status,
+			CreatedAt: timeValue(item.CreatedAt),
+			IsCurrent: item.IsCurrent,
+		})
+	}
+	return demandDossierLineageResponse{
+		ContinuesDemandID: stringPtr(lineage.ContinuesDemandID),
+		ChainPosition:     lineage.ChainPosition,
+		ChainLength:       lineage.ChainLength,
+		Chain:             chain,
+		ContinueDemand: demandContinueAvailabilityResponse{
+			Available:     lineage.ContinueDemand.Available,
+			ReasonCode:    lineage.ContinueDemand.ReasonCode,
+			ReasonMessage: lineage.ContinueDemand.ReasonMessage,
+		},
 	}
 }
 
@@ -4115,6 +4222,7 @@ func demandDossierResponseFromDomain(dossier DemandDossier) demandDossierRespons
 			Status:              string(dossier.Project.Status),
 			ScenarioTemplateKey: dossier.Project.ScenarioTemplateKey,
 		},
+		Lineage:           demandDossierLineageResponseFromDomain(dossier.Lineage),
 		EffectivePlaybook: demandDossierPlaybookResponse{
 			TemplateKey:     dossier.EffectivePlaybook.TemplateKey,
 			Source:          dossier.EffectivePlaybook.Source,

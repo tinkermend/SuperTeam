@@ -397,6 +397,14 @@ func (r *PgRepository) archiveProjectWithQueries(ctx context.Context, q *queries
 	return projectFromRecord(row)
 }
 
+func (r *PgRepository) UnarchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
+	row, err := r.q.UnarchiveProject(ctx, queries.UnarchiveProjectParams{TenantID: tenantID, ID: projectID})
+	if err != nil {
+		return Project{}, projectRepositoryError(err)
+	}
+	return projectFromRecord(row)
+}
+
 func (r *PgRepository) GetProjectForDelete(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
 	row, err := r.q.GetProjectForDelete(ctx, queries.GetProjectForDeleteParams{TenantID: tenantID, ID: projectID})
 	if err != nil {
@@ -758,6 +766,53 @@ func (r *PgRepository) ListDemandLaunchProjectTasks(ctx context.Context, tenantI
 	return tasksFromRecords(rows)
 }
 
+func (r *PgRepository) ListProjectDemandContinuationChain(ctx context.Context, tenantID, demandID uuid.UUID, maxDepth int32) ([]ProjectDemand, error) {
+	rows, err := r.q.ListProjectDemandContinuationChain(ctx, queries.ListProjectDemandContinuationChainParams{
+		TenantID: tenantID,
+		DemandID: demandID,
+		MaxDepth: maxDepth,
+	})
+	if err != nil {
+		return nil, err
+	}
+	demands := make([]ProjectDemand, 0, len(rows))
+	for _, row := range rows {
+		demand, err := demandFromRecord(queries.ProjectDemand{
+			ID:                  row.ID,
+			TenantID:            row.TenantID,
+			ProjectID:           row.ProjectID,
+			SubmittedByUserID:   row.SubmittedByUserID,
+			Title:               row.Title,
+			Content:             row.Content,
+			SourceType:          row.SourceType,
+			SourceRefs:          row.SourceRefs,
+			Attachments:         row.Attachments,
+			Priority:            row.Priority,
+			RiskLevel:           row.RiskLevel,
+			Status:              row.Status,
+			CreatedEventID:      row.CreatedEventID,
+			CreatedAt:           row.CreatedAt,
+			UpdatedAt:           row.UpdatedAt,
+			CoordinationMode:    row.CoordinationMode,
+			ScenarioTemplateKey: row.ScenarioTemplateKey,
+			ContinuesDemandID:   row.ContinuesDemandID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		demands = append(demands, demand)
+	}
+	return demands, nil
+}
+
+func (r *PgRepository) CountProjectDemandContinuationDepth(ctx context.Context, tenantID, demandID uuid.UUID, maxDepth int32) (int32, error) {
+	return r.q.CountProjectDemandContinuationDepth(ctx, queries.CountProjectDemandContinuationDepthParams{
+		TenantID: tenantID,
+		DemandID: demandID,
+		MaxDepth: maxDepth,
+	})
+}
+
 func (r *PgRepository) listProjectTasksByDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]ProjectTask, error) {
 	rows, err := r.q.ListProjectTasksByDemand(ctx, queries.ListProjectTasksByDemandParams{
 		TenantID:  tenantID,
@@ -897,6 +952,7 @@ func (r *PgRepository) CreateProjectDemand(ctx context.Context, req SubmitProjec
 		CreatedEventID:      nullUUID(createdEventID),
 		CoordinationMode:    req.CoordinationMode,
 		ScenarioTemplateKey: textFromStringPtr(req.ScenarioTemplateKey),
+		ContinuesDemandID:   nullUUID(req.ContinuesDemandID),
 	})
 	if err != nil {
 		return ProjectDemand{}, err
@@ -7206,6 +7262,7 @@ func demandFromRecord(row queries.ProjectDemand) (ProjectDemand, error) {
 		UpdatedAt:           row.UpdatedAt.Time,
 		CoordinationMode:    row.CoordinationMode,
 		ScenarioTemplateKey: ptrText(row.ScenarioTemplateKey),
+		ContinuesDemandID:   ptrUUID(row.ContinuesDemandID),
 	}, nil
 }
 

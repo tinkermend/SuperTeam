@@ -40,6 +40,7 @@ import {
   markProjectWorkspaceReady,
   recloneProjectWorkspace,
   archiveProject,
+  unarchiveProject,
   createProject,
   createProjectArchiveSnapshot,
   createProjectEvidence,
@@ -703,7 +704,19 @@ export function ProjectsView({
         queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
       ]);
     }
-});
+  });
+
+  const unarchiveMutation = useMutation({
+    mutationFn: (projectId: string) => unarchiveProject(apiOptions, projectId),
+    onSuccess: async (project) => {
+      queryClient.setQueryData(["project", project.id], project);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-config", project.id] }),
+      ]);
+    }
+  });
 
   const recloneWorkspaceMutation = useMutation({
     mutationFn: (projectId: string) =>
@@ -1164,6 +1177,11 @@ export function ProjectsView({
                       archiveMutation.reset();
                       setArchiveDialogOpen(true);
                     }}
+                    onUnarchiveProject={() => {
+                      if (effectiveProjectId) {
+                        unarchiveMutation.mutate(effectiveProjectId);
+                      }
+                    }}
                     onDeleteProject={() => setDeleteDialogOpen(true)}
                     onRecloneWorkspace={() => {
                       if (effectiveProjectId) {
@@ -1269,7 +1287,7 @@ export function ProjectsView({
             <div className="space-y-2">
               <p>
                 确认归档项目「{displayedProject.name}
-                」？归档后项目停止推进、配置与需求提交将被禁用，且当前没有取消归档入口；历史记录仍可查看。
+                」？仅当没有未完结任务时可归档；归档后停止推进、配置与需求提交将被禁用，可从菜单「恢复项目」重新打开。
               </p>
               {archiveMutation.isError ? (
                 <p className="text-sm text-danger">

@@ -60,9 +60,31 @@ type GetDemandDossierRequest struct {
 	SiblingPending bool
 }
 
+// DemandDossierLineage 是这一单所属的接续链（spec 2026-08-01 §7.2）。
+// 「一单」的用户身份是链而不是行：不给出链，每接续一次就会在需求列表里多出
+// 一个看似无关的单。
+type DemandDossierLineage struct {
+	ContinuesDemandID *uuid.UUID
+	ChainPosition     int
+	ChainLength       int
+	Chain             []DemandDossierChainItem
+	// ContinueDemand 是"这一单现在能不能接续"的服务端判据。前端不自己算：
+	// 能不能接续是业务规则，散到前端就会两处不一致。
+	ContinueDemand DemandContinuationAvailability
+}
+
+type DemandDossierChainItem struct {
+	DemandID  uuid.UUID
+	Title     string
+	Status    string
+	CreatedAt time.Time
+	IsCurrent bool
+}
+
 type DemandDossier struct {
 	Demand            ProjectDemand
 	Project           Project
+	Lineage           DemandDossierLineage
 	EffectivePlaybook DemandDossierPlaybook
 	Signals           DemandDossierSignals
 	PendingActions    []DemandDossierPendingAction
@@ -227,6 +249,7 @@ func (s *Service) GetDemandDossier(ctx context.Context, req GetDemandDossierRequ
 	dossier := &DemandDossier{
 		Demand:            facts.Demand,
 		Project:           facts.Project,
+		Lineage:           s.resolveDemandDossierLineage(ctx, facts),
 		EffectivePlaybook: playbook,
 		Signals:           buildDemandDossierSignals(facts),
 		PendingActions:    buildDemandDossierPendingActions(facts),
@@ -351,6 +374,64 @@ func (s *Service) resolveDemandDossierPlaybook(ctx context.Context, facts *deman
 	}
 	playbook.ProduceKinds = dedupeStringsPreservingOrder(kinds)
 	return playbook
+}
+
+// resolveDemandDossierLineage 解析这一单所属的接续链。
+//
+// 链读不出来时降级成"只有本单的单元素链"并记 warn，不 500：卷宗的其余事实与
+// 血缘无关，不该因为链查询失败整页打不开（与剧本解析失败同口径）。
+func (s *Service) resolveDemandDossierLineage(ctx context.Context, facts *demandLaunchFacts) DemandDossierLineage {
+	demand := facts.Demand
+	solo := DemandDossierLineage{
+		ContinuesDemandID: demand.ContinuesDemandID,
+		ChainPosition:     1,
+		ChainLength:       1,
+		Chain: []DemandDossierChainItem{{
+			DemandID:  demand.ID,
+			Title:     strings.TrimSpace(demand.Title),
+			Status:    string(demand.Status),
+			CreatedAt: demand.CreatedAt,
+			IsCurrent: true,
+		}},
+		ContinueDemand: evaluateDemandContinuation(demand, 0),
+	}
+
+	chain, err := s.repository.ListProjectDemandContinuationChain(ctx, demand.TenantID, demand.ID, DefaultDemandContinuationMaxDepth)
+	if err != nil {
+		slog.WarnContext(ctx, "一单卷宗接续链读取失败,降级为单元素链",
+			"demand_id", demand.ID, "error", err)
+		return solo
+	}
+	if len(chain) == 0 {
+		return solo
+	}
+
+	lineage := DemandDossierLineage{
+		ContinuesDemandID: demand.ContinuesDemandID,
+		ChainLength:       len(chain),
+		Chain:             make([]DemandDossierChainItem, 0, len(chain)),
+	}
+	for index, item := range chain {
+		isCurrent := item.ID == demand.ID
+		if isCurrent {
+			lineage.ChainPosition = index + 1
+		}
+		lineage.Chain = append(lineage.Chain, DemandDossierChainItem{
+			DemandID:  item.ID,
+			Title:     strings.TrimSpace(item.Title),
+			Status:    string(item.Status),
+			CreatedAt: item.CreatedAt,
+			IsCurrent: isCurrent,
+		})
+	}
+	if lineage.ChainPosition == 0 {
+		// 本单不在返回的链里(不该发生)：宁可退回单元素链，也不给出一条不含
+		// 自己的"链"——那会让前端把高亮画到别人身上。
+		return solo
+	}
+	// 接续判据按**本单**算：链上位置即已用掉的代数。
+	lineage.ContinueDemand = evaluateDemandContinuation(demand, int32(lineage.ChainPosition-1))
+	return lineage
 }
 
 // resolveDemandDossierExit 填充本单收口。**独立于剧本解析成败**:模板被删或

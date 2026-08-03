@@ -1788,6 +1788,9 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 		CoordinationStatus:     "registered",
 	}
 	seedHumanOwnerMember(repo.memoryRepository, tenantID, projectID, ownerID)
+	// 提交需求的硬门禁要求项目至少有一名 active 数字员工，否则这里会先撞 400，
+	// 断言不到本用例真正要验的「signal 短暂失败要冒成 500」。
+	seedDigitalExecutorMember(repo.memoryRepository, tenantID, projectID, uuid.Nil)
 
 	submitReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
 		"title":"验证 Runtime 执行回写",
@@ -2308,6 +2311,7 @@ type handlerTestService struct {
 	submitDemandReq                   SubmitProjectDemandRequest
 	submitDemandErr                   error
 	closeDemandErr                    error
+	continueDemandErr                 error
 	workflowInstances                 []WorkflowInstanceSummary
 	workflowInstancesReq              ListWorkflowInstancesRequest
 	createEvidenceReq                 CreateEvidenceRefServiceRequest
@@ -2447,6 +2451,13 @@ func (s *handlerTestService) ArchiveProject(ctx context.Context, tenantID, proje
 	return &project, nil
 }
 
+func (s *handlerTestService) UnarchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error) {
+	project := testProject(tenantID, projectID, actorUserID)
+	project.Status = ProjectStatusRunning
+	project.ArchivedAt = nil
+	return &project, nil
+}
+
 func (s *handlerTestService) GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectDeletePreview, error) {
 	return &ProjectDeletePreview{ProjectID: projectID, ProjectName: "预览", CanDelete: true}, nil
 }
@@ -2498,6 +2509,20 @@ func (s *handlerTestService) SubmitDemand(ctx context.Context, req SubmitProject
 
 func (s *handlerTestService) ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error) {
 	return nil, nil
+}
+
+func (s *handlerTestService) ContinueProjectDemand(ctx context.Context, req ContinueDemandRequest) (*ProjectDemand, error) {
+	if s.continueDemandErr != nil {
+		return nil, s.continueDemandErr
+	}
+	parent := req.DemandID
+	return &ProjectDemand{
+		ID:                uuid.New(),
+		TenantID:          req.TenantID,
+		Title:             req.Title,
+		Status:            ProjectDemandStatusPlanningPending,
+		ContinuesDemandID: &parent,
+	}, nil
 }
 
 func (s *handlerTestService) CloseDemand(ctx context.Context, req CloseDemandRequest) (*ProjectDemand, error) {

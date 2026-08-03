@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- 2026-08-03（修复迁移乱序：continuation lineage 重排版本）：`20260803093136_project_demand_continuation_lineage` 在库已应用到 `20260803160000` 之后才进目录，atlas 报 non-linear / out of order，导致 `dev-services restart control-plane` 迁移失败。改名为 `20260803180000_…` 并 `atlas migrate hash`；dev 库已 apply（`continues_demand_id` + 部分索引落库）。**验证**：`atlas migrate status` Already at latest；无 `SKIP_MIGRATIONS` 正常 restart CP healthy。
+- 2026-08-03（项目归档硬门禁 + 恢复回拨）：归档此前只改 `status/archived_at` 并 cancel 收件箱，**不检查**未完结任务，与「能归档=工作面已空」产品语义不符。现 `ArchiveProject`/`CreateArchiveSnapshot`/结项归档/验收批准归档统一走 `assertProjectReadyToArchive`（`GetProjectTaskStatusCounts.active_tasks>0` → 409「项目仍有未完结任务，无法归档」；终态=completed/done/success/failed/cancelled）。新增 `POST /projects/{id}/unarchive`：`archived→running`、清 `archived_at`、事件 `project.unarchived`（不复活旧待办、不重跑历史）。Console 菜单「恢复项目」+ 归档确认文案更新。开发库排查：当前 12 个已归档项目均 `active_tasks=0`，无需脏数据删除。**验证**：Go 单测挡/放/恢复三路径；真实 CP 对 `active=2` 项目归档 409 中文；对空活跃项目 archive→unarchive 200 回 running。
+- 2026-08-03（项目配置去掉「任务历史」tab）：配置页职责应是名称/负责人/成员池/协调策略与配置修订，任务列表属于项目运行面（详情/任务 tab），混在配置里越界且还多拉一轮 `listProjectTasks`。已移除 tab、TaskHistoryPanel 与对应 query。
+- 2026-08-03（项目配置概览去掉「协调线程」展示字段）：概览里该 Input 只读回显 `project-coordinator:{project_id}`，创建时由控制平面注册 Temporal 协调 Workflow 自动生成，不进配置保存、用户无法也不应填写；放在名称/目标/描述之间像可配项，纯噪音。已从概览表单移除（协调策略 tab 与成员变更 callout 仍说明策略/成员变更会 signal 协调线程）。
 - 2026-08-03（跨通道体验 PR-3：收件箱 toast + 飞书终态通道文案）：Console 批完 project_decision 成功 toast「决策已提交 / 飞书通知将同步更新为已处理」；飞书终态卡区分「你在飞书处理的」与「处理人…（平台收件箱或其它通道）」。
 - 2026-08-03（飞书 outbox 长轮询唤醒 PR-2）：connector 原 2s 固定轮询 `ListOutbox`，Console 批完飞书卡最多再等一轮才 `card_update`。现 `feishu_outbox` pending 写入 `NOTIFY feishu_outbox_changed(tenant_id)`；CP `ListOutbox?wait_ms=` 空队列挂起至通知/超时；connector 改紧循环长轮询（默认 wait 2s，有货立即投）。connector 仍不连库。迁移 `20260803160000`。
 - 2026-08-03（废止规划执行池「外团队踢出」）：产品语义=团队是员工归属单位、项目是运行载体，项目可挂任意团队的数字员工。协调器 `LoadProjectCoordinationSnapshot` 却用 `project.team_id` 过滤执行池（借调下线后的错误反向），UI 已加入的员工规划时池仍为空。现只保留「无团队归属」踢出；跨团队项目成员一律入池。单测改钉「外团队成员保留」。

@@ -80,6 +80,8 @@ type Querier interface {
 	// guard clamps the file-size cap while any such node is online.
 	CountOnlineLegacyLimitRuntimeNodesForTenant(ctx context.Context, arg CountOnlineLegacyLimitRuntimeNodesForTenantParams) (int64, error)
 	CountOnlineRuntimeNodesForTenant(ctx context.Context, arg CountOnlineRuntimeNodesForTenantParams) (int64, error)
+	// 从该 demand 上溯到链头的代数（链头返回 0）。写入期用它拦"链太深"。
+	CountProjectDemandContinuationDepth(ctx context.Context, arg CountProjectDemandContinuationDepthParams) (int32, error)
 	// Aggregates a project's demands into total / non-terminal counts so the coordinator
 	// can decide whether the whole project is ready for human acceptance.
 	CountProjectDemandsByTerminality(ctx context.Context, arg CountProjectDemandsByTerminalityParams) (CountProjectDemandsByTerminalityRow, error)
@@ -541,6 +543,10 @@ type Querier interface {
 	ListProjectDeclaredArtifactsByTaskIDs(ctx context.Context, arg ListProjectDeclaredArtifactsByTaskIDsParams) ([]ProjectArtifactRef, error)
 	ListProjectDeleteRunBlockers(ctx context.Context, arg ListProjectDeleteRunBlockersParams) ([]ListProjectDeleteRunBlockersRow, error)
 	ListProjectDeleteTaskBlockers(ctx context.Context, arg ListProjectDeleteTaskBlockersParams) ([]ListProjectDeleteTaskBlockersRow, error)
+	// 一条接续链的全部 demand，时间正序（链头在前）。从任意成员出发都返回同一条链：
+	// 先沿 continues_demand_id 上溯到链头，再从链头向下展开后代。
+	// depth 上限由调用方传入（spec §5.2 D3：数据被手工改出环时必须能停）。
+	ListProjectDemandContinuationChain(ctx context.Context, arg ListProjectDemandContinuationChainParams) ([]ListProjectDemandContinuationChainRow, error)
 	ListProjectDemands(ctx context.Context, arg ListProjectDemandsParams) ([]ProjectDemand, error)
 	ListProjectEvents(ctx context.Context, arg ListProjectEventsParams) ([]ProjectEvent, error)
 	ListProjectEvidenceRefs(ctx context.Context, arg ListProjectEvidenceRefsParams) ([]ProjectEvidenceRef, error)
@@ -712,6 +718,19 @@ type Querier interface {
 	// 孤儿催办回收:团队已被恢复或确认删除后,其滞留催办条目自动关闭(清扫任务每轮执行)。
 	ResolveOrphanTeamPendingDeleteReminders(ctx context.Context) error
 	ResolveProjectDecisionRequest(ctx context.Context, arg ResolveProjectDecisionRequestParams) (ProjectDecisionRequest, error)
+	// 接续场景的会话血缘根（spec §5.1 第 3 条 / §5.2 D1–D7）：
+	// 从本任务所属 demand 沿 continues_demand_id **逐代上溯**，在每一代里找同一个
+	// digital_employee 的任务，取最近一条的血缘根。
+	//
+	// D1 排序钉死：先按代数（距离近的一代优先），同代内 created_at DESC, id DESC。
+	// D2 逐代：靠 depth 排序天然实现，不会跳过中间代。
+	// D3 depth 上限由调用方传入，成环也能停。
+	// D4 返回的是那条任务自己的**根**（planner_metadata > revision_of > 自身 id），
+	//    不是它的 id —— 会话是按根存的。
+	// D5 employee 完全相等才匹配；换人查不到，调用方落回任务自身 id。
+	// D6 整个上溯是这一条查询，不在 Go 里循环往返。
+	// D7 未定人的任务不参与匹配（assigned_digital_employee_id IS NOT NULL）。
+	ResolveTaskLineageRootFromDemandChain(ctx context.Context, arg ResolveTaskLineageRootFromDemandChainParams) (uuid.UUID, error)
 	RestorePendingDeleteTeam(ctx context.Context, arg RestorePendingDeleteTeamParams) (TenantTeam, error)
 	RestoreProjectTaskAfterDispatchStartFailure(ctx context.Context, arg RestoreProjectTaskAfterDispatchStartFailureParams) (ProjectTask, error)
 	// 人类验收写回的**补偿动作**：把任务从 completed 退回 waiting_human，并把
@@ -786,6 +805,8 @@ type Querier interface {
 	// node is full, offline, stale, or archived; callers must treat pgx.ErrNoRows
 	// as "slot unavailable" and try the next candidate.
 	TryAcquireRuntimeNodeSlot(ctx context.Context, arg TryAcquireRuntimeNodeSlotParams) (RuntimeNode, error)
+	// 归档回拨：仅 status=archived 的行生效；清 archived_at，回到 running（「已就绪」）。
+	UnarchiveProject(ctx context.Context, arg UnarchiveProjectParams) (Project, error)
 	// 把单个数字员工移出所属团队，回候岗大厅（team_id = NULL）。带 team_id 守卫，
 	// 避免并发下把已经换到别的团队的员工误解绑。
 	UnbindTeamDigitalEmployee(ctx context.Context, arg UnbindTeamDigitalEmployeeParams) (uuid.UUID, error)

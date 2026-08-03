@@ -31,6 +31,7 @@ export type ProjectEventType =
   | "project.created"
   | "project.config.changed"
   | "project.archived"
+  | "project.unarchived"
   | "demand.submitted"
   | "workflow.signaled"
   | "workflow.coordination_failed"
@@ -1397,6 +1398,17 @@ export function archiveProject(
     options,
     projectPath(projectId, "/archive"),
     "archive project",
+  );
+}
+
+export function unarchiveProject(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<Project> {
+  return postJsonWithoutBody<Project>(
+    options,
+    projectPath(projectId, "/unarchive"),
+    "unarchive project",
   );
 }
 

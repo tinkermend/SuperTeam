@@ -1114,11 +1114,37 @@ paths:
     post:
       operationId: archiveProject
       summary: Archive a project
+      description: |
+        Soft-terminal lifecycle: blocks when any non-terminal project_task remains
+        (completed/done/success/failed/cancelled are terminal; dismissed excluded).
+        On success cancels open inbox items; does not terminate the coordinator.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       responses:
         "200":
           description: Project archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/unarchive:
+    post:
+      operationId: unarchiveProject
+      summary: Restore an archived project to running
+      description: |
+        Status flip only (archived → running, clear archived_at). Does not reopen
+        historical demands/tasks or revive cancelled inbox cards.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project restored to running
           content:
             application/json:
               schema:
@@ -1627,6 +1653,42 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/project-demands/{demandId}/continuations:
+    post:
+      operationId: createProjectDemandContinuation
+      summary: >-
+        Continue a settled demand: open a new demand linked to it by lineage.
+        原单终态永不回退，接续一律新开一单接链;派发时同一员工会回到自己在链上
+        的既有会话。
+      parameters:
+        - name: demandId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectDemandContinuationRequest"
+      responses:
+        "201":
+          description: Continuation demand created (planning starts as for any demand)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDemand"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        # 409 = 原单尚未结束(demand_not_settled)或接续链已达深度上限。
         "409":
           $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/route-decisions:
@@ -7156,6 +7218,7 @@ components:
         - project.created
         - project.config.changed
         - project.archived
+        - project.unarchived
         - demand.submitted
         - workflow.signaled
         - workflow.coordination_failed
@@ -8635,6 +8698,12 @@ components:
         scenario_template_key:
           type: string
           description: 需求级场景模板 key；缺省回落项目默认
+        continues_demand_id:
+          type: string
+          format: uuid
+          description: >-
+            接续血缘：本单接着哪一单做。缺省表示链头。原单终态永不回退，
+            接续一律新开一单接链，因此「一单」的用户身份是这条链而非单行。
         created_at:
           type: string
           format: date-time
@@ -8689,11 +8758,12 @@ components:
     ProjectDemandDossier:
       type: object
       description: >
-        一单卷宗读模型。刻意不含写字段与"继续此任务"入口:接续能力属后续版本,
-        放 disabled 占位只会变成点不动的承诺按钮。
+        一单卷宗读模型。除 lineage.continue_demand 给出的接续判据外不含写字段;
+        接续本身走 POST /project-demands/{demandId}/continuations。
       required:
         - demand
         - project
+        - lineage
         - effective_playbook
         - signals
         - pending_actions
@@ -8703,6 +8773,67 @@ components:
       properties:
         demand:
           $ref: "#/components/schemas/ProjectDemand"
+        lineage:
+          type: object
+          description: >-
+            这一单所属的接续链。「一单」的用户身份是链而不是行——不给出链，
+            每接续一次就会在需求列表里多出一个看似无关的单。
+          required:
+            - chain_position
+            - chain_length
+            - chain
+            - continue_demand
+          properties:
+            continues_demand_id:
+              type: string
+              format: uuid
+              description: 本单接着哪一单；缺省表示链头
+            chain_position:
+              type: integer
+              description: 本单是链上第几单，从 1 起
+            chain_length:
+              type: integer
+            chain:
+              type: array
+              description: 全链摘要，链头在前
+              items:
+                type: object
+                required:
+                  - demand_id
+                  - title
+                  - status
+                  - created_at
+                  - is_current
+                properties:
+                  demand_id:
+                    type: string
+                    format: uuid
+                  title:
+                    type: string
+                  status:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  is_current:
+                    type: boolean
+            continue_demand:
+              type: object
+              description: >-
+                能不能接续由服务端判定。前端不自己算：这是业务规则，
+                散到前端就会两处不一致。
+              required:
+                - available
+                - reason_code
+              properties:
+                available:
+                  type: boolean
+                reason_code:
+                  type: string
+                  enum: [ok, demand_not_settled, chain_too_deep]
+                reason_message:
+                  type: string
+                  description: 中文说明，available=false 时展示
         project:
           type: object
           required:
@@ -10614,6 +10745,22 @@ components:
         reason:
           type: string
           description: 关闭原因（可选），写入 demand.cancelled 审计事件
+    CreateProjectDemandContinuationRequest:
+      type: object
+      required:
+        - content
+      properties:
+        title:
+          type: string
+          description: 留空时服务端按父单标题派生；面向用户的标题不得为空
+        content:
+          type: string
+          description: >-
+            接着要做什么。必填——接续继承的是剧本与血缘，不是诉求，
+            诉求每次都要重新说清楚。
+        attachments:
+          type: array
+          items: {}
     SignDemandCriterionVerdictRequest:
       type: object
       required:

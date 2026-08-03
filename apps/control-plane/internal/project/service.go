@@ -1335,6 +1335,9 @@ func (s *Service) ArchiveProject(ctx context.Context, tenantID, projectID, actor
 	if tenantID == uuid.Nil || projectID == uuid.Nil || actorUserID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
+	if err := s.assertProjectReadyToArchive(ctx, tenantID, projectID); err != nil {
+		return nil, err
+	}
 	project, err := s.repository.ArchiveProject(ctx, tenantID, projectID)
 	if err != nil {
 		return nil, err
@@ -1351,6 +1354,61 @@ func (s *Service) ArchiveProject(ctx context.Context, tenantID, projectID, actor
 		return nil, err
 	}
 	return &project, nil
+}
+
+// UnarchiveProject 将已归档项目恢复为 running（可再接需求/改配置）。
+// 不复活归档时 cancel 的收件箱，不重跑历史任务；只做状态回拨 + 审计。
+func (s *Service) UnarchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil || actorUserID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	current, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if !projectArchived(current) {
+		return nil, ErrProjectNotArchived
+	}
+	project, err := s.repository.UnarchiveProject(ctx, tenantID, projectID)
+	if err != nil {
+		// 并发下已被他人恢复：仓储无行 → NotFound，产品上视为「未归档」。
+		if errors.Is(err, ErrProjectNotFound) {
+			return nil, ErrProjectNotArchived
+		}
+		return nil, err
+	}
+	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventUnarchived,
+		ActorType: "human_user",
+		ActorID:   actorUserID.String(),
+		Summary:   "项目已从归档恢复",
+		Payload:   map[string]any{"status": string(project.Status)},
+	}); err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+// assertProjectReadyToArchive 归档硬门禁：不得对已归档项目重复归档；不得在仍有
+// 未完结任务时归档（与 GetProjectTaskStatusCounts.active_tasks 同源）。
+func (s *Service) assertProjectReadyToArchive(ctx context.Context, tenantID, projectID uuid.UUID) error {
+	project, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return err
+	}
+	if projectArchived(project) {
+		return ErrProjectArchived
+	}
+	summary, err := s.repository.GetProjectTaskStatusCounts(ctx, tenantID, projectID)
+	if err != nil {
+		return err
+	}
+	if summary.ActiveTasks > 0 {
+		return ErrProjectArchiveBlocked
+	}
+	return nil
 }
 
 func (s *Service) GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectDeletePreview, error) {
@@ -1978,6 +2036,13 @@ func (s *Service) BuildArchivePreview(ctx context.Context, tenantID, projectID u
 	if len(evidenceRefs) == 0 {
 		blockedReasons = append(blockedReasons, "missing_evidence")
 	}
+	taskSummary, taskSummaryErr := s.repository.GetProjectTaskStatusCounts(ctx, tenantID, projectID)
+	if taskSummaryErr != nil {
+		return nil, taskSummaryErr
+	}
+	if taskSummary.ActiveTasks > 0 {
+		blockedReasons = append(blockedReasons, "active_tasks")
+	}
 	retentionPending := false
 	estimatedObjectRefs := make([]any, 0, len(artifactRefs)+len(reportRefs))
 	for _, artifact := range artifactRefs {
@@ -2030,6 +2095,9 @@ func (s *Service) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSn
 	}
 	if projectArchived(project) {
 		return nil, ErrProjectArchived
+	}
+	if err := s.assertProjectReadyToArchive(ctx, req.TenantID, req.ProjectID); err != nil {
+		return nil, err
 	}
 	preview, err := s.BuildArchivePreview(ctx, req.TenantID, req.ProjectID)
 	if err != nil {
@@ -7352,6 +7420,10 @@ func (s *Service) tryCloseProjectFromDemandSignOff(ctx context.Context, tenantID
 	}
 	if projectArchived(projectRecord) {
 		return true, nil // already archived — idempotent success
+	}
+	// 与手点归档同一道任务门禁：需求全终态仍可能有未完结任务。
+	if err := s.assertProjectReadyToArchive(ctx, tenantID, projectID); err != nil {
+		return false, err
 	}
 	if _, err := s.repository.ArchiveProject(ctx, tenantID, projectID); err != nil {
 		return false, err

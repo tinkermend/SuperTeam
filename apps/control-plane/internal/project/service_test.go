@@ -10695,6 +10695,125 @@ func TestUpdateConfigRejectsArchivedProject(t *testing.T) {
 	}
 }
 
+func TestArchiveProjectBlocksWhenActiveTasksRemain(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "仍有任务",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: actorID,
+	}
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "执行中",
+		Status:    "running",
+	})
+	_, err = service.ArchiveProject(context.Background(), tenantID, projectID, actorID)
+	if !errors.Is(err, ErrProjectArchiveBlocked) {
+		t.Fatalf("expected archive blocked, got %v", err)
+	}
+	if repo.projects[projectID].Status == ProjectStatusArchived {
+		t.Fatal("project must stay running when archive is blocked")
+	}
+}
+
+func TestArchiveProjectAllowsTerminalTasksOnly(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "可归档",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: actorID,
+	}
+	repo.tasks = append(repo.tasks,
+		ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Title: "完成", Status: "completed"},
+		ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Title: "失败", Status: "failed"},
+		ProjectTask{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID, Title: "取消", Status: "cancelled"},
+	)
+	got, err := service.ArchiveProject(context.Background(), tenantID, projectID, actorID)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if got.Status != ProjectStatusArchived {
+		t.Fatalf("expected archived, got %s", got.Status)
+	}
+	if got.ArchivedAt == nil {
+		t.Fatal("expected archived_at")
+	}
+	found := false
+	for _, et := range repo.eventTypes {
+		if et == ProjectEventArchived {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected project.archived event, got %#v", repo.eventTypes)
+	}
+}
+
+func TestUnarchiveProjectRestoresRunning(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	now := time.Now().UTC()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "已归档",
+		Status:           ProjectStatusArchived,
+		ArchivedAt:       &now,
+		HumanOwnerUserID: actorID,
+	}
+	got, err := service.UnarchiveProject(context.Background(), tenantID, projectID, actorID)
+	if err != nil {
+		t.Fatalf("unarchive: %v", err)
+	}
+	if got.Status != ProjectStatusRunning {
+		t.Fatalf("expected running, got %s", got.Status)
+	}
+	if got.ArchivedAt != nil {
+		t.Fatalf("expected archived_at cleared, got %#v", got.ArchivedAt)
+	}
+	_, err = service.UnarchiveProject(context.Background(), tenantID, projectID, actorID)
+	if !errors.Is(err, ErrProjectNotArchived) {
+		t.Fatalf("expected not-archived on second unarchive, got %v", err)
+	}
+	found := false
+	for _, et := range repo.eventTypes {
+		if et == ProjectEventUnarchived {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected project.unarchived event, got %#v", repo.eventTypes)
+	}
+}
+
 func TestUpdateProjectConfigCreatesRevision(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -12328,6 +12447,20 @@ func (r *memoryRepository) ArchiveProject(ctx context.Context, tenantID, project
 	return project, nil
 }
 
+func (r *memoryRepository) UnarchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error) {
+	project, ok := r.projects[projectID]
+	if !ok || project.TenantID != tenantID {
+		return Project{}, ErrProjectNotFound
+	}
+	if project.Status != ProjectStatusArchived && project.ArchivedAt == nil {
+		return Project{}, ErrProjectNotFound
+	}
+	project.Status = ProjectStatusRunning
+	project.ArchivedAt = nil
+	r.projects[projectID] = project
+	return project, nil
+}
+
 func (r *memoryRepository) TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (Project, error) {
 	project, ok := r.projects[projectID]
 	if !ok || project.TenantID != tenantID {
@@ -12906,6 +13039,86 @@ func (r *memoryRepository) ListDemandLaunchProjectTasks(ctx context.Context, ten
 		return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
 	})
 	return paginateTestSlice(filtered, limit, 0), nil
+}
+
+// 接续链的内存实现：先沿 continues_demand_id 上溯到链头，再自链头向下展开。
+// 与 SQL 版同口径(spec §4.1)：从链上任一成员出发返回同一条链，链头在前。
+func (r *memoryRepository) ListProjectDemandContinuationChain(ctx context.Context, tenantID, demandID uuid.UUID, maxDepth int32) ([]ProjectDemand, error) {
+	byID := map[uuid.UUID]ProjectDemand{}
+	for _, demand := range r.demands {
+		if demand.TenantID == tenantID {
+			byID[demand.ID] = demand
+		}
+	}
+	current, ok := byID[demandID]
+	if !ok {
+		return nil, ErrProjectNotFound
+	}
+	head := current
+	seen := map[uuid.UUID]bool{head.ID: true}
+	for depth := int32(0); depth < maxDepth; depth++ {
+		if head.ContinuesDemandID == nil {
+			break
+		}
+		parent, ok := byID[*head.ContinuesDemandID]
+		if !ok || seen[parent.ID] {
+			break
+		}
+		seen[parent.ID] = true
+		head = parent
+	}
+	chain := []ProjectDemand{head}
+	frontier := []ProjectDemand{head}
+	visited := map[uuid.UUID]bool{head.ID: true}
+	for depth := int32(0); depth < maxDepth && len(frontier) > 0; depth++ {
+		next := make([]ProjectDemand, 0, len(frontier))
+		for _, parent := range frontier {
+			children := make([]ProjectDemand, 0)
+			for _, candidate := range byID {
+				if candidate.ContinuesDemandID != nil && *candidate.ContinuesDemandID == parent.ID && !visited[candidate.ID] {
+					children = append(children, candidate)
+				}
+			}
+			sort.SliceStable(children, func(i, j int) bool {
+				return children[i].CreatedAt.Before(children[j].CreatedAt)
+			})
+			for _, child := range children {
+				visited[child.ID] = true
+				chain = append(chain, child)
+				next = append(next, child)
+			}
+		}
+		frontier = next
+	}
+	return chain, nil
+}
+
+func (r *memoryRepository) CountProjectDemandContinuationDepth(ctx context.Context, tenantID, demandID uuid.UUID, maxDepth int32) (int32, error) {
+	byID := map[uuid.UUID]ProjectDemand{}
+	for _, demand := range r.demands {
+		if demand.TenantID == tenantID {
+			byID[demand.ID] = demand
+		}
+	}
+	current, ok := byID[demandID]
+	if !ok {
+		return 0, ErrProjectNotFound
+	}
+	seen := map[uuid.UUID]bool{current.ID: true}
+	depth := int32(0)
+	for depth < maxDepth {
+		if current.ContinuesDemandID == nil {
+			break
+		}
+		parent, ok := byID[*current.ContinuesDemandID]
+		if !ok || seen[parent.ID] {
+			break
+		}
+		seen[parent.ID] = true
+		current = parent
+		depth++
+	}
+	return depth, nil
 }
 
 func (r *memoryRepository) createProjectTaskAttempt(req QueueProjectTaskRequest, attemptNo int32, eventID *uuid.UUID) ProjectTaskAttempt {

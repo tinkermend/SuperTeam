@@ -932,13 +932,13 @@ func (e HealthResponseService) Valid() bool {
 
 // Defines values for HealthResponseStatus.
 const (
-	Ok HealthResponseStatus = "ok"
+	HealthResponseStatusOk HealthResponseStatus = "ok"
 )
 
 // Valid indicates whether the value is a known member of the HealthResponseStatus enum.
 func (e HealthResponseStatus) Valid() bool {
 	switch e {
-	case Ok:
+	case HealthResponseStatusOk:
 		return true
 	default:
 		return false
@@ -1389,6 +1389,27 @@ func (e ProjectDemandDossierHandoffSummaryAssessmentsStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectDemandDossierLineageContinueDemandReasonCode.
+const (
+	ProjectDemandDossierLineageContinueDemandReasonCodeChainTooDeep     ProjectDemandDossierLineageContinueDemandReasonCode = "chain_too_deep"
+	ProjectDemandDossierLineageContinueDemandReasonCodeDemandNotSettled ProjectDemandDossierLineageContinueDemandReasonCode = "demand_not_settled"
+	ProjectDemandDossierLineageContinueDemandReasonCodeOk               ProjectDemandDossierLineageContinueDemandReasonCode = "ok"
+)
+
+// Valid indicates whether the value is a known member of the ProjectDemandDossierLineageContinueDemandReasonCode enum.
+func (e ProjectDemandDossierLineageContinueDemandReasonCode) Valid() bool {
+	switch e {
+	case ProjectDemandDossierLineageContinueDemandReasonCodeChainTooDeep:
+		return true
+	case ProjectDemandDossierLineageContinueDemandReasonCodeDemandNotSettled:
+		return true
+	case ProjectDemandDossierLineageContinueDemandReasonCodeOk:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectDemandDossierPendingActionsHrefType.
 const (
 	ProjectDemandDossierPendingActionsHrefTypeDecision      ProjectDemandDossierPendingActionsHrefType = "decision"
@@ -1684,6 +1705,7 @@ const (
 	ProjectEventTypeProjectTaskDispatchGateWaitingHuman   ProjectEventType = "project_task.dispatch_gate.waiting_human"
 	ProjectEventTypeProjectTaskDispatched                 ProjectEventType = "project_task.dispatched"
 	ProjectEventTypeProjectTaskFailed                     ProjectEventType = "project_task.failed"
+	ProjectEventTypeProjectUnarchived                     ProjectEventType = "project.unarchived"
 	ProjectEventTypeRouteDecisionCreated                  ProjectEventType = "route_decision.created"
 	ProjectEventTypeTransferRequested                     ProjectEventType = "transfer.requested"
 	ProjectEventTypeWorkflowCoordinationFailed            ProjectEventType = "workflow.coordination_failed"
@@ -1744,6 +1766,8 @@ func (e ProjectEventType) Valid() bool {
 	case ProjectEventTypeProjectTaskDispatched:
 		return true
 	case ProjectEventTypeProjectTaskFailed:
+		return true
+	case ProjectEventTypeProjectUnarchived:
 		return true
 	case ProjectEventTypeRouteDecisionCreated:
 		return true
@@ -3330,6 +3354,17 @@ type CreateProjectArchiveSnapshotRequest struct {
 	ObjectRef    *string `json:"object_ref,omitempty"`
 	SnapshotType string  `json:"snapshot_type"`
 	Summary      *string `json:"summary,omitempty"`
+}
+
+// CreateProjectDemandContinuationRequest defines model for CreateProjectDemandContinuationRequest.
+type CreateProjectDemandContinuationRequest struct {
+	Attachments *[]interface{} `json:"attachments,omitempty"`
+
+	// Content 接着要做什么。必填——接续继承的是剧本与血缘，不是诉求， 诉求每次都要重新说清楚。
+	Content string `json:"content"`
+
+	// Title 留空时服务端按父单标题派生；面向用户的标题不得为空
+	Title *string `json:"title,omitempty"`
 }
 
 // CreateProjectEvidenceRequest defines model for CreateProjectEvidenceRequest.
@@ -5199,13 +5234,16 @@ type ProjectDeleteWarnings struct {
 
 // ProjectDemand defines model for ProjectDemand.
 type ProjectDemand struct {
-	Attachments    []interface{}       `json:"attachments"`
-	Content        *string             `json:"content,omitempty"`
-	CreatedAt      time.Time           `json:"created_at"`
-	CreatedEventId *openapi_types.UUID `json:"created_event_id,omitempty"`
-	Id             openapi_types.UUID  `json:"id"`
-	ProjectId      openapi_types.UUID  `json:"project_id"`
-	Reviewer       *ReviewerPreference `json:"reviewer"`
+	Attachments []interface{} `json:"attachments"`
+	Content     *string       `json:"content,omitempty"`
+
+	// ContinuesDemandId 接续血缘：本单接着哪一单做。缺省表示链头。原单终态永不回退， 接续一律新开一单接链，因此「一单」的用户身份是这条链而非单行。
+	ContinuesDemandId *openapi_types.UUID `json:"continues_demand_id,omitempty"`
+	CreatedAt         time.Time           `json:"created_at"`
+	CreatedEventId    *openapi_types.UUID `json:"created_event_id,omitempty"`
+	Id                openapi_types.UUID  `json:"id"`
+	ProjectId         openapi_types.UUID  `json:"project_id"`
+	Reviewer          *ReviewerPreference `json:"reviewer"`
 
 	// ScenarioTemplateKey 需求级场景模板 key；缺省回落项目默认
 	ScenarioTemplateKey *string                 `json:"scenario_template_key,omitempty"`
@@ -5218,7 +5256,7 @@ type ProjectDemand struct {
 	UpdatedAt           time.Time               `json:"updated_at"`
 }
 
-// ProjectDemandDossier 一单卷宗读模型。刻意不含写字段与"继续此任务"入口:接续能力属后续版本, 放 disabled 占位只会变成点不动的承诺按钮。
+// ProjectDemandDossier 一单卷宗读模型。除 lineage.continue_demand 给出的接续判据外不含写字段; 接续本身走 POST /project-demands/{demandId}/continuations。
 type ProjectDemandDossier struct {
 	// Acceptance 瘦摘要;判据明细仍由 acceptance-criteria 端点提供。
 	Acceptance *struct {
@@ -5259,6 +5297,34 @@ type ProjectDemandDossier struct {
 		Unfulfilled int `json:"unfulfilled"`
 		Unknown     int `json:"unknown"`
 	} `json:"handoff_summary"`
+
+	// Lineage 这一单所属的接续链。「一单」的用户身份是链而不是行——不给出链， 每接续一次就会在需求列表里多出一个看似无关的单。
+	Lineage struct {
+		// Chain 全链摘要，链头在前
+		Chain []struct {
+			CreatedAt time.Time          `json:"created_at"`
+			DemandId  openapi_types.UUID `json:"demand_id"`
+			IsCurrent bool               `json:"is_current"`
+			Status    string             `json:"status"`
+			Title     string             `json:"title"`
+		} `json:"chain"`
+		ChainLength int `json:"chain_length"`
+
+		// ChainPosition 本单是链上第几单，从 1 起
+		ChainPosition int `json:"chain_position"`
+
+		// ContinueDemand 能不能接续由服务端判定。前端不自己算：这是业务规则， 散到前端就会两处不一致。
+		ContinueDemand struct {
+			Available  bool                                                `json:"available"`
+			ReasonCode ProjectDemandDossierLineageContinueDemandReasonCode `json:"reason_code"`
+
+			// ReasonMessage 中文说明，available=false 时展示
+			ReasonMessage *string `json:"reason_message,omitempty"`
+		} `json:"continue_demand"`
+
+		// ContinuesDemandId 本单接着哪一单；缺省表示链头
+		ContinuesDemandId *openapi_types.UUID `json:"continues_demand_id,omitempty"`
+	} `json:"lineage"`
 	PendingActions []struct {
 		CreatedAt *time.Time `json:"created_at,omitempty"`
 		Href      *struct {
@@ -5309,6 +5375,9 @@ type ProjectDemandDossierEffectivePlaybookSource string
 
 // ProjectDemandDossierHandoffSummaryAssessmentsStatus defines model for ProjectDemandDossier.HandoffSummary.Assessments.Status.
 type ProjectDemandDossierHandoffSummaryAssessmentsStatus string
+
+// ProjectDemandDossierLineageContinueDemandReasonCode defines model for ProjectDemandDossier.Lineage.ContinueDemand.ReasonCode.
+type ProjectDemandDossierLineageContinueDemandReasonCode string
 
 // ProjectDemandDossierPendingActionsHrefType defines model for ProjectDemandDossier.PendingActions.Href.Type.
 type ProjectDemandDossierPendingActionsHrefType string
@@ -7894,6 +7963,9 @@ type DecidePermissionApprovalJSONRequestBody = PermissionApprovalDecisionRequest
 // CloseProjectDemandJSONRequestBody defines body for CloseProjectDemand for application/json ContentType.
 type CloseProjectDemandJSONRequestBody = CloseProjectDemandRequest
 
+// CreateProjectDemandContinuationJSONRequestBody defines body for CreateProjectDemandContinuation for application/json ContentType.
+type CreateProjectDemandContinuationJSONRequestBody = CreateProjectDemandContinuationRequest
+
 // SignDemandCriterionVerdictJSONRequestBody defines body for SignDemandCriterionVerdict for application/json ContentType.
 type SignDemandCriterionVerdictJSONRequestBody = SignDemandCriterionVerdictRequest
 
@@ -8966,6 +9038,9 @@ type ServerInterface interface {
 	// Close (cancel) a non-terminal demand, e.g. to clear a planning zombie
 	// (POST /api/v1/project-demands/{demandId}/close)
 	CloseProjectDemand(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
+	// Continue a settled demand: open a new demand linked to it by lineage. 原单终态永不回退，接续一律新开一单接链;派发时同一员工会回到自己在链上 的既有会话。
+	// (POST /api/v1/project-demands/{demandId}/continuations)
+	CreateProjectDemandContinuation(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
 	// Sign a human verdict against a demand's blocking human_judgment acceptance criterion
 	// (POST /api/v1/project-demands/{demandId}/criterion-verdicts)
 	SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID)
@@ -9122,6 +9197,9 @@ type ServerInterface interface {
 	// List project transfer requests
 	// (GET /api/v1/projects/{projectId}/transfer-requests)
 	ListProjectTransferRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTransferRequestsParams)
+	// Restore an archived project to running
+	// (POST /api/v1/projects/{projectId}/unarchive)
+	UnarchiveProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Mark project workspace ready after manual disk repair
 	// (POST /api/v1/projects/{projectId}/workspace/mark-ready)
 	MarkProjectWorkspaceReady(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -9938,6 +10016,12 @@ func (_ Unimplemented) CloseProjectDemand(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Continue a settled demand: open a new demand linked to it by lineage. 原单终态永不回退，接续一律新开一单接链;派发时同一员工会回到自己在链上 的既有会话。
+// (POST /api/v1/project-demands/{demandId}/continuations)
+func (_ Unimplemented) CreateProjectDemandContinuation(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Sign a human verdict against a demand's blocking human_judgment acceptance criterion
 // (POST /api/v1/project-demands/{demandId}/criterion-verdicts)
 func (_ Unimplemented) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request, demandId openapi_types.UUID) {
@@ -10247,6 +10331,12 @@ func (_ Unimplemented) GetProjectTaskLiveness(w http.ResponseWriter, r *http.Req
 // List project transfer requests
 // (GET /api/v1/projects/{projectId}/transfer-requests)
 func (_ Unimplemented) ListProjectTransferRequests(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTransferRequestsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Restore an archived project to running
+// (POST /api/v1/projects/{projectId}/unarchive)
+func (_ Unimplemented) UnarchiveProject(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -13713,6 +13803,32 @@ func (siw *ServerInterfaceWrapper) CloseProjectDemand(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// CreateProjectDemandContinuation operation middleware
+func (siw *ServerInterfaceWrapper) CreateProjectDemandContinuation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "demandId" -------------
+	var demandId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "demandId", chi.URLParam(r, "demandId"), &demandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demandId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateProjectDemandContinuation(w, r, demandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SignDemandCriterionVerdict operation middleware
 func (siw *ServerInterfaceWrapper) SignDemandCriterionVerdict(w http.ResponseWriter, r *http.Request) {
 
@@ -15800,6 +15916,32 @@ func (siw *ServerInterfaceWrapper) ListProjectTransferRequests(w http.ResponseWr
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListProjectTransferRequests(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnarchiveProject operation middleware
+func (siw *ServerInterfaceWrapper) UnarchiveProject(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnarchiveProject(w, r, projectId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19334,6 +19476,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/project-demands/{demandId}/close", wrapper.CloseProjectDemand)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/project-demands/{demandId}/continuations", wrapper.CreateProjectDemandContinuation)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/project-demands/{demandId}/criterion-verdicts", wrapper.SignDemandCriterionVerdict)
 	})
 	r.Group(func(r chi.Router) {
@@ -19488,6 +19633,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/transfer-requests", wrapper.ListProjectTransferRequests)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/unarchive", wrapper.UnarchiveProject)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/workspace/mark-ready", wrapper.MarkProjectWorkspaceReady)

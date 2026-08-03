@@ -2995,6 +2995,14 @@ func (s *ProjectStore) ApplyProjectAcceptanceDecision(ctx context.Context, input
 	conclusion := acceptanceConclusion(input.Payload, status)
 	acceptedBy := projectRecord.HumanOwnerUserID
 	if approved {
+		// 与 Console 手点归档同一门禁：仍有未完结任务时不得因验收批准而归档。
+		taskSummary, countErr := s.repository.GetProjectTaskStatusCounts(ctx, input.TenantID, input.ProjectID)
+		if countErr != nil {
+			return countErr
+		}
+		if taskSummary.ActiveTasks > 0 {
+			return project.ErrProjectArchiveBlocked
+		}
 		if _, err := s.repository.ArchiveProject(ctx, input.TenantID, input.ProjectID); err != nil {
 			return err
 		}
@@ -4607,6 +4615,11 @@ func recoveryReplacementTitle(title string) string {
 
 func recoveryPlannerMetadata(source project.ProjectTask, decisionRequestID uuid.UUID, action FailureRecoveryAction) map[string]any {
 	metadata := cloneAnyMap(source.PlannerMetadata)
+	// 会话血缘根必须显式继承(与 revisionPlannerMetadata 同口径)。只 clone 源
+	// metadata 是不够的:源任务若是**原始任务**(从没做过 revision),它自己就没有
+	// revision_root_task_id,替换任务于是把根解析成自己的 id,查不到旧会话 ——
+	// 人主动重试反而丢上下文,恰是接续最该保住的东西。
+	metadata["revision_root_task_id"] = revisionRootTaskID(source)
 	metadata["source_task_id"] = source.ID.String()
 	metadata["decision_request_id"] = decisionRequestID.String()
 	metadata["recovery_action"] = action.Action
