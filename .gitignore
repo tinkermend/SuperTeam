@@ -111,6 +111,7 @@ temp/
 .tmp/
 .agents/
 .claude/
+.reasonix/
 .codex/*
 !.codex/skills/
 !.codex/skills/**
