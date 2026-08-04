@@ -380,12 +380,14 @@ func buildPlanningSourceVersions(source DigitalEmployeePlanningProfileSourceReco
 // scoreCapabilities records the capability diff for display but contributes a
 // constant to the score.
 //
-// Both sides of the diff are free text with no registry: required_capabilities is
-// synthesised by the planner because the prompt offers no vocabulary, and the
-// employee's Capabilities come from external_capabilities, which nothing
-// validates and the runtime never reads. Letting that diff zero the score (via
-// HardFailures) meant an invented name could disqualify a perfectly capable
-// employee. See the 2026-07-10 plan-phase refactor spec §1.6.
+// 历史原因：两侧曾都是无注册表的自由文本，让该 diff 归零评分（经 HardFailures）
+// 会因为一个杜撰的名字就废掉一个完全胜任的员工，故此处只记录不扣分。
+// 见 2026-07-10 plan 阶段重构 spec §1.6。
+//
+// 现状已部分改变（2026-08-04）：能力词表 capability_vocabulary 已存在，模板
+// required_capabilities 与员工 external_capabilities **两侧均已过词表校验**。
+// 仍未对齐的最后一环是 planner 提示里不注入词表，required_capabilities 因此
+// 仍由模型自行合成；在那一环补齐之前，这里维持"只记录不扣分"。
 func scoreCapabilities(profile DigitalEmployeePlanningProfile, req PlanningTaskRequirements, result *PlanningProfileScore) int {
 	available := map[string]struct{}{}
 	for _, capability := range profile.Capabilities {

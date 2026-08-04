@@ -26,6 +26,42 @@ type Service struct {
 	// 批准时权限中心调 ActivateConfigRevision 写回员工行。均为可选,未注入(测试)时提交即返回 ErrPermissionApprovalNotConfigured。
 	approvals *approval.Service
 	router    *permission.ApproverRouter
+	// vocabulary 校验员工声明的 external_capabilities 是否在租户能力词表里
+	// 注册且 active。此前只有场景模板侧过词表校验、员工侧随便写，于是出现
+	// 「词表里注册的键 0 人声明 / 员工在用的键根本没注册」的两头落空 ——
+	// 而这两侧本来就该抽同一份词表。可选:未注入(测试)时放行。
+	vocabulary CapabilityVocabularyValidator
+}
+
+// CapabilityVocabularyValidator 返回未在租户词表中注册为 active 的能力键子集。
+// 由 scenariotemplate.Service 实现,app.go 注入(employee 不依赖该包)。
+type CapabilityVocabularyValidator interface {
+	ValidateCapabilityKeys(ctx context.Context, tenantID uuid.UUID, keys []string) ([]string, error)
+}
+
+// SetCapabilityVocabularyValidator 注入能力词表校验器。
+func (s *Service) SetCapabilityVocabularyValidator(validator CapabilityVocabularyValidator) {
+	s.vocabulary = validator
+}
+
+// validateDeclaredCapabilities 拒绝未注册的能力键。词表是模板 required_capabilities
+// 与员工声明的共用词表(能力差异走注册表,不进代码枚举);单边校验等于没有词表。
+func (s *Service) validateDeclaredCapabilities(ctx context.Context, tenantID uuid.UUID, bindings map[string]any) error {
+	if s.vocabulary == nil {
+		return nil
+	}
+	keys := stringList(bindings["external_capabilities"])
+	if len(keys) == 0 {
+		return nil
+	}
+	unknown, err := s.vocabulary.ValidateCapabilityKeys(ctx, tenantID, keys)
+	if err != nil {
+		return err
+	}
+	if len(unknown) > 0 {
+		return fmt.Errorf("%w: 能力键未在词表中注册: %s", ErrInvalidInput, strings.Join(unknown, ", "))
+	}
+	return nil
 }
 
 // SetSystemConfigReader 注入配置中心读取器；未注入（测试）时使用注册表默认值。
@@ -1283,6 +1319,9 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 		return config.CapabilityBindings
 	})
 	capabilityBindings = normalizeCapabilityBindings(capabilityBindings)
+	if err := s.validateDeclaredCapabilities(ctx, req.TenantID, capabilityBindings); err != nil {
+		return nil, err
+	}
 	budgetPolicySource := inheritedConfigMap(req.BudgetPolicy, latestConfig, func(config EmployeeConfigInput) map[string]any {
 		return config.BudgetPolicy
 	})

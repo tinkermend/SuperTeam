@@ -694,6 +694,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	scenarioTemplateService.SetVocabularyRepository(scenariotemplate.NewPgVocabularyRepository(q))
 	scenarioTemplateService.SetAuditRecorder(auditService)
 	projectService.SetScenarioTemplateResolver(scenarioTemplateResolverAdapter{service: scenarioTemplateService})
+	// 能力词表是模板 required_capabilities 与员工 external_capabilities 的共用
+	// 词表；此前只有模板侧校验，员工侧随便写。两侧抽同一份词表才算有词表。
+	employeeService.SetCapabilityVocabularyValidator(scenarioTemplateService)
 	if coordinationStore != nil {
 		coordinationStore.WithScenarioTemplateSource(scenarioTemplateSourceAdapter{service: scenarioTemplateService})
 	}
