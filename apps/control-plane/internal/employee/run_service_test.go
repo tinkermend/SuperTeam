@@ -462,6 +462,54 @@ func TestStartProjectTaskRunOmitsSessionIDWhenRootHasNoSession(t *testing.T) {
 	}
 }
 
+// 会话过期时派发必须**照常发出**（开新会话）并把降级原因写进 metadata。
+// 反面是带着一个必失败的 session id 去 resume —— provider 进程会直接失败，
+// 于是人主动接续换来整单失败，正是 §6.1 要消灭的失败模式。
+func TestStartProjectTaskRunSkipsStaleSessionAndRecordsReason(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	projectTaskID := uuid.MustParse("00000000-0000-0000-0000-000000000905")
+	repo.projectTaskPreflight = validProjectTaskRunServicePreflight()
+	repo.providerSessionCandidate = &ProviderSessionResumeCandidate{
+		SessionID:         "provider-session-stale",
+		RuntimeNodeID:     repo.projectTaskPreflight.RuntimeNodeID,
+		LastRuntimeSeenAt: time.Now().Add(-DefaultSessionResumeMaxIdle - time.Hour),
+	}
+	dispatcher := newFakeRunServiceDispatcher()
+	dispatcher.connected[repo.projectTaskPreflight.NodeID] = true
+	service := mustNewRunService(t, repo, dispatcher)
+	service.SetProjectTaskNodeResolver(&fakeProjectTaskNodeResolver{nodeID: repo.projectTaskPreflight.RuntimeNodeID})
+
+	_, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
+		TenantID:             runServiceTenantID,
+		ProjectID:            uuid.New(),
+		DemandID:             uuid.New(),
+		ProjectTaskID:        projectTaskID,
+		ProjectTaskAttemptID: uuid.New(),
+		DigitalEmployeeID:    runServiceEmployeeID,
+		DispatchUserID:       uuid.New(),
+		Objective:            "接续一单",
+	})
+	if err != nil {
+		t.Fatalf("过期会话不得让派发失败: %v", err)
+	}
+	if len(dispatcher.commands) != 1 {
+		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
+	}
+	metadata, ok := commandPayload(t, dispatcher.commands[0].command)["metadata"].(map[string]any)
+	if !ok {
+		t.Fatal("expected metadata object")
+	}
+	if _, ok := metadata["provider_session_id"]; ok {
+		t.Fatalf("过期会话不得下发: %#v", metadata["provider_session_id"])
+	}
+	if metadata["session_resume_skipped"] != SessionResumeSkipReasonStale {
+		t.Fatalf("降级必须留痕原因码, got %#v", metadata["session_resume_skipped"])
+	}
+	if metadata["session_resume_skipped_session_id"] != "provider-session-stale" {
+		t.Fatalf("留痕须带上被放弃的会话 id, got %#v", metadata["session_resume_skipped_session_id"])
+	}
+}
+
 // TestShouldAttemptSessionResume covers the decision StartProjectTaskRun
 // uses to gate the FindProviderSessionForTaskRoot lookup. Project task
 // dispatch currently always normalizes session_policy to
@@ -2490,6 +2538,9 @@ type fakeRunServiceRepository struct {
 	// FindProviderSessionForTaskRoot should return for it (empty string /
 	// absent means "no active session for this root").
 	providerSessionForRoot      map[uuid.UUID]string
+	// providerSessionCandidate 覆盖 resume 预检看到的候选事实；未设置时由
+	// providerSessionForRoot 合成一条"新鲜且同节点"的候选。
+	providerSessionCandidate *ProviderSessionResumeCandidate
 	providerSessionForRootCalls []findProviderSessionForRootCall
 
 	// taskMetadata maps a task id to the metadata GetRunTaskMetadata should
@@ -2696,6 +2747,22 @@ func (f *fakeRunServiceRepository) CreateTaskEventIfAbsent(_ context.Context, re
 
 func (f *fakeRunServiceRepository) UpsertProviderSession(context.Context, UpsertProviderSessionRequest) (uuid.UUID, error) {
 	return uuid.New(), nil
+}
+
+func (f *fakeRunServiceRepository) FindProviderSessionCandidateForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (ProviderSessionResumeCandidate, error) {
+	if f.providerSessionCandidate != nil {
+		return *f.providerSessionCandidate, nil
+	}
+	sessionID, err := f.FindProviderSessionForTaskRoot(ctx, tenantID, employeeID, taskRootID)
+	if err != nil || sessionID == "" {
+		return ProviderSessionResumeCandidate{}, err
+	}
+	// 默认给一条"新鲜且同节点"的候选,让既有用例的语义保持"有会话就续";
+	// 预检本身的判据由 session_resume_preflight_test.go 直接覆盖。
+	return ProviderSessionResumeCandidate{
+		SessionID:    sessionID,
+		LastActiveAt: time.Now(),
+	}, nil
 }
 
 func (f *fakeRunServiceRepository) FindProviderSessionForTaskRoot(_ context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error) {

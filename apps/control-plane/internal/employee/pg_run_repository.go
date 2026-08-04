@@ -739,6 +739,27 @@ func (r *PgRunRepository) UpsertProviderSession(ctx context.Context, req UpsertP
 	return session.ID, nil
 }
 
+func (r *PgRunRepository) FindProviderSessionCandidateForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (ProviderSessionResumeCandidate, error) {
+	row, err := r.q.FindProviderSessionCandidateForTaskRoot(ctx, queries.FindProviderSessionCandidateForTaskRootParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ProjectTaskRootID: taskRootID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// 查不到不是错误路径：这一单该员工本来就可能没干过活。
+			return ProviderSessionResumeCandidate{}, nil
+		}
+		return ProviderSessionResumeCandidate{}, err
+	}
+	return ProviderSessionResumeCandidate{
+		SessionID:         row.ProviderSessionID,
+		RuntimeNodeID:     row.RuntimeNodeID,
+		LastRuntimeSeenAt: row.LastRuntimeSeenAt.Time,
+		LastActiveAt:      row.LastActiveAt.Time,
+	}, nil
+}
+
 func (r *PgRunRepository) FindProviderSessionForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error) {
 	providerSessionID, err := r.q.FindProviderSessionForTaskRoot(ctx, queries.FindProviderSessionForTaskRootParams{
 		TenantID:          tenantID,

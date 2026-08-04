@@ -1134,6 +1134,10 @@ func (f *fakeRunWritebackRepository) FindProviderSessionForTaskRoot(context.Cont
 	return "", nil
 }
 
+func (f *fakeRunWritebackRepository) FindProviderSessionCandidateForTaskRoot(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (ProviderSessionResumeCandidate, error) {
+	return ProviderSessionResumeCandidate{}, nil
+}
+
 func (f *fakeRunWritebackRepository) GetRunTaskMetadata(_ context.Context, _, taskID uuid.UUID) (map[string]any, error) {
 	return f.taskMetadata[taskID], nil
 }

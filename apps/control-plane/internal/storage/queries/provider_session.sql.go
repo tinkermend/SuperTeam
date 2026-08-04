@@ -144,6 +144,47 @@ func (q *Queries) CreateProviderSessionEventIfAbsent(ctx context.Context, arg Cr
 	return i, err
 }
 
+const FindProviderSessionCandidateForTaskRoot = `-- name: FindProviderSessionCandidateForTaskRoot :one
+SELECT provider_session_id, runtime_node_id, last_runtime_seen_at, last_active_at
+FROM provider_sessions
+WHERE tenant_id = $1::uuid
+  AND digital_employee_id = $2::uuid
+  AND project_task_root_id = $3::uuid
+  AND recoverable = true
+  AND status IN ('active', 'idle', 'completed')
+ORDER BY last_active_at DESC
+LIMIT 1
+`
+
+type FindProviderSessionCandidateForTaskRootParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	ProjectTaskRootID uuid.UUID `json:"project_task_root_id"`
+}
+
+type FindProviderSessionCandidateForTaskRootRow struct {
+	ProviderSessionID string             `json:"provider_session_id"`
+	RuntimeNodeID     uuid.UUID          `json:"runtime_node_id"`
+	LastRuntimeSeenAt pgtype.Timestamptz `json:"last_runtime_seen_at"`
+	LastActiveAt      pgtype.Timestamptz `json:"last_active_at"`
+}
+
+// 同 FindProviderSessionForTaskRoot，但把 resume 预检需要的事实一并带出：
+// 会话绑在哪个 runtime 节点、最后一次被 runtime 看到是什么时候。
+// 判据留在控制平面（spec 2026-08-01 §6.1）——runtime 侧不做 resume 兜底，
+// 那属于 provider 管道，越界。
+func (q *Queries) FindProviderSessionCandidateForTaskRoot(ctx context.Context, arg FindProviderSessionCandidateForTaskRootParams) (FindProviderSessionCandidateForTaskRootRow, error) {
+	row := q.db.QueryRow(ctx, FindProviderSessionCandidateForTaskRoot, arg.TenantID, arg.DigitalEmployeeID, arg.ProjectTaskRootID)
+	var i FindProviderSessionCandidateForTaskRootRow
+	err := row.Scan(
+		&i.ProviderSessionID,
+		&i.RuntimeNodeID,
+		&i.LastRuntimeSeenAt,
+		&i.LastActiveAt,
+	)
+	return i, err
+}
+
 const FindProviderSessionForTaskRoot = `-- name: FindProviderSessionForTaskRoot :one
 SELECT provider_session_id
 FROM provider_sessions

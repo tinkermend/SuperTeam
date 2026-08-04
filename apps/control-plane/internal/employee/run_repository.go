@@ -30,6 +30,10 @@ type DigitalEmployeeRunRepository interface {
 	// task lineage root). It returns an empty string when no eligible
 	// session matches — this is a lookup, not an error path.
 	FindProviderSessionForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (string, error)
+	// FindProviderSessionCandidateForTaskRoot 同上，但附带 resume 预检所需的
+	// 事实（会话绑定的节点、最后一次被 runtime 看到的时间）。SessionID 为空
+	// 表示无可续会话。
+	FindProviderSessionCandidateForTaskRoot(ctx context.Context, tenantID, employeeID, taskRootID uuid.UUID) (ProviderSessionResumeCandidate, error)
 	// GetRunTaskMetadata returns the metadata map persisted on the task
 	// backing a run (tasks.params["metadata"]), so writeback can recover
 	// dispatch-time context — e.g. revision_root_task_id — that isn't
@@ -57,6 +61,14 @@ type EmployeePermissionPolicyReader interface {
 // 可选能力:未实现的仓库(部分单测 fake)回退到最新修订读取,保持既有行为。
 type ConfigRevisionCurrentReader interface {
 	GetCurrentDigitalEmployeeConfigRevision(ctx context.Context, tenantID, employeeID uuid.UUID) (EmployeeConfigInput, error)
+}
+
+// ProviderSessionResumeCandidate 是一条可续会话的预检事实。
+type ProviderSessionResumeCandidate struct {
+	SessionID         string
+	RuntimeNodeID     uuid.UUID
+	LastRuntimeSeenAt time.Time
+	LastActiveAt      time.Time
 }
 
 type ProjectTaskRunPreflightRepository interface {

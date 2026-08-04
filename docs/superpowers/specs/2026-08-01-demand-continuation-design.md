@@ -1,7 +1,7 @@
 # #2 同单接续（Demand Continuation）
 
 - 日期：2026-08-01
-- 状态：**P0a–P0d 已实施（2026-08-03）；P1（resume 预检降级）未实施**
+- 状态：**已实施（P0a–P0d 2026-08-03；P1 resume 预检降级 2026-08-04）**
 - 系列：对齐基线 `2026-07-27-workspace-and-playbook-alignment-baseline.md` §8 第 2 项
 - 交付性质：CP 写路径（1 条 Atlas 迁移 + OpenAPI 契约变更）+ 派发期会话血缘传播 + Web 卷宗接续入口
 - 目标读者：实施会话（本文自包含；实施前必读基线 §3/§4/§6/§7 与 `2026-07-29-demand-workbench-design.md`）
@@ -296,7 +296,7 @@ actions:
 | **P0b** | 迁移 + `continues_demand_id` + 接续 API + 链继承规则 | **已实施**（迁移落为 `20260803180000_*`） |
 | **P0c** | 派发期血缘传播（§5.1/§5.2，含递归 CTE 与 D1–D7） | **已实施**：D1–D5/D7 + 成环停机由真库测试锁住 |
 | **P0d** | 卷宗 lineage 字段 + Web 入口 + 左轨按链折叠 | **已实施**：浏览器真链路走通 |
-| **P1** | resume 预检降级 + 留痕（§6.1） | **未实施** |
+| **P1** | resume 预检降级 + 留痕（§6.1） | **已实施**：真库造过期会话，派发照常且留痕 `session_stale` |
 
 **默认交付 = P0a–P0d 全做完**。P1 可紧随。若排期砍刀：**不得只做 API 不做传播**（那就是"接续了但会话没接上"，等于没做）。
 
@@ -315,7 +315,7 @@ actions:
 | G5 | 接续后检查父单 | 状态、验收结论、终态通知**均未变化** |
 | G6 | 对未到终态的单调接续 API | 409 `demand_not_settled` |
 | G7 | 人工 recovery 重试一个**原始任务** | 替换任务仍回到同一会话（修复前会开新会话） |
-| G8 | 造一条过期/跨节点会话后派发 | 任务**不失败**，正常开新会话，且事件/attestation 有 `session_resume_skipped` 留痕（P1） |
+| G8 ✅ | 造一条过期/跨节点会话后派发 | **已验证**：任务照常 running、另起新会话，派发 metadata 带 `session_resume_skipped=session_stale` 与被放弃的会话 id |
 | G9 | 浏览器：完成单 → 点「继续这一单」→ 填写 → 提交 | 落到新单卷宗；单头链条显示第 2/2；左轨该链只占一行 |
 | G10 | 链上任一单的深链 | 均可直达，左轨高亮该链，能切到链内其他单 |
 | G11 | `verify:contracts` + `verify:control-plane` + `verify:web` + `make migrate-validate` | 全过 |

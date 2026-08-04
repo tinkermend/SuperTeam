@@ -407,12 +407,22 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 	// this is what lets a revision task resume its predecessor's session.
 	sessionPolicy := runtimeSessionPolicyPayload(preflight.SessionPolicy)
 	if shouldAttemptSessionResume(sessionPolicy) {
-		sessionID, err := s.repository.FindProviderSessionForTaskRoot(ctx, req.TenantID, req.DigitalEmployeeID, rootTaskID)
+		candidate, err := s.repository.FindProviderSessionCandidateForTaskRoot(ctx, req.TenantID, req.DigitalEmployeeID, rootTaskID)
 		if err != nil {
 			return StartProjectTaskRunResult{}, fmt.Errorf("find provider session for task root: %w", err)
 		}
-		if sessionID != "" {
-			metadata["provider_session_id"] = sessionID
+		// resume 预检（spec 2026-08-01 §6.1）：过期或跨节点的会话不下发。
+		// 带着一个必失败的 session id 去 resume，会让 provider 进程直接失败、
+		// 整单跟着失败——那正是人主动接续时最不该出现的失败模式。
+		decision := evaluateSessionResume(candidate, preflight.RuntimeNodeID, time.Now(), DefaultSessionResumeMaxIdle)
+		switch {
+		case decision.Resumed():
+			metadata["provider_session_id"] = decision.SessionID
+		case decision.SkipReason != "":
+			// 留痕：不留痕的降级等于静默丢上下文，事后无法区分
+			// "该续没续"与"本就不该续"。
+			metadata["session_resume_skipped"] = decision.SkipReason
+			metadata["session_resume_skipped_session_id"] = candidate.SessionID
 		}
 	}
 

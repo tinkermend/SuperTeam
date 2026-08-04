@@ -247,6 +247,11 @@ type Querier interface {
 	// ApprovalProjectorAdapter must not also project/overwrite the inbox card.
 	ExistsProjectDecisionRequestByApproval(ctx context.Context, arg ExistsProjectDecisionRequestByApprovalParams) (bool, error)
 	FailProjectPlanDecompositionClaim(ctx context.Context, arg FailProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
+	// 同 FindProviderSessionForTaskRoot，但把 resume 预检需要的事实一并带出：
+	// 会话绑在哪个 runtime 节点、最后一次被 runtime 看到是什么时候。
+	// 判据留在控制平面（spec 2026-08-01 §6.1）——runtime 侧不做 resume 兜底，
+	// 那属于 provider 管道，越界。
+	FindProviderSessionCandidateForTaskRoot(ctx context.Context, arg FindProviderSessionCandidateForTaskRootParams) (FindProviderSessionCandidateForTaskRootRow, error)
 	// Resume the latest recoverable session for this lineage root, including
 	// completed ones. Upstream work often finishes (status=completed) before a
 	// revision/supplement under the same root is dispatched; requiring 'active'

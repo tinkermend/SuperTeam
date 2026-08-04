@@ -55,6 +55,21 @@ FROM provider_session_events
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND provider_session_id = sqlc.arg('provider_session_id')::uuid;
 
+-- name: FindProviderSessionCandidateForTaskRoot :one
+-- 同 FindProviderSessionForTaskRoot，但把 resume 预检需要的事实一并带出：
+-- 会话绑在哪个 runtime 节点、最后一次被 runtime 看到是什么时候。
+-- 判据留在控制平面（spec 2026-08-01 §6.1）——runtime 侧不做 resume 兜底，
+-- 那属于 provider 管道，越界。
+SELECT provider_session_id, runtime_node_id, last_runtime_seen_at, last_active_at
+FROM provider_sessions
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND project_task_root_id = sqlc.arg('project_task_root_id')::uuid
+  AND recoverable = true
+  AND status IN ('active', 'idle', 'completed')
+ORDER BY last_active_at DESC
+LIMIT 1;
+
 -- name: FindProviderSessionForTaskRoot :one
 -- Resume the latest recoverable session for this lineage root, including
 -- completed ones. Upstream work often finishes (status=completed) before a
