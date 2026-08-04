@@ -150,11 +150,17 @@ func (r *PgRunRepository) GetProjectTaskRunPreflightForNode(ctx context.Context,
 	return projectTaskRunPreflightForNodeFromQuery(preflight)
 }
 
+// projectDemandContinuationMaxDepth 与 project.DefaultDemandContinuationMaxDepth
+// 同值。此处不导入 project 包(employee 侧刻意不依赖 project 域),两处改动须同步;
+// 上限的意义是让递归遍历在数据被手工改出环时一定能停(spec §5.2 D3)。
+const projectDemandContinuationMaxDepth int32 = 10
+
 // ResolveProjectTaskLineageRoot mirrors projectcoordination's
 // revisionRootTaskID (see project_store.go) without importing that package:
 // planner_metadata["revision_root_task_id"] wins if set, else
-// revision_of_task_id (one hop), else the task's own id.
-func (r *PgRunRepository) ResolveProjectTaskLineageRoot(ctx context.Context, tenantID, projectTaskID uuid.UUID) (uuid.UUID, error) {
+// revision_of_task_id (one hop), else 接续链上溯(见接口注释第 3 条),
+// else the task's own id.
+func (r *PgRunRepository) ResolveProjectTaskLineageRoot(ctx context.Context, tenantID, digitalEmployeeID, projectTaskID uuid.UUID) (uuid.UUID, error) {
 	row, err := r.q.GetProjectTaskSessionLineage(ctx, queries.GetProjectTaskSessionLineageParams{
 		TenantID: tenantID,
 		ID:       projectTaskID,
@@ -177,6 +183,25 @@ func (r *PgRunRepository) ResolveProjectTaskLineageRoot(ctx context.Context, ten
 	}
 	if row.RevisionOfTaskID.Valid && row.RevisionOfTaskID.UUID != uuid.Nil {
 		return row.RevisionOfTaskID.UUID, nil
+	}
+	// 接续链上溯（spec §5.1 第 3 条）。只有接续单会进这条分支：普通单的
+	// demand 没有 continues_demand_id，递归 CTE 首行就取不到，一次查询即返回
+	// 空结果，因此对绝大多数派发是零额外代价。
+	if row.DemandID.Valid && row.DemandID.UUID != uuid.Nil && digitalEmployeeID != uuid.Nil {
+		rootID, err := r.q.ResolveTaskLineageRootFromDemandChain(ctx, queries.ResolveTaskLineageRootFromDemandChainParams{
+			TenantID:          tenantID,
+			DigitalEmployeeID: digitalEmployeeID,
+			DemandID:          row.DemandID.UUID,
+			MaxDepth:          projectDemandContinuationMaxDepth,
+		})
+		switch {
+		case err == nil && rootID != uuid.Nil:
+			return rootID, nil
+		case err != nil && !errors.Is(err, pgx.ErrNoRows):
+			// 查不到（该员工没在祖先链里干过活）是正常结果，不是错误；
+			// 其余错误必须冒泡——静默吞掉会退化成"莫名其妙开了新会话"。
+			return uuid.Nil, fmt.Errorf("resolve lineage root from demand chain: %w", err)
+		}
 	}
 	return projectTaskID, nil
 }

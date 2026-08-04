@@ -387,7 +387,7 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		return StartProjectTaskRunResult{}, fmt.Errorf("%w: runtime node is not connected", ErrRuntimeUnavailable)
 	}
 
-	rootTaskID, err := preflightRepo.ResolveProjectTaskLineageRoot(ctx, req.TenantID, req.ProjectTaskID)
+	rootTaskID, err := preflightRepo.ResolveProjectTaskLineageRoot(ctx, req.TenantID, req.DigitalEmployeeID, req.ProjectTaskID)
 	if err != nil {
 		return StartProjectTaskRunResult{}, fmt.Errorf("resolve project task lineage root: %w", err)
 	}

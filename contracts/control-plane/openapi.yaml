@@ -8830,7 +8830,7 @@ components:
                   type: boolean
                 reason_code:
                   type: string
-                  enum: [ok, demand_not_settled, chain_too_deep]
+                  enum: [ok, demand_not_settled, already_continued, chain_too_deep, project_archived]
                 reason_message:
                   type: string
                   description: 中文说明，available=false 时展示

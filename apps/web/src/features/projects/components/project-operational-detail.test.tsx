@@ -37,7 +37,9 @@ vi.mock("@tanstack/react-router", () => {
           {children}
         </a>
       );
-    }
+    },
+    // 需求区（同页子组件）接续后要 navigate；mock 需补上这个导出。
+    useNavigate: () => vi.fn()
 };
 });
 

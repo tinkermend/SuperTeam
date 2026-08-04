@@ -69,12 +69,18 @@ type ProjectTaskRunPreflightRepository interface {
 	// dispatchable.
 	GetProjectTaskRunPreflightForNode(ctx context.Context, tenantID, employeeID, resolvedNodeID uuid.UUID) (StartProjectTaskRunPreflight, error)
 	// ResolveProjectTaskLineageRoot resolves the session-lineage root task id
-	// for projectTaskID: planner_metadata["revision_root_task_id"] if set,
-	// else revision_of_task_id (one hop), else the task's own id. This
-	// mirrors projectcoordination's revisionRootTaskID without importing that
-	// package. Provider session identity is scoped to this root, not to the
-	// current project_task_id.
-	ResolveProjectTaskLineageRoot(ctx context.Context, tenantID, projectTaskID uuid.UUID) (uuid.UUID, error)
+	// for projectTaskID, in this order:
+	//   1. planner_metadata["revision_root_task_id"] if set
+	//   2. revision_of_task_id (one hop)
+	//   3. 接续链：任务所属 demand 有 continues_demand_id 时，沿祖先链**逐代**
+	//      上溯，取**同一个 digitalEmployeeID** 的最近任务的根
+	//      (spec 2026-08-01-demand-continuation-design §5.1/§5.2)
+	//   4. the task's own id
+	// 1/2 mirror projectcoordination's revisionRootTaskID without importing
+	// that package. Provider session identity is scoped to this root, not to
+	// the current project_task_id —— 3 是"接续时回到自己上次那条会话"的全部
+	// 机制：键里带员工，所以多员工单里各员工各续各的，换人则落回 4 开新会话。
+	ResolveProjectTaskLineageRoot(ctx context.Context, tenantID, digitalEmployeeID, projectTaskID uuid.UUID) (uuid.UUID, error)
 }
 
 // ResolveProjectTaskNodeRequest carries the identifiers the runtime node

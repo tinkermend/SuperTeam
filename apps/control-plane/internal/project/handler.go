@@ -1998,7 +1998,8 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		http.Error(w, "项目已归档，无法提交新需求或执行该操作。", http.StatusConflict)
 	case errors.Is(err, ErrProjectNotArchived),
 		errors.Is(err, ErrProjectArchiveBlocked), errors.Is(err, ErrProjectConflict), errors.Is(err, ErrProjectTaskNotDismissible),
-		errors.Is(err, ErrDemandNotSettled), errors.Is(err, ErrContinuationChainTooDeep):
+		errors.Is(err, ErrDemandNotSettled), errors.Is(err, ErrContinuationChainTooDeep),
+		errors.Is(err, ErrDemandAlreadyContinued):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		// 500 兜底不能吞错误细节——留一条服务端日志供排障（响应体仍不泄露内部信息）。

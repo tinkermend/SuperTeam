@@ -32,7 +32,9 @@ vi.mock("@tanstack/react-router", () => {
           {children}
         </a>
       );
-    }
+    },
+    // 接续成功后要 navigate 到新一单；mock 只需可调用，断言看的是请求与渲染。
+    useNavigate: () => vi.fn()
 };
 });
 
@@ -149,6 +151,20 @@ function dossierFor(demandId: string, overrides: Record<string, unknown> = {}) {
     acceptance: { criteria_total: 0, demand_status: source.status, pending_human_judgment: 0 },
     demand: source,
     effective_playbook: { name: "", produce_kinds: [], source: "none", template_key: null },
+    lineage: {
+      chain: [
+        {
+          created_at: source.created_at ?? "2026-07-25T08:00:00Z",
+          demand_id: demandId,
+          is_current: true,
+          status: source.status,
+          title: source.title
+},
+      ],
+      chain_length: 1,
+      chain_position: 1,
+      continue_demand: { available: false, reason_code: "demand_not_settled", reason_message: "这一单还在进行中，结束后才能接续" }
+},
     handoff_summary: {
       assessments: [],
       fulfilled: 0,
@@ -408,6 +424,97 @@ describe("ProjectDemandsSection", () => {
     await expect.element(screen.getByText("已整理完毕")).toBeVisible();
     // 剧本名进单头，用户能看见"这一单按哪套剧本走"。
     await expect.element(screen.getByText("剧本 · 软件交付")).toBeVisible();
+  });
+
+  it("offers 继续这一单 only when the server says the demand can be continued", async () => {
+    const screen = await renderSection({
+      apiOptions: {
+        baseUrl: "http://cp.test",
+        fetcher: stubFetcher({
+          lineage: {
+            chain: [
+              {
+                created_at: "2026-07-25T08:00:00Z",
+                demand_id: "demand-latest",
+                is_current: true,
+                status: "completed",
+                title: "整理验收材料"
+},
+            ],
+            chain_length: 1,
+            chain_position: 1,
+            continue_demand: { available: true, reason_code: "ok" }
+}
+})
+},
+    });
+
+    await expect.element(screen.getByTestId("demand-dossier-continue")).toBeVisible();
+  });
+
+  it("explains why instead of showing a dead disabled button when continuation is blocked", async () => {
+    const screen = await renderSection();
+
+    // 默认 stub 的 continue_demand.available=false（单还在进行中）。
+    await expect
+      .element(screen.getByTestId("demand-dossier-continue-blocked"))
+      .toBeVisible();
+    await expect.element(screen.getByText("这一单还在进行中，结束后才能接续")).toBeVisible();
+    expect(
+      screen.container.querySelector('[data-testid="demand-dossier-continue"]'),
+    ).toBeNull();
+  });
+
+  it("folds a continuation chain into one queue row and shows the chain in the header", async () => {
+    const chained: ProjectDemand[] = [
+      demand({ created_at: latestDemandCreatedAt, id: "demand-head", status: "completed", title: "首轮调研" }),
+      demand({
+        continues_demand_id: "demand-head",
+        created_at: latestDemandCreatedAt,
+        id: "demand-next",
+        status: "executing",
+        title: "首轮调研（接续 1）"
+}),
+    ];
+    const screen = await renderSection({
+      apiOptions: {
+        baseUrl: "http://cp.test",
+        fetcher: async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes("/dossier")) {
+            return jsonResponse({
+              ...dossierFor("demand-latest"),
+              demand: chained[1],
+              lineage: {
+                chain: [
+                  { created_at: latestDemandCreatedAt, demand_id: "demand-head", is_current: false, status: "completed", title: "首轮调研" },
+                  { created_at: latestDemandCreatedAt, demand_id: "demand-next", is_current: true, status: "executing", title: "首轮调研（接续 1）" },
+                ],
+                chain_length: 2,
+                chain_position: 2,
+                continue_demand: { available: false, reason_code: "demand_not_settled", reason_message: "这一单还在进行中，结束后才能接续" }
+}
+});
+          }
+          if (url.includes("/acceptance-criteria")) {
+            return jsonResponse({ criteria: [], demand_status: "executing" });
+          }
+          return jsonResponse({ detail: "not found" }, 404);
+        }
+},
+      demands: chained,
+      selectedDemandId: "demand-next",
+    });
+
+    // 两条 demand 折成一行，行落在链上最新一单，并标出接续次数。
+    await expect.element(screen.getByTestId("demand-list-item-demand-next")).toBeVisible();
+    expect(
+      screen.container.querySelector('[data-testid="demand-list-item-demand-head"]'),
+    ).toBeNull();
+    await expect.element(screen.getByTestId("demand-list-continuations-demand-next")).toBeVisible();
+    // 单头给出链上位置，人能看出"这是第几次接续"。
+    await expect.element(screen.getByTestId("demand-dossier-chain")).toBeVisible();
+    await expect.element(screen.getByText("本单为第 2 / 2 次")).toBeVisible();
   });
 
   it("shows the pinned exit in the header so scope is visible, not just the playbook", async () => {

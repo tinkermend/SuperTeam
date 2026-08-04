@@ -1391,19 +1391,25 @@ func (e ProjectDemandDossierHandoffSummaryAssessmentsStatus) Valid() bool {
 
 // Defines values for ProjectDemandDossierLineageContinueDemandReasonCode.
 const (
+	ProjectDemandDossierLineageContinueDemandReasonCodeAlreadyContinued ProjectDemandDossierLineageContinueDemandReasonCode = "already_continued"
 	ProjectDemandDossierLineageContinueDemandReasonCodeChainTooDeep     ProjectDemandDossierLineageContinueDemandReasonCode = "chain_too_deep"
 	ProjectDemandDossierLineageContinueDemandReasonCodeDemandNotSettled ProjectDemandDossierLineageContinueDemandReasonCode = "demand_not_settled"
 	ProjectDemandDossierLineageContinueDemandReasonCodeOk               ProjectDemandDossierLineageContinueDemandReasonCode = "ok"
+	ProjectDemandDossierLineageContinueDemandReasonCodeProjectArchived  ProjectDemandDossierLineageContinueDemandReasonCode = "project_archived"
 )
 
 // Valid indicates whether the value is a known member of the ProjectDemandDossierLineageContinueDemandReasonCode enum.
 func (e ProjectDemandDossierLineageContinueDemandReasonCode) Valid() bool {
 	switch e {
+	case ProjectDemandDossierLineageContinueDemandReasonCodeAlreadyContinued:
+		return true
 	case ProjectDemandDossierLineageContinueDemandReasonCodeChainTooDeep:
 		return true
 	case ProjectDemandDossierLineageContinueDemandReasonCodeDemandNotSettled:
 		return true
 	case ProjectDemandDossierLineageContinueDemandReasonCodeOk:
+		return true
+	case ProjectDemandDossierLineageContinueDemandReasonCodeProjectArchived:
 		return true
 	default:
 		return false

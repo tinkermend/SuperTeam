@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, Inbox } from "lucide-react";
+import { ArrowUpRight, CornerDownRight, Inbox } from "lucide-react";
 
 import { Button, Callout, Segmented, SoftCard, StatusPill } from "@/components/superteam";
 import { demandStatusLabel, decisionTypeLabel, dossierDensityLabel } from "@/lib/status-labels";
@@ -39,25 +39,34 @@ export function demandDossierExitText(playbook: {
 }
 
 /**
- * 一单卷宗单头：身份 + 有效剧本 + 本单收口 + 待你处理 + 视图/密度切换。
+ * 一单卷宗单头：身份 + 有效剧本 + 本单收口 + 接续链 + 待你处理 + 视图/密度切换。
  *
- * 刻意**不放**「继续此任务」——同单接续能力属后续版本；放一颗禁用按钮不是留
- * 挂点，是留一颗点不动的承诺按钮。挂点留在契约与组件边界上。
+ * 「继续这一单」在**能接续时才渲染**：不可用时给原因文案而不是禁用按钮——
+ * 点不动的按钮只会让人反复试。能不能接续由服务端 lineage.continue_demand 判定，
+ * 前端不自己算（散到前端就会两处不一致）。
  */
 export function DemandDossierHeader({
   density,
   dossier,
+  onContinue,
   onDensityChange,
+  onSelectDemand,
   onViewChange,
   view,
 }: {
   density: DossierDensity;
   dossier: ProjectDemandDossier;
+  onContinue?: () => void;
   onDensityChange: (density: DossierDensity) => void;
+  onSelectDemand?: (demandId: string) => void;
   onViewChange: (view: DemandDossierView) => void;
   view: DemandDossierView;
 }) {
   const demand = dossier.demand;
+  const lineage = dossier.lineage;
+  const chainLength = lineage?.chain_length ?? 1;
+  const chainPosition = lineage?.chain_position ?? 1;
+  const continueDemand = lineage?.continue_demand;
   const playbookName = dossier.effective_playbook.name?.trim();
   const showPlaybook =
     dossier.effective_playbook.source !== "none" && Boolean(playbookName);
@@ -90,6 +99,36 @@ export function DemandDossierHeader({
               </span>
             ) : null}
           </div>
+          {chainLength > 1 ? (
+            <nav
+              aria-label="接续链"
+              className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-3"
+              data-testid="demand-dossier-chain"
+            >
+              <CornerDownRight aria-hidden className="size-3 shrink-0" />
+              <span>
+                本单为第 {chainPosition} / {chainLength} 次
+              </span>
+              {lineage.chain.map((item) => (
+                <button
+                  aria-current={item.is_current ? "true" : undefined}
+                  className={[
+                    "rounded-full px-2 py-0.5",
+                    item.is_current
+                      ? "bg-accent-soft font-semibold text-ink"
+                      : "bg-card-soft text-ink-2 hover:text-ink",
+                  ].join(" ")}
+                  disabled={item.is_current || !onSelectDemand}
+                  key={item.demand_id}
+                  onClick={() => onSelectDemand?.(item.demand_id)}
+                  title={`${item.title}（${demandStatusLabel(item.status)}）`}
+                  type="button"
+                >
+                  {item.is_current ? "本单" : item.title}
+                </button>
+              ))}
+            </nav>
+          ) : null}
           {demand.content && demand.content !== demand.title ? (
             <p className="mt-1.5 line-clamp-3 text-[13px] leading-6 text-ink-2">
               {demand.content}
@@ -98,6 +137,24 @@ export function DemandDossierHeader({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {continueDemand?.available && onContinue ? (
+            <Button
+              data-testid="demand-dossier-continue"
+              onClick={onContinue}
+              size="sm"
+              variant="secondary"
+            >
+              <CornerDownRight className="size-3.5" />
+              继续这一单
+            </Button>
+          ) : continueDemand && !continueDemand.available && continueDemand.reason_message ? (
+            <span
+              className="text-[11.5px] text-ink-3"
+              data-testid="demand-dossier-continue-blocked"
+            >
+              {continueDemand.reason_message}
+            </span>
+          ) : null}
           <Segmented
             aria-label="切换视图"
             data-testid="demand-dossier-view-toggle"

@@ -305,7 +305,7 @@ export function ProjectConfigView({
     }
 });
 
-  const replaceMembersMutation = useMutation({
+  const replaceMembersMutation = useMutation<ProjectMember[], Error, ProjectMemberInput[]>({
     mutationFn: (members: ProjectMemberInput[]) =>
       replaceProjectMembers(apiOptions, projectId, members),
     onSuccess: async (members) => {

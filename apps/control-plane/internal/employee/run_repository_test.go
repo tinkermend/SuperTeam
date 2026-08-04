@@ -1086,26 +1086,163 @@ func TestPgRunRepositoryResolveProjectTaskLineageRoot(t *testing.T) {
 	require.True(t, ok, "PgRunRepository must implement ProjectTaskRunPreflightRepository")
 
 	t.Run("task with no lineage resolves to itself", func(t *testing.T) {
-		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, freshTaskID)
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, uuid.Nil, freshTaskID)
 		require.NoError(t, err)
 		require.Equal(t, freshTaskID, got)
 	})
 
 	t.Run("one-hop revision falls back to revision_of_task_id", func(t *testing.T) {
-		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, revisionTaskID)
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, uuid.Nil, revisionTaskID)
 		require.NoError(t, err)
 		require.Equal(t, rootTaskID, got)
 	})
 
 	t.Run("planner_metadata root override takes precedence", func(t *testing.T) {
-		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, overriddenTaskID)
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, uuid.Nil, overriddenTaskID)
 		require.NoError(t, err)
 		require.Equal(t, overrideRoot, got)
 	})
 
 	t.Run("unknown task id is reported as not found", func(t *testing.T) {
-		_, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, uuid.New())
+		_, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, uuid.Nil, uuid.New())
 		require.ErrorIs(t, err, ErrNotFound)
+	})
+}
+
+// TestPgRunRepositoryResolveLineageRootAcrossContinuationChain 覆盖接续链上溯
+// (spec 2026-08-01-demand-continuation-design §5.1 第 3 条 / §5.2 D1–D7)。
+// 这条路径全在 SQL 里，内存假仓储盖不住，必须打真库。
+func TestPgRunRepositoryResolveLineageRootAcrossContinuationChain(t *testing.T) {
+	ctx := context.Background()
+	cfg, ok := employeeRunRepositoryTestConfig()
+	if !ok {
+		t.Skip("set TEST_DATABASE_URL and TEST_REDIS_URL, or set ALLOW_DATABASE_URL_FOR_QUERY_TESTS=1 with DATABASE_URL and REDIS_URL")
+	}
+
+	conn, err := pgx.Connect(ctx, cfg.databaseURL)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	schemaName := "continuation_lineage_" + strings.ReplaceAll(strings.ToLower(uuid.NewString()), "-", "_")
+	_, err = conn.Exec(ctx, `CREATE SCHEMA `+schemaName)
+	require.NoError(t, err)
+	defer conn.Exec(ctx, `DROP SCHEMA IF EXISTS `+schemaName+` CASCADE`)
+	_, err = conn.Exec(ctx, `SET search_path TO `+schemaName)
+	require.NoError(t, err)
+	require.NoError(t, runEmployeeRepositoryTestMigrations(ctx, conn))
+
+	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	_, err = conn.Exec(ctx, `
+		INSERT INTO tenants (id, slug, name, status)
+		VALUES ($1, 'default', '默认租户', 'active')
+		ON CONFLICT (id) DO NOTHING;
+	`, tenantID)
+	require.NoError(t, err)
+
+	// project_demands / project_tasks 对 projects、users 都没有外键约束，
+	// 造链只需要这两张表本身（与同文件既有 lineage 用例同口径）。
+	ownerID := uuid.New()
+	projectID := uuid.New()
+
+	insertDemand := func(id uuid.UUID, continues *uuid.UUID) {
+		_, err := conn.Exec(ctx, `
+			INSERT INTO project_demands (
+				id, tenant_id, project_id, submitted_by_user_id, title, status,
+				source_type, coordination_mode, continues_demand_id
+			) VALUES ($1, $2, $3, $4, '需求', 'completed', 'manual', 'plan', $5)
+		`, id, tenantID, projectID, ownerID, continues)
+		require.NoError(t, err)
+	}
+	insertTaskIn := func(id, demandID uuid.UUID, employeeID *uuid.UUID, plannerMetadata string, createdAt string) {
+		_, err := conn.Exec(ctx, `
+			INSERT INTO project_tasks (
+				id, tenant_id, project_id, demand_id, title, status,
+				assigned_digital_employee_id, planner_metadata, created_at
+			) VALUES ($1, $2, $3, $4, 'task', 'completed', $5, $6::jsonb, $7::timestamptz)
+		`, id, tenantID, projectID, demandID, employeeID, plannerMetadata, createdAt)
+		require.NoError(t, err)
+	}
+
+	// 链：A → B → C。E1 在 A 与 B 都干过活，E2 只在 A 干过，E3 从没出现。
+	demandA, demandB, demandC := uuid.New(), uuid.New(), uuid.New()
+	insertDemand(demandA, nil)
+	insertDemand(demandB, &demandA)
+	insertDemand(demandC, &demandB)
+
+	e1, e2, e3 := uuid.New(), uuid.New(), uuid.New()
+
+	// A 里 E1 有两条任务：D1 要求同代内取 created_at 最新的那条。
+	e1TaskAOld, e1TaskANew := uuid.New(), uuid.New()
+	insertTaskIn(e1TaskAOld, demandA, &e1, `{}`, "2026-01-01T00:00:00Z")
+	insertTaskIn(e1TaskANew, demandA, &e1, `{}`, "2026-01-02T00:00:00Z")
+	// A 里 E2 的任务本身是 revision 链的一员：D4 要求继承它的**根**而非 id。
+	e2RootInA := uuid.New()
+	e2TaskA := uuid.New()
+	insertTaskIn(e2TaskA, demandA, &e2, fmt.Sprintf(`{"revision_root_task_id": %q}`, e2RootInA.String()), "2026-01-01T00:00:00Z")
+	// B 里只有 E1：C 上的 E2 任务因此必须跨过 B、逐代上溯到 A（D2）。
+	e1TaskB := uuid.New()
+	insertTaskIn(e1TaskB, demandB, &e1, `{}`, "2026-02-01T00:00:00Z")
+	// A 里还有一条没定人的任务：D7 要求它不参与匹配。
+	insertTaskIn(uuid.New(), demandA, nil, `{}`, "2026-01-03T00:00:00Z")
+
+	// C 上待派发的三条任务，分别给 E1 / E2 / E3。
+	cTaskE1, cTaskE2, cTaskE3 := uuid.New(), uuid.New(), uuid.New()
+	insertTaskIn(cTaskE1, demandC, &e1, `{}`, "2026-03-01T00:00:00Z")
+	insertTaskIn(cTaskE2, demandC, &e2, `{}`, "2026-03-01T00:00:00Z")
+	insertTaskIn(cTaskE3, demandC, &e3, `{}`, "2026-03-01T00:00:00Z")
+
+	repo, ok := NewPgRunRepository(queries.New(conn)).(ProjectTaskRunPreflightRepository)
+	require.True(t, ok)
+
+	t.Run("D2 逐代上溯：命中最近一代里同员工的任务", func(t *testing.T) {
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, e1, cTaskE1)
+		require.NoError(t, err)
+		require.Equal(t, e1TaskB, got, "E1 在 B 里有任务，就不该跳到 A")
+	})
+
+	t.Run("D2+D4 跨代上溯并继承前序任务自己的根", func(t *testing.T) {
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, e2, cTaskE2)
+		require.NoError(t, err)
+		require.Equal(t, e2RootInA, got, "B 里没有 E2，须上溯到 A 并取那条任务的根")
+	})
+
+	t.Run("D5 换人不得续别人的会话", func(t *testing.T) {
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, e3, cTaskE3)
+		require.NoError(t, err)
+		require.Equal(t, cTaskE3, got, "从没参与过的员工必须落回任务自身 id（开新会话）")
+	})
+
+	t.Run("D1 同代内取最新一条", func(t *testing.T) {
+		// 直接对 B 上的 E1 任务求根：B 的父代 A 里 E1 有两条，取 created_at 新的。
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, e1, e1TaskB)
+		require.NoError(t, err)
+		require.Equal(t, e1TaskANew, got)
+		require.NotEqual(t, e1TaskAOld, got)
+	})
+
+	t.Run("链头无祖先：落回任务自身", func(t *testing.T) {
+		got, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, e1, e1TaskANew)
+		require.NoError(t, err)
+		require.Equal(t, e1TaskANew, got)
+	})
+
+	t.Run("D3 成环也能停", func(t *testing.T) {
+		// 把链头 A 指回 C，人为造环；上溯必须在 depth 上限处收敛而不是挂死。
+		_, err := conn.Exec(ctx, `UPDATE project_demands SET continues_demand_id = $1 WHERE id = $2`, demandC, demandA)
+		require.NoError(t, err)
+		defer conn.Exec(ctx, `UPDATE project_demands SET continues_demand_id = NULL WHERE id = $1`, demandA)
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, err := repo.ResolveProjectTaskLineageRoot(ctx, tenantID, e3, cTaskE3)
+			require.NoError(t, err)
+		}()
+		select {
+		case <-done:
+		case <-time.After(20 * time.Second):
+			t.Fatal("成环时上溯没有收敛")
+		}
 	})
 }
 

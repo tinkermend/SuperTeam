@@ -1,6 +1,6 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ClipboardList, FileText } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
@@ -45,6 +45,8 @@ import {
 import { DemandDossierRail } from "./demand-dossier-rail";
 import { DemandDossierTimeline } from "./demand-dossier-timeline";
 import { StaffGapDialog } from "./staff-gap-dialog";
+import { DemandContinueDialog } from "./demand-continue-dialog";
+import { findChainOf, foldDemandChains } from "./demand-chains";
 
 // 与工作台执行图同一权威画布（@xyflow/react 重依赖，懒加载同一 chunk）。
 const FlowGraphCanvas = lazy(() =>
@@ -120,6 +122,23 @@ export function ProjectDemandsSection({
 }: ProjectDemandsSectionProps) {
   const selectedDemand =
     demands.find((demand) => demand.id === selectedDemandId) ?? demands[0];
+  const navigate = useNavigate();
+  const sectionQueryClient = useQueryClient();
+  const [continueOpen, setContinueOpen] = useState(false);
+  // 左轨按接续链折叠：一条链只占一行（spec 2026-08-01 §8.2）。不折叠的话，
+  // 每接续一次列表就多出一行看似无关的单。
+  const chains = useMemo(() => foldDemandChains(demands), [demands]);
+  const selectedChain = findChainOf(chains, selectedDemand?.id);
+  const goToDemand = useCallback(
+    (demandId: string) => {
+      void navigate({
+        params: { projectId },
+        search: (prev: Record<string, unknown>) => ({ ...prev, demand: demandId, tab: "demands" }),
+        to: "/projects/$projectId",
+      });
+    },
+    [navigate, projectId],
+  );
 
   // 数据活性升级（spec 2026-07-27 §5 P2-E）：主通道是既有跨员工活动 SSE 的
   // 项目维度事件驱动 invalidate；组件测试注入 fetcher 时默认不开真实流（避免
@@ -222,12 +241,18 @@ export function ProjectDemandsSection({
       <SoftCard className="overflow-hidden lg:sticky lg:top-4">
         <div className="border-b border-line px-4 py-3">
           <h3 className="text-sm font-semibold text-ink">需求</h3>
-          <p className="mt-0.5 text-[11.5px] text-ink-3">{demands.length} 条 · 最新在前</p>
+          <p className="mt-0.5 text-[11.5px] text-ink-3">{chains.length} 条 · 最新在前</p>
         </div>
         <nav aria-label="需求列表" className="max-h-[520px] divide-y divide-line overflow-y-auto">
-          {demands.map((demand) => {
-            const isSelected = demand.id === selectedDemand?.id;
-            const pendingCount = pendingByDemand.get(demand.id) ?? 0;
+          {chains.map((chain) => {
+            // 行代表整条链，落点是链上最新一单；选中链内任一单都算本行选中。
+            const demand = chain.latest;
+            const isSelected = chain === selectedChain;
+            const continuationCount = chain.members.length - 1;
+            const pendingCount = chain.members.reduce(
+              (total, member) => total + (pendingByDemand.get(member.id) ?? 0),
+              0,
+            );
             return (
               <Link
                 aria-current={isSelected ? "true" : undefined}
@@ -264,6 +289,14 @@ export function ProjectDemandsSection({
                   <StatusPill tone={demandStatusTone(demand.status)}>
                     {demandStatusLabel(demand.status)}
                   </StatusPill>
+                  {continuationCount > 0 ? (
+                    <span
+                      className="rounded-full bg-card-soft px-1.5 py-0.5 text-[10.5px] text-ink-3"
+                      data-testid={`demand-list-continuations-${demand.id}`}
+                    >
+                      接续 {continuationCount} 次
+                    </span>
+                  ) : null}
                   {demand.created_at ? (
                     <time
                       className="text-[11px] tabular-nums text-ink-3"
@@ -332,7 +365,9 @@ export function ProjectDemandsSection({
                   <DemandDossierHeader
                     density={density}
                     dossier={dossier}
+                    onContinue={() => setContinueOpen(true)}
                     onDensityChange={handleDensityChange}
+                    onSelectDemand={goToDemand}
                     onViewChange={onViewChange ?? (() => undefined)}
                     view={view}
                   />
@@ -389,6 +424,25 @@ export function ProjectDemandsSection({
             />
           )}
         </div>
+      ) : null}
+      {selectedDemand ? (
+        <DemandContinueDialog
+          apiOptions={apiOptions}
+          demandId={selectedDemand.id}
+          demandTitle={selectedDemand.title}
+          onContinued={(created) => {
+            // 必须显式失效父页需求列表：不刷新的话左轨里没有这条新单，
+            // 跳过去会落在一个列表不认识的 demand 上（链也折不出来）。
+            // 不能只依赖 SSE——它是尽力而为的，而这里是刚发生的确定事实。
+            void sectionQueryClient.invalidateQueries({
+              queryKey: ["project-demands", projectId],
+            });
+            // 落到新一单的卷宗：接续的价值就在"接着往下看"，停在旧单上等于没接。
+            goToDemand(created.id);
+          }}
+          onOpenChange={setContinueOpen}
+          open={continueOpen}
+        />
       ) : null}
     </div>
   );

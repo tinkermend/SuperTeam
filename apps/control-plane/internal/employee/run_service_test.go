@@ -2499,8 +2499,9 @@ type fakeRunServiceRepository struct {
 }
 
 type resolveLineageRootCall struct {
-	TenantID      uuid.UUID
-	ProjectTaskID uuid.UUID
+	TenantID          uuid.UUID
+	DigitalEmployeeID uuid.UUID
+	ProjectTaskID     uuid.UUID
 }
 
 type findProviderSessionForRootCall struct {
@@ -2529,8 +2530,8 @@ func (f *fakeRunServiceRepository) GetProjectTaskRunPreflightForNode(_ context.C
 	return f.projectTaskPreflight, nil
 }
 
-func (f *fakeRunServiceRepository) ResolveProjectTaskLineageRoot(_ context.Context, tenantID, projectTaskID uuid.UUID) (uuid.UUID, error) {
-	f.lineageRootCalls = append(f.lineageRootCalls, resolveLineageRootCall{TenantID: tenantID, ProjectTaskID: projectTaskID})
+func (f *fakeRunServiceRepository) ResolveProjectTaskLineageRoot(_ context.Context, tenantID, digitalEmployeeID, projectTaskID uuid.UUID) (uuid.UUID, error) {
+	f.lineageRootCalls = append(f.lineageRootCalls, resolveLineageRootCall{TenantID: tenantID, DigitalEmployeeID: digitalEmployeeID, ProjectTaskID: projectTaskID})
 	if f.lineageRootErr != nil {
 		return uuid.Nil, f.lineageRootErr
 	}

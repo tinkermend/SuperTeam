@@ -393,7 +393,7 @@ func (s *Service) resolveDemandDossierLineage(ctx context.Context, facts *demand
 			CreatedAt: demand.CreatedAt,
 			IsCurrent: true,
 		}},
-		ContinueDemand: evaluateDemandContinuation(demand, 0),
+		ContinueDemand: evaluateDemandContinuation(facts.Project, demand, 0, true),
 	}
 
 	chain, err := s.repository.ListProjectDemandContinuationChain(ctx, demand.TenantID, demand.ID, DefaultDemandContinuationMaxDepth)
@@ -430,7 +430,12 @@ func (s *Service) resolveDemandDossierLineage(ctx context.Context, facts *demand
 		return solo
 	}
 	// 接续判据按**本单**算：链上位置即已用掉的代数。
-	lineage.ContinueDemand = evaluateDemandContinuation(demand, int32(lineage.ChainPosition-1))
+	lineage.ContinueDemand = evaluateDemandContinuation(
+		facts.Project,
+		demand,
+		int32(lineage.ChainPosition-1),
+		lineage.ChainPosition == lineage.ChainLength,
+	)
 	return lineage
 }
 

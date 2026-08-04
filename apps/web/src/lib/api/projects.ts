@@ -516,6 +516,8 @@ export type ProjectDemand = {
   scenario_template_key?: string;
   created_at?: string;
   updated_at?: string;
+  /** 接续血缘：本单接着哪一单做；缺省为链头。 */
+  continues_demand_id?: string;
 };
 
 export type ProjectStatusSummary = {
@@ -664,6 +666,35 @@ export type DemandDossierHandoffAssessment = {
   deliverables: ProjectTaskGraphHandoffDeliverable[];
 };
 
+export type DemandContinuationReasonCode =
+  | "ok"
+  | "demand_not_settled"
+  | "already_continued"
+  | "chain_too_deep"
+  | "project_archived";
+
+/** 这一单所属的接续链。「一单」的用户身份是链而不是行。 */
+export type ProjectDemandLineage = {
+  continues_demand_id?: string;
+  /** 本单是链上第几单，从 1 起 */
+  chain_position: number;
+  chain_length: number;
+  /** 全链摘要，链头在前 */
+  chain: {
+    demand_id: string;
+    title: string;
+    status: string;
+    created_at: string;
+    is_current: boolean;
+  }[];
+  /** 能不能接续由服务端判定，前端不自己算 */
+  continue_demand: {
+    available: boolean;
+    reason_code: DemandContinuationReasonCode;
+    reason_message?: string;
+  };
+};
+
 export type ProjectDemandDossier = {
   demand: ProjectDemand;
   project: {
@@ -672,6 +703,7 @@ export type ProjectDemandDossier = {
     status?: string;
     scenario_template_key?: string | null;
   };
+  lineage: ProjectDemandLineage;
   effective_playbook: {
     template_key?: string | null;
     source: "demand" | "project" | "none";
@@ -1657,6 +1689,23 @@ export function getProjectDemandDossier(
     options,
     `/api/v1/project-demands/${encodeURIComponent(demandId)}/dossier${suffix}`,
     "project demand dossier",
+  );
+}
+
+/**
+ * 接续这一单：新开一单并接上血缘链。原单不动（终态永不回退）。
+ * 派发时同一员工会回到自己在链上的既有会话。
+ */
+export function createProjectDemandContinuation(
+  options: ApiClientOptions,
+  demandId: string,
+  body: { content: string; title?: string },
+): Promise<ProjectDemand> {
+  return postJson<ProjectDemand>(
+    options,
+    `/api/v1/project-demands/${encodeURIComponent(demandId)}/continuations`,
+    body,
+    "project demand continuation",
   );
 }
 

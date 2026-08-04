@@ -33,6 +33,10 @@ var (
 	ErrDemandNotSettled = errors.New("demand not settled")
 	// ErrContinuationChainTooDeep 表示链深超过上限。
 	ErrContinuationChainTooDeep = errors.New("continuation chain too deep")
+	// ErrDemandAlreadyContinued 表示该单已被接续过。只有链**尾**可以接续:
+	// 从链中间再接一条会把线性链分叉,而「第 k / n 次」与卷宗链条展示都建立在
+	// 线性之上;真要另起一条线,那是新开一单,不是接续。
+	ErrDemandAlreadyContinued = errors.New("demand already continued")
 )
 
 type ContinueDemandRequest struct {
@@ -63,6 +67,14 @@ func (s *Service) ContinueProjectDemand(ctx context.Context, req ContinueDemandR
 	// 拦它等于把最痛的那条路堵死。只拦"还没结束"。
 	if !isTerminalProjectDemandStatus(parent.Status) {
 		return nil, fmt.Errorf("原单尚未结束,无法接续: %w", ErrDemandNotSettled)
+	}
+
+	chain, err := s.repository.ListProjectDemandContinuationChain(ctx, req.TenantID, parent.ID, DefaultDemandContinuationMaxDepth)
+	if err != nil {
+		return nil, err
+	}
+	if !isChainTail(chain, parent.ID) {
+		return nil, fmt.Errorf("这一单已被接续过,请从最新一单继续: %w", ErrDemandAlreadyContinued)
 	}
 
 	depth, err := s.repository.CountProjectDemandContinuationDepth(ctx, req.TenantID, parent.ID, DefaultDemandContinuationMaxDepth)
@@ -121,16 +133,43 @@ type DemandContinuationAvailability struct {
 }
 
 const (
-	DemandContinuationReasonOK          = "ok"
-	DemandContinuationReasonNotSettled  = "demand_not_settled"
-	DemandContinuationReasonChainTooDee = "chain_too_deep"
+	DemandContinuationReasonOK               = "ok"
+	DemandContinuationReasonNotSettled       = "demand_not_settled"
+	DemandContinuationReasonChainTooDee      = "chain_too_deep"
+	DemandContinuationReasonAlreadyContinued = "already_continued"
+	DemandContinuationReasonProjectArchived  = "project_archived"
 )
 
-func evaluateDemandContinuation(demand ProjectDemand, chainDepth int32) DemandContinuationAvailability {
+// isChainTail 判断 demandID 是否是这条链的最后一单。链由
+// ListProjectDemandContinuationChain 给出且链头在前,故尾即最后一个元素。
+// 链为空(读取降级)时保守认为是尾:宁可放行一次接续,也不因为读不出链把功能锁死。
+func isChainTail(chain []ProjectDemand, demandID uuid.UUID) bool {
+	if len(chain) == 0 {
+		return true
+	}
+	return chain[len(chain)-1].ID == demandID
+}
+
+// evaluateDemandContinuation 是接续可用性的**唯一**判据来源:卷宗读路径与
+// ContinueProjectDemand 写路径必须同源,否则会出现"界面说能接、点了报错"。
+// 归档项目由 SubmitDemand 的既有门禁拦下,这里必须同步表达,否则就是两套真相。
+func evaluateDemandContinuation(project Project, demand ProjectDemand, chainDepth int32, isTail bool) DemandContinuationAvailability {
+	if project.Status == ProjectStatusArchived || project.ArchivedAt != nil {
+		return DemandContinuationAvailability{
+			ReasonCode:    DemandContinuationReasonProjectArchived,
+			ReasonMessage: "项目已归档，无法接续",
+		}
+	}
 	if !isTerminalProjectDemandStatus(demand.Status) {
 		return DemandContinuationAvailability{
 			ReasonCode:    DemandContinuationReasonNotSettled,
 			ReasonMessage: "这一单还在进行中，结束后才能接续",
+		}
+	}
+	if !isTail {
+		return DemandContinuationAvailability{
+			ReasonCode:    DemandContinuationReasonAlreadyContinued,
+			ReasonMessage: "这一单已被接续过，请从最新一单继续",
 		}
 	}
 	if chainDepth+1 > DefaultDemandContinuationMaxDepth {
