@@ -1,11 +1,39 @@
 # 批二：角色词表与编制（Role Vocabulary & Casting）
 
 - 日期：2026-08-04
-- 状态：**立项（未实施）——等人审阅后决定是否开工**
+- 状态：**已立项、数据已预置，可直接开工**（交接给实施会话）
 - 系列：剧本可落地化第二批（批一「能力词表两侧对齐 + 剧本卫生」已入 main `7a7064b5`）
 - 交付性质：新增角色注册表 + 员工角色多值化（schema）+ 编制表（schema）+ 剧本选择器读路径 + 发起期编制界面 + 执行期扩编决策
 - 目标读者：实施会话（本文自包含；实施前必读基线 `2026-07-27-workspace-and-playbook-alignment-baseline.md` §1/§4）
 - **剧本本身一行不改**
+
+---
+
+## 0.0 开工须知（实施会话先读这一节）
+
+**开工第一件事，不是写代码，是勘察一个未知：**
+
+> 重规划时**已完成任务如何处理**——会不会重复创建、已消费的验收闸怎么算、已完成产物是否被新计划继承。
+> 入口：`request_changes` 重规划的现有行为（`service.go` 的 `PlanReviewDecisionRequestChanges` → 协调线程重规划）。
+> **必须先读懂再动 §7 的扩编**，不得凭猜实现。若发现现有行为本身就有缺陷，停下来报告，不要在其上叠加。
+
+**环境**（服务由 `./scripts/dev-services.sh start|status|restart <service>` 管理，OpenFGA 需单独管）：
+
+| 项 | 值 |
+|---|---|
+| Web | `http://127.0.0.1:3100`（**不是 3000**） |
+| Control Plane | `http://127.0.0.1:8080` |
+| 登录 | `POST /api/auth/login`，`admin` / `admin` |
+| 数据库 | `apps/control-plane/config/config.yaml` 的 `postgres.url`（远程 dev 库） |
+| 迁移校验 | 无 docker，需自建干净 PG16：`make -C apps/control-plane migrate-validate DEV_URL=...`；改迁移后必须 `atlas migrate hash` |
+| 门禁 | `verify:contracts` / `verify:control-plane` / `verify:web` / `verify:runtime-agent`（**最后一个有既有并发 flake，单独跑可复现通过**） |
+
+**踩过的坑，别重复**：
+
+- `capability_vocabulary.status` 的 CHECK 只允许 `active|disabled`（写 `inactive` 会被拒）——新建 `role_vocabulary` 沿用同一取值
+- 建员工时 `employee_type` 必须是已注册模板 type 或哨兵 `custom_agent`；`avatar_asset_id` 必填（如 `engineer-m-01`）
+- 创建项目要求当前用户对该团队有 scope：`PUT /api/auth/users/{id}/project-team-scopes`
+- Web 测试若新增了对 `@tanstack/react-router` 的 hook 依赖，**多个测试文件的 mock 都要同步补**，否则整文件导入失败
 
 ---
 
@@ -90,6 +118,7 @@
 | 上游补做不引入新人 | `CreateUpstreamSupplementTasks`：「appends a task for the owner of each missing input」 |
 | 现有 decision types | `plan_review` / `planning_gap` / `planning_failed` / `demand_acceptance` / `task_failure_recovery` / `upstream_supplement_review` / `project_task_approval` / 各 recovery 类 |
 | 数据库已清空 | 2026-08-04 B 档清理：业务数据归零，保留用户/租户/团队/剧本/能力词表/技能/MCP/员工模板/runtime 注册 |
+| **清库误伤已修复** | `user_project_team_scopes` 表名含 "project" 但实为 **user × team 授权**（无 `project_id` 列），清库时被误清，已通过 `PUT /api/auth/users/{id}/project-team-scopes` 重新授予 admin 对「默认团队」的 scope。**若遇到「当前用户无权使用该团队创建项目」，就是这条**——按同一 API 补授权即可 |
 
 ---
 
@@ -319,35 +348,62 @@ GET  /api/v1/projects/{projectId}/role-candidates?role_key= # 候选（按角色
 
 ---
 
-## 10. 最小可用数据（GATE 前置）
+## 10. 最小可用数据（**已于 2026-08-04 预置完成**）
 
-数据库已于 2026-08-04 清空业务数据，验证前需要重建。**这一步本身也是 §5/§6 的可用性验证**——如果建这套数据很别扭，说明设计有问题。
+数据库已于 2026-08-04 做过 B 档清理（业务数据归零，保留用户/租户/团队/剧本/能力词表/技能/MCP/员工模板/runtime 注册）。**下列数据已用真实 API 建好，实施会话直接用，不必重建。**
+
+### 10.1 已预置（真实 ID，可直接引用）
+
+**数字员工 5 个**（租户 `00000000-0000-0000-0000-000000000001`，团队「默认团队」`00000000-0000-0000-0000-000000000101`，provider 均为 `claude-code`）：
+
+| 名称 | `digital_employees.id` | 当前 `role`（自由文本，待 P0b 迁词表） | `external_capabilities` |
+|---|---|---|---|
+| 开发-A | `0be393bb-9dfd-48c8-b010-4b5abb114f23` | developer | `code_implementation` |
+| 审查-B | `7a16f593-9a99-490e-bcab-77bb8b326afa` | reviewer | `code_review` |
+| 测试-C | `157b1a2c-b2af-4a08-99f3-f16abe291ed1` | tester | `test_execution` |
+| 运维-D | `9a623b40-c9ec-4d7d-99a4-17b1f569b52e` | collector | `log_analysis` |
+| 诊断-E | `3683f032-2e24-43da-af06-5af1b8ce71a4` | diagnostician | `incident_triage` |
+
+**项目 1 个**：`批二基线项目 P1` = `ca82b054-de2d-4810-9a2b-dd41f5e50a2c`，目录名 `batch2-baseline-p1`，负责人 admin，**数字员工成员池初始为空**（这是 §5/§6 的验证前提，不要预先加人）。
+
+**剧本**：5 个 active（`generic` / `software_delivery` / `ops_analysis` / `incident_response` / `research_report`）。**能力词表**：9 个 active（批一已对齐为下划线命名）。
+
+### 10.2 P0a/P0b 落地后需要补的（现在建不了）
+
+角色词表表与员工角色关联表尚不存在，因此以下两项**必须在 P0a/P0b 实现后补建**：
 
 ```text
-1) 角色词表（8 个，覆盖内置 4 个剧本的全部角色）
+1) 角色词表 8 项（覆盖内置 4 个剧本的全部角色）
    developer / reviewer / tester
    collector / analyst
    diagnostician / operator / verifier
 
-2) 数字员工（6 个，覆盖上述角色且刻意留一处缺口）
-   开发-A     roles=[developer]              caps=[code_implementation]
-   审查-B     roles=[reviewer]               caps=[code_review]
-   测试-C     roles=[tester]                 caps=[test_execution]
-   运维-D     roles=[collector, analyst]     caps=[log_analysis]        # 兼任，验 collapse
-   诊断-E     roles=[diagnostician, verifier] caps=[incident_triage]
-   （故意不建 operator 角色的员工 → 故障排查剧本只能走到"仅诊断根因"，验 §5）
-
-3) 项目 P1：成员池初始为空
-   期望：软件开发可走到「交付分支」（只需 developer）
-         故障排查可走到「仅诊断根因」
-         运维分析角色齐备
-   编制后重新计算，验证可达档位随编制变化
-
-4) automation 规则一条，绑定软件开发剧本
-   期望：编制不完整时保存即失败并点名缺角色（§6.3）
+2) 员工角色绑定（注意两处兼任，用于验 collapse）
+   开发-A  → [developer]
+   审查-B  → [reviewer]
+   测试-C  → [tester]
+   运维-D  → [collector, analyst]        # 兼任
+   诊断-E  → [diagnostician, verifier]   # 兼任
 ```
 
----
+**故意不建 `operator` 角色的员工** —— 这是 §5 可达收口计算的关键验证条件：故障排查剧本因此只能走到「仅诊断根因」，走不到「实施修复」。**不要"顺手"补一个 operator 员工**，那会让 G2 失去判别力。
+
+### 10.3 预置数据对应的期望（G2 的判据来源）
+
+项目 P1 成员池为空时：
+
+| 剧本 | 期望可达最深收口 | 缺什么 |
+|---|---|---|
+| 软件开发 | 「交付分支」（只需 developer） | 再往深缺独立的 reviewer |
+| 故障排查 | 「仅诊断根因」（只需 diagnostician） | 再往深缺 operator |
+| 运维分析 | 角色齐备（collector + analyst 由运维-D 兼任） | — |
+| 调研报告 | 无对应角色员工 | 缺 researcher / writer |
+
+编制后重新计算，验证可达档位随编制变化（G3）。
+
+### 10.4 automation 规则（G7 用，实施时建）
+
+一条绑定 `software_delivery` 的规则；期望编制不完整时**保存即失败并点名缺角色**（§6.3）。
 
 ## 11. 分期
 
