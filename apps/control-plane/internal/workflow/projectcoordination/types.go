@@ -529,6 +529,18 @@ func dispatchFailureRecorded(err error) bool {
 	return false
 }
 
+// dispatchFailureTerminal 识别 activity 侧包出来的不可重试派发拒绝。
+// 单个任务被终态拒绝不能拖停同批其余任务:批量派发发生在计划确认之后,一次中止
+// 会把同批新建的兄弟任务全部留在图里无人问津,且没有任何后续信号能唤醒它们。
+func dispatchFailureTerminal(err error) bool {
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		if appErr, ok := current.(*temporal.ApplicationError); ok && appErr.Type() == "ProjectTaskDispatchTerminal" {
+			return true
+		}
+	}
+	return false
+}
+
 type FinishCoordinationJobInput struct {
 	TenantID       uuid.UUID
 	JobID          uuid.UUID

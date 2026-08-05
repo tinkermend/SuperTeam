@@ -102,6 +102,34 @@ func (h *HTTPHandler) PatchRoleVocabulary(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, entryResponseFrom(entry))
 }
 
+// GetRoleVocabularyReferences handles GET /role-vocabulary/{roleKey}/references.
+func (h *HTTPHandler) GetRoleVocabularyReferences(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorize(w, r, authz.ActionScenarioTemplateRead, "role vocabulary references")
+	if !ok {
+		return
+	}
+	roleKey := chi.URLParam(r, "roleKey")
+	refs, err := h.service.GetReferences(r.Context(), tenantID, roleKey)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	templates := make([]templateRefResponse, 0, len(refs.ScenarioTemplates))
+	for _, t := range refs.ScenarioTemplates {
+		templates = append(templates, templateRefResponse{Key: t.Key, Name: t.Name})
+	}
+	employees := make([]employeeRefResponse, 0, len(refs.Employees))
+	for _, e := range refs.Employees {
+		employees = append(employees, employeeRefResponse{ID: e.ID, Name: e.Name})
+	}
+	writeJSON(w, http.StatusOK, referencesResponse{
+		ScenarioTemplates: templates,
+		Employees:         employees,
+		EmployeeCount:     refs.EmployeeCount,
+		CastingCount:      refs.CastingCount,
+	})
+}
+
 func (h *HTTPHandler) authorize(w http.ResponseWriter, r *http.Request, action, auditReason string) (uuid.UUID, uuid.UUID, bool) {
 	if h == nil || h.authorizer == nil {
 		http.Error(w, "role vocabulary authorization is not configured", http.StatusForbidden)
@@ -140,6 +168,23 @@ type entryResponse struct {
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type templateRefResponse struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+type employeeRefResponse struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+type referencesResponse struct {
+	ScenarioTemplates []templateRefResponse `json:"scenario_templates"`
+	Employees         []employeeRefResponse `json:"employees"`
+	EmployeeCount     int                   `json:"employee_count"`
+	CastingCount      int                   `json:"casting_count"`
 }
 
 func entryResponseFrom(e Entry) entryResponse {

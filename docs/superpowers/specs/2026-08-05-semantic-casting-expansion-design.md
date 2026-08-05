@@ -1,7 +1,7 @@
 # 批三：语义扩编与角色词表注入（Semantic Casting Expansion）
 
 - 日期：2026-08-05
-- 状态：**立项（未实施）**
+- 状态：**已实施、部分验收**（2026-08-05：H1/H2/H4/H7/H8/H9/H9a/H9c/H10/H11 有真实验证；H3/H5/H6 以单测为主；P1 额外任务 UI 可见性仍弱）
 - 系列：剧本可落地化第三批（批一 `7a7064b5` 词表两侧对齐；批二 `7b0369de` + `1f36c944` 角色词表与编制）
 - 交付性质：新增「缺口发现器」（受约束的 LLM 调用）+ 判官触发点 + planner 角色词表注入
 - 目标读者：实施会话（本文自包含；实施前必读批二 spec `2026-08-04-role-vocabulary-and-casting-design.md` §7）
@@ -300,8 +300,63 @@ P0a–P0c 是一个可交付单元；P1 可独立后置。
 | H9b | 词表外提请的卡 | 有「去注册角色」深链且可达角色词表页；注册后回来可完成扩编 |
 | H9c | 上限触顶后 | 卷宗时间线可见留痕，不是静默无事发生 |
 | H10（P1） | planner 产出骨架外任务 | 带已注册 `role_key`；未注册时降级为无角色 + `constraint_notes` 留痕，计划不被拒 |
+| H12 | 扩编 replan 后检查图终态（§7.0 ①②） | 无 blocker 已全解却仍 `blocked` 的任务；单个任务终态拒绝不影响同批其余任务派发 |
 | H11 | `verify:contracts` + `verify:control-plane` + `verify:web` | 全过 |
 
+
+### 7.0 复检揪出的两个缺陷（2026-08-05，已修）
+
+真实 E2E 全链跑通（项目 `56de8016`：发现器提请 → 人批准 → 写编制 → replan → 越界转计划确认 → 建任务派发 → 完成 → 下一轮答"无需补人"），但**终态图没人检查**，漏掉两处：
+
+**① `planned_task_key` 合并会造出永久滞留的 blocked 任务（承重）**
+
+`DecomposeAcceptedPlanRevision` 建任务时只看"有没有依赖声明"就置 `blocked`
+（`project_store.go` 原 766 行），而解锁只由**上游任务完成信号**驱动
+（`ResolveReadyDownstream`）。扩编 replan 的正常形态恰恰是把**已经完成**的上游
+原样合并留在图里——挂在它下面的新任务建出来就是 `blocked`，而那个完成信号早已
+发生过、不会再来。实测该项目的 评审/测试/发布 三个任务因此永久滞留，无任何看门狗覆盖。
+
+修法：`ListDispatchableTasks` 把 `blocked` 也纳入候选，按 `ListUnresolvedBlockersForTasks`
+的**真实** blocker 判定，无未解阻塞的用与 `ResolveReadyDownstream` 同一把 CAS 提回
+`planned`。活动签名不变，不产生 replay 分歧。
+
+**② 单个任务终态拒绝会拖停同批派发**
+
+`dispatchProjectTasks` 遇到未被记录的失败直接 `return err`，整批中止。批量派发发生在
+计划确认之后，一次中止就把同批新建的兄弟任务全部留在图里无人问津。实测留下一条
+`workflow.signal_failed: project task dispatch rejected ... project conflict`，且**没有**
+对应的 `dispatch_failed` 事件。
+
+修法：新增 `dispatchFailureTerminal`（识别 activity 侧包出的 `ProjectTaskDispatchTerminal`），
+终态拒绝只废掉该任务、留一条可见事件后继续派发其余任务；非终态错误仍按原样返回让
+Temporal 重试。控制流变更用 `GetVersion("dispatch-terminal-not-batch-fatal")` 围栏。
+
+**③ 扩编决策在一单里没有主体归属（承重，比叙事更深）**
+
+追叙事问题时发现的真正根因：**9 条扩编决策没有一条带 `coordination_job_id` 或
+`project_task_id`**。一单卷宗的决策读路径（`ListDemandLaunchDecisionRequests`）正是按
+这两个外键反查的——两者都空 = 这条决策在这一单里根本找不回来。后果不止文案：
+扩编卡**不出现在该单的待办**里，时间线上也只剩通用「待人工决策」。
+
+修法两层：
+1. `RequestCastingExpansionRequest` 增 `ProjectTaskID`，两个内部触发点（coordinator
+   确定性提请 / judge 发现器）一律带上触发它的那个已完成任务；HTTP 入口接受可选
+   `project_task_id`。
+2. 卷宗时间线增 `decisionsByApproval` 索引：扩编事件既无 `resource_*` 也无
+   `decision_request_id`，payload 里只有 `approval_request_id`。按它反查可让**既有**
+   事件一并复原，无需数据迁移。
+
+**④ 扩编在卷宗时间线上认不出来（叙事）**
+
+`refineDecisionNarrative` 只细分 `plan_review` / `demand_acceptance`，扩编决策落在通用
+「待人工决策」里——一单中途换过人在时间线上看不见。已补 `casting_expansion` 分支：
+待扩编批准 / 扩编已批准 / 扩编被驳回，kind 归 `TimelineKindStaffingGap`。
+
+> 注：③④ 修复只对**修复后新建**的扩编决策生效。此前 9 条历史决策缺 `project_task_id`，
+> 仍显示为通用「待人工决策」，未做回填。
+
+> **收尾教训**：三个 E2E 脚本对任务终态零断言，所以这一路是"绿着"漏过去的。
+> 扩编类改动的 GATE 必须包含**图终态检查**（无 `blocked` 且 blocker 已全解的任务）。
 
 ### 7.1 H2 的造数配方
 

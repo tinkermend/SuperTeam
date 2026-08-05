@@ -12,6 +12,47 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const CountCastingsForRole = `-- name: CountCastingsForRole :one
+SELECT COUNT(*)::int AS count
+FROM project_playbook_casting
+WHERE tenant_id = $1::uuid
+  AND role_key = $2::text
+`
+
+type CountCastingsForRoleParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	RoleKey  string    `json:"role_key"`
+}
+
+func (q *Queries) CountCastingsForRole(ctx context.Context, arg CountCastingsForRoleParams) (int32, error) {
+	row := q.db.QueryRow(ctx, CountCastingsForRole, arg.TenantID, arg.RoleKey)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const CountEmployeesHoldingRole = `-- name: CountEmployeesHoldingRole :one
+SELECT COUNT(*)::int AS count
+FROM digital_employee_roles der
+JOIN digital_employees de ON de.id = der.digital_employee_id AND de.tenant_id = der.tenant_id
+WHERE der.tenant_id = $1::uuid
+  AND der.role_key = $2::text
+  AND de.deleted_at IS NULL
+  AND de.status IN ('ready', 'active')
+`
+
+type CountEmployeesHoldingRoleParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	RoleKey  string    `json:"role_key"`
+}
+
+func (q *Queries) CountEmployeesHoldingRole(ctx context.Context, arg CountEmployeesHoldingRoleParams) (int32, error) {
+	row := q.db.QueryRow(ctx, CountEmployeesHoldingRole, arg.TenantID, arg.RoleKey)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const CreateRoleVocabulary = `-- name: CreateRoleVocabulary :one
 INSERT INTO role_vocabulary (
     id,
@@ -173,6 +214,47 @@ func (q *Queries) ListActiveRoleVocabulary(ctx context.Context, tenantID uuid.UU
 	return items, nil
 }
 
+const ListEmployeesHoldingRole = `-- name: ListEmployeesHoldingRole :many
+SELECT de.id, de.name
+FROM digital_employee_roles der
+JOIN digital_employees de ON de.id = der.digital_employee_id AND de.tenant_id = der.tenant_id
+WHERE der.tenant_id = $1::uuid
+  AND der.role_key = $2::text
+  AND de.deleted_at IS NULL
+ORDER BY de.name ASC
+`
+
+type ListEmployeesHoldingRoleParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	RoleKey  string    `json:"role_key"`
+}
+
+type ListEmployeesHoldingRoleRow struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+// Non-deleted employees that hold role_key (any status; for disable impact).
+func (q *Queries) ListEmployeesHoldingRole(ctx context.Context, arg ListEmployeesHoldingRoleParams) ([]ListEmployeesHoldingRoleRow, error) {
+	rows, err := q.db.Query(ctx, ListEmployeesHoldingRole, arg.TenantID, arg.RoleKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEmployeesHoldingRoleRow{}
+	for rows.Next() {
+		var i ListEmployeesHoldingRoleRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListRoleVocabulary = `-- name: ListRoleVocabulary :many
 SELECT id, tenant_id, role_key, title, description, status, deleted_at, created_at, updated_at FROM role_vocabulary
 WHERE tenant_id = $1::uuid
@@ -200,6 +282,50 @@ func (q *Queries) ListRoleVocabulary(ctx context.Context, tenantID uuid.UUID) ([
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListScenarioTemplatesReferencingRole = `-- name: ListScenarioTemplatesReferencingRole :many
+SELECT template_key, name
+FROM scenario_templates
+WHERE tenant_id = $1::uuid
+  AND deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(COALESCE(spec->'roles', '[]'::jsonb)) AS role_elem
+    WHERE role_elem->>'key' = $2::text
+  )
+ORDER BY template_key ASC
+`
+
+type ListScenarioTemplatesReferencingRoleParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	RoleKey  string    `json:"role_key"`
+}
+
+type ListScenarioTemplatesReferencingRoleRow struct {
+	TemplateKey string `json:"template_key"`
+	Name        string `json:"name"`
+}
+
+// Active/disabled templates whose current spec roles[].key includes role_key.
+func (q *Queries) ListScenarioTemplatesReferencingRole(ctx context.Context, arg ListScenarioTemplatesReferencingRoleParams) ([]ListScenarioTemplatesReferencingRoleRow, error) {
+	rows, err := q.db.Query(ctx, ListScenarioTemplatesReferencingRole, arg.TenantID, arg.RoleKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListScenarioTemplatesReferencingRoleRow{}
+	for rows.Next() {
+		var i ListScenarioTemplatesReferencingRoleRow
+		if err := rows.Scan(&i.TemplateKey, &i.Name); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

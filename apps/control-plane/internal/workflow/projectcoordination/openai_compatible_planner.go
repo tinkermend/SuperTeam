@@ -98,7 +98,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 		requestCtx, cancel := p.requestContext(ctx)
 		content, err := p.client.CreateChatCompletion(requestCtx, OpenAICompatibleChatRequest{
 			Model:       p.cfg.Model,
-			System:      buildPlannerSystemPrompt(),
+			System:      buildPlannerSystemPrompt(snapshot),
 			User:        buildPlannerUserPrompt(snapshot),
 			MaxTokens:   p.cfg.MaxTokens,
 			Temperature: p.cfg.Temperature,
@@ -141,6 +141,12 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 			// a governance violation is handled exactly like a validation
 			// failure below.
 			err = EnforceScenarioTemplateGovernance(snapshot, &plan)
+		}
+		if err == nil {
+			// Batch 3 P1: extra (beyond-skeleton) tasks must use registered
+			// role_key; unknown keys degrade to untagged + constraint_notes
+			// rather than rejecting the whole plan (planner retry is expensive).
+			AnnotateAndValidateExtraTaskRoles(snapshot, &plan)
 		}
 		if err != nil {
 			if errors.Is(err, ErrNoSuitableEmployee) {
@@ -339,8 +345,8 @@ type openAICompatibleChatCompletionResponse struct {
 	} `json:"choices"`
 }
 
-func buildPlannerSystemPrompt() string {
-	return strings.Join([]string{
+func buildPlannerSystemPrompt(snapshot CoordinationSnapshot) string {
+	parts := []string{
 		"You are the SuperTeam project coordination route planner.",
 		"Return a single JSON object only; do not wrap it in markdown.",
 		"The JSON object must match this schema: reason string, requires_human_review bool, tasks array, budget_estimate object, template_key string, exit_deliverable string, planner_metadata object.",
@@ -356,11 +362,24 @@ func buildPlannerSystemPrompt() string {
 		"selection_confidence is your own 0.0-1.0 confidence that the selected employee's described role and experience fit this task. Judge it from the employee's description, not from capability name overlap.",
 		"produces is a list of short, stable, snake_case keys naming the artifacts this task hands to downstream tasks, for example load_test_report. Every key a task lists in input_requirements.required_inputs must appear in the produces of one of its DIRECT blockers (declare the edge in blocked_by_keys; one edge = one handoff). At execution time the platform injects each task's direct blockers' results as upstream_results into its dispatch request, and a completed task must return result_contract.deliverables covering every name in its produces.",
 		"When the snapshot contains scenario_template, first choose exit_deliverable: exactly one deliverable name from scenario_template.spec.exits that best matches how far the demand asks to go — prefer the SHALLOWEST exit that satisfies the demand; never go deeper than the demand explicitly requires (if snapshot.pinned_exit_deliverable is set, you MUST use it verbatim). Then instantiate ONLY the skeleton steps in the dependency-ancestor closure of the step producing that deliverable: one task per included step in order, honoring depends_on edges, seeding each task's produces from that step's produces_defaults (names verbatim) and its input_requirements.required_inputs from required_inputs_defaults; use the matching spec.roles required_capabilities as capability annotations and fold the spec.default_acceptance_criteria whose applies_from_exit is at or before your chosen exit into plan_acceptance_criteria. You may add tasks the demand genuinely needs beyond the skeleton, but never drop an included skeleton step or rename its produces names. Every skeleton-derived task is still a full task object: include ALL required task fields exactly as for any other task.",
+		"For any task you ADD beyond the skeleton, you MUST set role_key to exactly one key from the active role vocabulary injected in the user snapshot (role_vocabulary). Skeleton-derived tasks inherit role from the template step — do not invent role keys. Never invent role_key values outside that list.",
 		"Set template_key exactly to scenario_template.key when scenario_template is present; otherwise choose a short descriptive key.",
 		"input_requirements.required_inputs lists the produces keys this task consumes from upstream. Put any other context you want to record under planner_notes instead; nothing else in input_requirements is read.",
 		"task_kind must be one of the canonical platform task types: database_analysis, incident_triage, feature_development. Use database_analysis for any database query, SQL, schema, or data quality work; incident_triage for any system diagnosis, log analysis, metrics, or runtime diagnostics; feature_development for any code implementation, API, contract, migration, or build work. Do not invent custom task_kind values.",
 		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
-	}, "\n")
+	}
+	if len(snapshot.RoleVocabulary) > 0 {
+		keys := make([]string, 0, len(snapshot.RoleVocabulary))
+		for _, r := range snapshot.RoleVocabulary {
+			if k := strings.TrimSpace(r.RoleKey); k != "" {
+				keys = append(keys, k)
+			}
+		}
+		if len(keys) > 0 {
+			parts = append(parts, "Active role_vocabulary keys for this tenant: "+strings.Join(keys, ", ")+". Extra-skeleton tasks must pick role_key from this list only.")
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 func buildPlannerUserPrompt(snapshot CoordinationSnapshot) string {
@@ -372,6 +391,7 @@ func buildPlannerUserPrompt(snapshot CoordinationSnapshot) string {
 		PreviousRouteContext:  snapshot.PreviousRouteContext,
 		ScenarioTemplate:      snapshot.ScenarioTemplate,
 		PinnedExitDeliverable: snapshot.PinnedExitDeliverable,
+		RoleVocabulary:        snapshot.RoleVocabulary,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -381,13 +401,14 @@ func buildPlannerUserPrompt(snapshot CoordinationSnapshot) string {
 }
 
 type plannerPromptSnapshot struct {
-	ProjectID             string                    `json:"project_id"`
-	Demand                DemandSnapshot            `json:"demand"`
-	DigitalEmployeePool   []ProjectMemberSnapshot   `json:"digital_employee_pool"`
-	CoordinationPolicy    map[string]any            `json:"coordination_policy,omitempty"`
-	PreviousRouteContext  map[string]any            `json:"previous_route_context,omitempty"`
-	ScenarioTemplate      *ScenarioTemplateSnapshot `json:"scenario_template,omitempty"`
-	PinnedExitDeliverable string                    `json:"pinned_exit_deliverable,omitempty"`
+	ProjectID             string                      `json:"project_id"`
+	Demand                DemandSnapshot              `json:"demand"`
+	DigitalEmployeePool   []ProjectMemberSnapshot     `json:"digital_employee_pool"`
+	CoordinationPolicy    map[string]any              `json:"coordination_policy,omitempty"`
+	PreviousRouteContext  map[string]any              `json:"previous_route_context,omitempty"`
+	ScenarioTemplate      *ScenarioTemplateSnapshot   `json:"scenario_template,omitempty"`
+	PinnedExitDeliverable string                      `json:"pinned_exit_deliverable,omitempty"`
+	RoleVocabulary        []RoleVocabularyPromptEntry `json:"role_vocabulary,omitempty"`
 }
 
 func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
@@ -430,6 +451,7 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 			InputRequirements:        nonNilMap(task.InputRequirements),
 			HandoffContract:          nonNilMap(task.HandoffContract),
 			BlockedByKeys:            nonNilStrings(task.BlockedByKeys),
+			RoleKey:                  strings.TrimSpace(task.RoleKey),
 		})
 	}
 	return plan, nil
@@ -470,6 +492,7 @@ type plannerTask struct {
 	InputRequirements        map[string]any `json:"input_requirements"`
 	HandoffContract          map[string]any `json:"handoff_contract"`
 	BlockedByKeys            []string       `json:"blocked_by_keys"`
+	RoleKey                  string         `json:"role_key"`
 }
 
 func (t *plannerTask) UnmarshalJSON(data []byte) error {
@@ -497,6 +520,7 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		InputRequirements        json.RawMessage `json:"input_requirements"`
 		HandoffContract          json.RawMessage `json:"handoff_contract"`
 		BlockedByKeys            []string        `json:"blocked_by_keys"`
+		RoleKey                  string          `json:"role_key"`
 	}
 	var raw plannerTaskJSON
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -542,6 +566,7 @@ func (t *plannerTask) UnmarshalJSON(data []byte) error {
 		InputRequirements:        inputRequirements,
 		HandoffContract:          handoffContract,
 		BlockedByKeys:            raw.BlockedByKeys,
+		RoleKey:                  strings.TrimSpace(raw.RoleKey),
 	}
 	return nil
 }

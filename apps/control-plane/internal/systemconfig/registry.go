@@ -32,6 +32,9 @@ const (
 	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
 	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
 	KeyProjectTaskDefaultMaxAttempts       = "project_task.default_max_attempts"
+	// KeyCastingGapDiscoveryMaxPerDemand bounds semantic casting-gap discoverer
+	// LLM calls per demand (design 2026-08-05 §3.3 / open detail #2). 0 disables.
+	KeyCastingGapDiscoveryMaxPerDemand = "casting.gap_discovery_max_per_demand"
 	KeyEmployeeMaxPerTeam                 = "employee.max_per_team"
 	KeyTeamConstitutionMaxChars           = "team.constitution_max_chars"
 	KeyRetentionRuntimeEventsDays         = "retention.runtime_events_days"
@@ -215,6 +218,18 @@ var registry = []Definition{
 		DefaultValue: 3,
 		MinValue:     1,
 		MaxValue:     5,
+	},
+	{
+		Key:    KeyCastingGapDiscoveryMaxPerDemand,
+		Domain: DomainExecution,
+		Label:  "语义扩编发现器每单调用上限",
+		Description: "任务完成后，当剧本编制已满时，语义缺口发现器可再调用模型判断是否需要扩编。" +
+			"本配置限制同一需求上的发现器调用次数，防止反复打扰；达到上限后不再触发并在卷宗留痕。" +
+			"0 表示关闭语义发现（仍走编制未满时的确定性扩编提请）。",
+		ValueType:    ValueTypeInt,
+		DefaultValue: 3,
+		MinValue:     0,
+		MaxValue:     20,
 	},
 	{
 		Key:    KeyEmployeeMaxPerTeam,

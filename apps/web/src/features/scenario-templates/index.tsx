@@ -28,6 +28,7 @@ import {
   scenarioTemplateSkeleton,
   type ScenarioTemplate
 } from "@/lib/api/scenario-templates";
+import { getScenarioTemplateRoleView } from "@/lib/api/casting";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { formatRelativeTime } from "@/lib/format-time";
 import { CreateScenarioTemplateDialog } from "./create-dialog";
@@ -261,6 +262,13 @@ function ScenarioTemplateRow({
     enabled: expanded
 });
 
+  const roleView = useQuery({
+    queryKey: ["scenario-template-role-view", row.template_key],
+    queryFn: () =>
+      getScenarioTemplateRoleView({ baseUrl: apiBaseUrl }, row.template_key),
+    enabled: expanded
+});
+
   return (
     <Fragment>
       <Tr className="cursor-pointer" onClick={onToggle}>
@@ -360,6 +368,90 @@ function ScenarioTemplateRow({
                 </ul>
               </div>
             </div>
+            <div className="mt-4 border-t border-line pt-3">
+              <p className="text-xs font-semibold text-ink-2">角色与收口</p>
+              <p className="mt-0.5 text-[11px] text-ink-3">
+                收口档位与所需角色由服务端计算（与规划期同一套规则），前端只渲染。
+              </p>
+              {roleView.isPending ? (
+                <p className="mt-2 text-xs text-ink-2">加载角色视图…</p>
+              ) : roleView.isError ? (
+                <p className="mt-2 text-xs text-danger">无法加载角色视图</p>
+              ) : (
+                <div className="mt-2 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+                      角色
+                    </p>
+                    {(roleView.data?.roles ?? []).length === 0 ? (
+                      <p className="mt-1 text-xs text-ink-2">无角色约束</p>
+                    ) : (
+                      <ul className="mt-1 grid gap-1.5">
+                        {(roleView.data?.roles ?? []).map((role) => (
+                          <li key={role.role_key} className="text-xs">
+                            <span className="font-medium text-ink">
+                              {role.title || role.role_key}
+                            </span>{" "}
+                            <span className="font-mono text-ink-3">{role.role_key}</span>
+                            {role.required_capabilities.length ? (
+                              <span className="ml-1 text-ink-2">
+                                建议能力 {role.required_capabilities.join("、")}
+                              </span>
+                            ) : null}
+                            <span className="ml-1 text-ink-2">
+                              · 本租户持有者 {role.holder_count} 人
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">
+                      收口档位（浅 → 深）
+                    </p>
+                    {(roleView.data?.exits ?? []).length === 0 ? (
+                      <p className="mt-1 text-xs text-ink-2">无收口档位</p>
+                    ) : (
+                      <ul className="mt-1 grid gap-1.5">
+                        {(roleView.data?.exits ?? []).map((exit) => {
+                          const titleOf = (key: string) => {
+                            const hit = (roleView.data?.roles ?? []).find(
+                              (r) => r.role_key === key,
+                            );
+                            return hit?.title || key;
+                          };
+                          const requiredLabels = exit.required_roles.map(titleOf);
+                          const independenceNote = exit.role_independence_pairs
+                            .map((pair) => pair.roles.map(titleOf).join(" + "))
+                            .filter(Boolean);
+                          return (
+                            <li key={exit.deliverable} className="text-xs">
+                              <span className="font-medium text-ink">
+                                {exit.label || exit.deliverable}
+                              </span>{" "}
+                              <span className="font-mono text-ink-3">{exit.deliverable}</span>
+                              <span className="block text-ink-2">
+                                需要：
+                                {requiredLabels.length
+                                  ? requiredLabels.join(" + ")
+                                  : "无角色"}
+                                {independenceNote.length ? (
+                                  <span className="ml-1 text-danger">
+                                    （须不同人：{independenceNote.join("；")}）
+                                  </span>
+                                ) : null}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="mt-4 border-t border-line pt-3">
               <p className="text-xs font-semibold text-ink-2">版本历史</p>
               {versions.isPending ? (

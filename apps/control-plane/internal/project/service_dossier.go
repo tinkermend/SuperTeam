@@ -582,10 +582,17 @@ func buildDemandDossierPendingActions(facts *demandLaunchFacts) []DemandDossierP
 func buildDemandDossierTimeline(facts *demandLaunchFacts, names demandDossierNames, limit int32) DemandDossierTimeline {
 	decisionsByID := make(map[uuid.UUID]DecisionRequest, len(facts.DecisionRequests))
 	decisionsByPlanRevision := make(map[uuid.UUID]DecisionRequest, len(facts.DecisionRequests))
+	// 扩编的 decision.requested / decision.submitted 事件既不带 resource_*,payload 里
+	// 也只有 approval_request_id —— 没有这条索引,决策身份就找不回来,精化文案永远
+	// 没机会触发,卷宗上只剩通用「待人工决策」(真实链路踩到)。
+	decisionsByApproval := make(map[uuid.UUID]DecisionRequest, len(facts.DecisionRequests))
 	for _, decision := range facts.DecisionRequests {
 		decisionsByID[decision.ID] = decision
 		if decision.PlanRevisionID != nil {
 			decisionsByPlanRevision[*decision.PlanRevisionID] = decision
+		}
+		if decision.ApprovalRequestID != uuid.Nil {
+			decisionsByApproval[decision.ApprovalRequestID] = decision
 		}
 	}
 
@@ -596,6 +603,14 @@ func buildDemandDossierTimeline(facts *demandLaunchFacts, names demandDossierNam
 		narrative := NarrateProjectEventType(event.EventType)
 		if narrative.Noise {
 			continue
+		}
+		// 批三：语义发现「无需补人」只记账不进时间线（open detail #4）；
+		// limit_reached / needed / external 仍可见（H9c）。
+		if event.EventType == ProjectEventCastingGapDiscovery {
+			payload := mapOrEmptyAny(event.Payload)
+			if strings.TrimSpace(stringFromAny(payload["outcome"])) == "not_needed" {
+				continue
+			}
 		}
 		item := DemandDossierTimelineItem{
 			ID:               event.ID.String(),
@@ -608,7 +623,7 @@ func buildDemandDossierTimeline(facts *demandLaunchFacts, names demandDossierNam
 		if event.Summary != nil {
 			item.Summary = strings.TrimSpace(*event.Summary)
 		}
-		applyDemandDossierTimelineEntity(&item, event, facts, names, decisionsByID, decisionsByPlanRevision)
+		applyDemandDossierTimelineEntity(&item, event, facts, names, decisionsByID, decisionsByPlanRevision, decisionsByApproval)
 		items = append(items, item)
 
 		if item.Entity != nil && item.Entity.Type == "task" {
@@ -673,6 +688,7 @@ func applyDemandDossierTimelineEntity(
 	names demandDossierNames,
 	decisionsByID map[uuid.UUID]DecisionRequest,
 	decisionsByPlanRevision map[uuid.UUID]DecisionRequest,
+	decisionsByApproval map[uuid.UUID]DecisionRequest,
 ) {
 	resourceType := ""
 	if event.ResourceType != nil {
@@ -743,6 +759,12 @@ func applyDemandDossierTimelineEntity(
 			return
 		}
 	}
+	if approvalID, ok := payloadUUID(event.Payload, "approval_request_id"); ok {
+		if decision, found := decisionsByApproval[approvalID]; found {
+			attachDecision(decision)
+			return
+		}
+	}
 	if taskID, ok := payloadUUID(event.Payload, "project_task_id"); ok {
 		attachTask(taskID)
 		return
@@ -793,6 +815,20 @@ func refineDecisionNarrative(kind string, decision DecisionRequest) (string, str
 	case "demand_acceptance":
 		if kind == TimelineKindDecisionOpened {
 			return "待验收签署", TimelineKindDecisionOpened, true
+		}
+	case "casting_expansion":
+		// 扩编是执行中途改团队构成的动作。落在通用「待人工决策」里,卷宗上就看不出
+		// 这一单中途换过人 —— 叙事断裂。批准/驳回都要能一眼分辨。
+		if kind == TimelineKindDecisionOpened {
+			return "待扩编批准", TimelineKindStaffingGap, true
+		}
+		if resolved && kind == TimelineKindDecisionResolved {
+			if strings.EqualFold(decision.StatusSnapshot, "approved") {
+				return "扩编已批准", TimelineKindStaffingGap, true
+			}
+			if strings.EqualFold(decision.StatusSnapshot, "rejected") {
+				return "扩编被驳回", TimelineKindStaffingGap, true
+			}
 		}
 	}
 	return "", "", false

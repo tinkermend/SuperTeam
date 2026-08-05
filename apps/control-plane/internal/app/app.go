@@ -589,6 +589,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	// construction completes, so attaching it via this pointer after the fact
 	// is safe.
 	var coordinationStore *projectcoordination.ProjectStore
+	// castingGapDiscoverer is wired when Temporal+planner client are available
+	// (batch 3 semantic expansion; optional — nil skips discoverer path).
+	var castingGapDiscoverer project.CastingGapDiscoverer
 	projectTaskPreflights, _ := runRepository.(gateProjectTaskRunPreflightReader)
 	if cfg.Temporal.Enabled {
 		temporalClient, err = temporalclient.NewLazyClient(temporalclient.Options{
@@ -629,11 +632,14 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		// review-gate detector Activity (RunReviewGateForTask) reuses the SAME
 		// client/model for its code_review LLM detector; if unwired, the LLM
 		// detectors fail open and only rule detectors (secret_leak) fire.
+		// Batch 3 casting-gap discoverer reuses this same client (design §9 #1).
+		judgeClient := projectcoordination.NewOpenAICompatibleChatCompletionClient(cfg.Planner.BaseURL, cfg.Planner.APIKey)
 		coordinationActivities = projectcoordination.WithJudgeClient(
 			coordinationActivities,
-			projectcoordination.NewOpenAICompatibleChatCompletionClient(cfg.Planner.BaseURL, cfg.Planner.APIKey),
+			judgeClient,
 			cfg.Planner.Model,
 		)
+		castingGapDiscoverer = projectcoordination.NewCastingGapDiscoverer(judgeClient, cfg.Planner.Model)
 		temporalWorker = projectcoordination.NewWorker(temporalClient, cfg.Temporal.TaskQueue, coordinationActivities)
 		coordinationWorker = temporalWorker
 	}
@@ -697,8 +703,14 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	scenarioTemplateService.SetAuditRecorder(auditService)
 	roleVocabularyService := rolevocab.NewService(q)
 	scenarioTemplateService.SetRoleVocabularyValidator(roleVocabularyService)
+	// Role governance console: holder_count on template role-view (P0c).
+	scenarioTemplateService.SetRoleHolderCounter(roleHolderCounterAdapter{q: q})
 	projectService.SetScenarioTemplateResolver(scenarioTemplateResolverAdapter{service: scenarioTemplateService})
 	projectService.SetRoleVocabulary(roleVocabularyService)
+	// Batch 3: active role rows for semantic gap discoverer prompts + planner inject.
+	roleVocabLister := roleVocabularyListerAdapter{svc: roleVocabularyService}
+	projectService.SetRoleVocabularyLister(roleVocabLister)
+	projectService.SetCastingGapDiscoverer(castingGapDiscoverer)
 	projectService.SetScenarioTemplateSpecSource(scenarioTemplateSpecSourceAdapter{service: scenarioTemplateService})
 	projectService.SetPlaybookTemplateLister(scenarioTemplateSpecSourceAdapter{service: scenarioTemplateService})
 	projectService.SetCastingRepository(project.NewPgCastingRepository(q, stores.Postgres))
@@ -712,7 +724,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		coordinationStore.WithScenarioTemplateSource(scenarioTemplateSourceAdapter{service: scenarioTemplateService})
 		// G9 coordinator path: after accepted task completion, propose casting_expansion
 		// when readiness still needs deeper-exit roles (vocab-constrained).
+		// Batch 3: when casting is complete, projectService runs the semantic discoverer.
 		coordinationStore.WithCastingExpansionProposer(projectService)
+		// Planner role vocabulary injection (P1).
+		coordinationStore.WithRoleVocabularySource(roleVocabLister)
 	}
 	runService.SetMCPLister(runtimeMCPListerAdapter{capability: capabilityService})
 	runService.SetSkillMCPDependencyLister(skillMCPDependencyListerAdapter{capability: capabilityService})
@@ -1082,6 +1097,63 @@ func (a scenarioTemplateSourceAdapter) GetScenarioTemplateSnapshot(ctx context.C
 		return projectcoordination.ScenarioTemplateSnapshot{}, fmt.Errorf("scenario template %q is %s", key, template.Status)
 	}
 	return projectcoordination.ScenarioTemplateSnapshot{Key: template.Key, Name: template.Name, Version: template.ActiveVersion, Spec: template.Spec}, nil
+}
+
+// roleHolderCounterAdapter backs scenario-template role-view holder_count
+// (role governance console P0c) without scenariotemplate importing queries.
+type roleHolderCounterAdapter struct {
+	q *queries.Queries
+}
+
+func (a roleHolderCounterAdapter) CountActiveHolders(ctx context.Context, tenantID uuid.UUID, roleKey string) (int, error) {
+	n, err := a.q.CountEmployeesHoldingRole(ctx, queries.CountEmployeesHoldingRoleParams{
+		TenantID: tenantID,
+		RoleKey:  roleKey,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+// roleVocabularyListerAdapter exposes active role rows to project service
+// (gap discoverer) and projectcoordination (planner inject) without those
+// packages importing rolevocab.
+type roleVocabularyListerAdapter struct {
+	svc *rolevocab.Service
+}
+
+func (a roleVocabularyListerAdapter) ListActiveRoleRows(ctx context.Context, tenantID uuid.UUID) ([]project.RoleVocabularyRow, error) {
+	entries, err := a.svc.ListActive(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]project.RoleVocabularyRow, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, project.RoleVocabularyRow{
+			RoleKey:     e.RoleKey,
+			Title:       e.Title,
+			Description: e.Description,
+		})
+	}
+	return out, nil
+}
+
+// ListActiveRoleVocabulary implements projectcoordination.RoleVocabularySource.
+func (a roleVocabularyListerAdapter) ListActiveRoleVocabulary(ctx context.Context, tenantID uuid.UUID) ([]projectcoordination.RoleVocabularyPromptEntry, error) {
+	rows, err := a.ListActiveRoleRows(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]projectcoordination.RoleVocabularyPromptEntry, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, projectcoordination.RoleVocabularyPromptEntry{
+			RoleKey:     r.RoleKey,
+			Title:       r.Title,
+			Description: r.Description,
+		})
+	}
+	return out, nil
 }
 
 // serviceAuthMiddlewareAdapter 把 serviceauth.Service 适配成中间件需要的最小视图。

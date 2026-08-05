@@ -284,6 +284,11 @@ const (
 	// (spec §5.5 close_demand), e.g. to clear a planning zombie. Payload carries
 	// {demand_id, reason, previous_status}.
 	ProjectEventDemandCancelled ProjectEventType = "demand.cancelled"
+	// ProjectEventCastingGapDiscovery records a semantic casting-gap discoverer
+	// attempt or limit hit (design 2026-08-05 §3.3 / §5.1). Payload carries
+	// {demand_id, outcome, ...}; outcome=limit_reached is the visible trace when
+	// the per-demand call budget is exhausted.
+	ProjectEventCastingGapDiscovery ProjectEventType = "project.casting.gap_discovery"
 )
 
 type EvidenceVerificationStatus string

@@ -46,3 +46,25 @@ type PatchRequest struct {
 	Description *string
 	Status      *string
 }
+
+// TemplateRef is a scenario template that references a role key in its current spec.
+type TemplateRef struct {
+	Key  string
+	Name string
+}
+
+// EmployeeRef is a digital employee that currently holds a role key.
+type EmployeeRef struct {
+	ID   uuid.UUID
+	Name string
+}
+
+// References is the disable-impact snapshot for a role vocabulary entry.
+// Design: { scenario_templates, employee_count, casting_count }; employees[]
+// is included so the confirm dialog can list holder names (spec §4.3).
+type References struct {
+	ScenarioTemplates []TemplateRef
+	Employees         []EmployeeRef
+	EmployeeCount     int
+	CastingCount      int
+}

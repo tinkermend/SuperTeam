@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
+	"github.com/superteam/control-plane/internal/systemconfig"
 )
 
 // RequestCastingExpansionRequest opens a casting_expansion decision for a
@@ -27,6 +28,11 @@ type RequestCastingExpansionRequest struct {
 	// ActorType "system" | "coordinator" | "judge"
 	ActorType string
 	ActorID   string
+	// ProjectTaskID 是触发本次提请的那个已完成任务。**必须带**:一单卷宗的决策
+	// 读路径按 coordination_job_id / project_task_id 反查(ListDemandLaunchDecisionRequests),
+	// 两者都空的决策在这一单里根本找不回来 —— 扩编卡不会出现在待办,时间线上也
+	// 只剩通用「待人工决策」。人工发起(无来源任务)时才允许为空。
+	ProjectTaskID *uuid.UUID
 }
 
 // RequestCastingExpansion creates a human decision (approval + decision_request
@@ -77,6 +83,7 @@ func (s *Service) RequestCastingExpansion(ctx context.Context, req RequestCastin
 		}
 	}
 	title := "扩编请求"
+	actorType := defaultString(req.ActorType, "system")
 	payload := map[string]any{
 		"decision_type":         DecisionTypeCastingExpansion,
 		"demand_id":             req.DemandID.String(),
@@ -84,6 +91,9 @@ func (s *Service) RequestCastingExpansion(ctx context.Context, req RequestCastin
 		"suggested_role_key":    roleKey,
 		"needs_external_role":   req.NeedsExternalRole,
 		"reason":                summary,
+		// actor_type distinguishes coordinator (deterministic template gap) vs
+		// judge (semantic discoverer) so the inbox card can present differently.
+		"actor_type": actorType,
 	}
 	targetUser := projectRecord.HumanOwnerUserID
 	if len(projectRecord.HumanOwnerUserIDs) > 0 {
@@ -97,7 +107,7 @@ func (s *Service) RequestCastingExpansion(ctx context.Context, req RequestCastin
 		TenantID:       req.TenantID,
 		ResourceType:   "project",
 		ResourceID:     req.ProjectID,
-		RequesterType:  defaultString(req.ActorType, "system"),
+		RequesterType:  actorType,
 		TargetUserID:   targetUser,
 		DecisionType:   DecisionTypeCastingExpansion,
 		Title:          title,
@@ -113,13 +123,14 @@ func (s *Service) RequestCastingExpansion(ctx context.Context, req RequestCastin
 		TenantID:  req.TenantID,
 		ProjectID: req.ProjectID,
 		EventType: ProjectEventDecisionRequested,
-		ActorType: defaultString(req.ActorType, "system"),
+		ActorType: actorType,
 		ActorID:   defaultString(req.ActorID, "coordinator"),
 		Summary:   summary,
 		Payload: map[string]any{
 			"approval_request_id": approvalRequestID.String(),
 			"decision_type":       DecisionTypeCastingExpansion,
 			"demand_id":           req.DemandID.String(),
+			"actor_type":          actorType,
 		},
 	})
 	if err != nil {
@@ -129,6 +140,7 @@ func (s *Service) RequestCastingExpansion(ctx context.Context, req RequestCastin
 		TenantID:          req.TenantID,
 		ProjectID:         req.ProjectID,
 		ApprovalRequestID: approvalRequestID,
+		ProjectTaskID:     req.ProjectTaskID,
 		TargetUserID:      targetUser,
 		DecisionType:      DecisionTypeCastingExpansion,
 		TitleSnapshot:     title,
@@ -224,15 +236,16 @@ func (s *Service) MaybeRequestCastingExpansionForCompletedTask(ctx context.Conte
 	// Casting-only next roles (not pool/tenant feasibility from GetPlaybookReadiness).
 	// Expansion is about 编制 gaps: pool may already hold reviewer/tester, but
 	// without cast rows the plan cannot deepen (§7 / G9).
+	//
+	// Division of labour (design 2026-08-05 §3.3):
+	//   - casting incomplete → deterministic coordinator proposal (batch 2)
+	//   - casting complete   → semantic gap discoverer (batch 3), if wired
 	roleKey, err := s.nextUncastRoleForTemplate(ctx, tenantID, projectID, templateKey)
 	if err != nil {
 		return MaybeCastingExpansionResult{}, err
 	}
 	if roleKey == "" {
-		return MaybeCastingExpansionResult{
-			DemandID:      demandID,
-			SkippedReason: "casting_complete",
-		}, nil
+		return s.maybeDiscoverCastingGap(ctx, tenantID, projectID, demandID, completedTaskID, templateKey, task)
 	}
 
 	decision, err := s.RequestCastingExpansion(ctx, RequestCastingExpansionRequest{
@@ -244,6 +257,7 @@ func (s *Service) MaybeRequestCastingExpansionForCompletedTask(ctx context.Conte
 		ScenarioTemplateKey: templateKey,
 		ActorType:           "coordinator",
 		ActorID:             "project-coordinator",
+		ProjectTaskID:       &completedTaskID,
 	})
 	if err != nil {
 		return MaybeCastingExpansionResult{}, err
@@ -254,6 +268,273 @@ func (s *Service) MaybeRequestCastingExpansionForCompletedTask(ctx context.Conte
 		DemandID:         demandID,
 		SuggestedRoleKey: roleKey,
 	}, nil
+}
+
+// maybeDiscoverCastingGap runs the semantic discoverer when playbook casting is
+// already complete. Never fails the task graph: transport/discoverer errors are
+// returned so the activity can log+swallow; parse/R2 soft outcomes skip quietly.
+func (s *Service) maybeDiscoverCastingGap(
+	ctx context.Context,
+	tenantID, projectID, demandID, completedTaskID uuid.UUID,
+	templateKey string,
+	task ProjectTask,
+) (MaybeCastingExpansionResult, error) {
+	base := MaybeCastingExpansionResult{DemandID: demandID, SkippedReason: "casting_complete"}
+	if s.castingGapDiscoverer == nil {
+		return MaybeCastingExpansionResult{DemandID: demandID, SkippedReason: "discoverer_unwired"}, nil
+	}
+	if s.roleVocabularyLister == nil {
+		return MaybeCastingExpansionResult{DemandID: demandID, SkippedReason: "role_vocab_lister_unwired"}, nil
+	}
+
+	maxCalls := s.castingGapDiscoveryMaxPerDemand(ctx, tenantID)
+	if maxCalls <= 0 {
+		return MaybeCastingExpansionResult{DemandID: demandID, SkippedReason: "discoverer_disabled"}, nil
+	}
+	callCount, alreadyLimited, err := s.countCastingGapDiscoveries(ctx, tenantID, projectID, demandID)
+	if err != nil {
+		return MaybeCastingExpansionResult{}, err
+	}
+	if callCount >= maxCalls {
+		if !alreadyLimited {
+			// H9c: one visible timeline mark when the budget first exhausts.
+			_, _ = s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+				TenantID:  tenantID,
+				ProjectID: projectID,
+				EventType: ProjectEventCastingGapDiscovery,
+				ActorType: "judge",
+				ActorID:   "casting-gap-discoverer",
+				Summary:   "语义扩编发现次数已达上限，本单不再自动提请",
+				Payload: map[string]any{
+					"demand_id":           demandID.String(),
+					"completed_task_id":   completedTaskID.String(),
+					"outcome":             "limit_reached",
+					"call_count":          callCount,
+					"max_calls":           maxCalls,
+					"scenario_template_key": templateKey,
+				},
+			})
+		}
+		return MaybeCastingExpansionResult{DemandID: demandID, SkippedReason: "discoverer_limit_reached"}, nil
+	}
+
+	rows, err := s.roleVocabularyLister.ListActiveRoleRows(ctx, tenantID)
+	if err != nil {
+		return MaybeCastingExpansionResult{}, err
+	}
+	if len(rows) == 0 {
+		return MaybeCastingExpansionResult{DemandID: demandID, SkippedReason: "no_active_roles"}, nil
+	}
+	activeRoles := make([]CastingGapRoleOption, 0, len(rows))
+	for _, r := range rows {
+		activeRoles = append(activeRoles, CastingGapRoleOption{
+			RoleKey:     r.RoleKey,
+			Title:       r.Title,
+			Description: r.Description,
+		})
+	}
+
+	participating, err := s.participatingRoleKeys(ctx, tenantID, projectID, templateKey)
+	if err != nil {
+		return MaybeCastingExpansionResult{}, err
+	}
+
+	conclusion, deliverables := s.taskOutputForGapDiscovery(ctx, tenantID, projectID, completedTaskID)
+
+	suggestion, err := s.castingGapDiscoverer.DiscoverCastingGap(ctx, CastingGapInput{
+		TaskTitle:          task.Title,
+		ConclusionSummary:  conclusion,
+		DeliverableNames:   deliverables,
+		ActiveRoles:        activeRoles,
+		ParticipatingRoles: participating,
+	})
+	if err != nil {
+		return MaybeCastingExpansionResult{}, err
+	}
+
+	// Record every model invocation (including not-needed) for the call budget.
+	outcome := "not_needed"
+	if suggestion.Needed {
+		if suggestion.External {
+			outcome = "external"
+		} else {
+			outcome = "needed"
+		}
+	}
+	_, _ = s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventCastingGapDiscovery,
+		ActorType: "judge",
+		ActorID:   "casting-gap-discoverer",
+		Summary:   castingGapDiscoverySummary(outcome, suggestion),
+		Payload: map[string]any{
+			"demand_id":             demandID.String(),
+			"completed_task_id":     completedTaskID.String(),
+			"outcome":               outcome,
+			"suggested_role_key":    suggestion.RoleKey,
+			"needs_external_role":   suggestion.External,
+			"reason":                suggestion.Reason,
+			"scenario_template_key": templateKey,
+		},
+	})
+
+	if !suggestion.Needed {
+		return base, nil
+	}
+
+	reason := strings.TrimSpace(suggestion.Reason)
+	if reason == "" {
+		if suggestion.External {
+			reason = "根据产出判断需要词表外的角色参与"
+		} else {
+			reason = fmt.Sprintf("根据产出判断还需要角色 %s", suggestion.RoleKey)
+		}
+	}
+
+	decision, err := s.RequestCastingExpansion(ctx, RequestCastingExpansionRequest{
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		DemandID:            demandID,
+		SuggestedRoleKey:    suggestion.RoleKey,
+		NeedsExternalRole:   suggestion.External,
+		Reason:              reason,
+		ScenarioTemplateKey: templateKey,
+		ActorType:           "judge",
+		ActorID:             "casting-gap-discoverer",
+		ProjectTaskID:       &completedTaskID,
+	})
+	if err != nil {
+		// R1 demotion already applied in the discoverer; if Request still
+		// rejects (e.g. race on vocab disable), surface as skip not hard fail
+		// so the task graph continues.
+		if strings.Contains(err.Error(), "not in role vocabulary") {
+			return MaybeCastingExpansionResult{DemandID: demandID, SkippedReason: "suggested_role_rejected"}, nil
+		}
+		return MaybeCastingExpansionResult{}, err
+	}
+	return MaybeCastingExpansionResult{
+		Requested:        true,
+		DecisionID:       decision.ID,
+		DemandID:         demandID,
+		SuggestedRoleKey: suggestion.RoleKey,
+	}, nil
+}
+
+func castingGapDiscoverySummary(outcome string, suggestion CastingGapSuggestion) string {
+	switch outcome {
+	case "needed":
+		return fmt.Sprintf("语义扩编发现：建议补充角色 %s", suggestion.RoleKey)
+	case "external":
+		return "语义扩编发现：需要词表外角色"
+	case "not_needed":
+		return "语义扩编发现：无需补人"
+	default:
+		return "语义扩编发现"
+	}
+}
+
+func (s *Service) castingGapDiscoveryMaxPerDemand(ctx context.Context, tenantID uuid.UUID) int {
+	if s.systemConfig == nil {
+		return 3
+	}
+	v := s.systemConfig.Int64(ctx, tenantID, systemconfig.KeyCastingGapDiscoveryMaxPerDemand)
+	if v < 0 {
+		return 0
+	}
+	if v > 20 {
+		return 20
+	}
+	return int(v)
+}
+
+// countCastingGapDiscoveries returns (modelCallCount, alreadyHasLimitReachedMark).
+// limit_reached events do not count toward the model budget.
+func (s *Service) countCastingGapDiscoveries(ctx context.Context, tenantID, projectID, demandID uuid.UUID) (int, bool, error) {
+	events, err := s.repository.ListProjectEvents(ctx, tenantID, projectID, 500, 0)
+	if err != nil {
+		return 0, false, err
+	}
+	demandStr := demandID.String()
+	calls := 0
+	limited := false
+	for _, ev := range events {
+		if ev.EventType != ProjectEventCastingGapDiscovery {
+			continue
+		}
+		payload := mapOrEmptyAny(ev.Payload)
+		if strings.TrimSpace(stringFromAny(payload["demand_id"])) != demandStr {
+			continue
+		}
+		outcome := strings.TrimSpace(stringFromAny(payload["outcome"]))
+		if outcome == "limit_reached" {
+			limited = true
+			continue
+		}
+		// Any non-limit event is a model invocation (needed / not_needed / external).
+		calls++
+	}
+	return calls, limited, nil
+}
+
+func (s *Service) participatingRoleKeys(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]string, error) {
+	if s.castingRepo == nil {
+		return nil, nil
+	}
+	castings, err := s.castingRepo.ListProjectCastings(ctx, tenantID, projectID, &templateKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(castings))
+	seen := map[string]bool{}
+	for _, c := range castings {
+		role := strings.TrimSpace(c.RoleKey)
+		if role == "" || c.DigitalEmployeeID == uuid.Nil || seen[role] {
+			continue
+		}
+		seen[role] = true
+		out = append(out, role)
+	}
+	return out, nil
+}
+
+// taskOutputForGapDiscovery loads a short conclusion + deliverable names for the
+// discoverer prompt (design open detail #3: no full artifact bodies).
+func (s *Service) taskOutputForGapDiscovery(ctx context.Context, tenantID, projectID, taskID uuid.UUID) (string, []string) {
+	conclusion := ""
+	if summaries, err := s.repository.ListExecutionSummariesByTaskIDs(ctx, tenantID, projectID, []uuid.UUID{taskID}); err == nil {
+		for _, sum := range summaries {
+			if strings.TrimSpace(sum.Conclusion) != "" {
+				conclusion = strings.TrimSpace(sum.Conclusion)
+				break
+			}
+		}
+	}
+	var deliverables []string
+	if results, err := s.repository.ListProjectTaskResults(ctx, ListProjectTaskResultsRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		ProjectTaskID: taskID,
+		Limit:         5,
+		Offset:        0,
+	}); err == nil {
+		for _, r := range results {
+			for _, d := range r.Contract.Deliverables {
+				name := strings.TrimSpace(d.Name)
+				if name != "" {
+					deliverables = append(deliverables, name)
+				}
+			}
+		}
+	}
+	// Bound prompt size.
+	if len(conclusion) > 2000 {
+		conclusion = conclusion[:2000] + "…"
+	}
+	if len(deliverables) > 20 {
+		deliverables = deliverables[:20]
+	}
+	return conclusion, deliverables
 }
 
 func firstCastingExpansionRoleKey(candidates []string) string {

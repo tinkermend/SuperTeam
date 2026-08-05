@@ -124,6 +124,9 @@ func (h *HTTPHandler) RequestCastingExpansion(w http.ResponseWriter, r *http.Req
 		NeedsExternalRole   bool      `json:"needs_external_role"`
 		Reason              string    `json:"reason"`
 		ScenarioTemplateKey string    `json:"scenario_template_key"`
+		// 可选:触发本次提请的已完成任务。带上它这条决策才归属得到这一单
+		// (卷宗决策读路径按 project_task_id 反查)。
+		ProjectTaskID *uuid.UUID `json:"project_task_id"`
 	}
 	if !decodeJSONBody(w, r, &body) {
 		return
@@ -136,6 +139,7 @@ func (h *HTTPHandler) RequestCastingExpansion(w http.ResponseWriter, r *http.Req
 		NeedsExternalRole:   body.NeedsExternalRole,
 		Reason:              body.Reason,
 		ScenarioTemplateKey: body.ScenarioTemplateKey,
+		ProjectTaskID:       body.ProjectTaskID,
 		ActorType:           "human_user",
 		ActorID:             actorID.String(),
 	})

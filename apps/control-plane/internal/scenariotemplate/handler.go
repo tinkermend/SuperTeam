@@ -20,6 +20,7 @@ type HandlerService interface {
 	CreateVersion(ctx context.Context, req CreateScenarioTemplateVersionRequest) (ScenarioTemplate, error)
 	ListVersions(ctx context.Context, tenantID uuid.UUID, key string) ([]ScenarioTemplateVersion, error)
 	Patch(ctx context.Context, req PatchScenarioTemplateRequest) (ScenarioTemplate, error)
+	RoleView(ctx context.Context, tenantID uuid.UUID, templateKey string) (RoleView, error)
 }
 
 type HTTPHandler struct {
@@ -140,6 +141,61 @@ func (h *HTTPHandler) ListScenarioTemplateVersions(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, responses)
 }
 
+// GetScenarioTemplateRoleView handles GET /scenario-templates/{templateKey}/role-view.
+// Server computes exit required_roles via PruneSkeletonForExit (design §6).
+func (h *HTTPHandler) GetScenarioTemplateRoleView(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorize(w, r, authz.ActionScenarioTemplateRead, "scenario template role view")
+	if !ok {
+		return
+	}
+	key := chi.URLParam(r, "templateKey")
+	view, err := h.service.RoleView(r.Context(), tenantID, key)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	roles := make([]roleViewRoleResponse, 0, len(view.Roles))
+	for _, role := range view.Roles {
+		caps := role.RequiredCapabilities
+		if caps == nil {
+			caps = []string{}
+		}
+		roles = append(roles, roleViewRoleResponse{
+			RoleKey:              role.RoleKey,
+			Title:                role.Title,
+			RequiredCapabilities: caps,
+			HolderCount:          role.HolderCount,
+		})
+	}
+	exits := make([]roleViewExitResponse, 0, len(view.Exits))
+	for _, exit := range view.Exits {
+		required := exit.RequiredRoles
+		if required == nil {
+			required = []string{}
+		}
+		pairs := make([]roleIndependencePairResponse, 0, len(exit.RoleIndependencePairs))
+		for _, p := range exit.RoleIndependencePairs {
+			rolesCopy := p.Roles
+			if rolesCopy == nil {
+				rolesCopy = []string{}
+			}
+			pairs = append(pairs, roleIndependencePairResponse{Roles: rolesCopy})
+		}
+		exits = append(exits, roleViewExitResponse{
+			Deliverable:           exit.Deliverable,
+			Label:                 exit.Label,
+			RequiredRoles:         required,
+			RoleIndependencePairs: pairs,
+		})
+	}
+	writeJSON(w, http.StatusOK, roleViewResponse{
+		TemplateKey: view.TemplateKey,
+		Name:        view.Name,
+		Roles:       roles,
+		Exits:       exits,
+	})
+}
+
 // PatchScenarioTemplate handles PATCH /scenario-templates/{templateKey}:
 // partial update of status (active/disabled) and/or name/description.
 func (h *HTTPHandler) PatchScenarioTemplate(w http.ResponseWriter, r *http.Request) {
@@ -208,6 +264,31 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
+}
+
+type roleViewRoleResponse struct {
+	RoleKey              string   `json:"role_key"`
+	Title                string   `json:"title"`
+	RequiredCapabilities []string `json:"required_capabilities"`
+	HolderCount          int      `json:"holder_count"`
+}
+
+type roleIndependencePairResponse struct {
+	Roles []string `json:"roles"`
+}
+
+type roleViewExitResponse struct {
+	Deliverable           string                         `json:"deliverable"`
+	Label                 string                         `json:"label"`
+	RequiredRoles         []string                       `json:"required_roles"`
+	RoleIndependencePairs []roleIndependencePairResponse `json:"role_independence_pairs"`
+}
+
+type roleViewResponse struct {
+	TemplateKey string                 `json:"template_key"`
+	Name        string                 `json:"name"`
+	Roles       []roleViewRoleResponse `json:"roles"`
+	Exits       []roleViewExitResponse `json:"exits"`
 }
 
 type scenarioTemplateResponse struct {

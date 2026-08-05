@@ -1,7 +1,7 @@
 # 角色治理界面（Role Governance Console）
 
 - 日期：2026-08-05
-- 状态：**立项（未实施）**
+- 状态：**已实施、已验收**（2026-08-05 复检：R1–R4/R6–R9 有实证，R5 未单独走）
 - 系列：剧本可落地化的界面补齐（批一 `7a7064b5`；批二 `7b0369de` + `1f36c944`）
 - 交付性质：**纯 Web + 少量只读端点**；无 schema 变更、无新业务规则
 - 目标读者：实施会话（本文自包含）
@@ -265,6 +265,18 @@ P0a + P0b 是**批三的最小前置**（缺了它们，批三的「去注册角
 | R9 | `verify:web` + `verify:contracts` + `verify:control-plane` | 全过 |
 
 **完成定义**：R1–R6 + R9 全过（P0c 交付时补 R7）；R8 待批三一并验。
+
+### 9.1 复检结论（2026-08-05）
+
+| ID | 结论 | 实证 |
+|---|---|---|
+| R1–R3 | PASS | 真库存在 `network_diagnostics`（词表 15 条）→ 绑定到员工（`digital_employee_roles`）→ 被扩编编制，全程走真实链路 |
+| R4 | PASS | `GET /role-vocabulary/{roleKey}/references` 端点 + 前端「被引用」列，停用弹窗复用同 cache |
+| R6 | PASS | `config.tsx` 旧 `role` 显示为「显示标签」，与「角色与权限」分区分列，并注明"不参与剧本匹配与编制" |
+| R7 | PASS | `scenariotemplate/role_view.go` 复用 `PruneSkeletonForExit` / `ExitCondMet`，未在读路径重算 |
+| R8 | PASS | 扩编卡「去注册角色」深链已接 |
+| R9 | PASS | `verify:web` / `verify:contracts` / `verify:control-plane` / `migrate-validate` 全过 |
+| R5 | **未单独验** | 停用后改版引用它的剧本这一步没走；`validateSpecRoles` 是既有行为，风险低但未实证 |
 
 ---
 

@@ -32,6 +32,16 @@ type CoordinationSnapshot struct {
 	// present, ApplyPlaybookCasting forces selected_employee_id before
 	// governance so "编制由人定" is contractual and SoD (G12) still applies.
 	PlaybookCasting []PlaybookCastingAssignment `json:"playbook_casting,omitempty"`
+	// RoleVocabulary is the tenant's active role list injected into the planner
+	// so extra-skeleton tasks can declare a registered role_key (batch 3 P1).
+	RoleVocabulary []RoleVocabularyPromptEntry `json:"role_vocabulary,omitempty"`
+}
+
+// RoleVocabularyPromptEntry is one active role row for planner / discoverer prompts.
+type RoleVocabularyPromptEntry struct {
+	RoleKey     string `json:"role_key"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // PlaybookCastingAssignment is one role→employee cast row on the coordination snapshot.
@@ -147,6 +157,10 @@ type PlannedTask struct {
 	InputRequirements map[string]any
 	HandoffContract   map[string]any
 	BlockedByKeys     []string
+	// RoleKey is the playbook role this task is cast against. Skeleton tasks
+	// inherit it from the template step; extra (beyond-skeleton) tasks must
+	// declare a registered vocabulary key (batch 3 P1). Empty means untagged.
+	RoleKey string
 }
 
 // activeExecutorIDs returns the active executor members of a coordination snapshot's

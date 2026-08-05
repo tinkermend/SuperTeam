@@ -129,6 +129,64 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Entry, error) 
 	return entryFromRow(row), nil
 }
 
+// GetReferences returns who would be affected if roleKey were disabled:
+// templates whose current spec lists the role, employees holding it, and
+// existing casting rows. roleKey must exist (any status); missing → ErrNotFound.
+func (s *Service) GetReferences(ctx context.Context, tenantID uuid.UUID, roleKey string) (References, error) {
+	if tenantID == uuid.Nil {
+		return References{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	key := strings.TrimSpace(roleKey)
+	if key == "" {
+		return References{}, fmt.Errorf("%w: role_key is required", ErrInvalidInput)
+	}
+	if _, err := s.q.GetRoleVocabularyByKey(ctx, queries.GetRoleVocabularyByKeyParams{
+		TenantID: tenantID,
+		RoleKey:  key,
+	}); err != nil {
+		if errorsIsNoRows(err) {
+			return References{}, ErrNotFound
+		}
+		return References{}, err
+	}
+
+	templates, err := s.q.ListScenarioTemplatesReferencingRole(ctx, queries.ListScenarioTemplatesReferencingRoleParams{
+		TenantID: tenantID,
+		RoleKey:  key,
+	})
+	if err != nil {
+		return References{}, err
+	}
+	employees, err := s.q.ListEmployeesHoldingRole(ctx, queries.ListEmployeesHoldingRoleParams{
+		TenantID: tenantID,
+		RoleKey:  key,
+	})
+	if err != nil {
+		return References{}, err
+	}
+	castingCount, err := s.q.CountCastingsForRole(ctx, queries.CountCastingsForRoleParams{
+		TenantID: tenantID,
+		RoleKey:  key,
+	})
+	if err != nil {
+		return References{}, err
+	}
+
+	out := References{
+		ScenarioTemplates: make([]TemplateRef, 0, len(templates)),
+		Employees:         make([]EmployeeRef, 0, len(employees)),
+		EmployeeCount:     len(employees),
+		CastingCount:      int(castingCount),
+	}
+	for _, t := range templates {
+		out.ScenarioTemplates = append(out.ScenarioTemplates, TemplateRef{Key: t.TemplateKey, Name: t.Name})
+	}
+	for _, e := range employees {
+		out.Employees = append(out.Employees, EmployeeRef{ID: e.ID, Name: e.Name})
+	}
+	return out, nil
+}
+
 func (s *Service) Patch(ctx context.Context, req PatchRequest) (Entry, error) {
 	if req.TenantID == uuid.Nil {
 		return Entry{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

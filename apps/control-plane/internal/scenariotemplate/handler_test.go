@@ -55,6 +55,15 @@ func (s *stubService) Patch(_ context.Context, req PatchScenarioTemplateRequest)
 	return ScenarioTemplate{}, ErrScenarioTemplateNotFound
 }
 
+func (s *stubService) RoleView(_ context.Context, _ uuid.UUID, key string) (RoleView, error) {
+	for _, template := range s.templates {
+		if template.Key == key {
+			return RoleView{TemplateKey: template.Key, Name: template.Name, Roles: []RoleViewRole{}, Exits: []RoleViewExit{}}, nil
+		}
+	}
+	return RoleView{}, ErrScenarioTemplateNotFound
+}
+
 type stubAuthorizer struct {
 	allowed bool
 	checks  []authz.CheckRequest

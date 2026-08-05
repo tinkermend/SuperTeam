@@ -618,6 +618,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/scenario-templates", s.scenarioTemplateHandler.ListScenarioTemplates)
 				r.Post("/scenario-templates", s.scenarioTemplateHandler.CreateScenarioTemplate)
 				r.Get("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.GetScenarioTemplate)
+				r.Get("/scenario-templates/{templateKey}/role-view", s.scenarioTemplateHandler.GetScenarioTemplateRoleView)
 				r.Patch("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.PatchScenarioTemplate)
 				r.Post("/scenario-templates/{templateKey}/versions", s.scenarioTemplateHandler.CreateScenarioTemplateVersion)
 				r.Get("/scenario-templates/{templateKey}/versions", s.scenarioTemplateHandler.ListScenarioTemplateVersions)
@@ -629,6 +630,7 @@ func (s *Server) registerRoutes() {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
 				r.Get("/role-vocabulary", s.roleVocabularyHandler.ListRoleVocabulary)
 				r.Post("/role-vocabulary", s.roleVocabularyHandler.CreateRoleVocabulary)
+				r.Get("/role-vocabulary/{roleKey}/references", s.roleVocabularyHandler.GetRoleVocabularyReferences)
 				r.Patch("/role-vocabulary/{roleKey}", s.roleVocabularyHandler.PatchRoleVocabulary)
 			})
 		}

@@ -3681,9 +3681,14 @@ type DigitalEmployee struct {
 	ProjectSummary DigitalEmployeeProjectSummary `json:"project_summary"`
 	ProviderType   string                        `json:"provider_type"`
 	RiskLevel      string                        `json:"risk_level"`
-	Role           string                        `json:"role"`
-	Status         DigitalEmployeeStatus         `json:"status"`
-	TeamId         openapi_types.UUID            `json:"team_id"`
+
+	// Role 显示用自述标签；不参与剧本匹配与编制
+	Role string `json:"role"`
+
+	// RoleKeys 租户角色词表绑定（多值）；编制候选按此过滤
+	RoleKeys *[]string             `json:"role_keys,omitempty"`
+	Status   DigitalEmployeeStatus `json:"status"`
+	TeamId   openapi_types.UUID    `json:"team_id"`
 
 	// TeamName 归属团队显示名；无团队时为空串，前端展示「无团队归属」
 	TeamName  string             `json:"team_name"`
@@ -6353,6 +6358,16 @@ type RenewProjectTaskAttemptLeaseRequest struct {
 	RuntimeNodeId openapi_types.UUID        `json:"runtime_node_id"`
 }
 
+// ReplaceDigitalEmployeeRolesRequest defines model for ReplaceDigitalEmployeeRolesRequest.
+type ReplaceDigitalEmployeeRolesRequest struct {
+	RoleKeys []string `json:"role_keys"`
+}
+
+// ReplaceDigitalEmployeeRolesResponse defines model for ReplaceDigitalEmployeeRolesResponse.
+type ReplaceDigitalEmployeeRolesResponse struct {
+	RoleKeys []string `json:"role_keys"`
+}
+
 // ReplaceProjectMembersRequest defines model for ReplaceProjectMembersRequest.
 type ReplaceProjectMembersRequest struct {
 	Members []ProjectMemberInput `json:"members"`
@@ -6432,6 +6447,12 @@ type RoleCandidate struct {
 // RoleCandidateCapabilityFit defines model for RoleCandidate.CapabilityFit.
 type RoleCandidateCapabilityFit string
 
+// RoleVocabularyEmployeeRef defines model for RoleVocabularyEmployeeRef.
+type RoleVocabularyEmployeeRef struct {
+	Id   openapi_types.UUID `json:"id"`
+	Name string             `json:"name"`
+}
+
 // RoleVocabularyEntry defines model for RoleVocabularyEntry.
 type RoleVocabularyEntry struct {
 	CreatedAt   time.Time                 `json:"created_at"`
@@ -6446,6 +6467,20 @@ type RoleVocabularyEntry struct {
 
 // RoleVocabularyEntryStatus defines model for RoleVocabularyEntry.Status.
 type RoleVocabularyEntryStatus string
+
+// RoleVocabularyReferences defines model for RoleVocabularyReferences.
+type RoleVocabularyReferences struct {
+	CastingCount      int                         `json:"casting_count"`
+	EmployeeCount     int                         `json:"employee_count"`
+	Employees         []RoleVocabularyEmployeeRef `json:"employees"`
+	ScenarioTemplates []RoleVocabularyTemplateRef `json:"scenario_templates"`
+}
+
+// RoleVocabularyTemplateRef defines model for RoleVocabularyTemplateRef.
+type RoleVocabularyTemplateRef struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
 
 // RuntimeCapability defines model for RuntimeCapability.
 type RuntimeCapability struct {
@@ -6735,6 +6770,35 @@ type ScenarioTemplate struct {
 	TemplateKey   string                 `json:"template_key"`
 	TenantId      openapi_types.UUID     `json:"tenant_id"`
 	UpdatedAt     time.Time              `json:"updated_at"`
+}
+
+// ScenarioTemplateRoleIndependencePair defines model for ScenarioTemplateRoleIndependencePair.
+type ScenarioTemplateRoleIndependencePair struct {
+	Roles []string `json:"roles"`
+}
+
+// ScenarioTemplateRoleView defines model for ScenarioTemplateRoleView.
+type ScenarioTemplateRoleView struct {
+	Exits       []ScenarioTemplateRoleViewExit `json:"exits"`
+	Name        string                         `json:"name"`
+	Roles       []ScenarioTemplateRoleViewRole `json:"roles"`
+	TemplateKey string                         `json:"template_key"`
+}
+
+// ScenarioTemplateRoleViewExit defines model for ScenarioTemplateRoleViewExit.
+type ScenarioTemplateRoleViewExit struct {
+	Deliverable           string                                 `json:"deliverable"`
+	Label                 string                                 `json:"label"`
+	RequiredRoles         []string                               `json:"required_roles"`
+	RoleIndependencePairs []ScenarioTemplateRoleIndependencePair `json:"role_independence_pairs"`
+}
+
+// ScenarioTemplateRoleViewRole defines model for ScenarioTemplateRoleViewRole.
+type ScenarioTemplateRoleViewRole struct {
+	HolderCount          int      `json:"holder_count"`
+	RequiredCapabilities []string `json:"required_capabilities"`
+	RoleKey              string   `json:"role_key"`
+	Title                string   `json:"title"`
 }
 
 // ScenarioTemplateVersion defines model for ScenarioTemplateVersion.
@@ -8137,6 +8201,9 @@ type UpdateDigitalEmployeeProfileJSONRequestBody = UpdateDigitalEmployeeProfileR
 // CreateProviderSessionForDigitalEmployeeJSONRequestBody defines body for CreateProviderSessionForDigitalEmployee for application/json ContentType.
 type CreateProviderSessionForDigitalEmployeeJSONRequestBody = CreateProviderSessionRequest
 
+// ReplaceDigitalEmployeeRolesJSONRequestBody defines body for ReplaceDigitalEmployeeRoles for application/json ContentType.
+type ReplaceDigitalEmployeeRolesJSONRequestBody = ReplaceDigitalEmployeeRolesRequest
+
 // CreateDigitalEmployeeRunJSONRequestBody defines body for CreateDigitalEmployeeRun for application/json ContentType.
 type CreateDigitalEmployeeRunJSONRequestBody = CreateDigitalEmployeeRunRequest
 
@@ -9173,6 +9240,9 @@ type ServerInterface interface {
 	// Create a provider session mapping for a digital employee
 	// (POST /api/v1/digital-employees/{employeeId}/provider-sessions)
 	CreateProviderSessionForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Replace digital employee playbook role bindings
+	// (PUT /api/v1/digital-employees/{employeeId}/roles)
+	ReplaceDigitalEmployeeRoles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// List slim digital employee runs for a calendar window
 	// (GET /api/v1/digital-employees/{employeeId}/run-calendar)
 	GetDigitalEmployeeRunCalendar(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params GetDigitalEmployeeRunCalendarParams)
@@ -9449,6 +9519,9 @@ type ServerInterface interface {
 	// Patch a role vocabulary entry
 	// (PATCH /api/v1/role-vocabulary/{roleKey})
 	PatchRoleVocabulary(w http.ResponseWriter, r *http.Request, roleKey string)
+	// List disable-impact references for a role vocabulary entry
+	// (GET /api/v1/role-vocabulary/{roleKey}/references)
+	GetRoleVocabularyReferences(w http.ResponseWriter, r *http.Request, roleKey string)
 	// Presign a direct upload URL for a content-addressed artifact
 	// (POST /api/v1/runtime/artifacts/presign)
 	PresignRuntimeArtifactUpload(w http.ResponseWriter, r *http.Request)
@@ -9572,6 +9645,9 @@ type ServerInterface interface {
 	// Update a scenario template's status (active/disabled) and/or name/description
 	// (PATCH /api/v1/scenario-templates/{templateKey})
 	PatchScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string)
+	// Read-only role and exit projection for a scenario template
+	// (GET /api/v1/scenario-templates/{templateKey}/role-view)
+	GetScenarioTemplateRoleView(w http.ResponseWriter, r *http.Request, templateKey string)
 	// List a scenario template's spec version history (newest first)
 	// (GET /api/v1/scenario-templates/{templateKey}/versions)
 	ListScenarioTemplateVersions(w http.ResponseWriter, r *http.Request, templateKey string)
@@ -10094,6 +10170,12 @@ func (_ Unimplemented) ListProviderSessionsForDigitalEmployee(w http.ResponseWri
 // Create a provider session mapping for a digital employee
 // (POST /api/v1/digital-employees/{employeeId}/provider-sessions)
 func (_ Unimplemented) CreateProviderSessionForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Replace digital employee playbook role bindings
+// (PUT /api/v1/digital-employees/{employeeId}/roles)
+func (_ Unimplemented) ReplaceDigitalEmployeeRoles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10649,6 +10731,12 @@ func (_ Unimplemented) PatchRoleVocabulary(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List disable-impact references for a role vocabulary entry
+// (GET /api/v1/role-vocabulary/{roleKey}/references)
+func (_ Unimplemented) GetRoleVocabularyReferences(w http.ResponseWriter, r *http.Request, roleKey string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Presign a direct upload URL for a content-addressed artifact
 // (POST /api/v1/runtime/artifacts/presign)
 func (_ Unimplemented) PresignRuntimeArtifactUpload(w http.ResponseWriter, r *http.Request) {
@@ -10892,6 +10980,12 @@ func (_ Unimplemented) GetScenarioTemplate(w http.ResponseWriter, r *http.Reques
 // Update a scenario template's status (active/disabled) and/or name/description
 // (PATCH /api/v1/scenario-templates/{templateKey})
 func (_ Unimplemented) PatchScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read-only role and exit projection for a scenario template
+// (GET /api/v1/scenario-templates/{templateKey}/role-view)
+func (_ Unimplemented) GetScenarioTemplateRoleView(w http.ResponseWriter, r *http.Request, templateKey string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -13080,6 +13174,32 @@ func (siw *ServerInterfaceWrapper) CreateProviderSessionForDigitalEmployee(w htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateProviderSessionForDigitalEmployee(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceDigitalEmployeeRoles operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceDigitalEmployeeRoles(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceDigitalEmployeeRoles(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16613,6 +16733,32 @@ func (siw *ServerInterfaceWrapper) PatchRoleVocabulary(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// GetRoleVocabularyReferences operation middleware
+func (siw *ServerInterfaceWrapper) GetRoleVocabularyReferences(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "roleKey" -------------
+	var roleKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "roleKey", chi.URLParam(r, "roleKey"), &roleKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "roleKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRoleVocabularyReferences(w, r, roleKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PresignRuntimeArtifactUpload operation middleware
 func (siw *ServerInterfaceWrapper) PresignRuntimeArtifactUpload(w http.ResponseWriter, r *http.Request) {
 
@@ -18077,6 +18223,32 @@ func (siw *ServerInterfaceWrapper) PatchScenarioTemplate(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PatchScenarioTemplate(w, r, templateKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScenarioTemplateRoleView operation middleware
+func (siw *ServerInterfaceWrapper) GetScenarioTemplateRoleView(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateKey" -------------
+	var templateKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateKey", chi.URLParam(r, "templateKey"), &templateKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScenarioTemplateRoleView(w, r, templateKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19928,6 +20100,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/provider-sessions", wrapper.CreateProviderSessionForDigitalEmployee)
 	})
 	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/roles", wrapper.ReplaceDigitalEmployeeRoles)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/run-calendar", wrapper.GetDigitalEmployeeRunCalendar)
 	})
 	r.Group(func(r chi.Router) {
@@ -20204,6 +20379,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Patch(options.BaseURL+"/api/v1/role-vocabulary/{roleKey}", wrapper.PatchRoleVocabulary)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/role-vocabulary/{roleKey}/references", wrapper.GetRoleVocabularyReferences)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/artifacts/presign", wrapper.PresignRuntimeArtifactUpload)
 	})
 	r.Group(func(r chi.Router) {
@@ -20325,6 +20503,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/api/v1/scenario-templates/{templateKey}", wrapper.PatchScenarioTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/scenario-templates/{templateKey}/role-view", wrapper.GetScenarioTemplateRoleView)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/scenario-templates/{templateKey}/versions", wrapper.ListScenarioTemplateVersions)

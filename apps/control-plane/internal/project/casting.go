@@ -76,6 +76,49 @@ type RoleVocabularyActiveKeys interface {
 	UnknownKeys(ctx context.Context, tenantID uuid.UUID, keys []string) ([]string, error)
 }
 
+// RoleVocabularyRow is one active vocabulary entry for discoverer/planner prompts.
+type RoleVocabularyRow struct {
+	RoleKey     string
+	Title       string
+	Description string
+}
+
+// RoleVocabularyActiveLister lists active role rows (optional; discoverer skips when nil).
+type RoleVocabularyActiveLister interface {
+	ListActiveRoleRows(ctx context.Context, tenantID uuid.UUID) ([]RoleVocabularyRow, error)
+}
+
+// CastingGapRoleOption is one vocabulary option injected into the gap discoverer.
+type CastingGapRoleOption struct {
+	RoleKey     string
+	Title       string
+	Description string
+}
+
+// CastingGapInput is the DB-free input for the semantic casting gap discoverer.
+type CastingGapInput struct {
+	TaskTitle          string
+	ConclusionSummary  string
+	DeliverableNames   []string
+	ActiveRoles        []CastingGapRoleOption
+	ParticipatingRoles []string
+	Model              string
+}
+
+// CastingGapSuggestion is the constrained discoverer output after R1–R3.
+type CastingGapSuggestion struct {
+	Needed   bool
+	RoleKey  string
+	External bool
+	Reason   string
+}
+
+// CastingGapDiscoverer is the optional LLM seam for mid-execution semantic
+// casting expansion (design 2026-08-05 §3). Unwired → silent skip.
+type CastingGapDiscoverer interface {
+	DiscoverCastingGap(ctx context.Context, in CastingGapInput) (CastingGapSuggestion, error)
+}
+
 // ScenarioTemplateSpecSource loads a parsed scenario template spec.
 type ScenarioTemplateSpecSource interface {
 	GetParsedSpec(ctx context.Context, tenantID uuid.UUID, key string) (scenariotemplate.SpecV2, string, error)
@@ -127,6 +170,14 @@ var (
 
 func (s *Service) SetRoleVocabulary(v RoleVocabularyActiveKeys) {
 	s.roleVocabulary = v
+}
+
+func (s *Service) SetRoleVocabularyLister(l RoleVocabularyActiveLister) {
+	s.roleVocabularyLister = l
+}
+
+func (s *Service) SetCastingGapDiscoverer(d CastingGapDiscoverer) {
+	s.castingGapDiscoverer = d
 }
 
 func (s *Service) SetScenarioTemplateSpecSource(src ScenarioTemplateSpecSource) {

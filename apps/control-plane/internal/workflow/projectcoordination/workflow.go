@@ -1403,6 +1403,17 @@ func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, t
 			DispatchReason: dispatchReason,
 		}).Get(ctx, nil); err != nil {
 			if !dispatchFailureRecorded(err) {
+				// 终态拒绝只应废掉这一个任务。旧行为是整批返回,同批兄弟任务从此
+				// 无人派发也无信号唤醒(扩编 replan 后最容易踩到)。
+				if dispatchFailureTerminal(err) &&
+					workflow.GetVersion(ctx, "dispatch-terminal-not-batch-fatal", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+					workflow.GetLogger(ctx).Warn("dispatch project task terminally rejected", "task_id", taskID.String(), "error", err.Error())
+					if evErr := appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: tenantID, ProjectID: projectID},
+						"project task dispatch terminally rejected: "+taskID.String()); evErr != nil {
+						return evErr
+					}
+					continue
+				}
 				return err
 			}
 			workflow.GetLogger(ctx).Warn("dispatch project task failed", "task_id", taskID.String(), "error", err.Error())

@@ -1,6 +1,7 @@
 import {
   type ApiClientOptions,
   getJson,
+  patchJson,
   postJson,
   putJson,
 } from "@/lib/api/client";
@@ -69,6 +70,108 @@ export function listRoleVocabulary(
     options,
     "/api/v1/role-vocabulary",
     "role vocabulary",
+  );
+}
+
+export type CreateRoleVocabularyInput = {
+  role_key: string;
+  title: string;
+  description?: string;
+  status?: "active" | "disabled";
+};
+
+export type PatchRoleVocabularyInput = {
+  title?: string;
+  description?: string;
+  status?: "active" | "disabled";
+};
+
+export type RoleVocabularyTemplateRef = {
+  key: string;
+  name: string;
+};
+
+export type RoleVocabularyEmployeeRef = {
+  id: string;
+  name: string;
+};
+
+export type RoleVocabularyReferences = {
+  scenario_templates: RoleVocabularyTemplateRef[];
+  employees: RoleVocabularyEmployeeRef[];
+  employee_count: number;
+  casting_count: number;
+};
+
+export type ScenarioTemplateRoleViewRole = {
+  role_key: string;
+  title: string;
+  required_capabilities: string[];
+  holder_count: number;
+};
+
+export type ScenarioTemplateRoleIndependencePair = {
+  roles: string[];
+};
+
+export type ScenarioTemplateRoleViewExit = {
+  deliverable: string;
+  label: string;
+  required_roles: string[];
+  role_independence_pairs: ScenarioTemplateRoleIndependencePair[];
+};
+
+export type ScenarioTemplateRoleView = {
+  template_key: string;
+  name: string;
+  roles: ScenarioTemplateRoleViewRole[];
+  exits: ScenarioTemplateRoleViewExit[];
+};
+
+export function createRoleVocabulary(
+  options: ApiClientOptions,
+  input: CreateRoleVocabularyInput,
+): Promise<RoleVocabularyEntry> {
+  return postJson<RoleVocabularyEntry>(
+    options,
+    "/api/v1/role-vocabulary",
+    input,
+    "create role vocabulary",
+  );
+}
+
+export function patchRoleVocabulary(
+  options: ApiClientOptions,
+  roleKey: string,
+  input: PatchRoleVocabularyInput,
+): Promise<RoleVocabularyEntry> {
+  return patchJson<RoleVocabularyEntry>(
+    options,
+    `/api/v1/role-vocabulary/${encodeURIComponent(roleKey)}`,
+    input,
+    "patch role vocabulary",
+  );
+}
+
+export function getRoleVocabularyReferences(
+  options: ApiClientOptions,
+  roleKey: string,
+): Promise<RoleVocabularyReferences> {
+  return getJson<RoleVocabularyReferences>(
+    options,
+    `/api/v1/role-vocabulary/${encodeURIComponent(roleKey)}/references`,
+    "role vocabulary references",
+  );
+}
+
+export function getScenarioTemplateRoleView(
+  options: ApiClientOptions,
+  templateKey: string,
+): Promise<ScenarioTemplateRoleView> {
+  return getJson<ScenarioTemplateRoleView>(
+    options,
+    `/api/v1/scenario-templates/${encodeURIComponent(templateKey)}/role-view`,
+    "scenario template role view",
   );
 }
 

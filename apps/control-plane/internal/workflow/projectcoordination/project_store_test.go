@@ -1917,6 +1917,62 @@ func TestProjectStoreListDispatchableTasksFiltersBlockedTasksAndUnresolvedBlocke
 	require.Equal(t, []uuid.UUID{rootID, readyDependentID}, ids)
 }
 
+// 扩编 replan 的 planned_task_key 合并会把**已完成**的上游原样留在图里,挂在它下面
+// 的新任务建出来就是 blocked。解锁本来只由"上游完成"信号驱动,而那个信号早已发生
+// 过、不会再来 —— 旧行为下这些任务永久滞留。
+func TestProjectStoreListDispatchableTasksPromotesBlockedWithAllBlockersResolved(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	demandID := uuid.New()
+	mergedCompletedID := uuid.New()
+	newDownstreamID := uuid.New()
+	stillBlockedID := uuid.New()
+	openUpstreamID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, mergedCompletedID, "completed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, newDownstreamID, "blocked"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, openUpstreamID, "planned"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, stillBlockedID, "blocked"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, newDownstreamID, mergedCompletedID),
+			projectStoreDependency(tenantID, projectID, jobID, stillBlockedID, openUpstreamID),
+		},
+	}
+	repo.setTaskLatestResult(mergedCompletedID, projectStoreTaskResult(tenantID, projectID, mergedCompletedID, project.TaskResultDecisionCompleteAccepted, "accepted"))
+	store := NewProjectStore(repo)
+
+	ids, err := store.ListDispatchableTasks(context.Background(), ListDispatchableTasksInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		CoordinationJobID: jobID,
+	})
+
+	require.NoError(t, err)
+	// openUpstream 本来就可派发;newDownstream 阻塞已全解,必须被提回 planned 一并派发。
+	require.ElementsMatch(t, []uuid.UUID{openUpstreamID, newDownstreamID}, ids)
+	require.NotContains(t, ids, stillBlockedID)
+
+	var promoted *projectTaskStatusUpdateRecord
+	for i := range repo.statusUpdates {
+		if repo.statusUpdates[i].TaskID == newDownstreamID {
+			promoted = &repo.statusUpdates[i]
+		}
+	}
+	require.NotNil(t, promoted, "阻塞已解的 blocked 任务必须被 CAS 提回 planned")
+	require.Equal(t, "planned", promoted.Status)
+	require.Equal(t, []string{"blocked"}, promoted.CurrentStatuses)
+
+	for _, task := range repo.tasks {
+		if task.ID == stillBlockedID {
+			require.Equal(t, "blocked", task.Status, "仍有未解阻塞的任务不得被提升")
+		}
+	}
+}
+
 func TestProjectStoreListDispatchableTasksSkipsFutureRetry(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

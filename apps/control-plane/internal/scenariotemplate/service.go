@@ -34,6 +34,7 @@ type Service struct {
 	repository           Repository
 	vocabularyRepository VocabularyRepository
 	roleVocabulary       RoleVocabularyValidator
+	roleHolderCounter    RoleHolderCounter
 	audit                AuditRecorder
 }
 

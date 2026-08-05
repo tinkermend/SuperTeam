@@ -41,6 +41,9 @@ type Service struct {
 	employeeRoles          DigitalEmployeeRoleSource
 	castingRepo            CastingRepository
 	playbookTemplateLister PlaybookTemplateLister
+	// 批三：语义扩编缺口发现器（可选；未注入则编制满后静默跳过）
+	roleVocabularyLister RoleVocabularyActiveLister
+	castingGapDiscoverer CastingGapDiscoverer
 }
 
 // AutomationActorRemover disables automation rules when a human actor loses

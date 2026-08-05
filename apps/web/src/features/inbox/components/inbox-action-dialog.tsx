@@ -206,6 +206,8 @@ type CastingExpansionFields = {
   needsExternalRole: boolean;
   reason: string;
   scenarioTemplateKey: string;
+  /** coordinator = 剧本确定性补编；judge = 语义缺口发现 */
+  actorType: "coordinator" | "judge" | "system" | string;
 };
 
 function readCastingExpansionFields(item: InboxItem | null): CastingExpansionFields {
@@ -215,17 +217,47 @@ function readCastingExpansionFields(item: InboxItem | null): CastingExpansionFie
       needsExternalRole: false,
       reason: "",
       scenarioTemplateKey: "",
+      actorType: "",
     };
   }
   const suggestedRoleKey = readContextText(item.context, ["suggested_role_key"]) ?? "";
   const needsExternal =
     item.context?.needs_external_role === true ||
     String(item.context?.needs_external_role ?? "").toLowerCase() === "true";
+  const actorType = (readContextText(item.context, ["actor_type"]) ?? "").trim().toLowerCase();
   return {
     suggestedRoleKey: suggestedRoleKey.trim(),
     needsExternalRole: needsExternal,
     reason: (readContextText(item.context, ["reason"]) ?? item.summary ?? "").trim(),
     scenarioTemplateKey: (readContextText(item.context, ["scenario_template_key"]) ?? "").trim(),
+    actorType,
+  };
+}
+
+/** 扩编卡提请来源说明（批三 §5.1）：区分确定性 vs 语义推断。 */
+function castingExpansionSourceBanner(fields: CastingExpansionFields): {
+  title: string;
+  detail: string;
+} {
+  if (fields.actorType === "judge") {
+    const role = fields.suggestedRoleKey || (fields.needsExternalRole ? "词表外角色" : "某角色");
+    return {
+      title: `根据产出判断还需要：${role}`,
+      detail: fields.reason
+        ? `语义推断理由：${fields.reason}。请核可信度后再选人批准。`
+        : "语义推断提请，请核可信度后再选人批准。",
+    };
+  }
+  if (fields.actorType === "coordinator" || fields.suggestedRoleKey) {
+    const role = fields.suggestedRoleKey || "未指定角色";
+    return {
+      title: `剧本里还有角色没编制：${role}`,
+      detail: "确定性提请，按剧本补齐编制即可。",
+    };
+  }
+  return {
+    title: "执行期扩编",
+    detail: fields.reason || "请选定承担角色的数字员工后批准。",
   };
 }
 
@@ -264,15 +296,22 @@ function CastingExpansionPickers({
 
   const groups = useMemo(() => groupCandidatesByTeam(candidates.data ?? []), [candidates.data]);
 
+  const source = castingExpansionSourceBanner(fields);
+
   return (
     <div className="space-y-3 rounded-inner border border-line bg-card-soft p-3">
       <div className="space-y-1">
-        <p className="text-[13px] font-bold leading-5 text-ink">选定扩编人员</p>
-        <p className="text-xs leading-5 text-ink-2">
+        <p className="text-[13px] font-bold leading-5 text-ink">{source.title}</p>
+        <p className="text-xs leading-5 text-ink-2">{source.detail}</p>
+        <p className="text-xs leading-5 text-ink-3">
           批准后写入项目编制并触发重规划；已完成任务不会被重复创建。
         </p>
       </div>
-      {fields.reason ? (
+      {fields.actorType === "judge" && fields.reason ? (
+        <ContextField label="自然语言理由">
+          <span>{fields.reason}</span>
+        </ContextField>
+      ) : fields.reason && fields.actorType !== "coordinator" ? (
         <ContextField label="提请理由">
           <span>{fields.reason}</span>
         </ContextField>
@@ -313,9 +352,19 @@ function CastingExpansionPickers({
             </SelectContent>
           </Select>
           {fields.needsExternalRole ? (
-            <p className="text-xs text-ink-3">
-              判官标记为词表外角色，需你翻译为词表中的角色后再选人。
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs text-ink-3">
+                需要词表外的角色
+                {fields.reason ? `：${fields.reason}` : ""}。可从词表中人工翻译映射，或先去注册新角色。
+              </p>
+              {/* 深链落点由角色治理界面会话交付 /role-vocabulary；此处只链约定路径。 */}
+              <Link
+                to="/role-vocabulary"
+                className="inline-flex text-xs font-semibold text-brand hover:underline"
+              >
+                去注册角色
+              </Link>
+            </div>
           ) : null}
         </div>
       ) : (
@@ -559,7 +608,7 @@ function decisionFraming(decisionType: string | undefined): { headline: string; 
     case "casting_expansion":
       return {
         headline: "你在处理：执行期扩编",
-        scope: "批准时选定承担新角色的数字员工；系统写入编制并重规划，需求保持执行中，已完成任务不重复创建。"
+        scope: "批准时选定承担新角色的数字员工；系统写入编制并重规划，需求保持执行中，已完成任务不重复创建。协调线程提请与语义发现提请文案不同，请在选人区核对来源。"
       };
     default:
       return null;
@@ -664,6 +713,7 @@ function technicalContextRows(item: InboxItem): Array<{ label: string; value: st
     demand_id: "需求 ID",
     suggested_role_key: "建议角色",
     scenario_template_key: "场景模板",
+    actor_type: "提请方",
   };
   const hidden = new Set([
     "demands",
@@ -683,6 +733,7 @@ function technicalContextRows(item: InboxItem): Array<{ label: string; value: st
     // 扩编主区/选人区已展示
     "reason",
     "needs_external_role",
+    "actor_type",
   ]);
 
   return Object.entries(item.context ?? {})

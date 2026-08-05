@@ -29,6 +29,7 @@ import { Route as AuthenticatedSkillsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedScenarioTemplatesIndexRouteImport } from './routes/_authenticated/scenario-templates/index'
 import { Route as AuthenticatedRuntimeIndexRouteImport } from './routes/_authenticated/runtime/index'
 import { Route as AuthenticatedRunOverviewIndexRouteImport } from './routes/_authenticated/run-overview/index'
+import { Route as AuthenticatedRoleVocabularyIndexRouteImport } from './routes/_authenticated/role-vocabulary/index'
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as AuthenticatedPermissionsIndexRouteImport } from './routes/_authenticated/permissions/index'
 import { Route as AuthenticatedMcpIndexRouteImport } from './routes/_authenticated/mcp/index'
@@ -167,6 +168,12 @@ const AuthenticatedRunOverviewIndexRoute =
   AuthenticatedRunOverviewIndexRouteImport.update({
     id: '/run-overview/',
     path: '/run-overview/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedRoleVocabularyIndexRoute =
+  AuthenticatedRoleVocabularyIndexRouteImport.update({
+    id: '/role-vocabulary/',
+    path: '/role-vocabulary/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedProjectsIndexRoute =
@@ -396,6 +403,7 @@ export interface FileRoutesByFullPath {
   '/mcp/': typeof AuthenticatedMcpIndexRoute
   '/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/role-vocabulary/': typeof AuthenticatedRoleVocabularyIndexRoute
   '/run-overview/': typeof AuthenticatedRunOverviewIndexRoute
   '/runtime/': typeof AuthenticatedRuntimeIndexRoute
   '/scenario-templates/': typeof AuthenticatedScenarioTemplatesIndexRoute
@@ -449,6 +457,7 @@ export interface FileRoutesByTo {
   '/mcp': typeof AuthenticatedMcpIndexRoute
   '/permissions': typeof AuthenticatedPermissionsIndexRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
+  '/role-vocabulary': typeof AuthenticatedRoleVocabularyIndexRoute
   '/run-overview': typeof AuthenticatedRunOverviewIndexRoute
   '/runtime': typeof AuthenticatedRuntimeIndexRoute
   '/scenario-templates': typeof AuthenticatedScenarioTemplatesIndexRoute
@@ -505,6 +514,7 @@ export interface FileRoutesById {
   '/_authenticated/mcp/': typeof AuthenticatedMcpIndexRoute
   '/_authenticated/permissions/': typeof AuthenticatedPermissionsIndexRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
+  '/_authenticated/role-vocabulary/': typeof AuthenticatedRoleVocabularyIndexRoute
   '/_authenticated/run-overview/': typeof AuthenticatedRunOverviewIndexRoute
   '/_authenticated/runtime/': typeof AuthenticatedRuntimeIndexRoute
   '/_authenticated/scenario-templates/': typeof AuthenticatedScenarioTemplatesIndexRoute
@@ -561,6 +571,7 @@ export interface FileRouteTypes {
     | '/mcp/'
     | '/permissions/'
     | '/projects/'
+    | '/role-vocabulary/'
     | '/run-overview/'
     | '/runtime/'
     | '/scenario-templates/'
@@ -614,6 +625,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/permissions'
     | '/projects'
+    | '/role-vocabulary'
     | '/run-overview'
     | '/runtime'
     | '/scenario-templates'
@@ -669,6 +681,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mcp/'
     | '/_authenticated/permissions/'
     | '/_authenticated/projects/'
+    | '/_authenticated/role-vocabulary/'
     | '/_authenticated/run-overview/'
     | '/_authenticated/runtime/'
     | '/_authenticated/scenario-templates/'
@@ -841,6 +854,13 @@ declare module '@tanstack/react-router' {
       path: '/run-overview'
       fullPath: '/run-overview/'
       preLoaderRoute: typeof AuthenticatedRunOverviewIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/role-vocabulary/': {
+      id: '/_authenticated/role-vocabulary/'
+      path: '/role-vocabulary'
+      fullPath: '/role-vocabulary/'
+      preLoaderRoute: typeof AuthenticatedRoleVocabularyIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/projects/': {
@@ -1169,6 +1189,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMcpIndexRoute: typeof AuthenticatedMcpIndexRoute
   AuthenticatedPermissionsIndexRoute: typeof AuthenticatedPermissionsIndexRoute
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
+  AuthenticatedRoleVocabularyIndexRoute: typeof AuthenticatedRoleVocabularyIndexRoute
   AuthenticatedRunOverviewIndexRoute: typeof AuthenticatedRunOverviewIndexRoute
   AuthenticatedRuntimeIndexRoute: typeof AuthenticatedRuntimeIndexRoute
   AuthenticatedScenarioTemplatesIndexRoute: typeof AuthenticatedScenarioTemplatesIndexRoute
@@ -1212,6 +1233,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMcpIndexRoute: AuthenticatedMcpIndexRoute,
   AuthenticatedPermissionsIndexRoute: AuthenticatedPermissionsIndexRoute,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
+  AuthenticatedRoleVocabularyIndexRoute: AuthenticatedRoleVocabularyIndexRoute,
   AuthenticatedRunOverviewIndexRoute: AuthenticatedRunOverviewIndexRoute,
   AuthenticatedRuntimeIndexRoute: AuthenticatedRuntimeIndexRoute,
   AuthenticatedScenarioTemplatesIndexRoute:

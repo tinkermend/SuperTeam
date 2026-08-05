@@ -35,7 +35,10 @@ export type DigitalEmployee = {
   employee_type: string;
   provider_type: string;
   name: string;
+  /** 显示用自述标签；不参与剧本匹配与编制（见 role_keys）。 */
   role: string;
+  /** 租户角色词表绑定（多值）；编制候选按此过滤。 */
+  role_keys?: string[];
   description?: string;
   status: DigitalEmployeeStatus;
   permission_policy: Record<string, unknown>;
@@ -936,6 +939,21 @@ export function submitEmployeePermissionChange(
     `/api/v1/digital-employees/${encodedEmployeeId}/permission-changes`,
     input,
     "submit employee permission change",
+  );
+}
+
+/** 整套替换员工剧本角色绑定（词表 role_keys；即时生效，无需审批）。 */
+export function replaceDigitalEmployeeRoles(
+  options: ApiClientOptions,
+  employeeId: string,
+  roleKeys: string[],
+): Promise<{ role_keys: string[] }> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  return putJson<{ role_keys: string[] }>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/roles`,
+    { role_keys: roleKeys },
+    "replace digital employee roles",
   );
 }
 

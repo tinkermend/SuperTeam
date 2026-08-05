@@ -270,6 +270,53 @@ func TestDemandDossierTimelineRefinesPlanReviewDecision(t *testing.T) {
 	}
 }
 
+// 扩编是执行中途改团队构成的动作。落回通用「待人工决策」,卷宗上就看不出这一单
+// 中途换过人 —— 叙事断裂。
+func TestDemandDossierTimelineRefinesCastingExpansionDecision(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status string
+		event  ProjectEventType
+		kind   string
+		title  string
+	}{
+		{"提请", "pending", ProjectEventDecisionRequested, TimelineKindDecisionOpened, "待扩编批准"},
+		{"批准", "approved", ProjectEventDecisionSubmitted, TimelineKindDecisionResolved, "扩编已批准"},
+		{"驳回", "rejected", ProjectEventDecisionSubmitted, TimelineKindDecisionResolved, "扩编被驳回"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newDossierFixture(t)
+			base := time.Now().UTC().Add(-time.Hour)
+			task := f.addTask("排查 API 超时", "completed", base)
+			decision := DecisionRequest{
+				ID:             uuid.New(),
+				TenantID:       f.tenantID,
+				ProjectID:      f.projectID,
+				ProjectTaskID:  &task.ID,
+				TargetUserID:   f.ownerID,
+				DecisionType:   "casting_expansion",
+				TitleSnapshot:  "扩编请求",
+				StatusSnapshot: tc.status,
+				CreatedAt:      base,
+			}
+			f.repo.decisionRequests = append(f.repo.decisionRequests, decision)
+			f.addEvent(tc.event, "decision_request", decision.ID, base.Add(time.Minute))
+
+			dossier := f.get(t)
+
+			for _, item := range dossier.Timeline.Items {
+				if item.Title == tc.title {
+					if item.Kind != TimelineKindStaffingGap {
+						t.Fatalf("扩编条目应归 staffing_gap,得到 %q", item.Kind)
+					}
+					return
+				}
+			}
+			t.Fatalf("casting_expansion 应精化为 %q: %#v", tc.title, dossier.Timeline.Items)
+		})
+	}
+}
+
 // 现网 decision.requested 事件不带 resource_type/resource_id,身份只在 payload 的
 // plan_revision_id 里。只认 resource_* 会让最该被一眼认出的「待计划确认」退回成
 // 通用的「待人工决策」——真实 E2E 揪出的漏网路径。

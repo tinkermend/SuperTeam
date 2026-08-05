@@ -1460,6 +1460,30 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/role-vocabulary/{roleKey}/references:
+    get:
+      operationId: getRoleVocabularyReferences
+      summary: List disable-impact references for a role vocabulary entry
+      description: |
+        Returns scenario templates whose current spec references the role,
+        employees holding it, and casting-row count. Used by the disable confirm dialog.
+      parameters:
+        - name: roleKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Role vocabulary references
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleVocabularyReferences"
+        "404":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/tasks:
     get:
       operationId: listProjectTasks
@@ -3654,6 +3678,32 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/scenario-templates/{templateKey}/role-view:
+    get:
+      operationId: getScenarioTemplateRoleView
+      summary: Read-only role and exit projection for a scenario template
+      description: |
+        Server-computed required roles per exit (PruneSkeletonForExit / ExitCondMet)
+        plus tenant-wide holder counts. Frontends must not recompute exit roles.
+      parameters:
+        - name: templateKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scenario template role view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenarioTemplateRoleView"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/scenario-templates/{templateKey}/versions:
     get:
       operationId: listScenarioTemplateVersions
@@ -4704,6 +4754,34 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/digital-employees/{employeeId}/roles:
+    put:
+      operationId: replaceDigitalEmployeeRoles
+      summary: Replace digital employee playbook role bindings
+      description: >-
+        整套替换员工在租户角色词表中的绑定（role_keys）。即时生效，无需审批。
+        所有 key 必须在词表中且 active。空数组表示清空绑定。
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceDigitalEmployeeRolesRequest"
+      responses:
+        "200":
+          description: Updated role keys
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplaceDigitalEmployeeRolesResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
           $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/profile:
     put:
@@ -12310,6 +12388,90 @@ components:
         title: { type: string }
         description: { type: string }
         status: { type: string, enum: [active, disabled] }
+    ReplaceDigitalEmployeeRolesRequest:
+      type: object
+      required: [role_keys]
+      properties:
+        role_keys:
+          type: array
+          items: { type: string }
+    ReplaceDigitalEmployeeRolesResponse:
+      type: object
+      required: [role_keys]
+      properties:
+        role_keys:
+          type: array
+          items: { type: string }
+    RoleVocabularyTemplateRef:
+      type: object
+      required: [key, name]
+      properties:
+        key: { type: string }
+        name: { type: string }
+    RoleVocabularyEmployeeRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    RoleVocabularyReferences:
+      type: object
+      required: [scenario_templates, employees, employee_count, casting_count]
+      properties:
+        scenario_templates:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleVocabularyTemplateRef"
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleVocabularyEmployeeRef"
+        employee_count: { type: integer }
+        casting_count: { type: integer }
+    ScenarioTemplateRoleViewRole:
+      type: object
+      required: [role_key, title, required_capabilities, holder_count]
+      properties:
+        role_key: { type: string }
+        title: { type: string }
+        required_capabilities:
+          type: array
+          items: { type: string }
+        holder_count: { type: integer }
+    ScenarioTemplateRoleIndependencePair:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          items: { type: string }
+    ScenarioTemplateRoleViewExit:
+      type: object
+      required: [deliverable, label, required_roles, role_independence_pairs]
+      properties:
+        deliverable: { type: string }
+        label: { type: string }
+        required_roles:
+          type: array
+          items: { type: string }
+        role_independence_pairs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScenarioTemplateRoleIndependencePair"
+    ScenarioTemplateRoleView:
+      type: object
+      required: [template_key, name, roles, exits]
+      properties:
+        template_key: { type: string }
+        name: { type: string }
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScenarioTemplateRoleViewRole"
+        exits:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScenarioTemplateRoleViewExit"
     ProjectPlaybookCasting:
       type: object
       required: [id, tenant_id, project_id, scenario_template_key, role_key, digital_employee_id, cast_by_user_id, created_at, updated_at]
@@ -13406,6 +13568,12 @@ components:
           type: string
         role:
           type: string
+          description: 显示用自述标签；不参与剧本匹配与编制
+        role_keys:
+          type: array
+          description: 租户角色词表绑定（多值）；编制候选按此过滤
+          items:
+            type: string
         description:
           type: string
         status:

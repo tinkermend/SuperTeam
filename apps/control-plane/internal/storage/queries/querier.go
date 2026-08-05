@@ -69,6 +69,7 @@ type Querier interface {
 	CountAuthzDecisionDiffsSince(ctx context.Context, arg CountAuthzDecisionDiffsSinceParams) (int64, error)
 	CountAuthzDecisionsSince(ctx context.Context, arg CountAuthzDecisionsSinceParams) (CountAuthzDecisionsSinceRow, error)
 	CountBlockedRuntimeEventsSince(ctx context.Context, arg CountBlockedRuntimeEventsSinceParams) (int64, error)
+	CountCastingsForRole(ctx context.Context, arg CountCastingsForRoleParams) (int32, error)
 	// Batch load per-employee load and reliability counts from recent project task
 	// attempts. Used by the planning profile builder to score how busy and how reliable
 	// each candidate digital employee is. Scoped to the last 30 days so the signal
@@ -77,6 +78,7 @@ type Querier interface {
 	CountDigitalEmployeeOperationalSignals(ctx context.Context, arg CountDigitalEmployeeOperationalSignalsParams) ([]CountDigitalEmployeeOperationalSignalsRow, error)
 	CountDigitalEmployeeRunCalendarItems(ctx context.Context, arg CountDigitalEmployeeRunCalendarItemsParams) (int64, error)
 	CountDigitalEmployeeRunsDetailed(ctx context.Context, arg CountDigitalEmployeeRunsDetailedParams) (int64, error)
+	CountEmployeesHoldingRole(ctx context.Context, arg CountEmployeesHoldingRoleParams) (int32, error)
 	CountFeishuOutboxByStatuses(ctx context.Context, arg CountFeishuOutboxByStatusesParams) (int64, error)
 	CountHighRiskInboxItems(ctx context.Context, arg CountHighRiskInboxItemsParams) (int64, error)
 	CountInboxItems(ctx context.Context, arg CountInboxItemsParams) (int64, error)
@@ -518,6 +520,8 @@ type Querier interface {
 	ListEmployeeTemplateLabels(ctx context.Context, tenantID uuid.UUID) ([]ListEmployeeTemplateLabelsRow, error)
 	// apps/control-plane/internal/storage/queries/digital_employee_templates.sql
 	ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID) ([]DigitalEmployeeTemplate, error)
+	// Non-deleted employees that hold role_key (any status; for disable impact).
+	ListEmployeesHoldingRole(ctx context.Context, arg ListEmployeesHoldingRoleParams) ([]ListEmployeesHoldingRoleRow, error)
 	ListEnabledAutomationRulesByActor(ctx context.Context, arg ListEnabledAutomationRulesByActorParams) ([]AutomationRule, error)
 	ListEnabledAutomationRulesByActorOnProject(ctx context.Context, arg ListEnabledAutomationRulesByActorOnProjectParams) ([]AutomationRule, error)
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
@@ -636,6 +640,8 @@ type Querier interface {
 	ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensParams) ([]AuthRuntimeToken, error)
 	ListScenarioTemplateVersions(ctx context.Context, arg ListScenarioTemplateVersionsParams) ([]ScenarioTemplateVersion, error)
 	ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error)
+	// Active/disabled templates whose current spec roles[].key includes role_key.
+	ListScenarioTemplatesReferencingRole(ctx context.Context, arg ListScenarioTemplatesReferencingRoleParams) ([]ListScenarioTemplatesReferencingRoleRow, error)
 	// 已投递的决策卡(含 message_id)。resolve/ack 竞态恢复后 supersede→sent 的行
 	// 也会落在这里,供 card_update 入队。
 	ListSentFeishuOutboxByResource(ctx context.Context, arg ListSentFeishuOutboxByResourceParams) ([]FeishuOutbox, error)

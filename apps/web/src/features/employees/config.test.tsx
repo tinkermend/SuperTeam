@@ -94,9 +94,27 @@ function createEmployeeConfigFetcher() {
     if (key === `GET /api/v1/digital-employees/${employee.id}`) {
       return jsonResponse(employee);
     }
+    if (key === "GET /api/v1/role-vocabulary") {
+      return jsonResponse([
+        {
+          id: "rv-1",
+          tenant_id: employee.tenant_id,
+          role_key: "developer",
+          title: "开发",
+          description: "",
+          status: "active",
+          created_at: "2026-08-05T00:00:00Z",
+          updated_at: "2026-08-05T00:00:00Z",
+        },
+      ]);
+    }
     if (key === `PUT /api/v1/digital-employees/${employee.id}/profile`) {
       const body = JSON.parse(String(init?.body ?? "{}")) as { description?: string };
       return jsonResponse({ ...employee, description: body.description ?? "" });
+    }
+    if (key === `PUT /api/v1/digital-employees/${employee.id}/roles`) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { role_keys?: string[] };
+      return jsonResponse({ role_keys: body.role_keys ?? [] });
     }
     if (key === `POST /api/v1/digital-employees/${employee.id}/config-revisions`) {
       return jsonResponse({ id: "revision-1", status: "draft" }, 201);
@@ -133,10 +151,11 @@ describe("EmployeeConfigView", () => {
   it("renders locator header, immediate tier form and read-only permission tier", async () => {
     const screen = await renderConfig(createEmployeeConfigFetcher());
 
-    // 定位头:名称 + Provider 只读 + 角色
+    // 定位头:名称 + Provider 只读 + 显示标签
     await expect.element(screen.getByText(employee.name).first()).toBeVisible();
     await expect.element(screen.getByText("Provider（不可改）")).toBeVisible();
     await expect.element(screen.getByText("Codex")).toBeVisible();
+    await expect.element(screen.getByText("显示标签").first()).toBeVisible();
 
     // 身份资料：员工说明可编辑
     await expect.element(screen.getByRole("heading", { name: "身份资料" })).toBeVisible();
@@ -145,6 +164,7 @@ describe("EmployeeConfigView", () => {
 
     // 分层标题
     await expect.element(screen.getByRole("heading", { name: "即时生效配置" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "剧本角色" })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "权限审批配置" })).toBeVisible();
 
     // 即时层字段
@@ -152,9 +172,10 @@ describe("EmployeeConfigView", () => {
     await expect.element(screen.getByRole("spinbutton", { name: "每日 Token 预算上限" })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "保存即时配置" })).toBeVisible();
 
-    // 权限审批层为只读呈现(role/grants),无编辑控件
+    // 权限审批层（显示标签 + grants）；剧本角色为独立分区
     await expect.element(screen.getByText("角色与权限")).toBeVisible();
     await expect.element(screen.getByText("database.read:dev_db")).toBeVisible();
+    await expect.element(screen.getByText("开发")).toBeVisible();
   });
 
   it("saves employee description via profile endpoint", async () => {

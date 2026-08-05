@@ -65,6 +65,7 @@ describe('sidebarData', () => {
       '外部能力',
       'MCP 管理',
       '场景模板',
+      '角色词表',
       '协作集成',
     ])
     expect(coreItems?.[0]).toMatchObject({

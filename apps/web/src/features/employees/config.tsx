@@ -15,6 +15,7 @@ import type { ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployeeConfigRevision,
   getDigitalEmployee,
+  replaceDigitalEmployeeRoles,
   submitEmployeePermissionChange,
   updateDigitalEmployeeProfile,
   type CapabilityBindings,
@@ -22,6 +23,7 @@ import {
   type DigitalEmployee,
   type SubmitPermissionChangeInput
 } from "@/lib/api/employees";
+import { listRoleVocabulary } from "@/lib/api/casting";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { riskLevelLabel, statusLabel } from "@/lib/status-labels";
 import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
@@ -263,6 +265,8 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
               <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
             </section>
 
+            <PlaybookRolesSection apiOptions={apiOptions} employee={employee.data} />
+
             <PermissionTierSection apiOptions={apiOptions} employee={employee.data} />
           </>
         ) : null}
@@ -282,7 +286,7 @@ function LocatorHeader({ employee }: { employee: DigitalEmployee }) {
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <LocatorItem label="Provider（不可改）" value={providerDisplayName(employee.provider_type)} />
-        <LocatorItem label="角色" value={employee.role || "未设置"} />
+        <LocatorItem label="显示标签" value={employee.role || "未设置"} />
         <LocatorItem label="风险等级" value={riskLevelLabel(employee.risk_level)} />
         <LocatorItem label="所属团队" value={employee.team_id ? "已分配" : "未分配"} />
       </div>
@@ -386,6 +390,154 @@ function TierHeading({ title, hint }: { title: string; hint: string }) {
   );
 }
 
+function PlaybookRolesSection({
+  apiOptions,
+  employee
+}: {
+  apiOptions: ApiClientOptions;
+  employee: DigitalEmployee;
+}) {
+  const queryClient = useQueryClient();
+  const currentKeys = employee.role_keys ?? [];
+  const [selected, setSelected] = useState<string[]>(currentKeys);
+  const [dirty, setDirty] = useState(false);
+  const [hydratedEmployeeId, setHydratedEmployeeId] = useState(employee.id);
+
+  useEffect(() => {
+    if (hydratedEmployeeId === employee.id && dirty) return;
+    setSelected(employee.role_keys ?? []);
+    setDirty(false);
+    setHydratedEmployeeId(employee.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee.id, employee.role_keys]);
+
+  const vocabulary = useQuery({
+    queryKey: ["role-vocabulary"],
+    queryFn: () => listRoleVocabulary(apiOptions),
+  });
+
+  const activeRoles = (vocabulary.data ?? []).filter((entry) => entry.status === "active");
+  // Keep currently selected disabled roles visible so the user can uncheck them.
+  const selectedDisabled = (vocabulary.data ?? []).filter(
+    (entry) => entry.status !== "active" && selected.includes(entry.role_key),
+  );
+  const options = [...activeRoles, ...selectedDisabled];
+
+  const externalCaps = stringArray(employee.capability_bindings?.external_capabilities);
+
+  const saveRoles = useMutation({
+    mutationFn: () => replaceDigitalEmployeeRoles(apiOptions, employee.id, selected),
+    onSuccess: (result) => {
+      setSelected(result.role_keys ?? []);
+      setDirty(false);
+      queryClient.invalidateQueries({ queryKey: ["digital-employee", employee.id] });
+      queryClient.invalidateQueries({ queryKey: ["digital-employees"] });
+    },
+  });
+
+  const toggle = (roleKey: string) => {
+    setSelected((prev) =>
+      prev.includes(roleKey) ? prev.filter((k) => k !== roleKey) : [...prev, roleKey],
+    );
+    setDirty(true);
+  };
+
+  return (
+    <section className="space-y-3">
+      <TierHeading
+        title="剧本角色"
+        hint="编制单位；勿与下方权限层混淆"
+      />
+      <SoftCard className="space-y-4 p-5">
+        <p className="text-xs text-ink-3">
+          一人可兼多角色。保存后即时生效，决定该员工在项目编制 / 扩编候选中出现在哪些角色下。
+        </p>
+        {vocabulary.isPending ? (
+          <p className="text-sm text-ink-2">加载角色词表…</p>
+        ) : vocabulary.isError ? (
+          <p className="text-sm text-destructive">无法加载角色词表</p>
+        ) : options.length === 0 ? (
+          <p className="text-sm text-ink-2">
+            暂无启用中的角色。请先在{" "}
+            <Link className="underline" to="/role-vocabulary">
+              角色词表
+            </Link>{" "}
+            注册。
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {options.map((entry) => {
+              const checked = selected.includes(entry.role_key);
+              return (
+                <label
+                  key={entry.role_key}
+                  className={`inline-flex cursor-pointer items-center gap-2 rounded-inner border px-3 py-2 text-sm ${
+                    checked
+                      ? "border-brand/40 bg-brand/5 text-ink"
+                      : "border-line bg-card text-ink-2"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="size-3.5 accent-brand"
+                    checked={checked}
+                    onChange={() => toggle(entry.role_key)}
+                  />
+                  <span className="font-medium">{entry.title}</span>
+                  <span className="font-mono text-xs text-ink-3">{entry.role_key}</span>
+                  {entry.status !== "active" ? (
+                    <span className="text-xs text-danger">已停用</span>
+                  ) : null}
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <div className="rounded-[14px] border border-line bg-card-soft p-3">
+          <p className="text-xs font-semibold text-ink-2">已声明能力（参考）</p>
+          {externalCaps.length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {externalCaps.map((cap) => (
+                <span
+                  key={cap}
+                  className="rounded-inner border border-line bg-card px-2 py-0.5 font-mono text-xs text-ink-2"
+                >
+                  {cap}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-ink-3">未声明 external_capabilities</p>
+          )}
+          <p className="mt-2 text-xs text-ink-3">
+            角色是编制单位，能力是佐证；绑角色时请对照上方能力是否匹配。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            disabled={!dirty || saveRoles.isPending}
+            onClick={() => saveRoles.mutate()}
+          >
+            <Save />
+            保存剧本角色
+          </Button>
+          {saveRoles.isSuccess && !dirty ? (
+            <p className="text-sm text-green-600">已保存</p>
+          ) : null}
+          {saveRoles.isError ? (
+            <p className="text-sm text-destructive">
+              {saveRoles.error instanceof Error
+                ? saveRoles.error.message
+                : "保存失败"}
+            </p>
+          ) : null}
+        </div>
+      </SoftCard>
+    </section>
+  );
+}
+
 function PermissionTierSection({
   apiOptions,
   employee
@@ -459,7 +611,7 @@ function PermissionTierSection({
           </div>
           <div className="space-y-2">
             <Label htmlFor="permission-role" className="text-xs text-ink-3">
-              角色（role）· 当前：{employee.role || "未设置"}
+              显示标签 · 当前：{employee.role || "未设置"}
             </Label>
             <Input
               id="permission-role"
@@ -469,6 +621,9 @@ function PermissionTierSection({
                 setDirty(true);
               }}
             />
+            <p className="text-xs text-ink-3">
+              仅用于列表展示，不参与剧本匹配与编制。剧本角色请在上方「剧本角色」分区编辑。
+            </p>
           </div>
           <ChipsEditor
             label="资源授权（grants）· scope:resource 形式"

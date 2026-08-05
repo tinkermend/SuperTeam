@@ -16,6 +16,7 @@ import {
   SendHorizontal,
   Server,
   Settings2,
+  Tags,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -108,6 +109,14 @@ export function buildSidebarData({
             title: "场景模板",
             url: "/scenario-templates",
             icon: LayoutTemplate,
+            iconTone: "neutral",
+          },
+          {
+            // 与场景模板并列的租户级注册表；完整页由角色治理会话交付，
+            // 路径稳定供语义扩编「去注册角色」深链（批三 §5.1）。
+            title: "角色词表",
+            url: "/role-vocabulary",
+            icon: Tags,
             iconTone: "neutral",
           },
           {

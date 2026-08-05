@@ -140,6 +140,10 @@ var projectEventNarratives = map[ProjectEventType]ProjectEventNarrative{
 	ProjectEventDemandAcceptanceCompleted: {Kind: TimelineKindResultAccepted, Title: "验收通过", Severity: NarrativeSeveritySuccess},
 	ProjectEventDemandAcceptanceRejected:  {Kind: TimelineKindResultRejected, Title: "验收未通过", Severity: NarrativeSeverityDanger},
 	ProjectEventDemandCancelled:           {Kind: TimelineKindOther, Title: "需求已取消", Severity: NarrativeSeverityMute},
+
+	// 语义扩编缺口发现（批三）：needed 时另有 decision.requested；本事件覆盖
+	// 调用留痕与上限触顶（H9c），limit_reached 必须非 Noise 以便卷宗可见。
+	ProjectEventCastingGapDiscovery: {Kind: TimelineKindStaffingGap, Title: "扩编缺口发现", Severity: NarrativeSeverityInfo},
 }
 
 // unknownProjectEventNarrative 是未登记事件类型的兜底。文案必须是通用中文:

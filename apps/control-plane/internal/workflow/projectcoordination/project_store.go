@@ -35,9 +35,16 @@ type ProjectStore struct {
 	// castingExpansion opens mid-execution casting_expansion after task complete
 	// (optional; nil = G9 coordinator path disabled).
 	castingExpansion CastingExpansionProposer
+	// roleVocabulary loads active role rows for planner prompt injection (batch 3 P1).
+	roleVocabulary RoleVocabularySource
 	// maxAttemptsDefault resolves tenant platform default for project_tasks.max_attempts.
 	// nil falls back to systemconfig registry default (3).
 	maxAttemptsDefault func(ctx context.Context, tenantID uuid.UUID) int32
+}
+
+// RoleVocabularySource lists active role vocabulary for planner system/user prompts.
+type RoleVocabularySource interface {
+	ListActiveRoleVocabulary(ctx context.Context, tenantID uuid.UUID) ([]RoleVocabularyPromptEntry, error)
 }
 
 // PlaybookCastingLister is the optional read port for project×template casting rows.
@@ -129,6 +136,14 @@ func (s *ProjectStore) WithDigitalEmployeePlanningProfiles(source DigitalEmploye
 // (typically systemconfig project_task.default_max_attempts).
 func (s *ProjectStore) WithPlaybookCastingLister(lister PlaybookCastingLister) *ProjectStore {
 	s.castingLister = lister
+	return s
+}
+
+// WithRoleVocabularySource attaches the tenant role vocabulary for planner inject.
+func (s *ProjectStore) WithRoleVocabularySource(source RoleVocabularySource) *ProjectStore {
+	if s != nil {
+		s.roleVocabulary = source
+	}
 	return s
 }
 
@@ -434,6 +449,12 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 			}
 		}
 	}
+	var roleVocabulary []RoleVocabularyPromptEntry
+	if s.roleVocabulary != nil {
+		if rows, vocabErr := s.roleVocabulary.ListActiveRoleVocabulary(ctx, input.TenantID); vocabErr == nil {
+			roleVocabulary = rows
+		}
+	}
 	return CoordinationSnapshot{
 		ProjectID:                  projectRecord.ID,
 		Demand:                     DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey, CoordinationMode: demand.CoordinationMode},
@@ -442,6 +463,7 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		ScenarioTemplate:           scenarioTemplate,
 		DemandConstraintExemptions: demandExemptions,
 		PlaybookCasting:            playbookCasting,
+		RoleVocabulary:             roleVocabulary,
 	}, nil
 }
 
@@ -885,7 +907,11 @@ func (s *ProjectStore) ListDispatchableTasks(ctx context.Context, input ListDisp
 	candidates := make([]project.ProjectTask, 0, len(tasks))
 	candidateIDs := make([]uuid.UUID, 0, len(tasks))
 	for _, task := range tasks {
-		if !projectTaskDispatchAllowed(task.Status) {
+		// blocked 也纳入候选:解锁本来只由"上游任务完成"信号驱动,但 planned_task_key
+		// 合并会把**已经完成**的上游原样留在图里(扩编 replan 的正常形态)。挂在这种
+		// 上游下面的新任务建出来就是 blocked,而那个完成信号早已发生过、不会再来,
+		// 于是永久滞留。这里按真实 blocker 判定,无未解阻塞的直接提回 planned。
+		if !projectTaskDispatchAllowed(task.Status) && task.Status != "blocked" {
 			continue
 		}
 		if task.RetryNotBefore != nil && task.RetryNotBefore.After(now) {
@@ -906,6 +932,16 @@ func (s *ProjectStore) ListDispatchableTasks(ctx context.Context, input ListDisp
 	for _, task := range candidates {
 		if _, blocked := blockedByTaskID[task.ID]; blocked {
 			continue
+		}
+		if task.Status == "blocked" {
+			// 与 ResolveReadyDownstream 同一把提升:CAS 到 planned,输掉竞争就跳过,
+			// 避免和完成信号驱动的解锁重复派发。
+			if _, err := s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, task.ID, "planned", nil, []string{"blocked"}); err != nil {
+				if errors.Is(err, project.ErrProjectConflict) {
+					continue
+				}
+				return nil, err
+			}
 		}
 		dispatchable = append(dispatchable, task.ID)
 	}

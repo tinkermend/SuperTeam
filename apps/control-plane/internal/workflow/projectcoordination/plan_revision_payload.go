@@ -94,6 +94,8 @@ type PlanRevisionTask struct {
 	SelectionConfidence         float64        `json:"selection_confidence,omitempty"`
 	PlanningProfileSnapshotHash string         `json:"planning_profile_snapshot_hash,omitempty"`
 	HandoffContract             map[string]any `json:"handoff_contract,omitempty"`
+	// RoleKey is the playbook / vocabulary role for this task (batch 3 P1).
+	RoleKey string `json:"role_key,omitempty"`
 }
 
 type PlanRevisionPayloadValidationResult struct {
@@ -131,6 +133,7 @@ func BuildPlanRevisionPayload(plan RouteDecisionPlan) PlanRevisionPayload {
 			TaskType:                    task.TaskKind,
 			SelectedEmployeeID:          task.SelectedEmployeeID.String(),
 			EmployeeSelectionReason:     task.EmployeeSelectionReason,
+			RoleKey:                     strings.TrimSpace(task.RoleKey),
 			RequiredCapabilities:        clonePlanRevisionStringSlice(task.RequiredCapabilities),
 			MatchedCapabilities:         clonePlanRevisionStringSlice(task.MatchedCapabilities),
 			MissingCapabilities:         clonePlanRevisionStringSlice(task.MissingCapabilities),
@@ -283,6 +286,7 @@ func PlanRevisionPayloadToPlannedTasks(payload PlanRevisionPayload) []PlannedTas
 			Summary:                     task.Objective,
 			SelectedEmployeeID:          employeeID,
 			EmployeeSelectionReason:     task.EmployeeSelectionReason,
+			RoleKey:                     strings.TrimSpace(task.RoleKey),
 			RequiredCapabilities:        clonePlanRevisionStringSlice(task.RequiredCapabilities),
 			MatchedCapabilities:         clonePlanRevisionStringSlice(task.MatchedCapabilities),
 			MissingCapabilities:         clonePlanRevisionStringSlice(task.MissingCapabilities),
