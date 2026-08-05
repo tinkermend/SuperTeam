@@ -57,20 +57,23 @@
 **没有任何员工持有 `operator`** —— 这是批二 G2 的判别条件，**不要"顺手"给谁补上**。
 
 **项目**：`批二基线项目 P1` = `ca82b054-de2d-4810-9a2b-dd41f5e50a2c`
-**现有编制 6 条**：`software_delivery` 三角色齐全；`incident_response` 三角色齐全
+**现有编制 5 条**：`software_delivery` 三角色齐全；`incident_response` 只有
+diagnostician + verifier（**没有 operator**，见下）
 **demands = 0，open inbox = 0**（历史 E2E 数据已硬删）
 
-### ⚠ 一处已知的数据与产品不一致
+### 编制硬校验已落地（2026-08-05，人类拍板）
 
-`incident_response` 的 `operator` 位上编制的是**开发-A**，但开发-A **并不持有 `operator` 角色**。
+`PutCasting` 现在**硬校验被编制的员工持有该 role_key**（`ErrCastingRoleNotHeld` → 400）。
+理由：编制是「谁能干这个角色」的事实源，可达收口、缺员拦截、扩编候选全从这里读；
+前端候选列表按角色过滤只是便利，允许 API 绕过去写等于允许这些判断静默失真。
 
-原因：`PutCasting` 只校验 `role_key` 在词表里注册且 active，**不校验被编制的员工是否持有该角色**。UI 候选列表按角色过滤，但直接调 API 可以绕过。
+随之清理了唯一一条存量违规行：`incident_response` 的 `operator` 位原本编制的是
+**不持有该角色的开发-A**。按本节「不要顺手给谁补 operator」的原则，处置是**删掉
+那条编制行**而不是发角色 —— 这同时恢复了批二 §10.3 的期望表（「故障排查只能走到
+仅诊断根因，缺 operator」）在当前数据下重新成立。
 
-对实施会话的影响：
-
-- 批二 §10.3 的期望表（「故障排查只能走到仅诊断根因，缺 operator」）在**当前数据下不成立**，别照着它核对
-- 若要复现那个条件，先删掉 `incident_response` 的 `operator` 编制行
-- **是否把「编制时校验员工持有该角色」改成硬校验，是一个未决产品问题**（人类未拍板）。不要自行决定并顺手实现——发现它影响你的判据时，先报告
+对实施会话的影响：编制任何角色前先确认目标员工在 `digital_employee_roles` 里持有它，
+否则 PUT 会 400。
 
 ---
 
@@ -377,7 +380,7 @@ Temporal 重试。控制流变更用 `GetVersion("dispatch-terminal-not-batch-fa
 
 **期望的 `suggested_role_key`**：词表里没有 `network_diagnostics`（默认 seed 只有 10 个角色），因此**正确行为是 `external: true`**，即走 H4 的路径。若要验 H2（词表内命中），先在角色词表里注册 `network_diagnostics` 并让某员工持有它——这正好也验证了治理界面 P0a/P0b 的价值。
 
-**注意**：`incident_response` 当前编制已满但 `operator` 位上是不持有该角色的开发-A（见 §0.0 的已知不一致），用它造数会让判据含糊，**优先用 `ops_analysis`**。
+**注意**：`incident_response` 现在**缺 operator 编制**（无人持有该角色，见 §0.0），用它造数会撞上缺员拦截而不是发现器，**优先用 `ops_analysis`**。
 
 
 **完成定义**：H1–H9 + H11 全过（P1 交付时补 H10）。

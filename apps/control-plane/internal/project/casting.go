@@ -166,6 +166,10 @@ var (
 	ErrCastingEmployeeInUse   = fmt.Errorf("%w: employee still cast; change casting first", ErrInvalidProject)
 	ErrCastingUnknownRole     = fmt.Errorf("%w: unknown role key", ErrInvalidProject)
 	ErrCastingDuplicateRole   = fmt.Errorf("%w: duplicate role in casting", ErrInvalidProject)
+	// ErrCastingRoleNotHeld:被编制的员工不持有该剧本角色。候选列表按角色过滤
+	// 此前只在前端做,API 可绕 —— 绕过去写进来的编制会让「谁能干这个角色」这个
+	// 承重判断失真(可达收口、缺员拦截、扩编候选全依赖它)。
+	ErrCastingRoleNotHeld = fmt.Errorf("%w: employee does not hold the cast role", ErrInvalidProject)
 )
 
 func (s *Service) SetRoleVocabulary(v RoleVocabularyActiveKeys) {
@@ -249,6 +253,32 @@ func (s *Service) PutCasting(ctx context.Context, req PutCastingRequest) ([]Cast
 		}
 		if len(unknown) > 0 {
 			return nil, fmt.Errorf("%w: %s", ErrCastingUnknownRole, strings.Join(unknown, ", "))
+		}
+	}
+
+	// 硬校验:被编制的人必须真的持有这个角色。前端候选列表已按角色过滤,但那只是
+	// 便利;编制是「谁能干这个角色」的事实源,可达收口、缺员拦截、扩编候选全从这里
+	// 读。允许 API 绕过去写,等于允许这些判断静默失真。
+	if s.employeeRoles != nil && len(assignments) > 0 {
+		heldByEmployee, err := s.employeeRoles.ListEmployeeRoleKeys(ctx, req.TenantID, uniqueUUIDs(employeeIDs))
+		if err != nil {
+			return nil, err
+		}
+		violations := make([]string, 0, len(assignments))
+		for _, a := range assignments {
+			held := false
+			for _, key := range heldByEmployee[a.DigitalEmployeeID] {
+				if strings.EqualFold(strings.TrimSpace(key), a.RoleKey) {
+					held = true
+					break
+				}
+			}
+			if !held {
+				violations = append(violations, fmt.Sprintf("%s←%s", a.RoleKey, a.DigitalEmployeeID))
+			}
+		}
+		if len(violations) > 0 {
+			return nil, fmt.Errorf("%w: %s", ErrCastingRoleNotHeld, strings.Join(violations, ", "))
 		}
 	}
 
