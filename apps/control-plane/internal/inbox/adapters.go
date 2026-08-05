@@ -254,6 +254,8 @@ func humanTaskWhy(kind, summary string) string {
 		return "规划失败，需要你重试、换人或关闭需求"
 	case "planning_gap":
 		return "规划缺口需要你补员或豁免后才能继续"
+	case "casting_expansion":
+		return "执行中途需要扩编角色，请选定员工后批准重规划"
 	case "task_failure_recovery":
 		return "任务失败，需要你选择重试或取消下游"
 	}

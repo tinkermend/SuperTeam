@@ -114,6 +114,22 @@ type PersistPlanRevisionInput struct {
 	// (loop/chat) keep the conditional-Accepted auto-dispatch path. Sourced
 	// from snapshot.Demand.CoordinationMode at the workflow call site.
 	CoordinationMode string
+	// ForcePendingReview forces plan_review even when the exit-depth heuristic
+	// would auto-accept. Used by casting-expansion overbound (§7.4).
+	ForcePendingReview bool
+	// ForcePendingReviewReasons are recorded on the revision review_reason.
+	ForcePendingReviewReasons []string
+}
+
+type LoadPriorPlanPayloadInput struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+	DemandID  uuid.UUID
+}
+
+type LoadPriorPlanPayloadResult struct {
+	Found   bool
+	Payload PlanRevisionPayload
 }
 
 type PlanRevisionResult struct {
@@ -156,9 +172,20 @@ type LoadHumanDecisionRouteInput struct {
 }
 
 type HumanDecisionRouteResult struct {
-	Decision    ProjectDecisionSnapshot
-	PlanReview  *PlanReviewRoute
-	PlanningGap *PlanningGapRoute
+	Decision          ProjectDecisionSnapshot
+	PlanReview        *PlanReviewRoute
+	PlanningGap       *PlanningGapRoute
+	CastingExpansion  *CastingExpansionRoute
+}
+
+// CastingExpansionRoute carries demand + expansion hire info for mid-execution
+// replan (扩编). Demand status stays executing; no reopen.
+type CastingExpansionRoute struct {
+	ProjectID           uuid.UUID
+	DemandID            uuid.UUID
+	ExpansionEmployeeID string
+	ExpansionRoleKey    string
+	ScenarioTemplateKey string
 }
 
 // PlanningGapRoute carries the demand a planning_gap decision is about, resolved

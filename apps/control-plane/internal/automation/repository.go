@@ -33,6 +33,10 @@ type Repository interface {
 type ProjectGateway interface {
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectInfo, error)
 	IsEligibleInitiator(ctx context.Context, tenantID, projectID, userID uuid.UUID) (bool, error)
+	// MissingCastingRoles returns role keys still uncast (or cast to unavailable
+	// employees) for the project×template. Empty = complete. Used at rule save
+	// (G7) and fire time (G8). Nil-safe: implementers may return (nil, nil).
+	MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]string, error)
 }
 
 type ProjectInfo struct {

@@ -119,6 +119,9 @@ skills-lock.json
 apps/*/fix_*.py
 apps/*/scratch_*.go
 apps/control-plane/server
+# 误落在包根的编译产物（Makefile 的正式落点是 apps/control-plane/bin/）。
+apps/control-plane/control-plane
+apps/control-plane/bin/
 
 # Local/private notes and sensitive documents.
 doc/

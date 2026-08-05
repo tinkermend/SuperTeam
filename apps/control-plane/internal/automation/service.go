@@ -124,6 +124,9 @@ func (s *Service) CreateRule(ctx context.Context, req CreateRuleRequest) (Rule, 
 	if projectInfo.TeamID == uuid.Nil {
 		return Rule{}, fmt.Errorf("%w: project has no team", ErrInvalidInput)
 	}
+	if err := s.validateCastingForTemplate(ctx, req.TenantID, req.ProjectID, req.ScenarioTemplateKey); err != nil {
+		return Rule{}, err
+	}
 
 	enabled := true
 	if req.Enabled != nil {
@@ -229,6 +232,9 @@ func (s *Service) UpdateRule(ctx context.Context, req UpdateRuleRequest) (Rule, 
 		DigitalEmployeeID:     rule.DigitalEmployeeID,
 		ChatObjectiveTemplate: rule.ChatObjectiveTemplate,
 	}); err != nil {
+		return Rule{}, err
+	}
+	if err := s.validateCastingForTemplate(ctx, req.TenantID, rule.ProjectID, rule.ScenarioTemplateKey); err != nil {
 		return Rule{}, err
 	}
 
@@ -411,6 +417,15 @@ func (s *Service) Fire(ctx context.Context, tenantID, ruleID uuid.UUID, schedule
 	if err != nil {
 		return s.failFire(ctx, rule, fire, "project_lookup_failed", err.Error())
 	}
+	// G8: 编制因运行期资源变化失效时允许失败但必须通知（写明原因）。
+	if rule.ScenarioTemplateKey != nil && strings.TrimSpace(*rule.ScenarioTemplateKey) != "" {
+		if missing, castErr := s.projects.MissingCastingRoles(ctx, tenantID, rule.ProjectID, *rule.ScenarioTemplateKey); castErr != nil {
+			return s.failFire(ctx, rule, fire, "casting_check_failed", castErr.Error())
+		} else if len(missing) > 0 {
+			msg := "剧本编制不完整或编制员工不可用: " + strings.Join(missing, ", ")
+			return s.failFire(ctx, rule, fire, "casting_incomplete", msg)
+		}
+	}
 
 	switch rule.CoordinationMode {
 	case ModePlan, ModeLoop:
@@ -498,6 +513,22 @@ func (s *Service) ListFires(ctx context.Context, req ListFiresRequest) ([]Fire, 
 	}
 	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
 	return s.repo.ListFires(ctx, req)
+}
+
+// validateCastingForTemplate enforces §6.3: automation rule save fails when
+// the bound scenario template's casting is incomplete (G7).
+func (s *Service) validateCastingForTemplate(ctx context.Context, tenantID, projectID uuid.UUID, templateKey *string) error {
+	if templateKey == nil || strings.TrimSpace(*templateKey) == "" || s.projects == nil {
+		return nil
+	}
+	missing, err := s.projects.MissingCastingRoles(ctx, tenantID, projectID, *templateKey)
+	if err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: 剧本编制不完整，缺角色: %s", ErrInvalidInput, strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 func (s *Service) CascadeForProjectDeleted(ctx context.Context, tenantID, projectID uuid.UUID) error {

@@ -218,6 +218,7 @@ export function riskLevelLabel(level: string | undefined): string {
 
 const DECISION_TYPE_LABELS: Record<string, string> = {
   budget_approval: "预算审批",
+  casting_expansion: "扩编请求",
   demand_acceptance: "需求验收",
   plan_review: "计划确认",
   planning_gap: "规划缺口",
@@ -250,6 +251,7 @@ export const HUMAN_TASK_KIND_LABELS: Record<string, string> = {
   closure_confirm: "结项确认",
   planning_failed: "规划失败",
   planning_gap: "规划缺口",
+  casting_expansion: "扩编请求",
   task_failure_recovery: "任务失败恢复",
 };
 

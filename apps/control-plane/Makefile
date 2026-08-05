@@ -1,16 +1,10 @@
 .PHONY: generate generate-sqlc generate-openapi test build clean migrate-up migrate-down migrate-status migrate-validate new-migration
 
-# Throwaway dev DB used by migrate-validate to replay migrations. Standard CI has a docker
-# daemon; override for local podman etc: make migrate-validate DEV_URL=postgres://...:5432/dev?sslmode=disable
-#
-# 本机用 podman 时 docker:// 这个 scheme 用不了：atlas 直接 exec `docker` 可执行文件，
-# shell alias（docker→podman）对它无效，会报 "docker: executable file not found in $PATH"。
-# 走已起的 PG 容器时，先建一个**自己专用的空库**再指过去——atlas 会 clean dev-url 指向的库，
-# 与别人共用同一个库会互相清掉：
-#   psql "$$PGURL/postgres" -c 'CREATE DATABASE my_validate_db'
-#   make migrate-validate DEV_URL="postgres://postgres:postgres@127.0.0.1:55432/my_validate_db?sslmode=disable"
-#   psql "$$PGURL/postgres" -c 'DROP DATABASE my_validate_db'
-DEV_URL ?= docker://postgres/16/dev
+# Throwaway dev DB for migrate-validate (atlas will wipe this database only).
+# Default: local container superteam-migrate-validate-pg on :55432, dedicated empty DB.
+# CI with real Docker may override: make migrate-validate DEV_URL=docker://postgres/16/dev
+ATLAS_VALIDATE_ADMIN_URL ?= postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable
+DEV_URL ?= postgres://postgres:postgres@127.0.0.1:55432/atlas_migrate_validate?sslmode=disable
 
 # Generate code from sqlc and OpenAPI specs
 generate: generate-sqlc generate-openapi
@@ -76,7 +70,13 @@ migrate-status:
 	atlas migrate status --dir file://internal/storage/migrations --url "$(DATABASE_URL)" --revisions-schema atlas_schema_revisions
 
 # Verify atlas.sum integrity and that every migration replays cleanly on a throwaway dev DB.
-# Touches no real DB; safe to run in CI as a schema-drift/checksum gate.
+# Default DEV_URL → superteam-migrate-validate-pg :55432 / atlas_migrate_validate (auto-created).
+# Override for CI docker daemon: make migrate-validate DEV_URL=docker://postgres/16/dev
 # (atlas migrate lint is intentionally not wired in: v0.38+ gates it behind Atlas Pro login.)
 migrate-validate:
+	@if echo "$(DEV_URL)" | grep -qE '^postgres://'; then \
+		if ! psql "$(ATLAS_VALIDATE_ADMIN_URL)" -tAc "SELECT 1 FROM pg_database WHERE datname='atlas_migrate_validate'" | grep -q 1; then \
+			psql "$(ATLAS_VALIDATE_ADMIN_URL)" -v ON_ERROR_STOP=1 -c "CREATE DATABASE atlas_migrate_validate"; \
+		fi; \
+	fi
 	atlas migrate validate --dir file://internal/storage/migrations --dev-url "$(DEV_URL)"

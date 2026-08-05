@@ -6,5 +6,6 @@
   "closure_confirm": "结项确认",
   "planning_failed": "规划失败",
   "planning_gap": "规划缺口",
+  "casting_expansion": "扩编请求",
   "task_failure_recovery": "任务失败恢复"
 }

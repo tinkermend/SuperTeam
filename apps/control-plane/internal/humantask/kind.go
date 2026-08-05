@@ -23,6 +23,8 @@ func KindAndLayer(decisionType string) (kind string, layer string) {
 		return "planning_failed", "demand"
 	case "planning_gap":
 		return "planning_gap", "demand"
+	case "casting_expansion":
+		return "casting_expansion", "demand"
 	case "task_failure_recovery":
 		return "task_failure_recovery", "task"
 	case "":

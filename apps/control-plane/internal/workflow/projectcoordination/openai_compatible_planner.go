@@ -131,6 +131,8 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 		ApplyTaskTypeDefaults(&plan)
 		applyRequiredHumanReviewPolicy(snapshot, &plan)
 		ApplyPlanningProfileScores(snapshot, &plan)
+		// 编制优先于 planner 自选人（§7 / G12）：先落编制再做图校验与治理。
+		ApplyPlaybookCasting(snapshot, &plan)
 		err = ValidateRouteDecisionPlan(snapshot, plan, GraphValidationPolicy{MaxTasks: 12})
 		if err == nil {
 			// Template governance (role independence, mandatory stages, human
@@ -162,6 +164,7 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 				applyAcceptanceCriteriaDefaults(&repaired, snapshot.CoordinationPolicy)
 				ApplyTaskTypeDefaults(&repaired)
 				ApplyPlanningProfileScores(snapshot, &repaired)
+				ApplyPlaybookCasting(snapshot, &repaired)
 				repairErr := ValidateRouteDecisionPlan(snapshot, repaired, GraphValidationPolicy{MaxTasks: 12})
 				if repairErr == nil {
 					repairErr = EnforceScenarioTemplateGovernance(snapshot, &repaired)

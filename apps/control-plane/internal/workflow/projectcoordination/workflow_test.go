@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -2372,6 +2373,8 @@ type recordingActivityStore struct {
 	gateDecisionTaskID                 *uuid.UUID
 	humanDecisionRoutes                map[uuid.UUID]HumanDecisionRouteResult
 	unknownHumanDecisionRouteIDs       map[uuid.UUID]bool
+	priorPlanFound                     bool
+	priorPlanPayload                   PlanRevisionPayload
 	persistPlanRevisionInputs          []PersistPlanRevisionInput
 	requestPlanReviewInputs            []RequestPlanRevisionReviewInput
 	resolvePlanReviewInputs            []ResolvePlanRevisionReviewInput
@@ -2441,7 +2444,7 @@ func (s *recordingActivityStore) PersistPlanRevision(ctx context.Context, input 
 	status := s.planRevisionStatus
 	if status == "" {
 		status = "accepted"
-		if input.Decision.RequiresHumanReview {
+		if input.Decision.RequiresHumanReview || input.ForcePendingReview {
 			status = "pending_review"
 		}
 	}
@@ -2489,6 +2492,14 @@ func (s *recordingActivityStore) LoadHumanDecisionRoute(ctx context.Context, inp
 		return HumanDecisionRouteResult{}, nil
 	}
 	return HumanDecisionRouteResult{}, project.ErrInvalidProject
+}
+
+func (s *recordingActivityStore) LoadPriorPlanPayload(ctx context.Context, input LoadPriorPlanPayloadInput) (LoadPriorPlanPayloadResult, error) {
+	s.calls = append(s.calls, "LoadPriorPlanPayload")
+	if s.priorPlanFound {
+		return LoadPriorPlanPayloadResult{Found: true, Payload: s.priorPlanPayload}, nil
+	}
+	return LoadPriorPlanPayloadResult{Found: false}, nil
 }
 
 func (s *recordingActivityStore) planReviewOutputEventIDs(decisionRequestID uuid.UUID, route PlanReviewRoute) []uuid.UUID {
@@ -2697,4 +2708,227 @@ func (s *recordingActivityStore) ReopenProjectDemandForReplanning(ctx context.Co
 	s.calls = append(s.calls, "ReopenProjectDemandForReplanning")
 	s.reopenDemandInputs = append(s.reopenDemandInputs, input)
 	return s.reopenDemandErr
+}
+
+func TestCastingExpansionApprovedReplansWithoutReopen(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	decisionRequestID := uuid.New()
+	executorID := uuid.New()
+	newHireID := uuid.New()
+	readyTaskID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: projectID,
+			Demand:    DemandSnapshot{ID: demandID, Title: "扩编重规划", Content: "executing 中扩编", CoordinationMode: "plan"},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+				{PrincipalID: newHireID, ProjectRole: "executor", Status: "active"},
+			},
+		},
+		jobID:               uuid.New(),
+		routeID:             uuid.New(),
+		routeEventID:        uuid.New(),
+		planRevisionID:      uuid.New(),
+		planFingerprint:     "cast-exp-fp",
+		dispatchableTaskIDs: []uuid.UUID{readyTaskID},
+		dispatchEvent:       uuid.New(),
+		// Prior plan exists so overbound can evaluate; keep same exit, only new hire task → in-bounds.
+		priorPlanFound: true,
+		priorPlanPayload: PlanRevisionPayload{
+			ExitDeliverable: "root_cause",
+			Tasks: []PlanRevisionTask{
+				{PlannedTaskKey: "diag", SelectedEmployeeID: executorID.String()},
+			},
+		},
+		// planRevisionStatus empty → accepted unless ForcePendingReview
+		humanDecisionRoutes: map[uuid.UUID]HumanDecisionRouteResult{
+			decisionRequestID: {
+				Decision: ProjectDecisionSnapshot{
+					ID:             decisionRequestID,
+					ProjectID:      projectID,
+					DecisionType:   project.DecisionTypeCastingExpansion,
+					StatusSnapshot: "approved",
+				},
+				CastingExpansion: &CastingExpansionRoute{
+					ProjectID:           projectID,
+					DemandID:            demandID,
+					ExpansionEmployeeID: newHireID.String(),
+					ExpansionRoleKey:    "operator",
+				},
+			},
+		},
+	}
+	// Heuristic planner may not produce operator-only tasks; use a fixed planner stub via store plan path.
+	// PersistPlanRevision uses BuildPlanRevisionPayload(input.Decision) — Decision comes from PlanDemandRoute.
+	// Wire a planner that emits diag + fix for new hire so overbound is false.
+	activities := NewActivities(store, fixedCastingExpansionPlanner{
+		employeeID: executorID,
+		newHireID:  newHireID,
+	})
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: decisionRequestID,
+			Decision:          "approved",
+			Payload: map[string]any{
+				"digital_employee_id": newHireID.String(),
+				"role_key":            "operator",
+			},
+			ResolvedEventID: uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	// Must NOT reopen demand (executing stays executing).
+	require.Empty(t, store.reopenDemandInputs)
+	require.Contains(t, store.calls, "LoadPriorPlanPayload")
+	require.Contains(t, store.calls, "CreateCoordinationJob")
+	// PlanDemandRoute is an Activities method (not store), so it won't appear in store.calls.
+	require.Contains(t, store.calls, "PersistPlanRevision")
+	require.Contains(t, store.calls, "DecomposeAcceptedPlanRevision")
+	require.Len(t, store.persistPlanRevisionInputs, 1)
+	require.True(t, store.persistPlanRevisionInputs[0].SupersedeOpen)
+	require.False(t, store.persistPlanRevisionInputs[0].ForcePendingReview)
+}
+
+func TestCastingExpansionOverboundForcesPendingReview(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	decisionRequestID := uuid.New()
+	executorID := uuid.New()
+	newHireID := uuid.New()
+	store := &recordingActivityStore{
+		snapshot: CoordinationSnapshot{
+			ProjectID: projectID,
+			Demand:    DemandSnapshot{ID: demandID, Title: "扩编越界", Content: "改出口", CoordinationMode: "plan"},
+			DigitalEmployeePool: []ProjectMemberSnapshot{
+				{PrincipalID: executorID, ProjectRole: "executor", Status: "active"},
+				{PrincipalID: newHireID, ProjectRole: "executor", Status: "active"},
+			},
+		},
+		jobID:           uuid.New(),
+		routeID:         uuid.New(),
+		routeEventID:    uuid.New(),
+		planRevisionID:  uuid.New(),
+		planFingerprint: "cast-overbound-fp",
+		decisionRequestID: uuid.New(),
+		priorPlanFound:  true,
+		priorPlanPayload: PlanRevisionPayload{
+			ExitDeliverable: "root_cause",
+			Tasks: []PlanRevisionTask{
+				{PlannedTaskKey: "diag", SelectedEmployeeID: executorID.String()},
+			},
+		},
+		humanDecisionRoutes: map[uuid.UUID]HumanDecisionRouteResult{
+			decisionRequestID: {
+				Decision: ProjectDecisionSnapshot{
+					ID:           decisionRequestID,
+					ProjectID:    projectID,
+					DecisionType: project.DecisionTypeCastingExpansion,
+				},
+				CastingExpansion: &CastingExpansionRoute{
+					ProjectID: projectID, DemandID: demandID, ExpansionEmployeeID: newHireID.String(),
+				},
+			},
+		},
+	}
+	// Planner changes exit → overbound.
+	activities := NewActivities(store, fixedCastingExpansionPlanner{
+		employeeID:      executorID,
+		newHireID:       newHireID,
+		exitDeliverable: "fix_record",
+	})
+	env.RegisterActivity(activities)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalHumanDecisionSubmitted, HumanDecisionSubmitted{
+			ApprovalRequestID: uuid.New(),
+			DecisionRequestID: decisionRequestID,
+			Decision:          "approved",
+			Payload:           map[string]any{"digital_employee_id": newHireID.String()},
+			ResolvedEventID:   uuid.New(),
+		})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow(SignalShutdown, ShutdownSignal{})
+	}, 10*time.Millisecond)
+
+	env.ExecuteWorkflow(ProjectCoordinatorWorkflow, ProjectCoordinatorInput{
+		TenantID:   uuid.New(),
+		ProjectID:  projectID,
+		WorkflowID: "project-coordinator:" + projectID.String(),
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Empty(t, store.reopenDemandInputs)
+	require.Len(t, store.persistPlanRevisionInputs, 1)
+	require.True(t, store.persistPlanRevisionInputs[0].ForcePendingReview)
+	require.Contains(t, store.calls, "RequestPlanRevisionReview")
+	require.NotContains(t, store.calls, "DecomposeAcceptedPlanRevision")
+}
+
+// fixedCastingExpansionPlanner emits a minimal plan for casting-expansion tests.
+type fixedCastingExpansionPlanner struct {
+	employeeID      uuid.UUID
+	newHireID       uuid.UUID
+	exitDeliverable string
+}
+
+func (p fixedCastingExpansionPlanner) Plan(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	exit := strings.TrimSpace(p.exitDeliverable)
+	if exit == "" {
+		exit = "root_cause"
+	}
+	emp := p.employeeID
+	if emp == uuid.Nil && len(snapshot.DigitalEmployeePool) > 0 {
+		emp = snapshot.DigitalEmployeePool[0].PrincipalID
+	}
+	hire := p.newHireID
+	if hire == uuid.Nil {
+		hire = emp
+	}
+	tasks := []PlannedTask{
+		{
+			Key:                "diag",
+			Title:              "诊断",
+			Summary:            "定位根因",
+			TaskKind:           "analysis",
+			SelectedEmployeeID: emp,
+			ExpectedOutputs:    []string{"root_cause"},
+			Produces:           []string{"root_cause"},
+		},
+	}
+	if exit == "fix_record" || hire != emp {
+		tasks = append(tasks, PlannedTask{
+			Key:                "fix",
+			Title:              "修复",
+			Summary:            "实施修复",
+			TaskKind:           "implementation",
+			SelectedEmployeeID: hire,
+			BlockedByKeys:      []string{"diag"},
+			ExpectedOutputs:    []string{"fix_record"},
+			Produces:           []string{"fix_record"},
+		})
+	}
+	return RouteDecisionPlan{
+		Reason:          "casting expansion plan",
+		ExitDeliverable: exit,
+		Tasks:           tasks,
+	}, nil
 }

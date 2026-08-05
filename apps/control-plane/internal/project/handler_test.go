@@ -2470,6 +2470,21 @@ func (s *handlerTestService) ReplaceProjectMembers(ctx context.Context, tenantID
 	return nil, nil
 }
 
+func (s *handlerTestService) ListCastings(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]CastingEntry, error) {
+	return nil, nil
+}
+func (s *handlerTestService) PutCasting(ctx context.Context, req PutCastingRequest) ([]CastingEntry, error) {
+	return nil, nil
+}
+func (s *handlerTestService) RequestCastingExpansion(ctx context.Context, req RequestCastingExpansionRequest) (*DecisionRequest, error) {
+	return nil, nil
+}
+func (s *handlerTestService) ListRoleCandidates(ctx context.Context, tenantID, projectID uuid.UUID, roleKey string, requiredCapabilities []string) ([]RoleCandidate, error) {
+	return nil, nil
+}
+func (s *handlerTestService) GetPlaybookReadiness(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]PlaybookReadiness, error) {
+	return nil, nil
+}
 func (s *handlerTestService) ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error) {
 	return nil, nil
 }

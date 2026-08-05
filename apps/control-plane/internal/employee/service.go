@@ -31,6 +31,85 @@ type Service struct {
 	// 「词表里注册的键 0 人声明 / 员工在用的键根本没注册」的两头落空 ——
 	// 而这两侧本来就该抽同一份词表。可选:未注入(测试)时放行。
 	vocabulary CapabilityVocabularyValidator
+	// roleVocabulary 校验员工 role_keys 是否在租户角色词表中 active。
+	roleVocabulary RoleVocabularyValidator
+	// roleStore 读写 digital_employee_roles 多值角色绑定。
+	roleStore EmployeeRoleStore
+}
+
+// RoleVocabularyValidator returns role keys not registered as active.
+type RoleVocabularyValidator interface {
+	UnknownKeys(ctx context.Context, tenantID uuid.UUID, keys []string) ([]string, error)
+}
+
+// EmployeeRoleStore persists multi-value role bindings for digital employees.
+type EmployeeRoleStore interface {
+	ListRoleKeys(ctx context.Context, tenantID, employeeID uuid.UUID) ([]string, error)
+	ReplaceRoleKeys(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) error
+	ListRoleKeysByEmployees(ctx context.Context, tenantID uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID][]string, error)
+}
+
+// SetRoleVocabularyValidator injects the role vocabulary checker.
+func (s *Service) SetRoleVocabularyValidator(validator RoleVocabularyValidator) {
+	s.roleVocabulary = validator
+}
+
+// SetEmployeeRoleStore injects the multi-value role binding store.
+func (s *Service) SetEmployeeRoleStore(store EmployeeRoleStore) {
+	s.roleStore = store
+}
+
+func (s *Service) validateRoleKeys(ctx context.Context, tenantID uuid.UUID, roleKeys []string) error {
+	if s.roleVocabulary == nil || len(roleKeys) == 0 {
+		return nil
+	}
+	unknown, err := s.roleVocabulary.UnknownKeys(ctx, tenantID, roleKeys)
+	if err != nil {
+		return err
+	}
+	if len(unknown) > 0 {
+		return fmt.Errorf("%w: 角色键未在词表中注册: %s", ErrInvalidInput, strings.Join(unknown, ", "))
+	}
+	return nil
+}
+
+// ReplaceEmployeeRoles replaces the multi-value role set for one employee.
+func (s *Service) ReplaceEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) ([]string, error) {
+	if s.roleStore == nil {
+		return nil, fmt.Errorf("employee role store not configured")
+	}
+	if tenantID == uuid.Nil || employeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id and employee_id are required", ErrInvalidInput)
+	}
+	if _, err := s.repository.GetDigitalEmployee(ctx, tenantID, employeeID); err != nil {
+		return nil, err
+	}
+	normalized := normalizeRoleKeys(roleKeys)
+	if err := s.validateRoleKeys(ctx, tenantID, normalized); err != nil {
+		return nil, err
+	}
+	if err := s.roleStore.ReplaceRoleKeys(ctx, tenantID, employeeID, normalized); err != nil {
+		return nil, err
+	}
+	return normalized, nil
+}
+
+func normalizeRoleKeys(keys []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(keys))
+	for _, raw := range keys {
+		key := strings.TrimSpace(raw)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // CapabilityVocabularyValidator 返回未在租户词表中注册为 active 的能力键子集。
@@ -561,6 +640,11 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 		return nil, err
 	}
 
+	roleKeys := normalizeRoleKeys(normalized.RoleKeys)
+	if err := s.validateRoleKeys(ctx, normalized.TenantID, roleKeys); err != nil {
+		return nil, err
+	}
+
 	var record DigitalEmployeeRecord
 	if err := s.repository.WithTransaction(ctx, func(txRepo Repository) error {
 		createdRecord, err := s.createLocalReadyEmployeeFacts(ctx, txRepo, normalized, definition, teamConfig)
@@ -568,12 +652,18 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 			return err
 		}
 		record = createdRecord
+		if s.roleStore != nil && len(roleKeys) > 0 {
+			if err := s.roleStore.ReplaceRoleKeys(ctx, normalized.TenantID, createdRecord.ID, roleKeys); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 
 	employee := employeeFromRecord(record)
+	employee.RoleKeys = roleKeys
 	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
 		return nil, err
 	}
@@ -1104,6 +1194,13 @@ func (s *Service) GetDigitalEmployee(ctx context.Context, tenantID, employeeID u
 	employee := employeeFromRecord(record)
 	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
 		return nil, err
+	}
+	if s.roleStore != nil {
+		if keys, err := s.roleStore.ListRoleKeys(ctx, tenantID, employeeID); err != nil {
+			slog.Default().Warn("attach employee role keys failed", "employee_id", employeeID, "error", err)
+		} else {
+			employee.RoleKeys = keys
+		}
 	}
 	// 附上与总览/列表同源的 operational_state(跨视图一致性 P2 3.3a);裁决失败不阻断
 	// 员工读取,仅记录并留空(前端回退到既有本地判断),避免详情页因运行态查询挂掉打不开。

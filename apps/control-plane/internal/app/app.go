@@ -31,6 +31,7 @@ import (
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
 	"github.com/superteam/control-plane/internal/retention"
+	"github.com/superteam/control-plane/internal/rolevocab"
 	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
@@ -617,6 +618,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		).WithTeamBoundaryGatekeeper(teamBoundaryGatekeeperAdapter{employees: employeeRepository}).
 			WithDigitalEmployeePlanningProfiles(planningProfileSourceWithPreflights(planningProfileSource, projectTaskPreflights)).
 			WithPreDispatchGateReaders(gateAdapter, gateAdapter).
+			WithPlaybookCastingLister(project.NewPgCastingRepository(q, stores.Postgres)).
 			WithMaxAttemptsDefault(func(ctx context.Context, tenantID uuid.UUID) int32 {
 				return int32(systemConfigService.Int64(ctx, tenantID, systemconfig.KeyProjectTaskDefaultMaxAttempts))
 			})
@@ -693,12 +695,24 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	scenarioTemplateService := scenariotemplate.NewService(scenariotemplate.NewPgRepository(q))
 	scenarioTemplateService.SetVocabularyRepository(scenariotemplate.NewPgVocabularyRepository(q))
 	scenarioTemplateService.SetAuditRecorder(auditService)
+	roleVocabularyService := rolevocab.NewService(q)
+	scenarioTemplateService.SetRoleVocabularyValidator(roleVocabularyService)
 	projectService.SetScenarioTemplateResolver(scenarioTemplateResolverAdapter{service: scenarioTemplateService})
+	projectService.SetRoleVocabulary(roleVocabularyService)
+	projectService.SetScenarioTemplateSpecSource(scenarioTemplateSpecSourceAdapter{service: scenarioTemplateService})
+	projectService.SetPlaybookTemplateLister(scenarioTemplateSpecSourceAdapter{service: scenarioTemplateService})
+	projectService.SetCastingRepository(project.NewPgCastingRepository(q, stores.Postgres))
+	projectService.SetDigitalEmployeeRoleSource(project.NewPgDigitalEmployeeRoleSource(q))
 	// 能力词表是模板 required_capabilities 与员工 external_capabilities 的共用
 	// 词表；此前只有模板侧校验，员工侧随便写。两侧抽同一份词表才算有词表。
 	employeeService.SetCapabilityVocabularyValidator(scenarioTemplateService)
+	employeeService.SetRoleVocabularyValidator(roleVocabularyService)
+	employeeService.SetEmployeeRoleStore(employee.NewPgEmployeeRoleStore(q))
 	if coordinationStore != nil {
 		coordinationStore.WithScenarioTemplateSource(scenarioTemplateSourceAdapter{service: scenarioTemplateService})
+		// G9 coordinator path: after accepted task completion, propose casting_expansion
+		// when readiness still needs deeper-exit roles (vocab-constrained).
+		coordinationStore.WithCastingExpansionProposer(projectService)
 	}
 	runService.SetMCPLister(runtimeMCPListerAdapter{capability: capabilityService})
 	runService.SetSkillMCPDependencyLister(skillMCPDependencyListerAdapter{capability: capabilityService})
@@ -796,6 +810,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	capabilityHandler := capability.NewHandler(capabilityService)
 	systemConfigHandler := systemconfig.NewHandler(systemConfigService)
 	scenarioTemplateHandler := scenariotemplate.NewHandler(scenarioTemplateService)
+	roleVocabularyHandler := rolevocab.NewHandler(roleVocabularyService)
 	promptTemplateRepository := prompttemplate.NewPgRepository(q)
 	promptTemplateService := prompttemplate.NewService(promptTemplateRepository, authService, nil)
 	promptTemplateHandler := prompttemplate.NewHandler(promptTemplateService, authService, authorizer)
@@ -850,6 +865,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetCapabilityHandler(capabilityHandler)
 	server.SetSystemConfigHandler(systemConfigHandler)
 	server.SetScenarioTemplateHandler(scenarioTemplateHandler)
+	server.SetRoleVocabularyHandler(roleVocabularyHandler)
 	server.SetPromptTemplateHandler(promptTemplateHandler)
 	server.SetServiceTokenHandler(serviceTokenHandler)
 	server.SetFeishuHandlers(feishuConnectorHandler, feishuAdminHandler)
@@ -1016,6 +1032,41 @@ func (a scenarioTemplateResolverAdapter) ResolveScenarioTemplate(ctx context.Con
 
 func (a scenarioTemplateResolverAdapter) ResolveScenarioTemplateProduceKinds(ctx context.Context, tenantID uuid.UUID, key string) ([]string, error) {
 	return a.service.ProduceKinds(ctx, tenantID, key)
+}
+
+// scenarioTemplateSpecSourceAdapter feeds playbook-readiness with parsed specs.
+type scenarioTemplateSpecSourceAdapter struct {
+	service *scenariotemplate.Service
+}
+
+func (a scenarioTemplateSpecSourceAdapter) GetParsedSpec(ctx context.Context, tenantID uuid.UUID, key string) (scenariotemplate.SpecV2, string, error) {
+	template, err := a.service.GetByKey(ctx, tenantID, key)
+	if err != nil {
+		return scenariotemplate.SpecV2{}, "", err
+	}
+	if template.Status != "active" {
+		return scenariotemplate.SpecV2{}, "", fmt.Errorf("scenario template %q is %s", key, template.Status)
+	}
+	spec, err := scenariotemplate.ParseSpec(template.Spec)
+	if err != nil {
+		return scenariotemplate.SpecV2{}, "", err
+	}
+	return spec, template.Name, nil
+}
+
+func (a scenarioTemplateSpecSourceAdapter) ListActiveTemplateKeys(ctx context.Context, tenantID uuid.UUID) ([]string, error) {
+	templates, err := a.service.List(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(templates))
+	for _, t := range templates {
+		if t.Status != "active" {
+			continue
+		}
+		keys = append(keys, t.Key)
+	}
+	return keys, nil
 }
 
 type scenarioTemplateSourceAdapter struct {

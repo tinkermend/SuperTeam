@@ -37,11 +37,16 @@ type Querier interface {
 	// 给已处于 waiting_human 的任务补挂/改挂 waiting_request_id（不改 status）。
 	BindProjectTaskWaitingRequest(ctx context.Context, arg BindProjectTaskWaitingRequestParams) (ProjectTask, error)
 	BindQueuedProjectTaskRun(ctx context.Context, arg BindQueuedProjectTaskRunParams) (ProjectTask, error)
+	CancelApprovalRequestsByIDs(ctx context.Context, arg CancelApprovalRequestsByIDsParams) error
 	CancelApprovalRequestsForProjectDelete(ctx context.Context, arg CancelApprovalRequestsForProjectDeleteParams) ([]uuid.UUID, error)
 	// 取消项目挂接的 open 收件箱（source_project_id 显式关联）。
 	// run 失败恢复卡分支已随「运行必须归属项目」spec（2026-07-26 A4）退役：
 	// 该 item_type 不再产生，存量 open 态已由迁移 20260726170000 取消。
 	CancelInboxItemsForProjectDelete(ctx context.Context, arg CancelInboxItemsForProjectDeleteParams) ([]uuid.UUID, error)
+	// When a newer plan supersedes open revisions (casting expansion / replan),
+	// cancel plan_review decisions still pointing at those superseded revisions so
+	// humans cannot approve a dead plan (Accept would 409 and strand the demand).
+	CancelOpenPlanReviewDecisionsForDemandExceptRevision(ctx context.Context, arg CancelOpenPlanReviewDecisionsForDemandExceptRevisionParams) ([]CancelOpenPlanReviewDecisionsForDemandExceptRevisionRow, error)
 	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
 	// Soft-delete cascade: cancel any task that could still light employee overview
 	// blockers (active/waiting/failed). Keep completed/success/cancelled historical rows.
@@ -85,6 +90,7 @@ type Querier interface {
 	// Aggregates a project's demands into total / non-terminal counts so the coordinator
 	// can decide whether the whole project is ready for human acceptance.
 	CountProjectDemandsByTerminality(ctx context.Context, arg CountProjectDemandsByTerminalityParams) (CountProjectDemandsByTerminalityRow, error)
+	CountProjectPlaybookCastingsForEmployee(ctx context.Context, arg CountProjectPlaybookCastingsForEmployeeParams) (int32, error)
 	CountProjectTaskDispatchFailureEvents(ctx context.Context, arg CountProjectTaskDispatchFailureEventsParams) (int64, error)
 	CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error)
 	// 观测用:不删,只报当前各类超期行的规模,供日志与人工核对。
@@ -167,6 +173,7 @@ type Querier interface {
 	// 唯一索引（谓词 project_task_id IS NULL AND judge_type='review_gate'）。不能复用 CreateDemandCriterionVerdict/
 	// CreateAdversarialVerdict，二者 ON CONFLICT 谓词各自只对 executor/adversarial 行去重，对本聚合行不命中。
 	CreateReviewGateVerdict(ctx context.Context, arg CreateReviewGateVerdictParams) error
+	CreateRoleVocabulary(ctx context.Context, arg CreateRoleVocabularyParams) (RoleVocabulary, error)
 	CreateRuntimeBootstrapKey(ctx context.Context, arg CreateRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	CreateRuntimeCommandReceipt(ctx context.Context, arg CreateRuntimeCommandReceiptParams) (CreateRuntimeCommandReceiptRow, error)
 	CreateRuntimeEvent(ctx context.Context, arg CreateRuntimeEventParams) (RuntimeEvent, error)
@@ -227,6 +234,7 @@ type Querier interface {
 	// 以下三条清理"已软删且超期项目"的事实行。项目软删只置 deleted_at、不清行
 	// (SoftDeleteProject),这些行在应用层已完全不可见,却是最大的一块死重。
 	DeleteProjectEventsForPurgedProjects(ctx context.Context, arg DeleteProjectEventsForPurgedProjectsParams) (int64, error)
+	DeleteProjectPlaybookCastingsByTemplate(ctx context.Context, arg DeleteProjectPlaybookCastingsByTemplateParams) error
 	DeleteProjectRuntimeNodesForDelete(ctx context.Context, arg DeleteProjectRuntimeNodesForDeleteParams) ([]uuid.UUID, error)
 	DeleteRuntimeNode(ctx context.Context, nodeID string) error
 	DeleteRuntimeToken(ctx context.Context, nodeID string) error
@@ -260,6 +268,7 @@ type Querier interface {
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActiveDigitalEmployeeRunParams) (TaskRun, error)
+	GetActiveRoleVocabularyByKeys(ctx context.Context, arg GetActiveRoleVocabularyByKeysParams) ([]RoleVocabulary, error)
 	GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg GetActiveRuntimeBootstrapKeyByHashParams) (RuntimeBootstrapKey, error)
 	GetActiveRuntimeSessionByLookupHash(ctx context.Context, tokenLookupHash string) (GetActiveRuntimeSessionByLookupHashRow, error)
 	GetActiveTeamMembership(ctx context.Context, arg GetActiveTeamMembershipParams) (TenantMember, error)
@@ -378,6 +387,7 @@ type Querier interface {
 	// CreateProviderSession retired (2026-07-21).
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)
+	GetRoleVocabularyByKey(ctx context.Context, arg GetRoleVocabularyByKeyParams) (RoleVocabulary, error)
 	GetRuntimeCapability(ctx context.Context, arg GetRuntimeCapabilityParams) (RuntimeCapability, error)
 	GetRuntimeCommandReceiptByCommandID(ctx context.Context, arg GetRuntimeCommandReceiptByCommandIDParams) (RuntimeCommandReceipt, error)
 	GetRuntimeCommandReceiptByCommandIDForUpdate(ctx context.Context, arg GetRuntimeCommandReceiptByCommandIDForUpdateParams) (RuntimeCommandReceipt, error)
@@ -416,6 +426,8 @@ type Querier interface {
 	HardDeleteTeamUserProjectTeamScopes(ctx context.Context, teamID uuid.UUID) error
 	IncrementAutomationRuleFailureCount(ctx context.Context, arg IncrementAutomationRuleFailureCountParams) (AutomationRule, error)
 	IncrementPromptTemplateUseCount(ctx context.Context, arg IncrementPromptTemplateUseCountParams) error
+	InsertDigitalEmployeeRole(ctx context.Context, arg InsertDigitalEmployeeRoleParams) error
+	InsertProjectPlaybookCasting(ctx context.Context, arg InsertProjectPlaybookCastingParams) (ProjectPlaybookCasting, error)
 	InsertProjectRuntimeNode(ctx context.Context, arg InsertProjectRuntimeNodeParams) (ProjectRuntimeNode, error)
 	InsertSkillMCPDependency(ctx context.Context, arg InsertSkillMCPDependencyParams) error
 	InsertTenantLevelMembership(ctx context.Context, arg InsertTenantLevelMembershipParams) (TenantMember, error)
@@ -426,6 +438,7 @@ type Querier interface {
 	LinkProjectTaskResultDecisionRequest(ctx context.Context, arg LinkProjectTaskResultDecisionRequestParams) (ProjectTaskResult, error)
 	LinkProjectTaskResultRevisionTask(ctx context.Context, arg LinkProjectTaskResultRevisionTaskParams) (ProjectTaskResult, error)
 	ListActiveFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]FeishuAppConfig, error)
+	ListActiveRoleVocabulary(ctx context.Context, tenantID uuid.UUID) ([]RoleVocabulary, error)
 	ListActiveRuntimeBootstrapKeys(ctx context.Context, tenantID uuid.UUID) ([]RuntimeBootstrapKey, error)
 	ListActiveServiceTokensByName(ctx context.Context, serviceName string) ([]AuthServiceToken, error)
 	// 断连告警收件人:租户级 owner/admin(team_id IS NULL)。
@@ -485,6 +498,8 @@ type Querier interface {
 	// 创建的类型早已脱节,导致这一腿永远不触发)过滤;唯一排除 project_acceptance,
 	// 它是项目级 guard,不构成员工级 waiting_human(见 operational_status.go)。
 	ListDigitalEmployeeOverviewOperationalFacts(ctx context.Context, arg ListDigitalEmployeeOverviewOperationalFactsParams) ([]ListDigitalEmployeeOverviewOperationalFactsRow, error)
+	ListDigitalEmployeeRoles(ctx context.Context, arg ListDigitalEmployeeRolesParams) ([]DigitalEmployeeRole, error)
+	ListDigitalEmployeeRolesByEmployees(ctx context.Context, arg ListDigitalEmployeeRolesByEmployeesParams) ([]DigitalEmployeeRole, error)
 	// 日历看板轻量投影:不含 result/diagnostic/session_state/work_products。
 	ListDigitalEmployeeRunCalendarItems(ctx context.Context, arg ListDigitalEmployeeRunCalendarItemsParams) ([]ListDigitalEmployeeRunCalendarItemsRow, error)
 	// 运行必须归属项目 spec（2026-07-26）：归属读一等列，原「指针 UNION metadata 锚点」双路收敛。
@@ -493,6 +508,7 @@ type Querier interface {
 	ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListDigitalEmployeeRunsDetailedParams) ([]ListDigitalEmployeeRunsDetailedRow, error)
 	ListDigitalEmployeeTeamAssignments(ctx context.Context, arg ListDigitalEmployeeTeamAssignmentsParams) ([]ListDigitalEmployeeTeamAssignmentsRow, error)
 	ListDigitalEmployees(ctx context.Context, arg ListDigitalEmployeesParams) ([]DigitalEmployee, error)
+	ListDigitalEmployeesByRoleKey(ctx context.Context, arg ListDigitalEmployeesByRoleKeyParams) ([]DigitalEmployeeRole, error)
 	// Effective MCP bindings for an employee: team-inherited plus personal, joined to the
 	// registry definition. The caller computes missing required env vars by intersecting
 	// required_env_vars with ListConfiguredEmployeeEnvVarNames. credential values are never
@@ -565,6 +581,8 @@ type Querier interface {
 	ListProjectMembers(ctx context.Context, arg ListProjectMembersParams) ([]ProjectMember, error)
 	ListProjectPlanRevisions(ctx context.Context, arg ListProjectPlanRevisionsParams) ([]ProjectPlanRevision, error)
 	ListProjectPlanRevisionsForDemand(ctx context.Context, arg ListProjectPlanRevisionsForDemandParams) ([]ProjectPlanRevision, error)
+	ListProjectPlaybookCastings(ctx context.Context, arg ListProjectPlaybookCastingsParams) ([]ProjectPlaybookCasting, error)
+	ListProjectPlaybookCastingsByTemplate(ctx context.Context, arg ListProjectPlaybookCastingsByTemplateParams) ([]ProjectPlaybookCasting, error)
 	ListProjectReportRefs(ctx context.Context, arg ListProjectReportRefsParams) ([]ProjectReportRef, error)
 	ListProjectRouteDecisions(ctx context.Context, arg ListProjectRouteDecisionsParams) ([]ProjectRouteDecision, error)
 	// 运行总览项目运行带:跨项目一次聚合任务状态计数与今日完成运行数,避免逐项目 N+1。
@@ -594,6 +612,7 @@ type Querier interface {
 	ListProjectTasksByDemand(ctx context.Context, arg ListProjectTasksByDemandParams) ([]ProjectTask, error)
 	ListProjectTransferRequests(ctx context.Context, arg ListProjectTransferRequestsParams) ([]ProjectTransferRequest, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
+	ListProjectsCastingEmployee(ctx context.Context, arg ListProjectsCastingEmployeeParams) ([]uuid.UUID, error)
 	ListProjectsForHumanMember(ctx context.Context, arg ListProjectsForHumanMemberParams) ([]ListProjectsForHumanMemberRow, error)
 	ListPromptTemplates(ctx context.Context, arg ListPromptTemplatesParams) ([]TaskPromptTemplate, error)
 	// CreateProviderSessionEvent retired (2026-07-21).
@@ -601,6 +620,7 @@ type Querier interface {
 	ListProviderSessionsForDigitalEmployee(ctx context.Context, arg ListProviderSessionsForDigitalEmployeeParams) ([]ProviderSession, error)
 	// dei retired: required tools are delivered via dispatch payload/MCP config, not employee-node bindings.
 	ListRequiredToolsForNode(ctx context.Context) ([]string, error)
+	ListRoleVocabulary(ctx context.Context, tenantID uuid.UUID) ([]RoleVocabulary, error)
 	ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCapabilitiesParams) ([]RuntimeCapability, error)
 	ListRuntimeCapabilitiesForNode(ctx context.Context, arg ListRuntimeCapabilitiesForNodeParams) ([]RuntimeCapability, error)
 	ListRuntimeCommandReceiptsByResource(ctx context.Context, arg ListRuntimeCommandReceiptsByResourceParams) ([]RuntimeCommandReceipt, error)
@@ -651,6 +671,7 @@ type Querier interface {
 	// 预览与执行共用这一条，保证"看到的"和"接管的"是同一批。
 	ListTeamMCPTakeoverTargets(ctx context.Context, arg ListTeamMCPTakeoverTargetsParams) ([]ListTeamMCPTakeoverTargetsRow, error)
 	ListTeamMembers(ctx context.Context, arg ListTeamMembersParams) ([]ListTeamMembersRow, error)
+	ListTenantRoleKeysHeldByEmployees(ctx context.Context, tenantID uuid.UUID) ([]string, error)
 	// 团队能力基线计数 = 技能绑定 + MCP 绑定。两者都要排掉指向已删注册项的绑定行，
 	// 口径与生效列表(ListEffectiveMCPBindingsV2ForEmployee / ListEffectiveEmployeeSkills)一致。
 	// 本团队相关的待处理审批数（D6）：原先硬编码 0，头卡「待审批 N」pill 永不出现。
@@ -713,6 +734,7 @@ type Querier interface {
 	RemoveProjectRuntimeNode(ctx context.Context, arg RemoveProjectRuntimeNodeParams) error
 	RenewProjectTaskAttemptLease(ctx context.Context, arg RenewProjectTaskAttemptLeaseParams) (ProjectTaskAttempt, error)
 	RenewRuntimeSession(ctx context.Context, arg RenewRuntimeSessionParams) (RuntimeSession, error)
+	ReplaceDigitalEmployeeRolesDelete(ctx context.Context, arg ReplaceDigitalEmployeeRolesDeleteParams) error
 	ReplaceProjectMembersDelete(ctx context.Context, arg ReplaceProjectMembersDeleteParams) error
 	// 运营重推:failed 终态回到 pending 并清 attempts/last_error。
 	RequeueFeishuOutbox(ctx context.Context, arg RequeueFeishuOutboxParams) (FeishuOutbox, error)
@@ -785,6 +807,9 @@ type Querier interface {
 	// 项目 token 已消耗:对项目下所有任务的所有 attempt 的心跳累加值求和(P1-A 预算熔断)。
 	// budget_consumed_tokens 由 runtime 心跳单调累加,天然把失败与返工的消耗算进去。
 	SumProjectConsumedTokens(ctx context.Context, arg SumProjectConsumedTokensParams) (int64, error)
+	// Clears the partial unique index uq_project_plan_revisions_current_accepted so a
+	// newer pending_review revision can be accepted (casting-expansion replan / request_changes).
+	SupersedeCurrentAcceptedProjectPlanRevisions(ctx context.Context, arg SupersedeCurrentAcceptedProjectPlanRevisionsParams) error
 	SupersedeOpenProjectPlanRevisions(ctx context.Context, arg SupersedeOpenProjectPlanRevisionsParams) error
 	SupersedePendingFeishuOutboxByResource(ctx context.Context, arg SupersedePendingFeishuOutboxByResourceParams) error
 	// 人类解决等待、任务转入重派发或终态时,旧 waiting_human attempt 必须先出让
@@ -839,6 +864,7 @@ type Querier interface {
 	// 人类决策溯源不依赖该列：结项摘要与执行上下文包都从 project_decision_requests 取。
 	UpdateProjectTaskStatus(ctx context.Context, arg UpdateProjectTaskStatusParams) (ProjectTask, error)
 	UpdateProviderSessionStatus(ctx context.Context, arg UpdateProviderSessionStatusParams) (ProviderSession, error)
+	UpdateRoleVocabulary(ctx context.Context, arg UpdateRoleVocabularyParams) (RoleVocabulary, error)
 	UpdateRuntimeCommandReceiptStatus(ctx context.Context, arg UpdateRuntimeCommandReceiptStatusParams) (RuntimeCommandReceipt, error)
 	UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRuntimeNodeHeartbeatParams) (RuntimeNode, error)
 	UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNodeLoadParams) (RuntimeNode, error)

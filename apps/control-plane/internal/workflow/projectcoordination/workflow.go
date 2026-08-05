@@ -349,6 +349,13 @@ func handleHumanDecisionSubmitted(ctx workflow.Context, input ProjectCoordinator
 		delete(pendingAcceptance, signal.DecisionRequestID.String())
 		return applyProjectAcceptanceDecision(ctx, input.TenantID, pending.ProjectID, signal)
 	}
+	// Casting-expansion / continue-as-new never put the subsequent plan_review into
+	// pendingReviews. Without a durable fallback, plan_review lands on the
+	// predispatch path, Accept never runs, and the demand stays planning_pending
+	// forever after the human already approved the card (§7.4 overbound path).
+	if workflow.GetVersion(ctx, "human-decision-store-fallback", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+		return handleHumanDecisionSubmittedFromStore(ctx, input, signal)
+	}
 	if workflow.GetVersion(ctx, "predispatch-gate-decision-rerun", workflow.DefaultVersion, 1) == workflow.DefaultVersion {
 		return appendSignalObservedEvent(ctx, input, "human decision submitted")
 	}
@@ -395,6 +402,8 @@ func handleHumanDecisionSubmittedFromStore(ctx workflow.Context, input ProjectCo
 		return err
 	case "planning_gap":
 		return handlePlanningGapDecision(ctx, input, signal, route, projectID)
+	case project.DecisionTypeCastingExpansion:
+		return handleCastingExpansionDecision(ctx, input, signal, route, projectID)
 	case "planning_failed":
 		return handlePlanningFailedDecision(ctx, input, signal, route, projectID)
 	case "task_failure_recovery", "upstream_supplement_review":
@@ -467,6 +476,166 @@ func handlePlanningGapDecision(ctx workflow.Context, input ProjectCoordinatorInp
 		CreatedEventID: signal.ResolvedEventID,
 	})
 	return err
+}
+
+// handleCastingExpansionDecision runs mid-execution replan after a human
+// approved 扩编. Demand status is NOT reopened (stays executing). New plan is
+// supersede-created; overbound diffs force plan_review once (§7.4); in-bounds
+// auto-decomposes with planned_task_key merge so completed work is not recreated.
+//
+// Decision type is new-code-only → no GetVersion fence (same rationale as planning_gap).
+func handleCastingExpansionDecision(ctx workflow.Context, input ProjectCoordinatorInput, signal HumanDecisionSubmitted, route HumanDecisionRouteResult, projectID uuid.UUID) error {
+	if route.CastingExpansion == nil {
+		return temporal.NewNonRetryableApplicationError("human decision route missing casting expansion", "HumanDecisionRouteMissingCastingExpansion", project.ErrInvalidProject)
+	}
+	if signal.Decision != "approved" {
+		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "casting expansion rejected")
+	}
+	demandID := route.CastingExpansion.DemandID
+	expansionEmployeeID := strings.TrimSpace(route.CastingExpansion.ExpansionEmployeeID)
+	if expansionEmployeeID == "" && signal.Payload != nil {
+		if v, ok := signal.Payload["digital_employee_id"].(string); ok {
+			expansionEmployeeID = strings.TrimSpace(v)
+		}
+		if expansionEmployeeID == "" {
+			if v, ok := signal.Payload["employee_id"].(string); ok {
+				expansionEmployeeID = strings.TrimSpace(v)
+			}
+		}
+	}
+
+	workflowID := input.WorkflowID
+	if workflowID == "" {
+		workflowID = "project-coordinator:" + projectID.String()
+	}
+	var job CoordinationJobResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).CreateCoordinationJob, CreateCoordinationJobInput{
+		TenantID:       input.TenantID,
+		ProjectID:      projectID,
+		WorkflowID:     workflowID,
+		TriggerEventID: signal.ResolvedEventID,
+		JobType:        "casting_expansion_replan",
+	}).Get(ctx, &job); err != nil {
+		return err
+	}
+
+	var prior LoadPriorPlanPayloadResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).LoadPriorPlanPayload, LoadPriorPlanPayloadInput{
+		TenantID:  input.TenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	}).Get(ctx, &prior); err != nil {
+		return err
+	}
+
+	var snapshot CoordinationSnapshot
+	if err := workflow.ExecuteActivity(ctx, (*Activities).LoadProjectCoordinationSnapshot, LoadSnapshotInput{
+		TenantID:  input.TenantID,
+		ProjectID: projectID,
+		DemandID:  demandID,
+	}).Get(ctx, &snapshot); err != nil {
+		return err
+	}
+	// Pin planner to deepest exit unlocked by the new 编制 so expansion creates
+	// hire tasks (G10) and exit changes force overbound human confirm (G11).
+	if pin := DeepestExitDeliverableWithCasting(snapshot); pin != "" {
+		snapshot.PinnedExitDeliverable = pin
+	}
+
+	var decision RouteDecisionPlan
+	if err := workflow.ExecuteActivity(ctx, (*Activities).PlanDemandRoute, snapshot).Get(ctx, &decision); err != nil {
+		if diagnosis, gap, ok := noSuitableEmployeeDiagnosis(err); ok {
+			return rejectDemandPlanningByID(ctx, input.TenantID, projectID, demandID, job.ID, diagnosis, gap, []uuid.UUID{signal.ResolvedEventID})
+		}
+		if workflow.GetVersion(ctx, "planning-failed-human-task", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+			return markDemandPlanningFailed(ctx, input.TenantID, projectID, demandID, job.ID, err, []uuid.UUID{signal.ResolvedEventID})
+		}
+		return err
+	}
+
+	var routeDecision RouteDecisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).PersistRouteDecision, PersistRouteDecisionInput{
+		TenantID:  input.TenantID,
+		ProjectID: projectID,
+		JobID:     job.ID,
+		DemandID:  demandID,
+		Decision:  decision,
+	}).Get(ctx, &routeDecision); err != nil {
+		return err
+	}
+
+	newPayload := BuildPlanRevisionPayload(decision)
+	forcePending := false
+	var overboundReasons []string
+	if prior.Found {
+		diff := EvaluateCastingExpansionPlanDiff(prior.Payload, newPayload, expansionEmployeeID)
+		if diff.Overbound {
+			forcePending = true
+			overboundReasons = append(overboundReasons, "casting_expansion_overbound")
+			overboundReasons = append(overboundReasons, diff.Reasons...)
+		}
+	}
+
+	supersedeReason := "casting expansion replan"
+	var planRevision PlanRevisionResult
+	if err := workflow.ExecuteActivity(ctx, (*Activities).PersistPlanRevision, PersistPlanRevisionInput{
+		TenantID:                  input.TenantID,
+		ProjectID:                 projectID,
+		DemandID:                  demandID,
+		CoordinationJobID:         job.ID,
+		RouteDecisionID:           routeDecision.ID,
+		Decision:                  decision,
+		SupersedeOpen:             true,
+		SupersedeReason:           &supersedeReason,
+		CoordinationMode:          snapshot.Demand.CoordinationMode,
+		ForcePendingReview:        forcePending,
+		ForcePendingReviewReasons: overboundReasons,
+	}).Get(ctx, &planRevision); err != nil {
+		return err
+	}
+
+	outputEventIDs := []uuid.UUID{}
+	if routeDecision.CreatedEventID != uuid.Nil {
+		outputEventIDs = append(outputEventIDs, routeDecision.CreatedEventID)
+	}
+	if planRevision.CreatedEventID != uuid.Nil {
+		outputEventIDs = append(outputEventIDs, planRevision.CreatedEventID)
+	}
+	pending := pendingPlanRevisionReview{
+		ProjectID:         projectID,
+		DemandID:          demandID,
+		CoordinationJobID: job.ID,
+		RouteDecisionID:   routeDecision.ID,
+		PlanRevisionID:    planRevision.ID,
+		PlanFingerprint:   planRevision.PlanFingerprint,
+		Payload:           planRevision.Payload,
+		OutputEventIDs:    outputEventIDs,
+	}
+	switch planRevision.Status {
+	case project.PlanRevisionStatusAccepted:
+		return decomposeAndDispatchAcceptedPlan(ctx, input, pending, project.DispatchReasonHumanResolved)
+	case project.PlanRevisionStatusPendingReview:
+		var review DecisionRequestResult
+		if err := workflow.ExecuteActivity(ctx, (*Activities).RequestPlanRevisionReview, RequestPlanRevisionReviewInput{
+			TenantID:          input.TenantID,
+			ProjectID:         projectID,
+			CoordinationJobID: job.ID,
+			DemandID:          demandID,
+			PlanRevisionID:    planRevision.ID,
+			PlanFingerprint:   planRevision.PlanFingerprint,
+			Payload:           planRevision.Payload,
+			CreatedEventID:    planRevision.CreatedEventID,
+		}).Get(ctx, &review); err != nil {
+			return err
+		}
+		// Pending review is held in workflow pendingReviews map by caller when
+		// returned; from-store path cannot return pending. Observe only —
+		// human will signal plan_review next.
+		_ = review
+		return appendSignalObservedEvent(ctx, ProjectCoordinatorInput{TenantID: input.TenantID, ProjectID: projectID}, "casting expansion replan pending human review")
+	default:
+		return finishCoordinationJob(ctx, input.TenantID, job.ID, planRevision.Status, outputEventIDs)
+	}
 }
 
 func reopenProjectDemandForReplanning(ctx workflow.Context, tenantID, projectID, demandID uuid.UUID) error {
@@ -710,6 +879,28 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 	}
 	if decision.Decision != "" && decision.Decision != string(project.TaskResultDecisionCompleteAccepted) {
 		return taskCompletionPending{}, nil
+	}
+	// Casting expansion proposal (design §7.1 / G9). After accepted completion
+	// the coordinator may open casting_expansion when readiness still needs a
+	// deeper-exit role — suggested_role_key is always vocabulary/template-bound.
+	// GetVersion from birth: new Activity absent from old histories. Errors are
+	// logged and swallowed so expansion never blocks the task graph.
+	if workflow.GetVersion(ctx, "casting-expansion-after-task", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+		var exp MaybeRequestCastingExpansionResult
+		expErr := workflow.ExecuteActivity(ctx, (*Activities).MaybeRequestCastingExpansion, MaybeRequestCastingExpansionInput{
+			TenantID:        input.TenantID,
+			ProjectID:       input.ProjectID,
+			CompletedTaskID: signal.ProjectTaskID,
+		}).Get(ctx, &exp)
+		if expErr != nil {
+			workflow.GetLogger(ctx).Error("casting expansion propose failed; continuing task graph",
+				"completed_task_id", signal.ProjectTaskID.String(), "error", expErr.Error())
+		} else if exp.Requested {
+			workflow.GetLogger(ctx).Info("casting expansion requested after task completion",
+				"completed_task_id", signal.ProjectTaskID.String(),
+				"decision_id", exp.DecisionID.String(),
+				"suggested_role_key", exp.SuggestedRoleKey)
+		}
 	}
 	// Adversarial-review trigger (autonomy posture Phase B). GetVersion fence
 	// from birth: this issues a NEW Activity command absent from old histories,

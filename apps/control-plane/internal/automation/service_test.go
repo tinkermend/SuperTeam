@@ -375,6 +375,10 @@ type fakeProjects struct {
 	name     string
 }
 
+func (f *fakeProjects) MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]string, error) {
+	return nil, nil
+}
+
 func (f *fakeProjects) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectInfo, error) {
 	return ProjectInfo{ID: projectID, TeamID: uuid.New(), Name: f.name}, nil
 }

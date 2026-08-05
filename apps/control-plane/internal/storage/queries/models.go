@@ -432,7 +432,7 @@ type DigitalEmployee struct {
 	TeamID uuid.NullUUID `json:"team_id"`
 	// 数字员工名称
 	Name string `json:"name"`
-	// 数字员工职责或角色标识
+	// 显示用自述标签（自由文本）。匹配/编制/可达收口一律读 digital_employee_roles，禁止再用本列做匹配。
 	Role string `json:"role"`
 	// 数字员工职责描述
 	Description pgtype.Text `json:"description"`
@@ -533,6 +533,15 @@ type DigitalEmployeeMcpBindingsV2 struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 绑定更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 数字员工可兼多角色；匹配与编制候选读此表，不读 digital_employees.role
+type DigitalEmployeeRole struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 引用 role_vocabulary.role_key（同命名空间，应用层校验 active）
+	RoleKey   string             `json:"role_key"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type DigitalEmployeeTemplate struct {
@@ -1367,6 +1376,21 @@ type ProjectPlanRevision struct {
 	CoordinationMode pgtype.Text `json:"coordination_mode"`
 }
 
+// 项目×剧本编制：每个角色定一人，必须由人操作（cast_by_user_id 留痕）
+type ProjectPlaybookCasting struct {
+	ID                  uuid.UUID `json:"id"`
+	TenantID            uuid.UUID `json:"tenant_id"`
+	ProjectID           uuid.UUID `json:"project_id"`
+	ScenarioTemplateKey string    `json:"scenario_template_key"`
+	RoleKey             string    `json:"role_key"`
+	// 被编制的数字员工；写入时若未在成员池则同事务入池
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	// 编制操作人；回答「谁批准这个人上这一仗」
+	CastByUserID uuid.UUID          `json:"cast_by_user_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 项目报告引用表，保存阶段汇报、验收报告和归档报告的对象引用
 type ProjectReportRef struct {
 	// 项目报告引用ID
@@ -1857,6 +1881,22 @@ type ProviderSessionEvent struct {
 	LogRef pgtype.Text `json:"log_ref"`
 	// 事件携带的会话状态增量
 	SessionStatePatch []byte `json:"session_state_patch"`
+}
+
+// 租户级角色词表：剧本 roles[].key 与员工角色绑定共用，插行即扩展
+type RoleVocabulary struct {
+	ID       uuid.UUID `json:"id"`
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 角色键稳定标识（下划线小写，如 code_reviewer），租户内唯一
+	RoleKey string `json:"role_key"`
+	// 角色显示名（中文）
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	// 角色状态：active/disabled
+	Status    string             `json:"status"`
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
 // Runtime Agent 环境级接入引导密钥表

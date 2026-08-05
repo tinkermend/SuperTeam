@@ -42,6 +42,11 @@ const (
 	// approved / rejected / needs_more_evidence for plan_review, project_acceptance,
 	// project_task_* gates etc., dispatched by decision type inside the coordinator.
 	handlerResolveDecisionGeneric = "project.Service.ResolveDecision.generic"
+	// handlerCastingExpansionDecision: project.Service.applyCastingExpansionApproval
+	// (approved writes casting + replan event) then
+	// projectcoordination.handleCastingExpansionDecision (mid-execution replan,
+	// demand stays executing). rejected only closes the decision card.
+	handlerCastingExpansionDecision = "project.Service.applyCastingExpansionApproval+projectcoordination.handleCastingExpansionDecision"
 )
 
 // implementedDecisionHandlers is the set of handler ids the Control Plane actually
@@ -49,12 +54,13 @@ const (
 // dangling handler id (typo, or a handler removed without removing its action)
 // fails the build.
 var implementedDecisionHandlers = map[string]struct{}{
-	handlerResolveDemandAcceptance: {},
-	handlerPlanningGapDecision:     {},
-	handlerPlanningFailedDecision:  {},
-	handlerFailureRecoveryDecision: {},
-	handlerTaskHumanWaitRelease:    {},
-	handlerResolveDecisionGeneric:  {},
+	handlerResolveDemandAcceptance:  {},
+	handlerPlanningGapDecision:      {},
+	handlerPlanningFailedDecision:   {},
+	handlerFailureRecoveryDecision:  {},
+	handlerTaskHumanWaitRelease:     {},
+	handlerResolveDecisionGeneric:   {},
+	handlerCastingExpansionDecision: {},
 }
 
 // registeredDecisionAction pairs an inbox Action with the handler that executes it.
@@ -92,6 +98,13 @@ var decisionActionRegistry = map[string][]registeredDecisionAction{
 	"task_failure_recovery": {
 		{action: Action{Key: "retry", Label: "重试任务", Tone: "positive", Metadata: map[string]any{"decision": "retry"}}, handler: handlerFailureRecoveryDecision},
 		{action: Action{Key: "cancel_downstream", Label: "取消下游", Tone: "destructive", RequiresComment: true, Metadata: map[string]any{"decision": "cancel_downstream"}}, handler: handlerFailureRecoveryDecision},
+	},
+	// 扩编（执行期 §7.5）：approved 必须带 digital_employee_id + role_key（Web 弹窗选人）；
+	// rejected 关闭。不得发出 needs_more_evidence——服务端 ResolveDecision 会拒，且语义上
+	// 扩编没有「补证」路径。
+	"casting_expansion": {
+		{action: Action{Key: "approved", Label: "批准并选人", Tone: "positive", Metadata: map[string]any{"decision": "approved"}}, handler: handlerCastingExpansionDecision},
+		{action: Action{Key: "rejected", Label: "驳回", Tone: "destructive", RequiresComment: true, Metadata: map[string]any{"decision": "rejected"}}, handler: handlerCastingExpansionDecision},
 	},
 	// Task human-wait family (projectcoordination.applyTaskHumanWaitRelease):
 	// only approved/rejected. needs_more_evidence would settle the card while

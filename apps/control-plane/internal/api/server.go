@@ -21,6 +21,7 @@ import (
 	"github.com/superteam/control-plane/internal/permission"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
+	"github.com/superteam/control-plane/internal/rolevocab"
 	"github.com/superteam/control-plane/internal/scenariotemplate"
 	"github.com/superteam/control-plane/internal/serviceauth"
 	"github.com/superteam/control-plane/internal/skill"
@@ -52,6 +53,7 @@ type Server struct {
 	projectHandler                 *project.HTTPHandler
 	promptTemplateHandler          *prompttemplate.HTTPHandler
 	scenarioTemplateHandler        *scenariotemplate.HTTPHandler
+	roleVocabularyHandler          *rolevocab.HTTPHandler
 	skillHandler                   *skill.HTTPHandler
 	systemConfigHandler            *systemconfig.HTTPHandler
 	tenantHandler                  *tenant.HTTPHandler
@@ -236,6 +238,14 @@ func (s *Server) SetScenarioTemplateHandler(scenarioTemplateHandler *scenariotem
 	s.registerRoutes()
 }
 
+func (s *Server) SetRoleVocabularyHandler(handler *rolevocab.HTTPHandler) {
+	s.roleVocabularyHandler = handler
+	if handler != nil {
+		handler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
 // SetServiceAuth 配置外部服务凭据认证与 on-behalf-of 核验(/api/v1/connector/* 依赖)。
 func (s *Server) SetServiceAuth(authService middleware.ServiceAuthService, resolver middleware.OnBehalfOfResolver) {
 	s.serviceAuthService = authService
@@ -375,6 +385,7 @@ func (s *Server) registerRoutes() {
 				r.Delete("/digital-employees/{employeeId}/environment-variables/{envName}", s.employeeHandler.DeleteEnvironmentVariable)
 				r.Put("/digital-employees/{employeeId}/status", s.employeeHandler.UpdateDigitalEmployeeStatus)
 				r.Put("/digital-employees/{employeeId}/profile", s.employeeHandler.UpdateDigitalEmployeeProfile)
+				r.Put("/digital-employees/{employeeId}/roles", s.employeeHandler.ReplaceDigitalEmployeeRoles)
 				r.Put("/digital-employees/{employeeId}/team", s.employeeHandler.ReassignDigitalEmployeeTeam)
 				r.Post("/digital-employees/{employeeId}/config-revisions", s.employeeHandler.CreateDigitalEmployeeConfigRevision)
 				r.Post("/digital-employees/{employeeId}/permission-changes", s.employeeHandler.SubmitPermissionChange)
@@ -416,6 +427,11 @@ func (s *Server) registerRoutes() {
 				r.Get("/projects/{projectId}/runtime-nodes", s.projectHandler.ListProjectRuntimeNodes)
 				r.Get("/projects/{projectId}/members", s.projectHandler.ListProjectMembers)
 				r.Put("/projects/{projectId}/members", s.projectHandler.ReplaceProjectMembers)
+				r.Get("/projects/{projectId}/castings", s.projectHandler.ListProjectCastings)
+				r.Put("/projects/{projectId}/castings", s.projectHandler.PutProjectCastings)
+				r.Post("/projects/{projectId}/casting-expansions", s.projectHandler.RequestCastingExpansion)
+				r.Get("/projects/{projectId}/role-candidates", s.projectHandler.ListRoleCandidates)
+				r.Get("/projects/{projectId}/playbook-readiness", s.projectHandler.GetPlaybookReadiness)
 				r.Get("/projects/{projectId}/tasks", s.projectHandler.ListProjectTasks)
 				r.Post("/projects/{projectId}/tasks/{taskId}/dismiss", s.projectHandler.DismissProjectTask)
 				r.Get("/projects/{projectId}/tasks/{taskId}/liveness", s.projectHandler.GetProjectTaskLiveness)
@@ -605,6 +621,15 @@ func (s *Server) registerRoutes() {
 				r.Patch("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.PatchScenarioTemplate)
 				r.Post("/scenario-templates/{templateKey}/versions", s.scenarioTemplateHandler.CreateScenarioTemplateVersion)
 				r.Get("/scenario-templates/{templateKey}/versions", s.scenarioTemplateHandler.ListScenarioTemplateVersions)
+			})
+		}
+
+		if s.roleVocabularyHandler != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.ConsoleUserAuth(s.authService))
+				r.Get("/role-vocabulary", s.roleVocabularyHandler.ListRoleVocabulary)
+				r.Post("/role-vocabulary", s.roleVocabularyHandler.CreateRoleVocabulary)
+				r.Patch("/role-vocabulary/{roleKey}", s.roleVocabularyHandler.PatchRoleVocabulary)
 			})
 		}
 

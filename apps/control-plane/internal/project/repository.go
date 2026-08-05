@@ -58,6 +58,9 @@ type Repository interface {
 	ListPlanRevisionsForDemand(ctx context.Context, tenantID, projectID, demandID uuid.UUID) ([]PlanRevision, error)
 	AcceptPlanRevision(ctx context.Context, req AcceptPlanRevisionRequest) (PlanRevision, error)
 	RejectPlanRevision(ctx context.Context, req RejectPlanRevisionRequest) (PlanRevision, error)
+	// CancelStalePlanReviewDecisionsForDemand cancels open plan_review decisions
+	// for superseded plans on the demand (except the new revision).
+	CancelStalePlanReviewDecisionsForDemand(ctx context.Context, tenantID, projectID, demandID, exceptRevisionID uuid.UUID) ([]DecisionRequest, error)
 	CreateProjectTask(ctx context.Context, req CreateProjectTaskRequest) (ProjectTask, error)
 	CreateProjectTaskGraph(ctx context.Context, req CreateProjectTaskGraphRequest) (CreateProjectTaskGraphResult, error)
 	ListProjectTaskDependencies(ctx context.Context, tenantID, projectID uuid.UUID, dependentTaskIDs []uuid.UUID) ([]ProjectTaskDependency, error)

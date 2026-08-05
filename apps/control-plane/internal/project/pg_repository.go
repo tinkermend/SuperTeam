@@ -1282,6 +1282,17 @@ func (r *PgRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRev
 		return PlanRevision{}, err
 	}
 	return withProjectQueries(ctx, r, "project plan revision create", func(q *queries.Queries) (PlanRevision, error) {
+		// Auto-accepted revisions (casting-expansion in-bounds replan / shallow auto-
+		// dispatch) would INSERT status accepted while a prior decomposed/accepted
+		// row still holds uq_project_plan_revisions_current_accepted → 23505 and the
+		// coordinator signal dies (G10/G11). Insert as pending_review first, then
+		// supersede + promote to accepted so the unique index never has two currents.
+		createStatus := req.Status
+		promoteToAccepted := false
+		if isCurrentAcceptedPlanStatus(req.Status) {
+			createStatus = PlanRevisionStatusPendingReview
+			promoteToAccepted = true
+		}
 		revisionNumber, err := q.NextProjectPlanRevisionNumber(ctx, queries.NextProjectPlanRevisionNumberParams{
 			TenantID:  req.TenantID,
 			ProjectID: req.ProjectID,
@@ -1298,7 +1309,7 @@ func (r *PgRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRev
 			CoordinationJobID:  nullUUID(req.CoordinationJobID),
 			RouteDecisionID:    nullUUID(req.RouteDecisionID),
 			RevisionNumber:     revisionNumber,
-			Status:             req.Status,
+			Status:             createStatus,
 			Payload:            payload,
 			PlannerProvider:    textPtr(req.PlannerProvider),
 			PlannerModel:       textPtr(req.PlannerModel),
@@ -1340,7 +1351,95 @@ func (r *PgRepository) CreatePlanRevision(ctx context.Context, req CreatePlanRev
 				return PlanRevision{}, err
 			}
 		}
+		if promoteToAccepted {
+			reason := "superseded by new plan revision"
+			if req.SupersedeReason != nil && strings.TrimSpace(*req.SupersedeReason) != "" {
+				reason = strings.TrimSpace(*req.SupersedeReason)
+			}
+			if err := q.SupersedeCurrentAcceptedProjectPlanRevisions(ctx, queries.SupersedeCurrentAcceptedProjectPlanRevisionsParams{
+				SupersededByRevisionID: created.ID,
+				Reason:                 textPtr(&reason),
+				TenantID:               req.TenantID,
+				ProjectID:              req.ProjectID,
+				DemandID:               req.DemandID,
+			}); err != nil {
+				return PlanRevision{}, err
+			}
+			accepted, accErr := q.AcceptProjectPlanRevision(ctx, queries.AcceptProjectPlanRevisionParams{
+				AcceptedBy: uuid.NullUUID{},
+				TenantID:   req.TenantID,
+				ProjectID:  req.ProjectID,
+				ID:         created.ID,
+			})
+			if accErr != nil {
+				return PlanRevision{}, accErr
+			}
+			return planRevisionFromRecord(accepted)
+		}
 		return created, nil
+	})
+}
+
+func isCurrentAcceptedPlanStatus(status string) bool {
+	switch status {
+	case PlanRevisionStatusAccepted, PlanRevisionStatusDecomposing, PlanRevisionStatusDecomposed:
+		return true
+	default:
+		return false
+	}
+}
+
+// CancelStalePlanReviewDecisionsForDemand cancels open plan_review decisions whose
+// plan revision was superseded (or otherwise not the exceptRevision). Used after
+// CreatePlanRevision(SupersedeOpen) so humans cannot approve a dead plan.
+func (r *PgRepository) CancelStalePlanReviewDecisionsForDemand(ctx context.Context, tenantID, projectID, demandID, exceptRevisionID uuid.UUID) ([]DecisionRequest, error) {
+	return withProjectQueries(ctx, r, "cancel stale plan reviews", func(q *queries.Queries) ([]DecisionRequest, error) {
+		rows, err := q.CancelOpenPlanReviewDecisionsForDemandExceptRevision(ctx, queries.CancelOpenPlanReviewDecisionsForDemandExceptRevisionParams{
+			TenantID:         tenantID,
+			ProjectID:        projectID,
+			DemandID:         demandID,
+			ExceptRevisionID: exceptRevisionID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]DecisionRequest, 0, len(rows))
+		approvalIDs := make([]uuid.UUID, 0, len(rows))
+		for _, row := range rows {
+			out = append(out, DecisionRequest{
+				ID:                   row.ID,
+				TenantID:             row.TenantID,
+				ProjectID:            row.ProjectID,
+				ApprovalRequestID:    row.ApprovalRequestID,
+				CoordinationJobID:    ptrUUID(row.CoordinationJobID),
+				ProjectTaskID:        ptrUUID(row.ProjectTaskID),
+				PlanRevisionID:       ptrUUID(row.PlanRevisionID),
+				TargetUserID:         row.TargetUserID,
+				DecisionType:         row.DecisionType,
+				TitleSnapshot:        row.TitleSnapshot,
+				SummarySnapshot:      ptrText(row.SummarySnapshot),
+				RiskLevelSnapshot:    ptrText(row.RiskLevelSnapshot),
+				StatusSnapshot:       row.StatusSnapshot,
+				CreatedEventID:       ptrUUID(row.CreatedEventID),
+				ResolvedEventID:      ptrUUID(row.ResolvedEventID),
+				CreatedAt:            row.CreatedAt.Time,
+				UpdatedAt:            row.UpdatedAt.Time,
+				ResolvedAt:           ptrTime(row.ResolvedAt),
+				DispatchGateResultID: ptrUUID(row.DispatchGateResultID),
+			})
+			if row.ApprovalRequestID != uuid.Nil {
+				approvalIDs = append(approvalIDs, row.ApprovalRequestID)
+			}
+		}
+		if len(approvalIDs) > 0 {
+			if err := q.CancelApprovalRequestsByIDs(ctx, queries.CancelApprovalRequestsByIDsParams{
+				TenantID: tenantID,
+				Ids:      approvalIDs,
+			}); err != nil {
+				return nil, err
+			}
+		}
+		return out, nil
 	})
 }
 
@@ -1387,19 +1486,55 @@ func listPlanRevisionsForDemandWithQueries(ctx context.Context, q *queries.Queri
 }
 
 func (r *PgRepository) AcceptPlanRevision(ctx context.Context, req AcceptPlanRevisionRequest) (PlanRevision, error) {
-	row, err := r.q.AcceptProjectPlanRevision(ctx, queries.AcceptProjectPlanRevisionParams{
-		AcceptedBy: nullUUID(req.AcceptedBy),
-		TenantID:   req.TenantID,
-		ProjectID:  req.ProjectID,
-		ID:         req.RevisionID,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	// Accepting a newer plan (e.g. casting-expansion replan that forced pending_review
+	// while a prior revision stays decomposed) must first clear the partial unique
+	// index uq_project_plan_revisions_current_accepted. Without supersede, Accept
+	// raises 23505 and the coordinator signal dies after inbox already resolved.
+	return withProjectQueries(ctx, r, "accept plan revision", func(q *queries.Queries) (PlanRevision, error) {
+		current, err := q.GetProjectPlanRevision(ctx, queries.GetProjectPlanRevisionParams{
+			TenantID:  req.TenantID,
+			ProjectID: req.ProjectID,
+			ID:        req.RevisionID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return PlanRevision{}, ErrProjectConflict
+			}
+			return PlanRevision{}, err
+		}
+		// Idempotent: already effective (retry after signal handler survived a later error).
+		switch current.Status {
+		case PlanRevisionStatusAccepted, PlanRevisionStatusDecomposing, PlanRevisionStatusDecomposed:
+			return planRevisionFromRecord(current)
+		case PlanRevisionStatusSuperseded, PlanRevisionStatusRejected, PlanRevisionStatusValidationFailed:
+			// Approving a dead plan (superseded by casting expansion / replan) must not
+			// look like a transient conflict — caller should cancel the decision card.
 			return PlanRevision{}, ErrProjectConflict
 		}
-		return PlanRevision{}, err
-	}
-	return planRevisionFromRecord(row)
+		reason := "superseded by accepted plan revision"
+		if err := q.SupersedeCurrentAcceptedProjectPlanRevisions(ctx, queries.SupersedeCurrentAcceptedProjectPlanRevisionsParams{
+			SupersededByRevisionID: req.RevisionID,
+			Reason:                 textPtr(&reason),
+			TenantID:               req.TenantID,
+			ProjectID:              req.ProjectID,
+			DemandID:               current.DemandID,
+		}); err != nil {
+			return PlanRevision{}, err
+		}
+		row, err := q.AcceptProjectPlanRevision(ctx, queries.AcceptProjectPlanRevisionParams{
+			AcceptedBy: nullUUID(req.AcceptedBy),
+			TenantID:   req.TenantID,
+			ProjectID:  req.ProjectID,
+			ID:         req.RevisionID,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return PlanRevision{}, ErrProjectConflict
+			}
+			return PlanRevision{}, err
+		}
+		return planRevisionFromRecord(row)
+	})
 }
 
 func (r *PgRepository) RejectPlanRevision(ctx context.Context, req RejectPlanRevisionRequest) (PlanRevision, error) {
@@ -2146,9 +2281,18 @@ func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req De
 			}
 		}
 
+		// Mid-execution replan merge (扩编 G10): reuse completed/in-flight tasks
+		// by planned_task_key so completed work is not recreated.
+		seeded, filteredTasks, err := r.prepareExpansionMergeTasks(ctx, q, req, graphReq.Tasks)
+		if err != nil {
+			return DecomposeAcceptedPlanRevisionResult{}, err
+		}
+		graphReq.Tasks = filteredTasks
+
 		created, err := r.createProjectTaskGraphWithQueries(ctx, q, graphReq, projectTaskGraphWriteOptions{
 			AcceptedPlanRevisionID: &req.AcceptedPlanRevisionID,
 			DecompositionClaimKey:  &req.DecompositionClaimKey,
+			SeededKeyToTaskID:      seeded,
 		})
 		if err != nil {
 			errorPayload, payloadErr := jsonbObject(map[string]any{"message": err.Error()}, "error")
@@ -2162,7 +2306,12 @@ func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req De
 			}
 			return DecomposeAcceptedPlanRevisionResult{}, err
 		}
+		// Result includes newly created tasks; callers that need full graph
+		// resolve by key via ListDispatchableTasks + dependencies.
 		taskIDs := acceptedPlanProjectTaskIDs(created.Tasks)
+		for _, id := range seeded {
+			taskIDs = append(taskIDs, id)
+		}
 		if _, err := q.CompleteProjectPlanDecompositionClaim(ctx, queries.CompleteProjectPlanDecompositionClaimParams{
 			CreatedTaskIds: taskIDs,
 			TenantID:       req.TenantID,
@@ -2181,6 +2330,95 @@ func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req De
 		}
 		return DecomposeAcceptedPlanRevisionResult{Tasks: created.Tasks, Dependencies: created.Graph.Dependencies, Replayed: false}, nil
 	})
+}
+
+// prepareExpansionMergeTasks loads prior demand tasks and returns:
+//   - seeded: planned_task_key → task ID for completed/in-flight work to reuse
+//   - filtered: graph tasks that still need creating (excludes reused keys)
+// Non-terminal prior tasks whose keys are being recreated or dropped are cancelled.
+func (r *PgRepository) prepareExpansionMergeTasks(
+	ctx context.Context,
+	q *queries.Queries,
+	req DecomposeAcceptedPlanRevisionRequest,
+	planned []ProjectTaskGraphCreateTask,
+) (map[string]uuid.UUID, []ProjectTaskGraphCreateTask, error) {
+	prior, err := r.listProjectTasksByDemand(ctx, req.TenantID, req.ProjectID, req.DemandID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(prior) == 0 {
+		return nil, planned, nil
+	}
+	plannedKeys := map[string]struct{}{}
+	for _, t := range planned {
+		plannedKeys[t.Key] = struct{}{}
+	}
+	seeded := map[string]uuid.UUID{}
+	// Prefer the latest non-cancelled task per key for reuse decisions.
+	byKey := map[string][]ProjectTask{}
+	for _, task := range prior {
+		if task.PlannedTaskKey == nil || strings.TrimSpace(*task.PlannedTaskKey) == "" {
+			continue
+		}
+		key := strings.TrimSpace(*task.PlannedTaskKey)
+		byKey[key] = append(byKey[key], task)
+	}
+	for key, tasks := range byKey {
+		// Sort newest first by UpdatedAt if available.
+		var reuse *ProjectTask
+		for i := range tasks {
+			t := &tasks[i]
+			switch t.Status {
+			case ProjectTaskStatusCompleted, "done", "success",
+				ProjectTaskStatusRunning, ProjectTaskStatusQueued, ProjectTaskStatusWaitingHuman:
+				if reuse == nil || t.UpdatedAt.After(reuse.UpdatedAt) {
+					reuse = t
+				}
+			}
+		}
+		if reuse != nil {
+			if _, stillPlanned := plannedKeys[key]; stillPlanned {
+				seeded[key] = reuse.ID
+			}
+		}
+	}
+	// Cancel non-terminal prior tasks that are not being reused:
+	// - key still in plan but not reused (e.g. planned/blocked redo)
+	// - key dropped from new plan
+	for key, tasks := range byKey {
+		reuseID := seeded[key]
+		for _, task := range tasks {
+			if task.ID == reuseID {
+				continue
+			}
+			if isTerminalProjectTaskStatus(task.Status) {
+				continue
+			}
+			// Cancel superseded non-terminal work so dispatch only sees the new graph.
+			if _, err := q.UpdateProjectTaskStatus(ctx, queries.UpdateProjectTaskStatusParams{
+				Status:          ProjectTaskStatusCancelled,
+				LatestEventID:   uuid.NullUUID{},
+				TenantID:        req.TenantID,
+				ID:              task.ID,
+				CurrentStatuses: []string{task.Status},
+			}); err != nil {
+				// Concurrent terminalization is fine; keep going.
+				continue
+			}
+		}
+	}
+	if len(seeded) == 0 {
+		return nil, planned, nil
+	}
+	filtered := make([]ProjectTaskGraphCreateTask, 0, len(planned))
+	for _, t := range planned {
+		if _, ok := seeded[t.Key]; ok {
+			continue
+		}
+		// Deps on reused keys remain in BlockedByKeys; create graph resolves via seed.
+		filtered = append(filtered, t)
+	}
+	return seeded, filtered, nil
 }
 
 func (r *PgRepository) createProjectTaskWithQueries(ctx context.Context, q *queries.Queries, req CreateProjectTaskRequest) (ProjectTask, error) {
@@ -2265,6 +2503,10 @@ func (r *PgRepository) CreateProjectTaskGraph(ctx context.Context, req CreatePro
 type projectTaskGraphWriteOptions struct {
 	AcceptedPlanRevisionID *uuid.UUID
 	DecompositionClaimKey  *string
+	// SeededKeyToTaskID pre-populates planned_task_key → existing task IDs so
+	// mid-execution replan can reuse completed/running tasks (G10) instead of
+	// creating duplicates. Seeded keys must not appear in req.Tasks.
+	SeededKeyToTaskID map[string]uuid.UUID
 }
 
 type projectTaskGraphWriteResult struct {
@@ -2274,6 +2516,12 @@ type projectTaskGraphWriteResult struct {
 
 func (r *PgRepository) createProjectTaskGraphWithQueries(ctx context.Context, q *queries.Queries, req CreateProjectTaskGraphRequest, opts projectTaskGraphWriteOptions) (projectTaskGraphWriteResult, error) {
 	keyToID := map[string]uuid.UUID{}
+	for k, id := range opts.SeededKeyToTaskID {
+		if strings.TrimSpace(k) == "" || id == uuid.Nil {
+			continue
+		}
+		keyToID[k] = id
+	}
 	created := make([]ProjectTaskGraphTaskResult, 0, len(req.Tasks))
 	createdTasks := make([]ProjectTask, 0, len(req.Tasks))
 	dependencies := make([]ProjectTaskDependency, 0)

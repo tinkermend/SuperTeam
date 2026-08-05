@@ -19,6 +19,14 @@ vi.mock("@/lib/api/scenario-templates", async (importOriginal) => {
     listScenarioTemplates: vi.fn()
 };
 });
+vi.mock("@/lib/api/casting", () => ({
+  getPlaybookReadiness: vi.fn().mockResolvedValue([]),
+  listProjectCastings: vi.fn().mockResolvedValue([]),
+  listRoleCandidates: vi.fn().mockResolvedValue([]),
+  putProjectCastings: vi.fn().mockResolvedValue([]),
+  listRoleVocabulary: vi.fn().mockResolvedValue([]),
+}));
+// Note: casting API uses (options, ...) signature matching client.ts helpers.
 
 const softwareDelivery = {
   id: "00000000-0000-0000-0000-000000000401",

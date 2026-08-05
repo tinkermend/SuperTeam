@@ -279,6 +279,24 @@ func (e CreatePromptTemplateRequestScope) Valid() bool {
 	}
 }
 
+// Defines values for CreateRoleVocabularyRequestStatus.
+const (
+	CreateRoleVocabularyRequestStatusActive   CreateRoleVocabularyRequestStatus = "active"
+	CreateRoleVocabularyRequestStatusDisabled CreateRoleVocabularyRequestStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the CreateRoleVocabularyRequestStatus enum.
+func (e CreateRoleVocabularyRequestStatus) Valid() bool {
+	switch e {
+	case CreateRoleVocabularyRequestStatusActive:
+		return true
+	case CreateRoleVocabularyRequestStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateTeamRequestInitialMembersRole.
 const (
 	CreateTeamRequestInitialMembersRoleMember CreateTeamRequestInitialMembersRole = "member"
@@ -1161,6 +1179,24 @@ func (e MCPTransport) Valid() bool {
 	case Http:
 		return true
 	case StreamableHttp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PatchRoleVocabularyRequestStatus.
+const (
+	PatchRoleVocabularyRequestStatusActive   PatchRoleVocabularyRequestStatus = "active"
+	PatchRoleVocabularyRequestStatusDisabled PatchRoleVocabularyRequestStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the PatchRoleVocabularyRequestStatus enum.
+func (e PatchRoleVocabularyRequestStatus) Valid() bool {
+	switch e {
+	case PatchRoleVocabularyRequestStatusActive:
+		return true
+	case PatchRoleVocabularyRequestStatusDisabled:
 		return true
 	default:
 		return false
@@ -2163,6 +2199,45 @@ func (e ReviewerPreferenceSelectionReason) Valid() bool {
 	}
 }
 
+// Defines values for RoleCandidateCapabilityFit.
+const (
+	RoleCandidateCapabilityFitMatched RoleCandidateCapabilityFit = "matched"
+	RoleCandidateCapabilityFitMissing RoleCandidateCapabilityFit = "missing"
+	RoleCandidateCapabilityFitPartial RoleCandidateCapabilityFit = "partial"
+)
+
+// Valid indicates whether the value is a known member of the RoleCandidateCapabilityFit enum.
+func (e RoleCandidateCapabilityFit) Valid() bool {
+	switch e {
+	case RoleCandidateCapabilityFitMatched:
+		return true
+	case RoleCandidateCapabilityFitMissing:
+		return true
+	case RoleCandidateCapabilityFitPartial:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RoleVocabularyEntryStatus.
+const (
+	RoleVocabularyEntryStatusActive   RoleVocabularyEntryStatus = "active"
+	RoleVocabularyEntryStatusDisabled RoleVocabularyEntryStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the RoleVocabularyEntryStatus enum.
+func (e RoleVocabularyEntryStatus) Valid() bool {
+	switch e {
+	case RoleVocabularyEntryStatusActive:
+		return true
+	case RoleVocabularyEntryStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RuntimeCommandWritebackAcceptedStatus.
 const (
 	Accepted RuntimeCommandWritebackAcceptedStatus = "accepted"
@@ -2894,25 +2969,25 @@ func (e ListPermissionApprovalsParamsView) Valid() bool {
 
 // Defines values for ListPermissionApprovalsParamsStatus.
 const (
-	Approved          ListPermissionApprovalsParamsStatus = "approved"
-	Cancelled         ListPermissionApprovalsParamsStatus = "cancelled"
-	NeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
-	Pending           ListPermissionApprovalsParamsStatus = "pending"
-	Rejected          ListPermissionApprovalsParamsStatus = "rejected"
+	ListPermissionApprovalsParamsStatusApproved          ListPermissionApprovalsParamsStatus = "approved"
+	ListPermissionApprovalsParamsStatusCancelled         ListPermissionApprovalsParamsStatus = "cancelled"
+	ListPermissionApprovalsParamsStatusNeedsMoreEvidence ListPermissionApprovalsParamsStatus = "needs_more_evidence"
+	ListPermissionApprovalsParamsStatusPending           ListPermissionApprovalsParamsStatus = "pending"
+	ListPermissionApprovalsParamsStatusRejected          ListPermissionApprovalsParamsStatus = "rejected"
 )
 
 // Valid indicates whether the value is a known member of the ListPermissionApprovalsParamsStatus enum.
 func (e ListPermissionApprovalsParamsStatus) Valid() bool {
 	switch e {
-	case Approved:
+	case ListPermissionApprovalsParamsStatusApproved:
 		return true
-	case Cancelled:
+	case ListPermissionApprovalsParamsStatusCancelled:
 		return true
-	case NeedsMoreEvidence:
+	case ListPermissionApprovalsParamsStatusNeedsMoreEvidence:
 		return true
-	case Pending:
+	case ListPermissionApprovalsParamsStatusPending:
 		return true
-	case Rejected:
+	case ListPermissionApprovalsParamsStatusRejected:
 		return true
 	default:
 		return false
@@ -2960,19 +3035,19 @@ func (e ChangeTeamMemberRoleJSONBodyRole) Valid() bool {
 
 // Defines values for ListWorkflowInstancesParamsScope.
 const (
-	ListWorkflowInstancesParamsScopeActive   ListWorkflowInstancesParamsScope = "active"
-	ListWorkflowInstancesParamsScopeAll      ListWorkflowInstancesParamsScope = "all"
-	ListWorkflowInstancesParamsScopeArchived ListWorkflowInstancesParamsScope = "archived"
+	Active   ListWorkflowInstancesParamsScope = "active"
+	All      ListWorkflowInstancesParamsScope = "all"
+	Archived ListWorkflowInstancesParamsScope = "archived"
 )
 
 // Valid indicates whether the value is a known member of the ListWorkflowInstancesParamsScope enum.
 func (e ListWorkflowInstancesParamsScope) Valid() bool {
 	switch e {
-	case ListWorkflowInstancesParamsScopeActive:
+	case Active:
 		return true
-	case ListWorkflowInstancesParamsScopeAll:
+	case All:
 		return true
-	case ListWorkflowInstancesParamsScopeArchived:
+	case Archived:
 		return true
 	default:
 		return false
@@ -3467,6 +3542,17 @@ type CreateProviderSessionRequest struct {
 	Recoverable         *bool                   `json:"recoverable,omitempty"`
 	RuntimeNodeId       openapi_types.UUID      `json:"runtime_node_id"`
 }
+
+// CreateRoleVocabularyRequest defines model for CreateRoleVocabularyRequest.
+type CreateRoleVocabularyRequest struct {
+	Description *string                            `json:"description,omitempty"`
+	RoleKey     string                             `json:"role_key"`
+	Status      *CreateRoleVocabularyRequestStatus `json:"status,omitempty"`
+	Title       string                             `json:"title"`
+}
+
+// CreateRoleVocabularyRequestStatus defines model for CreateRoleVocabularyRequest.Status.
+type CreateRoleVocabularyRequestStatus string
 
 // CreateScenarioTemplateRequest defines model for CreateScenarioTemplateRequest.
 type CreateScenarioTemplateRequest struct {
@@ -4820,6 +4906,16 @@ type PatchProjectEvidenceRequest struct {
 	VerificationStatus ProjectEvidenceVerificationStatus `json:"verification_status"`
 }
 
+// PatchRoleVocabularyRequest defines model for PatchRoleVocabularyRequest.
+type PatchRoleVocabularyRequest struct {
+	Description *string                           `json:"description,omitempty"`
+	Status      *PatchRoleVocabularyRequestStatus `json:"status,omitempty"`
+	Title       *string                           `json:"title,omitempty"`
+}
+
+// PatchRoleVocabularyRequestStatus defines model for PatchRoleVocabularyRequest.Status.
+type PatchRoleVocabularyRequestStatus string
+
 // PatchScenarioTemplateRequest defines model for PatchScenarioTemplateRequest.
 type PatchScenarioTemplateRequest struct {
 	Description *string                             `json:"description,omitempty"`
@@ -4934,6 +5030,26 @@ type PlatformLimits struct {
 
 	// WorkspaceBaseDir Effective platform workspace root from system config (runtime.workspace_base_dir). Agents may still override via local config.yaml / RUNTIME_AGENT_WORKSPACE_DIR. Missing field keeps the agent local default.
 	WorkspaceBaseDir *string `json:"workspace_base_dir,omitempty"`
+}
+
+// PlaybookExitReach defines model for PlaybookExitReach.
+type PlaybookExitReach struct {
+	Deliverable   string   `json:"deliverable"`
+	Label         string   `json:"label"`
+	MissingRoles  []string `json:"missing_roles"`
+	Reachable     bool     `json:"reachable"`
+	RequiredRoles []string `json:"required_roles"`
+}
+
+// PlaybookReadiness defines model for PlaybookReadiness.
+type PlaybookReadiness struct {
+	DeepestExit         *PlaybookExitReach  `json:"deepest_exit,omitempty"`
+	Exits               []PlaybookExitReach `json:"exits"`
+	MissingRolesForAny  []string            `json:"missing_roles_for_any"`
+	NextExitNeedsRoles  []string            `json:"next_exit_needs_roles"`
+	Runnable            bool                `json:"runnable"`
+	ScenarioTemplateKey string              `json:"scenario_template_key"`
+	TemplateName        string              `json:"template_name"`
 }
 
 // PresignRuntimeArtifactRequest defines model for PresignRuntimeArtifactRequest.
@@ -5655,6 +5771,19 @@ type ProjectPlanRevision struct {
 	ValidationWarnings     []string               `json:"validation_warnings"`
 }
 
+// ProjectPlaybookCasting defines model for ProjectPlaybookCasting.
+type ProjectPlaybookCasting struct {
+	CastByUserId        openapi_types.UUID `json:"cast_by_user_id"`
+	CreatedAt           time.Time          `json:"created_at"`
+	DigitalEmployeeId   openapi_types.UUID `json:"digital_employee_id"`
+	Id                  openapi_types.UUID `json:"id"`
+	ProjectId           openapi_types.UUID `json:"project_id"`
+	RoleKey             string             `json:"role_key"`
+	ScenarioTemplateKey string             `json:"scenario_template_key"`
+	TenantId            openapi_types.UUID `json:"tenant_id"`
+	UpdatedAt           time.Time          `json:"updated_at"`
+}
+
 // ProjectPrincipalType defines model for ProjectPrincipalType.
 type ProjectPrincipalType string
 
@@ -6180,6 +6309,15 @@ type PushTaskEventsRequest struct {
 	Events []map[string]interface{} `json:"events"`
 }
 
+// PutProjectCastingsRequest defines model for PutProjectCastingsRequest.
+type PutProjectCastingsRequest struct {
+	Assignments []struct {
+		DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
+		RoleKey           string             `json:"role_key"`
+	} `json:"assignments"`
+	ScenarioTemplateKey string `json:"scenario_template_key"`
+}
+
 // ReassignDigitalEmployeeTeamRequest defines model for ReassignDigitalEmployeeTeamRequest.
 type ReassignDigitalEmployeeTeamRequest struct {
 	TeamId openapi_types.UUID `json:"team_id"`
@@ -6278,6 +6416,36 @@ type ReviewerPreferenceSelectionReason string
 type RevokeRuntimeSessionRequest struct {
 	Reason *string `json:"reason,omitempty"`
 }
+
+// RoleCandidate defines model for RoleCandidate.
+type RoleCandidate struct {
+	CapabilityFit       RoleCandidateCapabilityFit `json:"capability_fit"`
+	DigitalEmployeeId   openapi_types.UUID         `json:"digital_employee_id"`
+	MatchedCapabilities []string                   `json:"matched_capabilities"`
+	MissingCapabilities []string                   `json:"missing_capabilities"`
+	Name                string                     `json:"name"`
+	RoleKeys            []string                   `json:"role_keys"`
+	TeamId              *openapi_types.UUID        `json:"team_id,omitempty"`
+	TeamName            *string                    `json:"team_name,omitempty"`
+}
+
+// RoleCandidateCapabilityFit defines model for RoleCandidate.CapabilityFit.
+type RoleCandidateCapabilityFit string
+
+// RoleVocabularyEntry defines model for RoleVocabularyEntry.
+type RoleVocabularyEntry struct {
+	CreatedAt   time.Time                 `json:"created_at"`
+	Description string                    `json:"description"`
+	Id          openapi_types.UUID        `json:"id"`
+	RoleKey     string                    `json:"role_key"`
+	Status      RoleVocabularyEntryStatus `json:"status"`
+	TenantId    openapi_types.UUID        `json:"tenant_id"`
+	Title       string                    `json:"title"`
+	UpdatedAt   time.Time                 `json:"updated_at"`
+}
+
+// RoleVocabularyEntryStatus defines model for RoleVocabularyEntry.Status.
+type RoleVocabularyEntryStatus string
 
 // RuntimeCapability defines model for RuntimeCapability.
 type RuntimeCapability struct {
@@ -7599,6 +7767,20 @@ type ListProjectBudgetLedgerParams struct {
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// RequestProjectCastingExpansionJSONBody defines parameters for RequestProjectCastingExpansion.
+type RequestProjectCastingExpansionJSONBody struct {
+	DemandId            openapi_types.UUID `json:"demand_id"`
+	NeedsExternalRole   *bool              `json:"needs_external_role,omitempty"`
+	Reason              *string            `json:"reason,omitempty"`
+	ScenarioTemplateKey *string            `json:"scenario_template_key,omitempty"`
+	SuggestedRoleKey    *string            `json:"suggested_role_key,omitempty"`
+}
+
+// ListProjectCastingsParams defines parameters for ListProjectCastings.
+type ListProjectCastingsParams struct {
+	TemplateKey *string `form:"template_key,omitempty" json:"template_key,omitempty"`
+}
+
 // ListProjectConfigRevisionsParams defines parameters for ListProjectConfigRevisions.
 type ListProjectConfigRevisionsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -7659,10 +7841,23 @@ type ListProjectPlanRevisionsParams struct {
 	Offset   *Offset             `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// GetProjectPlaybookReadinessParams defines parameters for GetProjectPlaybookReadiness.
+type GetProjectPlaybookReadinessParams struct {
+	TemplateKey *string `form:"template_key,omitempty" json:"template_key,omitempty"`
+}
+
 // ListProjectReportsParams defines parameters for ListProjectReports.
 type ListProjectReportsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListProjectRoleCandidatesParams defines parameters for ListProjectRoleCandidates.
+type ListProjectRoleCandidatesParams struct {
+	RoleKey string `form:"role_key" json:"role_key"`
+
+	// RequiredCapabilities Comma-separated capability keys for hint ranking
+	RequiredCapabilities *string `form:"required_capabilities,omitempty" json:"required_capabilities,omitempty"`
 }
 
 // ListProjectRouteDecisionsParams defines parameters for ListProjectRouteDecisions.
@@ -7987,6 +8182,12 @@ type CreateProjectArchiveSnapshotJSONRequestBody = CreateProjectArchiveSnapshotR
 // SetProjectBudgetJSONRequestBody defines body for SetProjectBudget for application/json ContentType.
 type SetProjectBudgetJSONRequestBody = SetProjectBudgetRequest
 
+// RequestProjectCastingExpansionJSONRequestBody defines body for RequestProjectCastingExpansion for application/json ContentType.
+type RequestProjectCastingExpansionJSONRequestBody RequestProjectCastingExpansionJSONBody
+
+// PutProjectCastingsJSONRequestBody defines body for PutProjectCastings for application/json ContentType.
+type PutProjectCastingsJSONRequestBody = PutProjectCastingsRequest
+
 // UpdateProjectConfigJSONRequestBody defines body for UpdateProjectConfig for application/json ContentType.
 type UpdateProjectConfigJSONRequestBody = UpdateProjectConfigRequest
 
@@ -8016,6 +8217,12 @@ type RecloneProjectWorkspaceJSONRequestBody = ProjectWorkspaceManualActionReques
 
 // AppendProviderSessionEventJSONRequestBody defines body for AppendProviderSessionEvent for application/json ContentType.
 type AppendProviderSessionEventJSONRequestBody = AppendProviderSessionEventRequest
+
+// CreateRoleVocabularyJSONRequestBody defines body for CreateRoleVocabulary for application/json ContentType.
+type CreateRoleVocabularyJSONRequestBody = CreateRoleVocabularyRequest
+
+// PatchRoleVocabularyJSONRequestBody defines body for PatchRoleVocabulary for application/json ContentType.
+type PatchRoleVocabularyJSONRequestBody = PatchRoleVocabularyRequest
 
 // PresignRuntimeArtifactUploadJSONRequestBody defines body for PresignRuntimeArtifactUpload for application/json ContentType.
 type PresignRuntimeArtifactUploadJSONRequestBody = PresignRuntimeArtifactRequest
@@ -9101,6 +9308,15 @@ type ServerInterface interface {
 	// Set project token budget limit (提额/设限/清限)
 	// (PUT /api/v1/projects/{projectId}/budget-summary)
 	SetProjectBudget(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Open mid-execution casting expansion decision
+	// (POST /api/v1/projects/{projectId}/casting-expansions)
+	RequestProjectCastingExpansion(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// List project playbook castings
+	// (GET /api/v1/projects/{projectId}/castings)
+	ListProjectCastings(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectCastingsParams)
+	// Replace castings for one scenario template (auto-join members)
+	// (PUT /api/v1/projects/{projectId}/castings)
+	PutProjectCastings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Get current project configuration facts
 	// (GET /api/v1/projects/{projectId}/config)
 	GetProjectConfig(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -9167,9 +9383,15 @@ type ServerInterface interface {
 	// Get a project plan revision
 	// (GET /api/v1/projects/{projectId}/plan-revisions/{planRevisionId})
 	GetProjectPlanRevision(w http.ResponseWriter, r *http.Request, projectId ProjectId, planRevisionId PlanRevisionId)
+	// Deepest reachable exit per scenario template under casting/pool
+	// (GET /api/v1/projects/{projectId}/playbook-readiness)
+	GetProjectPlaybookReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectPlaybookReadinessParams)
 	// List project report refs
 	// (GET /api/v1/projects/{projectId}/reports)
 	ListProjectReports(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectReportsParams)
+	// List role candidates with capability annotations
+	// (GET /api/v1/projects/{projectId}/role-candidates)
+	ListProjectRoleCandidates(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRoleCandidatesParams)
 	// List project route decisions
 	// (GET /api/v1/projects/{projectId}/route-decisions)
 	ListProjectRouteDecisions(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRouteDecisionsParams)
@@ -9218,6 +9440,15 @@ type ServerInterface interface {
 	// Append a provider session event reported by Runtime Agent
 	// (POST /api/v1/provider-sessions/{providerSessionId}/events)
 	AppendProviderSessionEvent(w http.ResponseWriter, r *http.Request, providerSessionId ProviderSessionId, params AppendProviderSessionEventParams)
+	// List tenant role vocabulary
+	// (GET /api/v1/role-vocabulary)
+	ListRoleVocabulary(w http.ResponseWriter, r *http.Request)
+	// Create a role vocabulary entry
+	// (POST /api/v1/role-vocabulary)
+	CreateRoleVocabulary(w http.ResponseWriter, r *http.Request)
+	// Patch a role vocabulary entry
+	// (PATCH /api/v1/role-vocabulary/{roleKey})
+	PatchRoleVocabulary(w http.ResponseWriter, r *http.Request, roleKey string)
 	// Presign a direct upload URL for a content-addressed artifact
 	// (POST /api/v1/runtime/artifacts/presign)
 	PresignRuntimeArtifactUpload(w http.ResponseWriter, r *http.Request)
@@ -10136,6 +10367,24 @@ func (_ Unimplemented) SetProjectBudget(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Open mid-execution casting expansion decision
+// (POST /api/v1/projects/{projectId}/casting-expansions)
+func (_ Unimplemented) RequestProjectCastingExpansion(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project playbook castings
+// (GET /api/v1/projects/{projectId}/castings)
+func (_ Unimplemented) ListProjectCastings(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectCastingsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Replace castings for one scenario template (auto-join members)
+// (PUT /api/v1/projects/{projectId}/castings)
+func (_ Unimplemented) PutProjectCastings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get current project configuration facts
 // (GET /api/v1/projects/{projectId}/config)
 func (_ Unimplemented) GetProjectConfig(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
@@ -10268,9 +10517,21 @@ func (_ Unimplemented) GetProjectPlanRevision(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Deepest reachable exit per scenario template under casting/pool
+// (GET /api/v1/projects/{projectId}/playbook-readiness)
+func (_ Unimplemented) GetProjectPlaybookReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectPlaybookReadinessParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List project report refs
 // (GET /api/v1/projects/{projectId}/reports)
 func (_ Unimplemented) ListProjectReports(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectReportsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List role candidates with capability annotations
+// (GET /api/v1/projects/{projectId}/role-candidates)
+func (_ Unimplemented) ListProjectRoleCandidates(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectRoleCandidatesParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -10367,6 +10628,24 @@ func (_ Unimplemented) ListProviderSessionEvents(w http.ResponseWriter, r *http.
 // Append a provider session event reported by Runtime Agent
 // (POST /api/v1/provider-sessions/{providerSessionId}/events)
 func (_ Unimplemented) AppendProviderSessionEvent(w http.ResponseWriter, r *http.Request, providerSessionId ProviderSessionId, params AppendProviderSessionEventParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List tenant role vocabulary
+// (GET /api/v1/role-vocabulary)
+func (_ Unimplemented) ListRoleVocabulary(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a role vocabulary entry
+// (POST /api/v1/role-vocabulary)
+func (_ Unimplemented) CreateRoleVocabulary(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Patch a role vocabulary entry
+// (PATCH /api/v1/role-vocabulary/{roleKey})
+func (_ Unimplemented) PatchRoleVocabulary(w http.ResponseWriter, r *http.Request, roleKey string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -14460,6 +14739,100 @@ func (siw *ServerInterfaceWrapper) SetProjectBudget(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// RequestProjectCastingExpansion operation middleware
+func (siw *ServerInterfaceWrapper) RequestProjectCastingExpansion(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestProjectCastingExpansion(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectCastings operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectCastings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectCastingsParams
+
+	// ------------- Optional query parameter "template_key" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "template_key", r.URL.Query(), &params.TemplateKey, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "template_key"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "template_key", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectCastings(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutProjectCastings operation middleware
+func (siw *ServerInterfaceWrapper) PutProjectCastings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutProjectCastings(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetProjectConfig operation middleware
 func (siw *ServerInterfaceWrapper) GetProjectConfig(w http.ResponseWriter, r *http.Request) {
 
@@ -15416,6 +15789,48 @@ func (siw *ServerInterfaceWrapper) GetProjectPlanRevision(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// GetProjectPlaybookReadiness operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectPlaybookReadiness(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetProjectPlaybookReadinessParams
+
+	// ------------- Optional query parameter "template_key" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "template_key", r.URL.Query(), &params.TemplateKey, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "template_key"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "template_key", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectPlaybookReadiness(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjectReports operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectReports(w http.ResponseWriter, r *http.Request) {
 
@@ -15462,6 +15877,61 @@ func (siw *ServerInterfaceWrapper) ListProjectReports(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListProjectReports(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectRoleCandidates operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectRoleCandidates(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListProjectRoleCandidatesParams
+
+	// ------------- Required query parameter "role_key" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "role_key", r.URL.Query(), &params.RoleKey, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "role_key"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "role_key", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "required_capabilities" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "required_capabilities", r.URL.Query(), &params.RequiredCapabilities, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "required_capabilities"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "required_capabilities", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectRoleCandidates(w, r, projectId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -16080,6 +16550,60 @@ func (siw *ServerInterfaceWrapper) AppendProviderSessionEvent(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AppendProviderSessionEvent(w, r, providerSessionId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRoleVocabulary operation middleware
+func (siw *ServerInterfaceWrapper) ListRoleVocabulary(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRoleVocabulary(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateRoleVocabulary operation middleware
+func (siw *ServerInterfaceWrapper) CreateRoleVocabulary(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateRoleVocabulary(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchRoleVocabulary operation middleware
+func (siw *ServerInterfaceWrapper) PatchRoleVocabulary(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "roleKey" -------------
+	var roleKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "roleKey", chi.URLParam(r, "roleKey"), &roleKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "roleKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchRoleVocabulary(w, r, roleKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -19539,6 +20063,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/budget-summary", wrapper.SetProjectBudget)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/casting-expansions", wrapper.RequestProjectCastingExpansion)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/castings", wrapper.ListProjectCastings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/castings", wrapper.PutProjectCastings)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/config", wrapper.GetProjectConfig)
 	})
 	r.Group(func(r chi.Router) {
@@ -19605,7 +20138,13 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/plan-revisions/{planRevisionId}", wrapper.GetProjectPlanRevision)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/playbook-readiness", wrapper.GetProjectPlaybookReadiness)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/reports", wrapper.ListProjectReports)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/role-candidates", wrapper.ListProjectRoleCandidates)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/route-decisions", wrapper.ListProjectRouteDecisions)
@@ -19654,6 +20193,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/provider-sessions/{providerSessionId}/events", wrapper.AppendProviderSessionEvent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/role-vocabulary", wrapper.ListRoleVocabulary)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/role-vocabulary", wrapper.CreateRoleVocabulary)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/role-vocabulary/{roleKey}", wrapper.PatchRoleVocabulary)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/runtime/artifacts/presign", wrapper.PresignRuntimeArtifactUpload)

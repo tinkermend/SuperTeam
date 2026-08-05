@@ -30,9 +30,19 @@ type ProjectStore struct {
 	employeeReader    GateEmployeeRuntimeReader
 	capabilityReader  GateCapabilityReader
 	nodeResolver      GateProjectTaskNodeResolver
+	// castingLister loads project playbook casting (optional; nil = no force-cast).
+	castingLister PlaybookCastingLister
+	// castingExpansion opens mid-execution casting_expansion after task complete
+	// (optional; nil = G9 coordinator path disabled).
+	castingExpansion CastingExpansionProposer
 	// maxAttemptsDefault resolves tenant platform default for project_tasks.max_attempts.
 	// nil falls back to systemconfig registry default (3).
 	maxAttemptsDefault func(ctx context.Context, tenantID uuid.UUID) int32
+}
+
+// PlaybookCastingLister is the optional read port for project×template casting rows.
+type PlaybookCastingLister interface {
+	ListProjectCastings(ctx context.Context, tenantID, projectID uuid.UUID, templateKey *string) ([]project.CastingEntry, error)
 }
 
 type clockFunc func() time.Time
@@ -117,6 +127,11 @@ func (s *ProjectStore) WithDigitalEmployeePlanningProfiles(source DigitalEmploye
 
 // WithMaxAttemptsDefault attaches the platform default max_attempts resolver
 // (typically systemconfig project_task.default_max_attempts).
+func (s *ProjectStore) WithPlaybookCastingLister(lister PlaybookCastingLister) *ProjectStore {
+	s.castingLister = lister
+	return s
+}
+
 func (s *ProjectStore) WithMaxAttemptsDefault(fn func(ctx context.Context, tenantID uuid.UUID) int32) *ProjectStore {
 	s.maxAttemptsDefault = fn
 	return s
@@ -406,6 +421,19 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 			Roles:          exemption.Roles,
 		})
 	}
+	var playbookCasting []PlaybookCastingAssignment
+	if s.castingLister != nil && key != "" {
+		entries, castErr := s.castingLister.ListProjectCastings(ctx, input.TenantID, input.ProjectID, &key)
+		if castErr == nil {
+			playbookCasting = make([]PlaybookCastingAssignment, 0, len(entries))
+			for _, e := range entries {
+				playbookCasting = append(playbookCasting, PlaybookCastingAssignment{
+					RoleKey:           e.RoleKey,
+					DigitalEmployeeID: e.DigitalEmployeeID,
+				})
+			}
+		}
+	}
 	return CoordinationSnapshot{
 		ProjectID:                  projectRecord.ID,
 		Demand:                     DemandSnapshot{ID: demand.ID, Title: demand.Title, Content: content, ScenarioTemplateKey: demandTemplateKey, CoordinationMode: demand.CoordinationMode},
@@ -413,6 +441,7 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		CoordinationPolicy:         projectRecord.CoordinationPolicy,
 		ScenarioTemplate:           scenarioTemplate,
 		DemandConstraintExemptions: demandExemptions,
+		PlaybookCasting:            playbookCasting,
 	}, nil
 }
 
@@ -515,6 +544,8 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 	status := project.PlanRevisionStatusPendingReview
 	if !validation.Acceptable {
 		status = project.PlanRevisionStatusValidationFailed
+	} else if input.ForcePendingReview {
+		status = project.PlanRevisionStatusPendingReview
 	} else if isAutonomousCoordinationMode(input.CoordinationMode) {
 		if !validation.ReviewRequired && !input.Decision.RequiresHumanReview {
 			status = project.PlanRevisionStatusAccepted
@@ -542,6 +573,11 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 	if input.Decision.RequiresHumanReview {
 		reviewReasons = appendUniqueString(reviewReasons, "plan_requires_human_review")
 	}
+	for _, reason := range input.ForcePendingReviewReasons {
+		if strings.TrimSpace(reason) != "" {
+			reviewReasons = appendUniqueString(reviewReasons, reason)
+		}
+	}
 	// Freeze the demand's coordination_mode onto the plan revision at persist time (spec
 	// §8.1). If the demand cannot be read (legacy/missing), leave it nil rather than failing
 	// the persist; interpreting a nil mode as "loop" happens downstream, not here.
@@ -562,7 +598,7 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 		PlanFingerprint:        validation.PlanFingerprint,
 		ValidationErrors:       validation.Errors,
 		ValidationWarnings:     validation.Warnings,
-		ReviewRequired:         validation.ReviewRequired || input.Decision.RequiresHumanReview,
+		ReviewRequired:         validation.ReviewRequired || input.Decision.RequiresHumanReview || input.ForcePendingReview,
 		ReviewReason:           stringPtr(strings.Join(reviewReasons, "; ")),
 		SupersedeOpenRevisions: input.SupersedeOpen,
 		SupersedeReason:        input.SupersedeReason,
@@ -571,6 +607,19 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 	})
 	if err != nil {
 		return PlanRevisionResult{}, err
+	}
+	// Casting expansion / replan supersedes open pending_review plans; cancel their
+	// plan_review cards so Accept is never called on a superseded revision (§7.4).
+	if input.SupersedeOpen {
+		cancelled, cancelErr := s.repository.CancelStalePlanReviewDecisionsForDemand(ctx, input.TenantID, input.ProjectID, input.DemandID, revision.ID)
+		if cancelErr != nil {
+			return PlanRevisionResult{}, cancelErr
+		}
+		if s.inbox != nil {
+			for _, d := range cancelled {
+				_ = s.inbox.ResolveProjectDecisionRequest(ctx, d)
+			}
+		}
 	}
 	return PlanRevisionResult{
 		ID:              revision.ID,
@@ -1651,6 +1700,72 @@ func (s *ProjectStore) planningGapDemandID(ctx context.Context, tenantID uuid.UU
 	return demandID, nil
 }
 
+// castingExpansionRoute reads demand + expansion hire from approval context /
+// resolve payload. Shared by LoadHumanDecisionRoute.
+func (s *ProjectStore) castingExpansionRoute(ctx context.Context, tenantID uuid.UUID, decision project.DecisionRequest) (CastingExpansionRoute, error) {
+	if s.approvals == nil {
+		return CastingExpansionRoute{}, ErrActivityStoreRequired
+	}
+	approvalRequest, err := s.approvals.GetRequest(ctx, tenantID, decision.ApprovalRequestID)
+	if err != nil {
+		return CastingExpansionRoute{}, err
+	}
+	payload := approvalRequest.ContextPayload
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	demandID, err := uuid.Parse(stringFromAny(payload["demand_id"]))
+	if err != nil {
+		return CastingExpansionRoute{}, project.ErrInvalidProject
+	}
+	// Prefer resolve-time selection (who was cast) over suggestion.
+	// ResolveDecision writes casting then signals; context payload still has
+	// the original suggestion — expansion employee is recovered from the
+	// latest casting-approved event when empty.
+	employeeID := strings.TrimSpace(stringFromAny(payload["digital_employee_id"]))
+	if employeeID == "" {
+		employeeID = strings.TrimSpace(stringFromAny(payload["suggested_employee_id"]))
+	}
+	roleKey := strings.TrimSpace(stringFromAny(payload["role_key"]))
+	if roleKey == "" {
+		roleKey = strings.TrimSpace(stringFromAny(payload["suggested_role_key"]))
+	}
+	templateKey := strings.TrimSpace(stringFromAny(payload["scenario_template_key"]))
+	return CastingExpansionRoute{
+		ProjectID:           decision.ProjectID,
+		DemandID:            demandID,
+		ExpansionEmployeeID: employeeID,
+		ExpansionRoleKey:    roleKey,
+		ScenarioTemplateKey: templateKey,
+	}, nil
+}
+
+// LoadPriorPlanPayload returns the current effective plan revision payload for
+// a demand (highest open accepted/decomposed revision). Used by casting
+// expansion overbound diff.
+func (s *ProjectStore) LoadPriorPlanPayload(ctx context.Context, input LoadPriorPlanPayloadInput) (LoadPriorPlanPayloadResult, error) {
+	if s.repository == nil {
+		return LoadPriorPlanPayloadResult{}, ErrActivityStoreRequired
+	}
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, input.TenantID, input.ProjectID, input.DemandID)
+	if err != nil {
+		return LoadPriorPlanPayloadResult{}, err
+	}
+	revisionID := project.CurrentEffectivePlanRevisionID(revisions)
+	if revisionID == uuid.Nil {
+		return LoadPriorPlanPayloadResult{Found: false}, nil
+	}
+	revision, err := s.repository.GetPlanRevision(ctx, input.TenantID, input.ProjectID, revisionID)
+	if err != nil {
+		return LoadPriorPlanPayloadResult{}, err
+	}
+	payload, err := planRevisionPayloadFromMap(revision.Payload)
+	if err != nil {
+		return LoadPriorPlanPayloadResult{}, err
+	}
+	return LoadPriorPlanPayloadResult{Found: true, Payload: payload}, nil
+}
+
 func (s *ProjectStore) appendUpstreamSupplementAuditEvent(ctx context.Context, tenantID, projectID, taskID, decisionRequestID uuid.UUID, eventType project.ProjectEventType, summary string) error {
 	_, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(tenantID, projectID, eventType, taskID.String(), summary, map[string]any{
 		"project_task_id":     taskID.String(),
@@ -1805,6 +1920,14 @@ func (s *ProjectStore) LoadHumanDecisionRoute(ctx context.Context, input LoadHum
 			return HumanDecisionRouteResult{}, err
 		}
 		result.PlanningGap = &PlanningGapRoute{ProjectID: decision.ProjectID, DemandID: demandID}
+		return result, nil
+	}
+	if decision.DecisionType == project.DecisionTypeCastingExpansion {
+		route, err := s.castingExpansionRoute(ctx, input.TenantID, decision)
+		if err != nil {
+			return HumanDecisionRouteResult{}, err
+		}
+		result.CastingExpansion = &route
 		return result, nil
 	}
 	if decision.DecisionType != "plan_review" {
@@ -3930,6 +4053,9 @@ func (s *ProjectStore) ensurePlanningGapDecision(ctx context.Context, input Reje
 	if err != nil {
 		return uuid.Nil, err
 	}
+	// Projection-only: demand_id + diagnosis + gap so inbox cards and E2E can
+	// bind the gap to the demand (CreateDecisionRequest does not persist this).
+	decision.InboxContext = contextPayload
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
 			return uuid.Nil, err

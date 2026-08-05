@@ -1,0 +1,222 @@
+package rolevocab
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/superteam/control-plane/internal/storage/queries"
+)
+
+// roleKeyPattern: 下划线小写，与批一能力词表一致。
+var roleKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+type Service struct {
+	q *queries.Queries
+}
+
+func NewService(q *queries.Queries) *Service {
+	return &Service{q: q}
+}
+
+func (s *Service) List(ctx context.Context, tenantID uuid.UUID) ([]Entry, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	rows, err := s.q.ListRoleVocabulary(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Entry, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, entryFromRow(row))
+	}
+	return out, nil
+}
+
+func (s *Service) ListActive(ctx context.Context, tenantID uuid.UUID) ([]Entry, error) {
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	rows, err := s.q.ListActiveRoleVocabulary(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Entry, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, entryFromRow(row))
+	}
+	return out, nil
+}
+
+// ActiveKeys returns the subset of keys that are registered and active.
+func (s *Service) ActiveKeys(ctx context.Context, tenantID uuid.UUID, keys []string) (map[string]bool, error) {
+	unique := normalizeKeys(keys)
+	if len(unique) == 0 {
+		return map[string]bool{}, nil
+	}
+	rows, err := s.q.GetActiveRoleVocabularyByKeys(ctx, queries.GetActiveRoleVocabularyByKeysParams{
+		TenantID: tenantID,
+		RoleKeys: unique,
+	})
+	if err != nil {
+		return nil, err
+	}
+	active := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		active[row.RoleKey] = true
+	}
+	return active, nil
+}
+
+// UnknownKeys returns keys not registered as active.
+func (s *Service) UnknownKeys(ctx context.Context, tenantID uuid.UUID, keys []string) ([]string, error) {
+	unique := normalizeKeys(keys)
+	if len(unique) == 0 {
+		return nil, nil
+	}
+	active, err := s.ActiveKeys(ctx, tenantID, unique)
+	if err != nil {
+		return nil, err
+	}
+	var unknown []string
+	for _, key := range unique {
+		if !active[key] {
+			unknown = append(unknown, key)
+		}
+	}
+	return unknown, nil
+}
+
+func (s *Service) Create(ctx context.Context, req CreateRequest) (Entry, error) {
+	if req.TenantID == uuid.Nil {
+		return Entry{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	key := strings.TrimSpace(req.RoleKey)
+	if !roleKeyPattern.MatchString(key) {
+		return Entry{}, fmt.Errorf("%w: role_key must be lowercase snake_case (got %q)", ErrInvalidInput, key)
+	}
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return Entry{}, fmt.Errorf("%w: title is required", ErrInvalidInput)
+	}
+	status := strings.TrimSpace(req.Status)
+	if status == "" {
+		status = StatusActive
+	}
+	if status != StatusActive && status != StatusDisabled {
+		return Entry{}, fmt.Errorf("%w: status must be active or disabled", ErrInvalidInput)
+	}
+	row, err := s.q.CreateRoleVocabulary(ctx, queries.CreateRoleVocabularyParams{
+		ID:          uuid.New(),
+		TenantID:    req.TenantID,
+		RoleKey:     key,
+		Title:       title,
+		Description: pgtype.Text{String: strings.TrimSpace(req.Description), Valid: true},
+		Status:      pgtype.Text{String: status, Valid: true},
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return Entry{}, fmt.Errorf("%w: role_key %q already exists", ErrConflict, key)
+		}
+		return Entry{}, err
+	}
+	return entryFromRow(row), nil
+}
+
+func (s *Service) Patch(ctx context.Context, req PatchRequest) (Entry, error) {
+	if req.TenantID == uuid.Nil {
+		return Entry{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	key := strings.TrimSpace(req.RoleKey)
+	if key == "" {
+		return Entry{}, fmt.Errorf("%w: role_key is required", ErrInvalidInput)
+	}
+	var title, description, status pgtype.Text
+	if req.Title != nil {
+		t := strings.TrimSpace(*req.Title)
+		if t == "" {
+			return Entry{}, fmt.Errorf("%w: title must not be blank", ErrInvalidInput)
+		}
+		title = pgtype.Text{String: t, Valid: true}
+	}
+	if req.Description != nil {
+		description = pgtype.Text{String: strings.TrimSpace(*req.Description), Valid: true}
+	}
+	if req.Status != nil {
+		st := strings.TrimSpace(*req.Status)
+		if st != StatusActive && st != StatusDisabled {
+			return Entry{}, fmt.Errorf("%w: status must be active or disabled", ErrInvalidInput)
+		}
+		status = pgtype.Text{String: st, Valid: true}
+	}
+	row, err := s.q.UpdateRoleVocabulary(ctx, queries.UpdateRoleVocabularyParams{
+		TenantID:    req.TenantID,
+		RoleKey:     key,
+		Title:       title,
+		Description: description,
+		Status:      status,
+	})
+	if err != nil {
+		if errorsIsNoRows(err) {
+			return Entry{}, ErrNotFound
+		}
+		return Entry{}, err
+	}
+	return entryFromRow(row), nil
+}
+
+func entryFromRow(row queries.RoleVocabulary) Entry {
+	return Entry{
+		ID:          row.ID,
+		TenantID:    row.TenantID,
+		RoleKey:     row.RoleKey,
+		Title:       row.Title,
+		Description: row.Description,
+		Status:      row.Status,
+		CreatedAt:   pgTime(row.CreatedAt),
+		UpdatedAt:   pgTime(row.UpdatedAt),
+	}
+}
+
+func pgTime(ts pgtype.Timestamptz) time.Time {
+	if !ts.Valid {
+		return time.Time{}
+	}
+	return ts.Time
+}
+
+func normalizeKeys(keys []string) []string {
+	seen := make(map[string]struct{}, len(keys))
+	out := make([]string, 0, len(keys))
+	for _, raw := range keys {
+		key := strings.TrimSpace(raw)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+	}
+	return out
+}
+
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "unique constraint") || strings.Contains(msg, "uq_role_vocabulary")
+}
+
+func errorsIsNoRows(err error) bool {
+	return err != nil && (err == pgx.ErrNoRows || strings.Contains(err.Error(), "no rows"))
+}
+

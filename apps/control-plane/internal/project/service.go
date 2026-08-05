@@ -35,6 +35,12 @@ type Service struct {
 	automationProjectCascade  AutomationProjectCascade
 	workspaceCommander        RuntimeWorkspaceCommander
 	workspaceReceipts         ProjectWorkspaceReceiptLister
+	// 批二：角色词表 / 编制 / 可达收口
+	roleVocabulary         RoleVocabularyActiveKeys
+	scenarioTemplateSpecs  ScenarioTemplateSpecSource
+	employeeRoles          DigitalEmployeeRoleSource
+	castingRepo            CastingRepository
+	playbookTemplateLister PlaybookTemplateLister
 }
 
 // AutomationActorRemover disables automation rules when a human actor loses
@@ -1522,6 +1528,34 @@ func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID
 	ownerIDs := ownerMemberIDs(members)
 	if len(ownerIDs) == 0 {
 		return nil, ErrProjectRequiresHumanOwner
+	}
+	// §4.4：仍被编制引用的数字员工不得从成员池移除。
+	if s.castingRepo != nil {
+		previousMembers, err := s.repository.ListProjectMembers(ctx, tenantID, projectID)
+		if err != nil {
+			return nil, err
+		}
+		kept := map[uuid.UUID]struct{}{}
+		for _, m := range members {
+			if m.PrincipalType == PrincipalTypeDigitalEmployee {
+				kept[m.PrincipalID] = struct{}{}
+			}
+		}
+		for _, prev := range previousMembers {
+			if prev.PrincipalType != PrincipalTypeDigitalEmployee || prev.Status != "active" {
+				continue
+			}
+			if _, ok := kept[prev.PrincipalID]; ok {
+				continue
+			}
+			count, err := s.castingRepo.CountCastingsForEmployee(ctx, tenantID, projectID, prev.PrincipalID)
+			if err != nil {
+				return nil, err
+			}
+			if count > 0 {
+				return nil, fmt.Errorf("%w: 员工仍被剧本编制引用，请先修改编制再移除成员", ErrCastingEmployeeInUse)
+			}
+		}
 	}
 	previousHumans := map[uuid.UUID]struct{}{}
 	if previousMembers, err := s.repository.ListProjectMembers(ctx, tenantID, projectID); err == nil {
@@ -6592,6 +6626,17 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 	// sign endpoint 404'd (spec F1).
 	if decision.DecisionType == DecisionTypeDemandAcceptance {
 		return s.resolveDemandAcceptanceDecision(ctx, req, decision)
+	}
+	// 扩编：approved 写编制并触发重规划；rejected 仅关闭决策。不回退 demand 状态。
+	if decision.DecisionType == DecisionTypeCastingExpansion {
+		if req.Decision != "approved" && req.Decision != "rejected" {
+			return nil, ErrInvalidProject
+		}
+		if req.Decision == "approved" {
+			if err := s.applyCastingExpansionApproval(ctx, req, decision); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// §5.5: close_demand must cancel the demand before the generic resolve path
 	// marks the card resolved; retry/reassign fall through and the coordinator

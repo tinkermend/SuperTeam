@@ -6425,6 +6425,10 @@ func (r *projectStoreMemoryRepository) AcceptPlanRevision(ctx context.Context, r
 	return project.PlanRevision{}, project.ErrProjectNotFound
 }
 
+func (r *projectStoreMemoryRepository) CancelStalePlanReviewDecisionsForDemand(ctx context.Context, tenantID, projectID, demandID, exceptRevisionID uuid.UUID) ([]project.DecisionRequest, error) {
+	return nil, nil
+}
+
 func (r *projectStoreMemoryRepository) RejectPlanRevision(ctx context.Context, req project.RejectPlanRevisionRequest) (project.PlanRevision, error) {
 	for index, revision := range r.planRevisions {
 		if revision.TenantID == req.TenantID && revision.ProjectID == req.ProjectID && revision.ID == req.RevisionID {

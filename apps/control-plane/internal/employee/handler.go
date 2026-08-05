@@ -32,6 +32,7 @@ type HandlerService interface {
 	DeleteDigitalEmployee(ctx context.Context, req DeleteDigitalEmployeeRequest) error
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
 	UpdateProfile(ctx context.Context, req UpdateProfileRequest) (*DigitalEmployee, error)
+	ReplaceEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) ([]string, error)
 	ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error)
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
 	SubmitPermissionChange(ctx context.Context, req SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error)
@@ -332,6 +333,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		Name                  string         `json:"name"`
 		AvatarAssetID         string         `json:"avatar_asset_id"`
 		Role                  string         `json:"role"`
+		RoleKeys              []string       `json:"role_keys"`
 		Description           *string        `json:"description"`
 		PermissionPolicy      map[string]any `json:"permission_policy"`
 		RiskLevel             string         `json:"risk_level"`
@@ -384,6 +386,7 @@ func (h *HTTPHandler) CreateDigitalEmployee(w http.ResponseWriter, r *http.Reque
 		Name:                  req.Name,
 		AvatarAssetID:         req.AvatarAssetID,
 		Role:                  req.Role,
+		RoleKeys:              req.RoleKeys,
 		Description:           req.Description,
 		PermissionPolicy:      req.PermissionPolicy,
 		RiskLevel:             req.RiskLevel,
@@ -424,6 +427,38 @@ func (h *HTTPHandler) GetDigitalEmployee(w http.ResponseWriter, r *http.Request)
 	response := employeeResponseFromDomain(employee)
 	response.AllowedActions = h.allowedEmployeeActions(r.Context(), tenantID, employeeID)
 	writeJSON(w, http.StatusOK, response)
+}
+
+// ReplaceDigitalEmployeeRoles handles PUT /digital-employees/{id}/roles.
+func (h *HTTPHandler) ReplaceDigitalEmployeeRoles(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeProfileUpdate, &employeeID, "digital employee roles")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body struct {
+		RoleKeys []string `json:"role_keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	keys, err := service.ReplaceEmployeeRoles(r.Context(), tenantID, employeeID, body.RoleKeys)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	if keys == nil {
+		keys = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"role_keys": keys})
 }
 
 func (h *HTTPHandler) DeleteDigitalEmployee(w http.ResponseWriter, r *http.Request) {
@@ -980,6 +1015,7 @@ type digitalEmployeeResponse struct {
 	ProviderType          string                `json:"provider_type"`
 	Name                  string                `json:"name"`
 	Role                  string                `json:"role"`
+	RoleKeys              []string              `json:"role_keys"`
 	Description           *string               `json:"description,omitempty"`
 	Status                DigitalEmployeeStatus `json:"status"`
 	PermissionPolicy      map[string]any        `json:"permission_policy"`
@@ -1473,6 +1509,10 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 	if projects == nil {
 		projects = []DigitalEmployeeProjectLinkSummary{}
 	}
+	roleKeys := employee.RoleKeys
+	if roleKeys == nil {
+		roleKeys = []string{}
+	}
 	response := digitalEmployeeResponse{
 		ID:                    employee.ID.String(),
 		TenantID:              employee.TenantID.String(),
@@ -1483,6 +1523,7 @@ func employeeResponseFromDomain(employee *DigitalEmployee) digitalEmployeeRespon
 		ProviderType:          employee.ProviderType,
 		Name:                  employee.Name,
 		Role:                  employee.Role,
+		RoleKeys:              roleKeys,
 		Description:           employee.Description,
 		Status:                employee.Status,
 		PermissionPolicy:      cloneMap(employee.PermissionPolicy),

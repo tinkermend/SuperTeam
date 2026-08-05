@@ -1274,6 +1274,7 @@ export function ProjectsView({
       <SubmitDemandDialog
         isSubmitting={submitDemandMutation.isPending}
         open={demandOpen}
+        projectId={selectedProject?.id}
         projectName={selectedProject?.name}
         submitError={submitDemandMutation.error?.message}
         onOpenChange={setDemandOpen}

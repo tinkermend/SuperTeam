@@ -28,6 +28,11 @@ const (
 	// DecisionTypePlanningGap is the human-decision type opened when a demand's
 	// route cannot be planned because the executor pool has a structural gap.
 	DecisionTypePlanningGap = "planning_gap"
+	// DecisionTypeCastingExpansion is opened mid-execution when the judge or
+	// coordinator requests an additional role (扩编). Distinct from planning_gap
+	// (planning-time staffing hole). Approve updates casting and triggers a
+	// replan without reopening demand status (demand stays executing).
+	DecisionTypeCastingExpansion = "casting_expansion"
 	// DecisionTypePlanningFailed is opened when PlanDemandRoute terminally fails
 	// after retries (timeout / upstream error / etc., spec §5.5 F6) — distinct
 	// from planning_gap (structural no-suitable-employee).

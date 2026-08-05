@@ -19,12 +19,14 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { getPlaybookReadiness } from "@/lib/api/casting";
 import { listScenarioTemplates } from "@/lib/api/scenario-templates";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import type {
   ProjectDemandSourceType,
   SubmitProjectDemandInput
 } from "@/lib/api/projects";
+import { PlaybookCastingPanel } from "./playbook-casting-panel";
 
 const NO_TEMPLATE_VALUE = "__none__";
 
@@ -33,6 +35,7 @@ type SubmitDemandDialogProps = {
   onOpenChange: (open: boolean) => void;
   onSubmit: (input: SubmitProjectDemandInput) => void;
   open: boolean;
+  projectId?: string;
   projectName?: string;
   submitError?: string;
 };
@@ -50,6 +53,7 @@ export function SubmitDemandDialog({
   onOpenChange,
   onSubmit,
   open,
+  projectId,
   projectName,
   submitError
 }: SubmitDemandDialogProps) {
@@ -69,6 +73,14 @@ export function SubmitDemandDialog({
 });
   const templateOptions = (templates.data ?? []).filter(
     (template) => template.status === "active",
+  );
+  const readiness = useQuery({
+    queryKey: ["playbook-readiness", projectId],
+    queryFn: () => getPlaybookReadiness({ baseUrl: apiBaseUrl }, projectId!),
+    enabled: Boolean(open && projectId),
+  });
+  const readinessByKey = new Map(
+    (readiness.data ?? []).map((item) => [item.scenario_template_key, item]),
   );
 
   useEffect(() => {
@@ -186,14 +198,36 @@ export function SubmitDemandDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NO_TEMPLATE_VALUE}>不绑定（通用）</SelectItem>
-                {templateOptions.map((template) => (
-                  <SelectItem key={template.template_key} value={template.template_key}>
-                    {template.name}（{template.template_key}）
-                  </SelectItem>
-                ))}
+                {templateOptions.map((template) => {
+                  const r = readinessByKey.get(template.template_key);
+                  let suffix = "";
+                  if (r) {
+                    if (!r.runnable) {
+                      suffix = ` · ⚠ 暂不可跑 缺：${(r.missing_roles_for_any ?? []).join("、") || "角色"}`;
+                    } else if (r.deepest_exit) {
+                      suffix = r.next_exit_needs_roles?.length
+                        ? ` · 可走到「${r.deepest_exit.label}」 再往深需要：${r.next_exit_needs_roles.join("、")}`
+                        : ` · 可走到「${r.deepest_exit.label}」 ✓ 角色齐备`;
+                    }
+                  }
+                  return (
+                    <SelectItem key={template.template_key} value={template.template_key}>
+                      {template.name}（{template.template_key}）{suffix}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </Field>
+          {projectId && scenarioTemplateKey ? (
+            <PlaybookCastingPanel
+              projectId={projectId}
+              lockedTemplateKey={scenarioTemplateKey}
+              onCastingSaved={() => {
+                void readiness.refetch();
+              }}
+            />
+          ) : null}
           {error || submitError ? (
             <p className="text-sm text-destructive">{error || submitError}</p>
           ) : null}

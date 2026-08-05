@@ -1326,6 +1326,49 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id <> sqlc.arg('superseded_by_revision_id')::uuid
   AND status IN ('draft', 'validation_failed', 'pending_review');
 
+-- name: CancelOpenPlanReviewDecisionsForDemandExceptRevision :many
+-- When a newer plan supersedes open revisions (casting expansion / replan),
+-- cancel plan_review decisions still pointing at those superseded revisions so
+-- humans cannot approve a dead plan (Accept would 409 and strand the demand).
+UPDATE project_decision_requests pdr
+SET status_snapshot = 'cancelled',
+    resolved_at = COALESCE(pdr.resolved_at, NOW()),
+    updated_at = NOW()
+FROM project_plan_revisions ppr
+WHERE pdr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pdr.project_id = sqlc.arg('project_id')::uuid
+  AND pdr.plan_revision_id = ppr.id
+  AND ppr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND ppr.project_id = sqlc.arg('project_id')::uuid
+  AND ppr.demand_id = sqlc.arg('demand_id')::uuid
+  AND ppr.id <> sqlc.arg('except_revision_id')::uuid
+  AND pdr.decision_type = 'plan_review'
+  AND pdr.status_snapshot IN ('pending', 'requested')
+RETURNING pdr.id, pdr.tenant_id, pdr.project_id, pdr.approval_request_id, pdr.coordination_job_id, pdr.project_task_id, pdr.plan_revision_id, pdr.dispatch_gate_result_id, pdr.target_user_id, pdr.decision_type, pdr.title_snapshot, pdr.summary_snapshot, pdr.risk_level_snapshot, pdr.status_snapshot, pdr.created_event_id, pdr.resolved_event_id, pdr.created_at, pdr.updated_at, pdr.resolved_at;
+
+-- name: CancelApprovalRequestsByIDs :exec
+UPDATE approval_requests
+SET status = 'cancelled',
+    resolved_at = COALESCE(resolved_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = ANY (sqlc.arg('ids')::uuid[])
+  AND status = 'pending';
+
+-- name: SupersedeCurrentAcceptedProjectPlanRevisions :exec
+-- Clears the partial unique index uq_project_plan_revisions_current_accepted so a
+-- newer pending_review revision can be accepted (casting-expansion replan / request_changes).
+UPDATE project_plan_revisions
+SET status = 'superseded',
+    superseded_by_revision_id = sqlc.arg('superseded_by_revision_id')::uuid,
+    rejection_reason = sqlc.narg('reason')::text,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND demand_id = sqlc.arg('demand_id')::uuid
+  AND id <> sqlc.arg('superseded_by_revision_id')::uuid
+  AND status IN ('accepted', 'decomposing', 'decomposed');
+
 -- name: AcceptProjectPlanRevision :one
 UPDATE project_plan_revisions
 SET status = 'accepted',

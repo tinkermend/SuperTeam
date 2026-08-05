@@ -212,7 +212,8 @@ type DigitalEmployee struct {
 	EmployeeType          string
 	ProviderType          string
 	Name                  string
-	Role                  string
+	Role                  string // 显示用自述标签；匹配读 RoleKeys
+	RoleKeys              []string
 	Description           *string
 	Status                DigitalEmployeeStatus
 	PermissionPolicy      map[string]any
@@ -488,6 +489,7 @@ type CreateDigitalEmployeeRequest struct {
 	Name                  string
 	AvatarAssetID         string
 	Role                  string
+	RoleKeys              []string // 词表角色多值；可选
 	Description           *string
 	PermissionPolicy      map[string]any
 	RiskLevel             string

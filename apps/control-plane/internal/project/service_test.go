@@ -13002,6 +13002,10 @@ func (r *memoryRepository) AcceptPlanRevision(ctx context.Context, req AcceptPla
 	return PlanRevision{}, ErrProjectNotFound
 }
 
+func (r *memoryRepository) CancelStalePlanReviewDecisionsForDemand(ctx context.Context, tenantID, projectID, demandID, exceptRevisionID uuid.UUID) ([]DecisionRequest, error) {
+	return nil, nil
+}
+
 func (r *memoryRepository) RejectPlanRevision(ctx context.Context, req RejectPlanRevisionRequest) (PlanRevision, error) {
 	return PlanRevision{}, ErrProjectNotFound
 }

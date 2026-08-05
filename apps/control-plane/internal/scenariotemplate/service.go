@@ -24,9 +24,16 @@ var knownScenarioTemplateStatuses = map[string]bool{
 	"disabled": true,
 }
 
+// RoleVocabularyValidator returns role keys that are not registered/active
+// in the tenant role vocabulary. Injected optionally; nil = skip role checks.
+type RoleVocabularyValidator interface {
+	UnknownKeys(ctx context.Context, tenantID uuid.UUID, keys []string) ([]string, error)
+}
+
 type Service struct {
 	repository           Repository
 	vocabularyRepository VocabularyRepository
+	roleVocabulary       RoleVocabularyValidator
 	audit                AuditRecorder
 }
 
@@ -39,6 +46,12 @@ func NewService(repository Repository) *Service {
 // SetVocabularyRepository.
 func (s *Service) SetAuditRecorder(recorder AuditRecorder) {
 	s.audit = recorder
+}
+
+// SetRoleVocabularyValidator injects the role vocabulary checker used by
+// validateSpecRoles. Left unset, role-key validation is a pass-through.
+func (s *Service) SetRoleVocabularyValidator(validator RoleVocabularyValidator) {
+	s.roleVocabulary = validator
 }
 
 func (s *Service) List(ctx context.Context, tenantID uuid.UUID) ([]ScenarioTemplate, error) {
@@ -121,6 +134,9 @@ func (s *Service) Create(ctx context.Context, req CreateScenarioTemplateRequest)
 	if err := s.validateSpecVocabulary(ctx, req.TenantID, parsedSpec); err != nil {
 		return ScenarioTemplate{}, err
 	}
+	if err := s.validateSpecRoles(ctx, req.TenantID, parsedSpec); err != nil {
+		return ScenarioTemplate{}, err
+	}
 
 	if _, err := s.repository.GetScenarioTemplateByKey(ctx, req.TenantID, key); err == nil {
 		return ScenarioTemplate{}, fmt.Errorf("%w: template key %q already exists", ErrConflict, key)
@@ -191,6 +207,9 @@ func (s *Service) CreateVersion(ctx context.Context, req CreateScenarioTemplateV
 		return ScenarioTemplate{}, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
 	}
 	if err := s.validateSpecVocabulary(ctx, req.TenantID, parsedSpec); err != nil {
+		return ScenarioTemplate{}, err
+	}
+	if err := s.validateSpecRoles(ctx, req.TenantID, parsedSpec); err != nil {
 		return ScenarioTemplate{}, err
 	}
 
@@ -367,6 +386,31 @@ func (s *Service) validateSpecVocabulary(ctx context.Context, tenantID uuid.UUID
 	}
 	if len(unknown) > 0 {
 		return fmt.Errorf("%w: unknown capability keys: %s", ErrInvalidInput, strings.Join(unknown, ", "))
+	}
+	return nil
+}
+
+// validateSpecRoles rejects specs whose roles[].key are not registered as
+// active in the tenant role vocabulary. With no validator injected, passes
+// through (same nil-optional convention as capability vocabulary).
+func (s *Service) validateSpecRoles(ctx context.Context, tenantID uuid.UUID, spec SpecV2) error {
+	if s.roleVocabulary == nil {
+		return nil
+	}
+	var keys []string
+	for _, role := range spec.Roles {
+		keys = append(keys, role.Key)
+	}
+	// skeleton steps may reference roles not listed under roles[] — collect both
+	for _, step := range spec.Skeleton {
+		keys = append(keys, step.Role)
+	}
+	unknown, err := s.roleVocabulary.UnknownKeys(ctx, tenantID, keys)
+	if err != nil {
+		return err
+	}
+	if len(unknown) > 0 {
+		return fmt.Errorf("%w: unknown role keys: %s", ErrInvalidInput, strings.Join(unknown, ", "))
 	}
 	return nil
 }

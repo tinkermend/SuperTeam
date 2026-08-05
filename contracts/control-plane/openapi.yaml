@@ -1261,6 +1261,205 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/castings:
+    get:
+      operationId: listProjectCastings
+      summary: List project playbook castings
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: template_key
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Casting list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectPlaybookCasting"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: putProjectCastings
+      summary: Replace castings for one scenario template (auto-join members)
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutProjectCastingsRequest"
+      responses:
+        "200":
+          description: Casting replaced
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectPlaybookCasting"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/casting-expansions:
+    post:
+      operationId: requestProjectCastingExpansion
+      summary: Open mid-execution casting expansion decision
+      description: |
+        Creates a casting_expansion human decision (inbox card). Approve with
+        digital_employee_id + role_key to cast and replan without reopening the demand.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [demand_id]
+              properties:
+                demand_id:
+                  type: string
+                  format: uuid
+                suggested_role_key:
+                  type: string
+                needs_external_role:
+                  type: boolean
+                reason:
+                  type: string
+                scenario_template_key:
+                  type: string
+      responses:
+        "201":
+          description: Casting expansion decision created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDecisionRequest"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/role-candidates:
+    get:
+      operationId: listProjectRoleCandidates
+      summary: List role candidates with capability annotations
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: role_key
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: required_capabilities
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated capability keys for hint ranking
+      responses:
+        "200":
+          description: Role candidate list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoleCandidate"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/playbook-readiness:
+    get:
+      operationId: getProjectPlaybookReadiness
+      summary: Deepest reachable exit per scenario template under casting/pool
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: template_key
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Playbook readiness list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlaybookReadiness"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/role-vocabulary:
+    get:
+      operationId: listRoleVocabulary
+      summary: List tenant role vocabulary
+      responses:
+        "200":
+          description: Role vocabulary list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoleVocabularyEntry"
+        "403":
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: createRoleVocabulary
+      summary: Create a role vocabulary entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoleVocabularyRequest"
+      responses:
+        "201":
+          description: Role vocabulary entry created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleVocabularyEntry"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/role-vocabulary/{roleKey}:
+    patch:
+      operationId: patchRoleVocabulary
+      summary: Patch a role vocabulary entry
+      parameters:
+        - name: roleKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchRoleVocabularyRequest"
+      responses:
+        "200":
+          description: Role vocabulary entry updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleVocabularyEntry"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/tasks:
     get:
       operationId: listProjectTasks
@@ -12085,6 +12284,94 @@ components:
         - none
         - bearer_env
         - headers_env
+    RoleVocabularyEntry:
+      type: object
+      required: [id, tenant_id, role_key, title, description, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        role_key: { type: string }
+        title: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, disabled] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateRoleVocabularyRequest:
+      type: object
+      required: [role_key, title]
+      properties:
+        role_key: { type: string }
+        title: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, disabled] }
+    PatchRoleVocabularyRequest:
+      type: object
+      properties:
+        title: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, disabled] }
+    ProjectPlaybookCasting:
+      type: object
+      required: [id, tenant_id, project_id, scenario_template_key, role_key, digital_employee_id, cast_by_user_id, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid }
+        scenario_template_key: { type: string }
+        role_key: { type: string }
+        digital_employee_id: { type: string, format: uuid }
+        cast_by_user_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PutProjectCastingsRequest:
+      type: object
+      required: [scenario_template_key, assignments]
+      properties:
+        scenario_template_key: { type: string }
+        assignments:
+          type: array
+          items:
+            type: object
+            required: [role_key, digital_employee_id]
+            properties:
+              role_key: { type: string }
+              digital_employee_id: { type: string, format: uuid }
+    RoleCandidate:
+      type: object
+      required: [digital_employee_id, name, role_keys, matched_capabilities, missing_capabilities, capability_fit]
+      properties:
+        digital_employee_id: { type: string, format: uuid }
+        name: { type: string }
+        team_id: { type: string, format: uuid }
+        team_name: { type: string }
+        role_keys: { type: array, items: { type: string } }
+        matched_capabilities: { type: array, items: { type: string } }
+        missing_capabilities: { type: array, items: { type: string } }
+        capability_fit: { type: string, enum: [matched, partial, missing] }
+    PlaybookExitReach:
+      type: object
+      required: [deliverable, label, reachable, required_roles, missing_roles]
+      properties:
+        deliverable: { type: string }
+        label: { type: string }
+        reachable: { type: boolean }
+        required_roles: { type: array, items: { type: string } }
+        missing_roles: { type: array, items: { type: string } }
+    PlaybookReadiness:
+      type: object
+      required: [scenario_template_key, template_name, runnable, next_exit_needs_roles, missing_roles_for_any, exits]
+      properties:
+        scenario_template_key: { type: string }
+        template_name: { type: string }
+        runnable: { type: boolean }
+        deepest_exit:
+          $ref: "#/components/schemas/PlaybookExitReach"
+        next_exit_needs_roles: { type: array, items: { type: string } }
+        missing_roles_for_any: { type: array, items: { type: string } }
+        exits:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlaybookExitReach"
     ScenarioTemplate:
       type: object
       required: [id, tenant_id, template_key, name, description, spec, status, active_version, created_at, updated_at]

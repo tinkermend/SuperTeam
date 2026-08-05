@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ApiRequestError } from "@/lib/api/client";
 import type { ExecuteInboxActionInput, InboxAction, InboxItem } from "@/lib/api/inbox";
+import {
+  listRoleCandidates,
+  listRoleVocabulary,
+  type RoleCandidate,
+} from "@/lib/api/casting";
+import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { ObjectIdChip, ObjectRef, StatusPill, Button, ErrorState } from "@/components/superteam";
 import {
   Dialog,
@@ -11,6 +18,14 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { decisionTypeLabel } from "@/lib/status-labels";
 import { formatInboxActionLabel } from "./action-format";
@@ -48,18 +63,32 @@ export function InboxActionDialog({
   const currentKeyRef = useRef<string | null>(null);
   const [comment, setComment] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [selectedRoleKey, setSelectedRoleKey] = useState("");
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const currentKey = open && item && action ? `${item.id}:${action.key}` : null;
   currentKeyRef.current = currentKey;
   const requiresComment = Boolean(action?.requires_comment);
   const isSubmitting = pending || (currentKey !== null && inFlightKeyRef.current === currentKey);
-  const canSubmit = Boolean(action && item && (!requiresComment || comment.trim()));
   const decisionType = readDecisionType(item);
+  const actionKey = action?.key.trim().toLowerCase() ?? "";
+  const isCastingExpansionApprove =
+    decisionType === "casting_expansion" && (actionKey === "approved" || actionKey === "approve");
+  const castingFields = isCastingExpansionApprove ? readCastingExpansionFields(item) : null;
+  const roleKeyReady = Boolean(selectedRoleKey.trim());
+  const employeeReady = Boolean(selectedEmployeeId.trim());
+  const castingReady = !isCastingExpansionApprove || (roleKeyReady && employeeReady);
+  const canSubmit = Boolean(
+    action && item && (!requiresComment || comment.trim()) && castingReady,
+  );
   const commentPlaceholder = commentPlaceholderFor(action, decisionType);
 
   useEffect(() => {
     if (open) {
       setComment("");
       setSubmitError(null);
+      const fields = readCastingExpansionFields(item);
+      setSelectedRoleKey(fields.suggestedRoleKey);
+      setSelectedEmployeeId("");
     }
   }, [open, item?.id, action?.key]);
 
@@ -76,12 +105,18 @@ export function InboxActionDialog({
     inFlightKeyRef.current = submittedKey;
     setSubmitError(null);
 
+    const payload: Record<string, unknown> = {};
+    if (isCastingExpansionApprove) {
+      payload.digital_employee_id = selectedEmployeeId.trim();
+      payload.role_key = selectedRoleKey.trim();
+    }
+
     try {
       await onSubmit({
         action: action.key,
         comment,
-        payload: {}
-});
+        payload,
+      });
     } catch (error) {
       // 用户已切换到其他事项或关闭弹窗:失败由页面横幅承接,不写进当前弹窗。
       if (currentKeyRef.current === submittedKey) {
@@ -103,12 +138,26 @@ export function InboxActionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-line bg-card text-ink shadow-pop sm:max-w-xl">
+      <DialogContent className="max-h-[min(90vh,720px)] overflow-y-auto border-line bg-card text-ink shadow-pop sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{action ? formatInboxActionLabel(action) : "处理事项"}</DialogTitle>
           <DialogDescription>{item?.title ?? "确认本次收件箱处理动作。"}</DialogDescription>
         </DialogHeader>
         {item && action ? <InboxActionContextSummary action={action} item={item} /> : null}
+        {isCastingExpansionApprove && item && castingFields ? (
+          <CastingExpansionPickers
+            fields={castingFields}
+            item={item}
+            disabled={isSubmitting}
+            roleKey={selectedRoleKey}
+            employeeId={selectedEmployeeId}
+            onRoleKeyChange={(next) => {
+              setSelectedRoleKey(next);
+              setSelectedEmployeeId("");
+            }}
+            onEmployeeIdChange={setSelectedEmployeeId}
+          />
+        ) : null}
         {submitError ? (
           <ErrorState title="操作未完成" description={submitError} className="py-4" />
         ) : null}
@@ -128,6 +177,11 @@ export function InboxActionDialog({
           {requiresComment && !comment.trim() ? (
             <p className="text-xs font-semibold text-danger">该动作需要填写处理意见。</p>
           ) : null}
+          {isCastingExpansionApprove && !castingReady ? (
+            <p className="text-xs font-semibold text-danger">
+              批准扩编需先选择角色与数字员工。
+            </p>
+          ) : null}
         </div>
         {isSubmitting ? (
           <p className="text-xs leading-5 text-ink-3">
@@ -145,6 +199,199 @@ export function InboxActionDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+type CastingExpansionFields = {
+  suggestedRoleKey: string;
+  needsExternalRole: boolean;
+  reason: string;
+  scenarioTemplateKey: string;
+};
+
+function readCastingExpansionFields(item: InboxItem | null): CastingExpansionFields {
+  if (!item) {
+    return {
+      suggestedRoleKey: "",
+      needsExternalRole: false,
+      reason: "",
+      scenarioTemplateKey: "",
+    };
+  }
+  const suggestedRoleKey = readContextText(item.context, ["suggested_role_key"]) ?? "";
+  const needsExternal =
+    item.context?.needs_external_role === true ||
+    String(item.context?.needs_external_role ?? "").toLowerCase() === "true";
+  return {
+    suggestedRoleKey: suggestedRoleKey.trim(),
+    needsExternalRole: needsExternal,
+    reason: (readContextText(item.context, ["reason"]) ?? item.summary ?? "").trim(),
+    scenarioTemplateKey: (readContextText(item.context, ["scenario_template_key"]) ?? "").trim(),
+  };
+}
+
+function CastingExpansionPickers({
+  fields,
+  item,
+  disabled,
+  roleKey,
+  employeeId,
+  onRoleKeyChange,
+  onEmployeeIdChange,
+}: {
+  fields: CastingExpansionFields;
+  item: InboxItem;
+  disabled: boolean;
+  roleKey: string;
+  employeeId: string;
+  onRoleKeyChange: (roleKey: string) => void;
+  onEmployeeIdChange: (employeeId: string) => void;
+}) {
+  const apiBaseUrl = resolveControlPlaneUrl();
+  const projectId = item.source_project_id ?? "";
+  const mustPickRole = fields.needsExternalRole || !fields.suggestedRoleKey;
+
+  const vocab = useQuery({
+    queryKey: ["role-vocabulary"],
+    queryFn: () => listRoleVocabulary({ baseUrl: apiBaseUrl }),
+    enabled: mustPickRole,
+  });
+
+  const candidates = useQuery({
+    queryKey: ["role-candidates", projectId, roleKey],
+    queryFn: () => listRoleCandidates({ baseUrl: apiBaseUrl }, projectId, roleKey),
+    enabled: Boolean(projectId && roleKey),
+  });
+
+  const groups = useMemo(() => groupCandidatesByTeam(candidates.data ?? []), [candidates.data]);
+
+  return (
+    <div className="space-y-3 rounded-inner border border-line bg-card-soft p-3">
+      <div className="space-y-1">
+        <p className="text-[13px] font-bold leading-5 text-ink">选定扩编人员</p>
+        <p className="text-xs leading-5 text-ink-2">
+          批准后写入项目编制并触发重规划；已完成任务不会被重复创建。
+        </p>
+      </div>
+      {fields.reason ? (
+        <ContextField label="提请理由">
+          <span>{fields.reason}</span>
+        </ContextField>
+      ) : null}
+      {fields.scenarioTemplateKey ? (
+        <ContextField label="场景模板">
+          <span className="font-mono text-[12px]">{fields.scenarioTemplateKey}</span>
+        </ContextField>
+      ) : null}
+
+      {mustPickRole ? (
+        <div className="grid gap-1.5">
+          <Label htmlFor="casting-expansion-role">角色（词表）</Label>
+          <Select
+            value={roleKey || undefined}
+            onValueChange={onRoleKeyChange}
+            disabled={disabled || vocab.isLoading}
+          >
+            <SelectTrigger id="casting-expansion-role" className="w-full">
+              <SelectValue
+                placeholder={
+                  vocab.isLoading
+                    ? "加载角色词表…"
+                    : fields.needsExternalRole
+                      ? "词表外需求：请人工映射角色"
+                      : "选择角色"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {(vocab.data ?? [])
+                .filter((r) => r.status === "active")
+                .map((r) => (
+                  <SelectItem key={r.role_key} value={r.role_key}>
+                    {r.title}（{r.role_key}）
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          {fields.needsExternalRole ? (
+            <p className="text-xs text-ink-3">
+              判官标记为词表外角色，需你翻译为词表中的角色后再选人。
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <ContextField label="建议角色">
+          <span>
+            {roleKey}
+            <span className="ml-1 text-ink-3">（可在下方换人；角色沿用建议）</span>
+          </span>
+        </ContextField>
+      )}
+
+      <div className="grid gap-1.5">
+        <Label htmlFor="casting-expansion-employee">数字员工</Label>
+        <Select
+          value={employeeId || undefined}
+          onValueChange={onEmployeeIdChange}
+          disabled={disabled || !roleKey || candidates.isLoading}
+        >
+          <SelectTrigger id="casting-expansion-employee" className="w-full">
+            <SelectValue
+              placeholder={
+                !roleKey
+                  ? "先选择角色"
+                  : candidates.isLoading
+                    ? "加载候选人…"
+                    : "选择员工"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {(candidates.data ?? []).length === 0 ? (
+              <SelectItem value="__none__" disabled>
+                暂无具备该角色的员工
+              </SelectItem>
+            ) : (
+              groups.flatMap(([team, list]) =>
+                list.map((c) => {
+                  const mark =
+                    c.capability_fit === "matched"
+                      ? "✓"
+                      : "⚠";
+                  const capHint =
+                    c.capability_fit === "matched"
+                      ? c.matched_capabilities.length
+                        ? `具备 ${c.matched_capabilities.join("、")}`
+                        : "能力匹配"
+                      : c.missing_capabilities.length
+                        ? `缺 ${c.missing_capabilities.join("、")}`
+                        : "能力不足";
+                  return (
+                    <SelectItem key={c.digital_employee_id} value={c.digital_employee_id}>
+                      {mark} {c.name}（{team}） · {capHint}
+                    </SelectItem>
+                  );
+                }),
+              )
+            )}
+          </SelectContent>
+        </Select>
+        {!projectId ? (
+          <p className="text-xs font-semibold text-danger">缺少项目 ID，无法加载候选人。</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function groupCandidatesByTeam(candidates: RoleCandidate[]): Array<[string, RoleCandidate[]]> {
+  const map = new Map<string, RoleCandidate[]>();
+  for (const c of candidates) {
+    const team = c.team_name || "未分组";
+    const list = map.get(team) ?? [];
+    list.push(c);
+    map.set(team, list);
+  }
+  return Array.from(map.entries());
 }
 
 function InboxActionContextSummary({ action, item }: { action: InboxAction; item: InboxItem }) {
@@ -293,22 +540,27 @@ function decisionFraming(decisionType: string | undefined): { headline: string; 
       return {
         headline: "你在确认：项目整体可关闭",
         scope: "这是项目级验收闸。触发它的是下方需求（及任务）已终态；同意后项目归档，不是单独再验收一次需求。"
-};
+      };
     case "demand_acceptance":
       return {
         headline: "你在确认：该需求是否验收通过",
         scope: "签署需求验收后，若项目内全部需求已终态，可能会继续打开项目验收。"
-};
+      };
     case "plan_review":
       return {
         headline: "你在确认：项目计划版本是否可执行",
         scope: "同意后计划生效并进入派发；驳回或要求修改将回到规划调整。"
-};
+      };
     case "planning_gap":
       return {
         headline: "你在处理：规划缺口",
         scope: "选择补员、豁免或关闭，将决定需求是否重新规划。"
-};
+      };
+    case "casting_expansion":
+      return {
+        headline: "你在处理：执行期扩编",
+        scope: "批准时选定承担新角色的数字员工；系统写入编制并重规划，需求保持执行中，已完成任务不重复创建。"
+      };
     default:
       return null;
   }
@@ -336,6 +588,14 @@ function actionConsequence(action: InboxAction, decisionType: string | undefined
     }
     if (key === "needs_more_evidence" || key === "request_evidence") {
       return "需求保持待验收，需按意见补充证据后再签。";
+    }
+  }
+  if (decisionType === "casting_expansion") {
+    if (key === "approved" || key === "approve") {
+      return "写入编制 → 协调线程重规划；差异仅含扩编相关新任务时直接开跑，越界则再退回计划确认一次。";
+    }
+    if (key === "rejected" || key === "reject") {
+      return "关闭扩编请求，不改变当前编制与执行计划。";
     }
   }
   return null;
@@ -366,6 +626,10 @@ function shouldShowSummary(
   if (readDecisionType(item) === "project_acceptance") {
     return false;
   }
+  // 扩编：理由在选人区展示，摘要不再重复。
+  if (readDecisionType(item) === "casting_expansion") {
+    return false;
+  }
   const needles = [item.title, demandLabel, projectName, taskLabel].filter(Boolean) as string[];
   const compact = summary.replace(/[「」·（）()\s]/g, "");
   const overlap = needles.some((needle) => compact.includes(needle.replace(/[「」·（）()\s]/g, "")));
@@ -382,6 +646,10 @@ function commentPlaceholderFor(action: InboxAction | null, decisionType: string 
       return "说明需要补充的证据";
     }
   }
+  if (decisionType === "casting_expansion") {
+    if (key === "approved" || key === "approve") return "可选：补充选人说明";
+    if (key === "rejected" || key === "reject") return "说明驳回扩编的原因";
+  }
   if (key === "rejected" || key === "reject" || key === "needs_more_evidence" || key === "request_evidence") {
     return "补充驳回理由、补证要求或处理说明";
   }
@@ -393,8 +661,10 @@ function technicalContextRows(item: InboxItem): Array<{ label: string; value: st
     primary_demand_id: "主需求 ID",
     project_id: "项目 ID",
     plan_revision_id: "计划版本 ID",
-    demand_id: "需求 ID"
-};
+    demand_id: "需求 ID",
+    suggested_role_key: "建议角色",
+    scenario_template_key: "场景模板",
+  };
   const hidden = new Set([
     "demands",
     "pending_criteria",
@@ -410,6 +680,9 @@ function technicalContextRows(item: InboxItem): Array<{ label: string; value: st
     "node_title",
     "stage",
     "workflow_node",
+    // 扩编主区/选人区已展示
+    "reason",
+    "needs_external_role",
   ]);
 
   return Object.entries(item.context ?? {})
@@ -421,5 +694,5 @@ function technicalContextRows(item: InboxItem): Array<{ label: string; value: st
     .map(([key, value]) => ({
       label: preferredLabels[key] ?? key,
       value: String(value).trim()
-}));
+    }));
 }

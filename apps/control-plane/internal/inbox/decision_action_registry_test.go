@@ -121,3 +121,25 @@ func TestProjectTaskApprovalKeepsGenericEvidenceAction(t *testing.T) {
 		t.Fatalf("project_task_approval should keep generic 3-action set, got %#v", got)
 	}
 }
+
+func TestCastingExpansionOmitsNeedsMoreEvidence(t *testing.T) {
+	// §7.5: casting_expansion is approved(选人)/rejected only.
+	got := DecisionActions("casting_expansion")
+	if len(got) != 2 {
+		t.Fatalf("DecisionActions(casting_expansion) returned %d actions, want 2", len(got))
+	}
+	if got[0].Key != "approved" || got[1].Key != "rejected" {
+		t.Fatalf("DecisionActions(casting_expansion)=%#v, want approved then rejected", got)
+	}
+	for _, action := range got {
+		if action.Key == "needs_more_evidence" {
+			t.Fatalf("casting_expansion must not emit needs_more_evidence")
+		}
+	}
+	entries := registeredActionsForDecision("casting_expansion")
+	for _, entry := range entries {
+		if entry.handler != handlerCastingExpansionDecision {
+			t.Fatalf("casting_expansion action %q handler=%q, want %q", entry.action.Key, entry.handler, handlerCastingExpansionDecision)
+		}
+	}
+}

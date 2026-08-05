@@ -36,6 +36,11 @@ type HandlerService interface {
 	DeleteProject(ctx context.Context, req DeleteProjectRequest) error
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
+	ListCastings(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]CastingEntry, error)
+	PutCasting(ctx context.Context, req PutCastingRequest) ([]CastingEntry, error)
+	RequestCastingExpansion(ctx context.Context, req RequestCastingExpansionRequest) (*DecisionRequest, error)
+	ListRoleCandidates(ctx context.Context, tenantID, projectID uuid.UUID, roleKey string, requiredCapabilities []string) ([]RoleCandidate, error)
+	GetPlaybookReadiness(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]PlaybookReadiness, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
 	DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (*ProjectTask, error)
 	ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error)

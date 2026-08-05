@@ -28,6 +28,16 @@ type CoordinationSnapshot struct {
 	// LoadProjectCoordinationSnapshot), so EnforceScenarioTemplateGovernance can
 	// skip an exempted constraint instead of rejecting the plan.
 	DemandConstraintExemptions []DemandConstraintExemption `json:"demand_constraint_exemptions,omitempty"`
+	// PlaybookCasting is the project×template role→employee map (编制). When
+	// present, ApplyPlaybookCasting forces selected_employee_id before
+	// governance so "编制由人定" is contractual and SoD (G12) still applies.
+	PlaybookCasting []PlaybookCastingAssignment `json:"playbook_casting,omitempty"`
+}
+
+// PlaybookCastingAssignment is one role→employee cast row on the coordination snapshot.
+type PlaybookCastingAssignment struct {
+	RoleKey           string    `json:"role_key"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
 }
 
 // DemandConstraintExemption is the coordination snapshot's local projection of

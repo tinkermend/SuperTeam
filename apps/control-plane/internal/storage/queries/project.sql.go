@@ -570,6 +570,26 @@ func (q *Queries) BindQueuedProjectTaskRun(ctx context.Context, arg BindQueuedPr
 	return i, err
 }
 
+const CancelApprovalRequestsByIDs = `-- name: CancelApprovalRequestsByIDs :exec
+UPDATE approval_requests
+SET status = 'cancelled',
+    resolved_at = COALESCE(resolved_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = $1::uuid
+  AND id = ANY ($2::uuid[])
+  AND status = 'pending'
+`
+
+type CancelApprovalRequestsByIDsParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	Ids      []uuid.UUID `json:"ids"`
+}
+
+func (q *Queries) CancelApprovalRequestsByIDs(ctx context.Context, arg CancelApprovalRequestsByIDsParams) error {
+	_, err := q.db.Exec(ctx, CancelApprovalRequestsByIDs, arg.TenantID, arg.Ids)
+	return err
+}
+
 const CancelApprovalRequestsForProjectDelete = `-- name: CancelApprovalRequestsForProjectDelete :many
 UPDATE approval_requests ar
 SET status = 'cancelled',
@@ -602,6 +622,101 @@ func (q *Queries) CancelApprovalRequestsForProjectDelete(ctx context.Context, ar
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const CancelOpenPlanReviewDecisionsForDemandExceptRevision = `-- name: CancelOpenPlanReviewDecisionsForDemandExceptRevision :many
+UPDATE project_decision_requests pdr
+SET status_snapshot = 'cancelled',
+    resolved_at = COALESCE(pdr.resolved_at, NOW()),
+    updated_at = NOW()
+FROM project_plan_revisions ppr
+WHERE pdr.tenant_id = $1::uuid
+  AND pdr.project_id = $2::uuid
+  AND pdr.plan_revision_id = ppr.id
+  AND ppr.tenant_id = $1::uuid
+  AND ppr.project_id = $2::uuid
+  AND ppr.demand_id = $3::uuid
+  AND ppr.id <> $4::uuid
+  AND pdr.decision_type = 'plan_review'
+  AND pdr.status_snapshot IN ('pending', 'requested')
+RETURNING pdr.id, pdr.tenant_id, pdr.project_id, pdr.approval_request_id, pdr.coordination_job_id, pdr.project_task_id, pdr.plan_revision_id, pdr.dispatch_gate_result_id, pdr.target_user_id, pdr.decision_type, pdr.title_snapshot, pdr.summary_snapshot, pdr.risk_level_snapshot, pdr.status_snapshot, pdr.created_event_id, pdr.resolved_event_id, pdr.created_at, pdr.updated_at, pdr.resolved_at
+`
+
+type CancelOpenPlanReviewDecisionsForDemandExceptRevisionParams struct {
+	TenantID         uuid.UUID `json:"tenant_id"`
+	ProjectID        uuid.UUID `json:"project_id"`
+	DemandID         uuid.UUID `json:"demand_id"`
+	ExceptRevisionID uuid.UUID `json:"except_revision_id"`
+}
+
+type CancelOpenPlanReviewDecisionsForDemandExceptRevisionRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	TenantID             uuid.UUID          `json:"tenant_id"`
+	ProjectID            uuid.UUID          `json:"project_id"`
+	ApprovalRequestID    uuid.UUID          `json:"approval_request_id"`
+	CoordinationJobID    uuid.NullUUID      `json:"coordination_job_id"`
+	ProjectTaskID        uuid.NullUUID      `json:"project_task_id"`
+	PlanRevisionID       uuid.NullUUID      `json:"plan_revision_id"`
+	DispatchGateResultID uuid.NullUUID      `json:"dispatch_gate_result_id"`
+	TargetUserID         uuid.UUID          `json:"target_user_id"`
+	DecisionType         string             `json:"decision_type"`
+	TitleSnapshot        string             `json:"title_snapshot"`
+	SummarySnapshot      pgtype.Text        `json:"summary_snapshot"`
+	RiskLevelSnapshot    pgtype.Text        `json:"risk_level_snapshot"`
+	StatusSnapshot       string             `json:"status_snapshot"`
+	CreatedEventID       uuid.NullUUID      `json:"created_event_id"`
+	ResolvedEventID      uuid.NullUUID      `json:"resolved_event_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
+}
+
+// When a newer plan supersedes open revisions (casting expansion / replan),
+// cancel plan_review decisions still pointing at those superseded revisions so
+// humans cannot approve a dead plan (Accept would 409 and strand the demand).
+func (q *Queries) CancelOpenPlanReviewDecisionsForDemandExceptRevision(ctx context.Context, arg CancelOpenPlanReviewDecisionsForDemandExceptRevisionParams) ([]CancelOpenPlanReviewDecisionsForDemandExceptRevisionRow, error) {
+	rows, err := q.db.Query(ctx, CancelOpenPlanReviewDecisionsForDemandExceptRevision,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+		arg.ExceptRevisionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CancelOpenPlanReviewDecisionsForDemandExceptRevisionRow{}
+	for rows.Next() {
+		var i CancelOpenPlanReviewDecisionsForDemandExceptRevisionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ApprovalRequestID,
+			&i.CoordinationJobID,
+			&i.ProjectTaskID,
+			&i.PlanRevisionID,
+			&i.DispatchGateResultID,
+			&i.TargetUserID,
+			&i.DecisionType,
+			&i.TitleSnapshot,
+			&i.SummarySnapshot,
+			&i.RiskLevelSnapshot,
+			&i.StatusSnapshot,
+			&i.CreatedEventID,
+			&i.ResolvedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -9766,6 +9881,40 @@ func (q *Queries) SumProjectConsumedTokens(ctx context.Context, arg SumProjectCo
 	var consumed_tokens int64
 	err := row.Scan(&consumed_tokens)
 	return consumed_tokens, err
+}
+
+const SupersedeCurrentAcceptedProjectPlanRevisions = `-- name: SupersedeCurrentAcceptedProjectPlanRevisions :exec
+UPDATE project_plan_revisions
+SET status = 'superseded',
+    superseded_by_revision_id = $1::uuid,
+    rejection_reason = $2::text,
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND project_id = $4::uuid
+  AND demand_id = $5::uuid
+  AND id <> $1::uuid
+  AND status IN ('accepted', 'decomposing', 'decomposed')
+`
+
+type SupersedeCurrentAcceptedProjectPlanRevisionsParams struct {
+	SupersededByRevisionID uuid.UUID   `json:"superseded_by_revision_id"`
+	Reason                 pgtype.Text `json:"reason"`
+	TenantID               uuid.UUID   `json:"tenant_id"`
+	ProjectID              uuid.UUID   `json:"project_id"`
+	DemandID               uuid.UUID   `json:"demand_id"`
+}
+
+// Clears the partial unique index uq_project_plan_revisions_current_accepted so a
+// newer pending_review revision can be accepted (casting-expansion replan / request_changes).
+func (q *Queries) SupersedeCurrentAcceptedProjectPlanRevisions(ctx context.Context, arg SupersedeCurrentAcceptedProjectPlanRevisionsParams) error {
+	_, err := q.db.Exec(ctx, SupersedeCurrentAcceptedProjectPlanRevisions,
+		arg.SupersededByRevisionID,
+		arg.Reason,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.DemandID,
+	)
+	return err
 }
 
 const SupersedeOpenProjectPlanRevisions = `-- name: SupersedeOpenProjectPlanRevisions :exec

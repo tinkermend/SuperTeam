@@ -15,6 +15,7 @@ func TestKindAndLayer(t *testing.T) {
 		{"project_acceptance", "closure_confirm", "project"},
 		{"planning_failed", "planning_failed", "demand"},
 		{"planning_gap", "planning_gap", "demand"},
+		{"casting_expansion", "casting_expansion", "demand"},
 		{"task_failure_recovery", "task_failure_recovery", "task"},
 		{"project_task_runtime_recovery", "project_task_runtime_recovery", "task"},
 		{"", "", ""},

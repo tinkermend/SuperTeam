@@ -39,6 +39,13 @@ func (g *ProjectServiceGateway) GetProject(ctx context.Context, tenantID, projec
 	return info, nil
 }
 
+func (g *ProjectServiceGateway) MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]string, error) {
+	if g == nil || g.projects == nil {
+		return nil, nil
+	}
+	return g.projects.ValidatePlaybookCastingComplete(ctx, tenantID, projectID, templateKey)
+}
+
 func (g *ProjectServiceGateway) IsEligibleInitiator(ctx context.Context, tenantID, projectID, userID uuid.UUID) (bool, error) {
 	if g == nil || g.projects == nil {
 		return false, ErrInvalidInput

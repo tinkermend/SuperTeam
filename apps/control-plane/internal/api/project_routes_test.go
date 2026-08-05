@@ -1531,6 +1531,26 @@ func (s *routeProjectService) ListProjectMembers(ctx context.Context, tenantID, 
 	return nil, nil
 }
 
+func (s *routeProjectService) ListCastings(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]project.CastingEntry, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) PutCasting(ctx context.Context, req project.PutCastingRequest) ([]project.CastingEntry, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) RequestCastingExpansion(ctx context.Context, req project.RequestCastingExpansionRequest) (*project.DecisionRequest, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) ListRoleCandidates(ctx context.Context, tenantID, projectID uuid.UUID, roleKey string, requiredCapabilities []string) ([]project.RoleCandidate, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) GetPlaybookReadiness(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]project.PlaybookReadiness, error) {
+	return nil, nil
+}
+
 func (s *routeProjectService) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]project.ProjectRuntimeNode, error) {
 	return nil, nil
 }

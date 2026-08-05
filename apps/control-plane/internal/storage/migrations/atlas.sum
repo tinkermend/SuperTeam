@@ -1,4 +1,4 @@
-h1:ToEDR7YnHeW1oLjdEJG4vIDRfFKtnfLroaPDdvXPShU=
+h1:z2VsX8JwgN/7v5JllII/Q6vrDV6JX/rrkQ0fzRqYxy4=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -118,3 +118,4 @@ h1:ToEDR7YnHeW1oLjdEJG4vIDRfFKtnfLroaPDdvXPShU=
 20260803160000_feishu_outbox_change_notify.sql h1:Bunzv7HxEVnmjBywZ/YAehPSOJXWQ6nnCopjDnEvvb4=
 20260803180000_project_demand_continuation_lineage.sql h1:2OvCPEhb15Aa3G+tpsrLMoj+07IAPYz1pOFSMm9NIS4=
 20260804082352_scenario_template_vocabulary_hygiene.sql h1:elw1iLMGwbyk/nIFsRhBI1uj5xuQ6n5ii9e6VmGDnLo=
+20260804144802_role_vocabulary_and_casting.sql h1:fa1BTt0RPzW5Heh0yIzxc7URk1djoeSscvsgQmGq4HY=

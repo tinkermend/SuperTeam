@@ -1885,6 +1885,10 @@ func (s *routeEmployeeService) UpdateStatus(ctx context.Context, req employee.Up
 	}, nil
 }
 
+func (s *routeEmployeeService) ReplaceEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) ([]string, error) {
+	return roleKeys, nil
+}
+
 func (s *routeEmployeeService) UpdateProfile(ctx context.Context, req employee.UpdateProfileRequest) (*employee.DigitalEmployee, error) {
 	s.updateProfileCalled = true
 	s.updateProfileReq = req

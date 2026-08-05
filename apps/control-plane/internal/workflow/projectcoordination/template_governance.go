@@ -16,6 +16,12 @@ import (
 // EnforceScenarioTemplateGovernance.
 const noSuitableEmployeeStructuralGapMessage = "项目员工池无法满足审查独立性约束（需≥2名可调度员工）；可改选更浅出口、为项目补充员工、或换用模板"
 
+// noSuitableEmployeeCastLockedGapMessage is surfaced when playbook casting (编制)
+// forces the same employee onto both sides of a role_independence pair. Re-planning
+// cannot help because ApplyPlaybookCasting re-applies the cast every attempt — the
+// human must change casting, restaff, pick a shallower exit, or exempt (G12).
+const noSuitableEmployeeCastLockedGapMessage = "剧本编制将职责分离角色指派给同一数字员工，重规划无法解除；请改编制、补员、改选更浅出口、豁免约束或换用模板"
+
 // structuralGapError wraps ErrNoSuitableEmployee with the actionable PlanningGap a
 // human needs to resolve a structural pool gap (补充员工/改浅出口/换模板), so the
 // terminal activities.go wrapping (wrapNoSuitableEmployeeError) can attach the gap
@@ -76,49 +82,20 @@ func buildRoleIndependenceGap(constraint scenariotemplate.SpecConstraint, roleCa
 // humanizeNoSuitableEmployeeDiagnosis in workflow.go keeps stripping the same
 // prefix), carrying the constraint's PlanningGap.
 func newStructuralGapError(constraint scenariotemplate.SpecConstraint, roleCapabilities map[string][]string, activeExecutorCount int) error {
+	return newStructuralGapErrorWithMessage(constraint, roleCapabilities, activeExecutorCount, noSuitableEmployeeStructuralGapMessage)
+}
+
+func newStructuralGapErrorWithMessage(constraint scenariotemplate.SpecConstraint, roleCapabilities map[string][]string, activeExecutorCount int, message string) error {
 	return &structuralGapError{
-		msg: ErrNoSuitableEmployee.Error() + ": " + noSuitableEmployeeStructuralGapMessage,
+		msg: ErrNoSuitableEmployee.Error() + ": " + message,
 		gap: buildRoleIndependenceGap(constraint, roleCapabilities, activeExecutorCount),
 	}
 }
 
-// pruneSkeletonForExit returns the subset of spec.Skeleton reachable via
-// depends_on from the step that produces exitDeliverable, preserving the
-// skeleton's declared order. It errors if exitDeliverable is not a declared
-// exit, or if no skeleton step produces it.
+// pruneSkeletonForExit delegates to scenariotemplate.PruneSkeletonForExit so
+// playbook-readiness and planning governance share one implementation.
 func pruneSkeletonForExit(spec scenariotemplate.SpecV2, exitDeliverable string) ([]scenariotemplate.SpecSkeletonStep, error) {
-	if spec.ExitIndex(exitDeliverable) < 0 {
-		return nil, fmt.Errorf("exit deliverable %q is not a declared exit", exitDeliverable)
-	}
-	target, ok := spec.StepByProduce(exitDeliverable)
-	if !ok {
-		return nil, fmt.Errorf("no skeleton step produces %q", exitDeliverable)
-	}
-	byStep := map[string]scenariotemplate.SpecSkeletonStep{}
-	for _, s := range spec.Skeleton {
-		byStep[s.Step] = s
-	}
-	included := map[string]bool{}
-	var visit func(step scenariotemplate.SpecSkeletonStep)
-	visit = func(step scenariotemplate.SpecSkeletonStep) {
-		if included[step.Step] {
-			return
-		}
-		included[step.Step] = true
-		for _, dep := range step.DependsOn {
-			if d, ok := byStep[dep]; ok {
-				visit(d)
-			}
-		}
-	}
-	visit(target)
-	var pruned []scenariotemplate.SpecSkeletonStep
-	for _, s := range spec.Skeleton {
-		if included[s.Step] {
-			pruned = append(pruned, s) // 保持声明序
-		}
-	}
-	return pruned, nil
+	return scenariotemplate.PruneSkeletonForExit(spec, exitDeliverable)
 }
 
 // validateSkeletonAdherence checks that plan's tasks collectively produce
@@ -160,24 +137,10 @@ func validateSkeletonAdherence(spec scenariotemplate.SpecV2, plan RouteDecisionP
 	return nil
 }
 
-// exitCondMet evaluates a SpecConstraint's When clause against the plan's
-// chosen exit. An empty clause is unconditional (always met). Otherwise the
-// constraint is met once the plan's exit is at-or-beyond the referenced exit
-// in the template's declared exit ordering. If either exit cannot be
-// resolved in the spec's Exits list (should not happen for a spec that has
-// already passed scenariotemplate.ParseSpec, but defends against a stale
-// caller), the condition is treated as met — sooner enforce a constraint
-// than silently skip one on unrecognized input.
+// exitCondMet delegates to scenariotemplate.ExitCondMet so playbook-readiness
+// and planning governance share one implementation.
 func exitCondMet(spec scenariotemplate.SpecV2, cond scenariotemplate.SpecConstraintWhen, exit string) bool {
-	if strings.TrimSpace(cond.ExitAtOrBeyond) == "" {
-		return true
-	}
-	target := spec.ExitIndex(cond.ExitAtOrBeyond)
-	current := spec.ExitIndex(exit)
-	if target < 0 || current < 0 {
-		return true
-	}
-	return current >= target
+	return scenariotemplate.ExitCondMet(spec, cond, exit)
 }
 
 // stepTask resolves the plan task that fulfils a skeleton step, via the
@@ -206,19 +169,37 @@ func stepTask(step scenariotemplate.SpecSkeletonStep, producedBy map[string]stri
 // the same sole employee forever; this is a structural pool gap, not a plan
 // defect, so it escalates straight to a human via newStructuralGapError,
 // carrying an actionable PlanningGap (roles/capabilities/ways-out) instead of
-// a raw diagnosis. This is the only production channel that raises
-// ErrNoSuitableEmployee: ValidateRouteDecisionPlan no longer gates on planner
-// self-reported confidence — see graph_validation.go's selectionScoreThreshold
-// for the server-computed gate that replaced it (a low score degrades the
-// plan via a low_feasibility note instead of rejecting it).
-func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmployees map[string]map[uuid.UUID]bool, roleCapabilities map[string][]string, activeExecutorCount int) error {
+// a raw diagnosis.
+//
+// Playbook casting (编制) is assignment authority: ApplyPlaybookCasting re-forces
+// role→employee on every plan. When both roles of a SoD pair are cast to the
+// same employee, re-planning cannot repair the violation either — escalate to
+// the same structural gap (restaff/exempt) so G12 does not burn planner retries
+// and leave the demand in planning_pending for many minutes (design §7.3 / G12).
+//
+// This is the only production channel that raises ErrNoSuitableEmployee:
+// ValidateRouteDecisionPlan no longer gates on planner self-reported confidence —
+// see graph_validation.go's selectionScoreThreshold for the server-computed gate
+// that replaced it (a low score degrades the plan via a low_feasibility note
+// instead of rejecting it).
+func enforceRoleIndependence(constraint scenariotemplate.SpecConstraint, roleEmployees map[string]map[uuid.UUID]bool, roleCapabilities map[string][]string, activeExecutorCount int, castByRole map[string]uuid.UUID) error {
 	for i := 0; i < len(constraint.Roles); i++ {
 		for j := i + 1; j < len(constraint.Roles); j++ {
-			left := roleEmployees[constraint.Roles[i]]
-			right := roleEmployees[constraint.Roles[j]]
+			leftRole := constraint.Roles[i]
+			rightRole := constraint.Roles[j]
+			left := roleEmployees[leftRole]
+			right := roleEmployees[rightRole]
 			for id := range left {
 				if !right[id] {
 					continue
+				}
+				// Cast-locked SoD: both roles force the same employee → not a planner defect.
+				if castByRole != nil {
+					leftCast, leftOK := castByRole[leftRole]
+					rightCast, rightOK := castByRole[rightRole]
+					if leftOK && rightOK && leftCast == id && rightCast == id {
+						return newStructuralGapErrorWithMessage(constraint, roleCapabilities, activeExecutorCount, noSuitableEmployeeCastLockedGapMessage)
+					}
 				}
 				if activeExecutorCount >= 2 {
 					return invalidRouteDecision("constraint role_independence violated: roles %v share employee %s", constraint.Roles, id)
@@ -440,6 +421,25 @@ func roleSetsEqual(a, b []string) bool {
 	return true
 }
 
+// playbookCastByRole indexes PlaybookCasting by role_key → employee.
+func playbookCastByRole(casts []PlaybookCastingAssignment) map[string]uuid.UUID {
+	if len(casts) == 0 {
+		return nil
+	}
+	out := make(map[string]uuid.UUID, len(casts))
+	for _, c := range casts {
+		role := strings.TrimSpace(c.RoleKey)
+		if role == "" || c.DigitalEmployeeID == uuid.Nil {
+			continue
+		}
+		out[role] = c.DigitalEmployeeID
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // structuralGapForPlan returns the actionable ErrNoSuitableEmployee-family error
 // (noSuitableEmployeeStructuralGapMessage) when a plan's failure is really a pool
 // structural gap the planner cannot re-plan around, else nil. The gap holds when:
@@ -591,6 +591,7 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 	}
 
 	activeExecutorCount := len(activeExecutorIDs(snapshot.DigitalEmployeePool))
+	castByRole := playbookCastByRole(snapshot.PlaybookCasting)
 
 	for _, constraint := range spec.Constraints {
 		if !exitCondMet(spec, constraint.When, plan.ExitDeliverable) {
@@ -612,7 +613,7 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 			if migrateReviewerRoleToAdversarial(constraint, steps, producedBy, taskByKey, roleByKey, plan) {
 				continue
 			}
-			if err := enforceRoleIndependence(constraint, roleEmployees, roleCapabilities, activeExecutorCount); err != nil {
+			if err := enforceRoleIndependence(constraint, roleEmployees, roleCapabilities, activeExecutorCount, castByRole); err != nil {
 				return err
 			}
 		case "stage_required":

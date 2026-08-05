@@ -28,10 +28,12 @@ make migrate-status DATABASE_URL=postgres://...
 # 回滚 N 步
 make migrate-down DATABASE_URL=postgres://... STEPS=1
 
-# 完整性 + 可重放校验（在一次性 dev 库上重放全部迁移，不碰真实库）
-# 标准 CI 有 docker 守护进程时可直接 make migrate-validate；
-# 本地用 podman 等时覆盖 DEV_URL：
-make migrate-validate DEV_URL=postgres://user:pass@localhost:5432/dev?sslmode=disable
+# 完整性 + 可重放校验（在一次性 dev 库上重放全部迁移，不碰业务库）
+# 默认 DEV_URL=postgres://postgres:postgres@127.0.0.1:55432/atlas_migrate_validate?sslmode=disable
+# （容器 superteam-migrate-validate-pg；库不存在会自动 CREATE）
+make migrate-validate
+# CI 有 Docker 守护进程时可：
+# make migrate-validate DEV_URL=docker://postgres/16/dev
 ```
 
 > `atlas migrate lint`（破坏性变更静态分析）自 Atlas v0.38 起需要 Atlas Pro 登录，
