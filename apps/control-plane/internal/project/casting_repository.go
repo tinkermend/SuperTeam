@@ -45,8 +45,15 @@ func (r *PgCastingRepository) ListProjectCastings(ctx context.Context, tenantID,
 	return out, nil
 }
 
-func (r *PgCastingRepository) ReplaceProjectCasting(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, templateKey string, assignments []CastingAssignment) ([]CastingEntry, error) {
+func (r *PgCastingRepository) ReplaceProjectCasting(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, templateKey string, assignments []CastingAssignment, displayNames map[uuid.UUID]string) ([]CastingEntry, error) {
 	run := func(q *queries.Queries) ([]CastingEntry, error) {
+		// 先入池再写编制,两者同事务(spec §4.4)。分两步会在编制失败时留下
+		// 「入了池却没有编制」的员工——他仍可被 planner 选中派活。
+		for _, a := range assignments {
+			if err := ensureDigitalEmployeeMember(ctx, q, tenantID, projectID, a.DigitalEmployeeID, displayNames[a.DigitalEmployeeID]); err != nil {
+				return nil, err
+			}
+		}
 		if err := q.DeleteProjectPlaybookCastingsByTemplate(ctx, queries.DeleteProjectPlaybookCastingsByTemplateParams{
 			TenantID:            tenantID,
 			ProjectID:           projectID,
@@ -99,8 +106,10 @@ func (r *PgCastingRepository) CountCastingsForEmployee(ctx context.Context, tena
 	return int(n), err
 }
 
-func (r *PgCastingRepository) EnsureDigitalEmployeeMember(ctx context.Context, tenantID, projectID, employeeID uuid.UUID, displayName string) error {
-	members, err := r.q.ListProjectMembers(ctx, queries.ListProjectMembersParams{
+// ensureDigitalEmployeeMember 用调用方给的 queries 句柄写入,以便在编制事务内
+// 复用同一 tx(spec §4.4 要求入池与编制同事务)。
+func ensureDigitalEmployeeMember(ctx context.Context, q *queries.Queries, tenantID, projectID, employeeID uuid.UUID, displayName string) error {
+	members, err := q.ListProjectMembers(ctx, queries.ListProjectMembersParams{
 		TenantID:  tenantID,
 		ProjectID: projectID,
 	})
@@ -116,7 +125,7 @@ func (r *PgCastingRepository) EnsureDigitalEmployeeMember(ctx context.Context, t
 	if strings.TrimSpace(displayName) != "" {
 		display = pgtype.Text{String: strings.TrimSpace(displayName), Valid: true}
 	}
-	_, err = r.q.CreateProjectMember(ctx, queries.CreateProjectMemberParams{
+	_, err = q.CreateProjectMember(ctx, queries.CreateProjectMemberParams{
 		TenantID:            tenantID,
 		ProjectID:           projectID,
 		PrincipalType:       string(PrincipalTypeDigitalEmployee),

@@ -109,10 +109,13 @@ type DigitalEmployeeSummary struct {
 // CastingRepository persists casting rows.
 type CastingRepository interface {
 	ListProjectCastings(ctx context.Context, tenantID, projectID uuid.UUID, templateKey *string) ([]CastingEntry, error)
-	ReplaceProjectCasting(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, templateKey string, assignments []CastingAssignment) ([]CastingEntry, error)
+	// ReplaceProjectCasting 整套替换编制,并在**同一事务**内把未入池的被编制
+	// 员工补进项目成员池(spec §4.4)。displayNames 供入池时写显示名快照。
+	//
+	// 入池与编制必须同事务:分两步做时,若编制写入失败而入池已提交,项目成员池
+	// 里会多出一个「没有编制却可被 planner 选中派活」的员工——治理泄漏。
+	ReplaceProjectCasting(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, templateKey string, assignments []CastingAssignment, displayNames map[uuid.UUID]string) ([]CastingEntry, error)
 	CountCastingsForEmployee(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (int, error)
-	// EnsureDigitalEmployeeMember inserts executor member if absent (same tx preferred).
-	EnsureDigitalEmployeeMember(ctx context.Context, tenantID, projectID, employeeID uuid.UUID, displayName string) error
 }
 
 var (
@@ -210,18 +213,17 @@ func (s *Service) PutCasting(ctx context.Context, req PutCastingRequest) ([]Cast
 		}
 	}
 
-	// Auto-join members then replace casting (member pool = union of castings + extras).
+	// 入池与编制在**同一事务**内完成(spec §4.4):成员池 = 编制的并集 + 人工额外加的人。
+	displayNames := make(map[uuid.UUID]string, len(assignments))
 	for _, a := range assignments {
 		display := names[a.DigitalEmployeeID]
 		if display == "" {
 			display = a.DigitalEmployeeID.String()
 		}
-		if err := s.castingRepo.EnsureDigitalEmployeeMember(ctx, req.TenantID, req.ProjectID, a.DigitalEmployeeID, display); err != nil {
-			return nil, err
-		}
+		displayNames[a.DigitalEmployeeID] = display
 	}
 
-	entries, err := s.castingRepo.ReplaceProjectCasting(ctx, req.TenantID, req.ProjectID, req.ActorUserID, templateKey, assignments)
+	entries, err := s.castingRepo.ReplaceProjectCasting(ctx, req.TenantID, req.ProjectID, req.ActorUserID, templateKey, assignments, displayNames)
 	if err != nil {
 		return nil, err
 	}
