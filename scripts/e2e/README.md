@@ -46,10 +46,28 @@ SUPERTEAM_ASSERT_GRAPH_REVERSE=1 node scripts/e2e/casting-suite.mjs --stage=grap
 `software_delivery` 的 developer+reviewer 已迁到 `adversarial_review` 不再走经典
 `role_independence`。探针用 `diagnostician+verifier`（两侧都有持有人，且有人同时持有两者）。
 
+## 浏览器 GATE 脚本
+
+| 脚本 | 覆盖 |
+|---|---|
+| `capability-binding-console.mjs` | 能力绑定控制台 U1–U9（spec `2026-08-06-capability-binding-console-design.md` §8）：tab/两区/说明条、**草稿态不即时写入**、依赖闭包预览（含**已保存**的绑定行）、员工侧场地标记**逐条对照 API**、技能详情页文案与项目绑定卡、控制台无真实错误 |
+
+```bash
+node scripts/e2e/capability-binding-console.mjs
+node scripts/e2e/capability-binding-console.mjs --project=<uuid>
+```
+
+改了 Web 代码要先 `restart web`，改了 CP 要先 `restart control-plane`。
+
 ## 共享库 `scripts/e2e/lib/`
 
 - `cp-client.mjs` — login / fetch / assert
 - `fixtures.mjs` — 按名字解析项目与员工（可用 env 覆盖 UUID）
+- `browser.mjs` — **浏览器 E2E 统一入口**：`launchLoggedIn({ chromium })` 返回已登录的
+  page + 控制台错误采集。封了两条反复踩的坑：
+  1. 登录必须用 placeholder 选择器（表单没有 name/id，`input[type=text]` 会命中错元素），
+     且 `waitForURL` 之后要再等一下，否则紧接着的硬导航会被弹回 `/sign-in`；
+  2. `realErrors()` 会滤掉**已知良性噪音**，见下。别再用裸 `consoleErrors.length === 0`。
 - `assert-graph.mjs` — 图终态断言（C10 承重）。**必须吃 `/task-graph` 的 nodes+edges**：
   `/projects/{id}/tasks` 的 `ProjectTask` 没有任何依赖字段，用它做断言时
   「blocker 已全解仍 blocked」永远无法求值，合法 blocked 反而被误报——
@@ -90,6 +108,26 @@ SUPERTEAM_ASSERT_GRAPH_REVERSE=1 node scripts/e2e/casting-suite.mjs --stage=grap
 - 员工按显示名 `开发-A` 等解析；**不要给无人持有的 `operator` 补绑定**（批二 G2 判别条件）
 - `cascade` / `automation-fire` / `sod` 都在 `finally` 里恢复角色、编制并收掉自己产生的
   待办；`sod` 每跑一次会留下一条终态探针 demand（终态 demand 不可 close，属正常残留）
+
+## 控制台断言：已知良性噪音
+
+`browser.mjs` 的 `BENIGN_CONSOLE_PATTERNS` 是**累积词表**，新增噪音请加进去而不是在脚本里各自绕过：
+
+| 噪音 | 为什么是良性的 |
+|---|---|
+| `/api/auth/me` 401 | 会话 cookie 是 httpOnly，前端读不到，只能问服务端"我有会话吗"，未登录时答案就是 401。且 `auth-provider` 的启动探测是裸 `useEffect`，**开发模式**下被 StrictMode 双调 ⇒ 每次应用启动固定两条（生产构建实测只发一次）。 |
+| `net::ERR_ABORTED` on `/stream`、`/events` | 收件箱与运行总览有常驻 SSE，每次页面导航都会被浏览器 abort，是导航的正常副作用。 |
+
+采集侧会把 `location().url` 拼进错误字符串——**资源类错误的 `text()` 里没有 URL**，不拼就按 URL 过滤不到（踩过）。
+
+另：**不要用 `waitUntil: "networkidle"`**，常驻 SSE 会让它永不触发、只等到超时；用 `SAFE_WAIT_UNTIL`。
+
+## 断言要对 API 真值，不要对"页面上有没有某个词"
+
+`capability-binding-console.mjs` 的 U7/U8 是个范例：早期版本断言"页面出现「通用」"，
+结果租户里所有技能都被项目绑定之后就永远绿不了（也可能反过来真空通过）。
+现在改成**逐条拿 `project_bindings` 真值对照 UI**，并在只覆盖到一种形态时显式提示，
+而不是让它悄悄算过。
 
 失真编制普查：
 
