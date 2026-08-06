@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { deleteJson, getJson, postJson } from "./client";
+import { deleteJson, getJson, postJson, putJson } from "./client";
 
 function encodePathSegment(value: string) {
   return encodeURIComponent(value);
@@ -7,6 +7,11 @@ function encodePathSegment(value: string) {
 
 export type McpAuthStrategy = "none" | "bearer_env" | "headers_env";
 export type McpTransport = "http" | "streamable_http";
+
+export type McpProjectBinding = {
+  project_id: string;
+  project_name: string;
+};
 
 export type McpServerDefinition = {
   id: string;
@@ -23,6 +28,7 @@ export type McpServerDefinition = {
   tool_allowlist: string[];
   risk_level: string;
   status: string;
+  project_bindings?: McpProjectBinding[];
   created_at?: string;
   updated_at?: string;
 };
@@ -46,6 +52,7 @@ export type McpBinding = {
   tenant_id: string;
   team_id?: string;
   digital_employee_id?: string;
+  project_id?: string;
   mcp_server_id: string;
   server_key?: string;
   server_name?: string;
@@ -312,5 +319,32 @@ export function listEmployeeSkillMcpDependencyStatus(
     options,
     `/api/v1/digital-employees/${encodedEmployeeId}/skill-mcp-dependency-status`,
     "employee skill mcp dependency status",
+  );
+}
+
+
+export async function listProjectMcpBindings(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<McpBinding[]> {
+  const encodedProjectId = encodePathSegment(projectId);
+  return getJson<McpBinding[]>(
+    options,
+    `/api/v1/projects/${encodedProjectId}/mcp-bindings`,
+    "project mcp bindings",
+  );
+}
+
+export async function putProjectMcpBindings(
+  options: ApiClientOptions,
+  projectId: string,
+  items: CreateMcpBindingInput[],
+): Promise<McpBinding[]> {
+  const encodedProjectId = encodePathSegment(projectId);
+  return putJson<McpBinding[]>(
+    options,
+    `/api/v1/projects/${encodedProjectId}/mcp-bindings`,
+    { items },
+    "put project mcp bindings",
   );
 }

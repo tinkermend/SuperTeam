@@ -939,7 +939,25 @@ ORDER BY s.name ASC`, req.TenantID, req.ProjectID)
 		b.Skill = &skill
 		out = append(out, b)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 显式释放游标持有的连接再发子查询：deferred Close 幂等，但池小时
+	// 边持游标边取新连接可能自锁。
+	rows.Close()
+	// 内嵌技能必须补全子项：能力绑定页的**依赖闭包预览**读的是
+	// skill.runtime_dependencies.mcp_servers，只扫主表会让它恒为空——
+	// 该页最有价值的提示（"这个技能会连带引入哪些 MCP"）就永远不显示。
+	// rows 必须先耗尽再发新查询：同一连接上不能并发游标。
+	for _, b := range out {
+		if b.Skill == nil {
+			continue
+		}
+		if err := r.loadChildren(ctx, b.Skill); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (r *PgRepository) ReplaceProjectSkillBindings(ctx context.Context, req PutProjectSkillBindingsRequest) ([]ProjectSkillBinding, error) {

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ProjectConfigPage } from "@/features/projects";
 
 export type ProjectConfigSearch = {
-  tab?: "overview" | "members" | "casting" | "coordination";
+  tab?: "overview" | "members" | "casting" | "capabilities" | "coordination";
 };
 
 export const Route = createFileRoute("/_authenticated/projects/$projectId/config")({
@@ -13,6 +13,7 @@ export const Route = createFileRoute("/_authenticated/projects/$projectId/config
       tab === "overview" ||
       tab === "members" ||
       tab === "casting" ||
+      tab === "capabilities" ||
       tab === "coordination"
     ) {
       return { tab };

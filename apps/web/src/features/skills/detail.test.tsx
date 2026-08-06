@@ -213,6 +213,7 @@ describe("SkillDetailView", () => {
 
     await expect.element(screen.getByRole("heading", { name: "安装范围" })).toBeVisible();
     expect(document.body.textContent).toContain("团队安装");
+    expect(document.body.textContent).toContain("项目绑定");
     expect(document.body.textContent).toContain("平台工程");
     expect(document.body.textContent).toContain("产品团队");
     expect(document.body.textContent).toContain("team-without-name");

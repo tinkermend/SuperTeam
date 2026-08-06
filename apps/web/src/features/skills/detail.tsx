@@ -13,6 +13,7 @@ import {
   Trash2,
   UserRound,
   Users,
+  FolderKanban,
   Wrench
 } from "lucide-react";
 import {
@@ -197,6 +198,12 @@ function SkillArchiveDetail({
         />
         <MetricCard icon={<Users />} iconTone="info" label="团队安装" value={skill.team_bindings.length} />
         <MetricCard icon={<Bot />} iconTone="artifact" label="数字员工安装" value={skill.agent_bindings.length} />
+        <MetricCard
+          icon={<FolderKanban />}
+          iconTone="brand"
+          label="项目绑定"
+          value={(skill.project_bindings ?? []).length}
+        />
         <MetricCard icon={<Wrench />} iconTone="warn" label="运行要求" value={dependencyCount} />
       </section>
 
@@ -239,6 +246,21 @@ function SkillArchiveDetail({
                     tone: "artifact"
 }))}
                   title="数字员工安装"
+                />
+                <BindingList
+                  empty="暂无项目绑定"
+                  icon={<FolderKanban />}
+                  items={(skill.project_bindings ?? []).map((binding) => ({
+                    id: binding.project_id,
+                    meta: binding.project_id,
+                    name:
+                      (binding.project_name || "").trim() ||
+                      (binding.project_id
+                        ? `未命名项目 (${binding.project_id.slice(0, 8)})`
+                        : "未命名项目"),
+                    tone: "brand"
+                  }))}
+                  title="项目绑定"
                 />
               </div>
             </DetailSection>
@@ -351,7 +373,7 @@ function SkillMcpDependenciesSection({
       {current.length === 0 ? (
         <EmptyState
           title="未声明依赖"
-          description="依赖只做装载校验：员工执行任务时若未绑定所依赖的 MCP（或缺环境变量），派发会被阻断等待人工处理；依赖不会自动为员工开通能力。"
+          description="依赖分两种情况：所依赖的 MCP 已在注册表中、且执行者已配齐它要求的环境变量时，派发会自动把它一并投影（记为 dependency_closure，可在派发记录中追溯）；若环境变量未配齐，派发会被阻断等待人工处理——依赖永远不会替员工开通缺失的凭据。"
         />
       ) : (
         <>
@@ -391,7 +413,7 @@ function SkillMcpDependenciesSection({
             ))}
           </ul>
           <p className="mt-3 text-xs text-ink-3">
-            依赖只做装载校验：员工执行任务时若未绑定所依赖的 MCP（或缺环境变量），派发会被阻断等待人工处理；依赖不会自动为员工开通能力。
+            依赖分两种情况：所依赖的 MCP 已在注册表中、且执行者已配齐它要求的环境变量时，派发会自动把它一并投影（记为 dependency_closure，可在派发记录中追溯）；若环境变量未配齐，派发会被阻断等待人工处理——依赖永远不会替员工开通缺失的凭据。
           </p>
         </>
       )}

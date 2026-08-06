@@ -14,9 +14,21 @@ export type SkillAgentBinding = {
   status: string;
 };
 
+export type SkillProjectBinding = {
+  project_id: string;
+  project_name: string;
+};
+
+export type SkillRuntimeMcpServerRef = {
+  mcp_server_id: string;
+  server_key: string;
+  server_name: string;
+};
+
 export type SkillRuntimeDependencies = {
   tools: string[];
   env: string[];
+  mcp_servers?: SkillRuntimeMcpServerRef[];
 };
 
 export type SkillRuntimeDependencyStatus = {
@@ -46,6 +58,7 @@ export type Skill = {
   created_by_name: string;
   team_bindings: SkillTeamBinding[];
   agent_bindings: SkillAgentBinding[];
+  project_bindings?: SkillProjectBinding[];
   runtime_dependencies?: SkillRuntimeDependencies;
   created_at?: string;
   updated_at?: string;
@@ -338,5 +351,46 @@ export function replaceSkillMcpDependencies(
     `/api/v1/skills/${encodeURIComponent(skillId)}/mcp-dependencies`,
     input,
     "replace skill mcp dependencies",
+  );
+}
+
+
+export type ProjectSkillBinding = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  skill_id: string;
+  created_by_user_id?: string;
+  created_at?: string;
+  skill?: Skill;
+};
+
+export type PutProjectSkillBindingItem = {
+  skill_id: string;
+};
+
+export async function listProjectSkillBindings(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectSkillBinding[]> {
+  const encodedProjectId = encodeURIComponent(projectId);
+  return getJson<ProjectSkillBinding[]>(
+    options,
+    `/api/v1/projects/${encodedProjectId}/skill-bindings`,
+    "project skill bindings",
+  );
+}
+
+export async function putProjectSkillBindings(
+  options: ApiClientOptions,
+  projectId: string,
+  items: PutProjectSkillBindingItem[],
+): Promise<ProjectSkillBinding[]> {
+  const encodedProjectId = encodeURIComponent(projectId);
+  return putJson<ProjectSkillBinding[]>(
+    options,
+    `/api/v1/projects/${encodedProjectId}/skill-bindings`,
+    { items },
+    "put project skill bindings",
   );
 }

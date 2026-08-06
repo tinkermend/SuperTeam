@@ -78,11 +78,12 @@ import {
 import { formatDateTime } from "@/lib/format-time";
 import { ProjectManagementShell } from "./project-management-shell";
 import { PlaybookCastingPanel } from "./playbook-casting-panel";
+import { ProjectCapabilityBindingsPanel } from "./project-capability-bindings-panel";
 import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
 import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
 
-type ProjectConfigTabValue = "overview" | "members" | "casting" | "coordination";
+type ProjectConfigTabValue = "overview" | "members" | "casting" | "capabilities" | "coordination";
 
 type ProjectConfigViewProps = {
   apiBaseUrl: string;
@@ -522,6 +523,7 @@ export function ProjectConfigView({
               <ProjectConfigTab value="overview">概览</ProjectConfigTab>
               <ProjectConfigTab value="members">成员</ProjectConfigTab>
               <ProjectConfigTab value="casting">剧本编制</ProjectConfigTab>
+              <ProjectConfigTab value="capabilities">能力绑定</ProjectConfigTab>
               <ProjectConfigTab value="coordination">协调策略</ProjectConfigTab>
             </SoftTabsList>
 
@@ -628,6 +630,14 @@ export function ProjectConfigView({
 
             <SoftTabsContent value="casting">
               <PlaybookCastingPanel projectId={projectId} />
+            </SoftTabsContent>
+
+            <SoftTabsContent value="capabilities">
+              <ProjectCapabilityBindingsPanel
+                apiOptions={apiOptions}
+                disabled={configFieldsDisabled}
+                projectId={projectId}
+              />
             </SoftTabsContent>
 
             <SoftTabsContent value="coordination">

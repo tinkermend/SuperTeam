@@ -157,7 +157,7 @@ export function ProjectConfigPage({
   projectId
 }: ProjectsPageProps & {
   projectId: string;
-  initialTab?: "overview" | "members" | "casting" | "coordination";
+  initialTab?: "overview" | "members" | "casting" | "capabilities" | "coordination";
 }) {
   return (
     <ProjectConfigView

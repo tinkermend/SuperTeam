@@ -404,6 +404,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
 
           <EmployeeMcpBindingsSection
             bindings={employeeMcpBindings.data ?? []}
+            definitions={mcpDefinitions.data ?? []}
             isError={employeeMcpBindings.isError}
             isFetching={employeeMcpBindings.isFetching}
             isLoading={employeeMcpBindings.isLoading}
@@ -448,6 +449,31 @@ function PanelTitle({
   );
 }
 
+
+function projectVenuePill(bindings: Array<{ project_id: string; project_name: string }> | undefined) {
+  const list = bindings ?? [];
+  if (list.length === 0) {
+    return (
+      <StatusPill tone="mute" title="该技能在所有项目的任务中都会投影">
+        通用
+      </StatusPill>
+    );
+  }
+  const names = list
+    .map((b) => {
+      const name = (b.project_name || "").trim();
+      if (name) return name;
+      const short = (b.project_id || "").slice(0, 8);
+      return short ? `未命名项目 (${short})` : "未命名项目";
+    })
+    .join("、");
+  return (
+    <StatusPill tone="info" title={names}>
+      限 {list.length} 个项目
+    </StatusPill>
+  );
+}
+
 function EmployeeSkillRow({
   entry,
   onRemove,
@@ -476,6 +502,7 @@ function EmployeeSkillRow({
             <StatusPill tone={skillRiskTone(entry.skill.risk_level)}>
               {skillRiskLabel(entry.skill.risk_level)}
             </StatusPill>
+            {projectVenuePill(entry.skill.project_bindings)}
             {skillLoadStatePills(entry).map((status) => (
               <StatusPill key={status.label} tone={status.tone}>{status.label}</StatusPill>
             ))}
@@ -733,6 +760,7 @@ function EffectiveMcpRegistrySection({
 // they surface in EffectiveMcpRegistrySection.
 function EmployeeMcpBindingsSection({
   bindings,
+  definitions,
   isError,
   isFetching,
   isLoading,
@@ -741,6 +769,7 @@ function EmployeeMcpBindingsSection({
   removeError
 }: {
   bindings: McpBinding[];
+  definitions: McpServerDefinition[];
   isError: boolean;
   isFetching: boolean;
   isLoading: boolean;
@@ -748,6 +777,13 @@ function EmployeeMcpBindingsSection({
   removing: boolean;
   removeError: boolean;
 }) {
+  const definitionsById = useMemo(() => {
+    const map = new Map<string, McpServerDefinition>();
+    for (const definition of definitions) {
+      map.set(definition.id, definition);
+    }
+    return map;
+  }, [definitions]);
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
@@ -772,6 +808,7 @@ function EmployeeMcpBindingsSection({
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <p className="truncate text-sm font-medium">{binding.server_name ?? binding.server_key}</p>
                   <StatusPill tone={blocked ? "warn" : "ok"}>{statusLabel(binding.status)}</StatusPill>
+                  {projectVenuePill(definitionsById.get(binding.mcp_server_id)?.project_bindings)}
                 </div>
                 <p className="truncate font-mono text-xs text-muted-foreground">{binding.url ?? binding.server_key}</p>
                 {binding.credential_env_var ? (

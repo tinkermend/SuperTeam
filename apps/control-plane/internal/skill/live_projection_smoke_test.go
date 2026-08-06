@@ -96,3 +96,51 @@ WHERE NOT EXISTS (
 		t.Fatalf("S4 venue: linux must not appear in B: %#v", resB2.Skills)
 	}
 }
+
+// 复检回归：绑定列表内嵌的 skill 必须补全子项——能力绑定页的依赖闭包预览读的是
+// skill.runtime_dependencies.mcp_servers，只扫主表会让它恒为空。
+func TestLiveProjectSkillBindingEmbedsDependencies(t *testing.T) {
+	url := os.Getenv("DATABASE_URL")
+	if url == "" {
+		t.Skip("DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConnConfig.RuntimeParams["search_path"] = "superteam"
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+
+	repo := NewPgRepository(pool)
+	tenant := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	proj := uuid.MustParse("56de8016-ce14-43d9-95bf-3fca89849b0a")
+
+	bindings, err := repo.ListProjectSkillBindings(ctx, ListProjectSkillBindingsRequest{
+		TenantID:  tenant,
+		ProjectID: proj,
+		UserID:    uuid.MustParse("36e24cb9-343b-44a2-ab67-2d491b8551ff"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) == 0 {
+		t.Skip("project has no skill bindings to assert on")
+	}
+	var sawDeps bool
+	for _, b := range bindings {
+		if b.Skill == nil {
+			t.Fatalf("binding %s must embed its skill", b.ID)
+		}
+		if len(b.Skill.RuntimeDependencies.MCPServers) > 0 {
+			sawDeps = true
+		}
+	}
+	if !sawDeps {
+		t.Fatal("no embedded skill carried MCP dependencies — loadChildren likely not applied (依赖闭包预览会恒空)")
+	}
+}
