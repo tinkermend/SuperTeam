@@ -33,6 +33,8 @@ type HandlerService interface {
 	UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*DigitalEmployee, error)
 	UpdateProfile(ctx context.Context, req UpdateProfileRequest) (*DigitalEmployee, error)
 	ReplaceEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) ([]string, error)
+	ReplaceEmployeeRolesWithImpact(ctx context.Context, req ReplaceEmployeeRolesRequest) ([]string, error)
+	GetEmployeeRoleImpact(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) (CastingRoleImpact, error)
 	ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error)
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
 	SubmitPermissionChange(ctx context.Context, req SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error)
@@ -444,14 +446,32 @@ func (h *HTTPHandler) ReplaceDigitalEmployeeRoles(w http.ResponseWriter, r *http
 		return
 	}
 	var body struct {
-		RoleKeys []string `json:"role_keys"`
+		RoleKeys      []string `json:"role_keys"`
+		ConfirmImpact bool     `json:"confirm_impact"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	keys, err := service.ReplaceEmployeeRoles(r.Context(), tenantID, employeeID, body.RoleKeys)
+	keys, err := service.ReplaceEmployeeRolesWithImpact(r.Context(), ReplaceEmployeeRolesRequest{
+		TenantID:      tenantID,
+		EmployeeID:    employeeID,
+		ActorUserID:   middleware.GetUserID(r.Context()),
+		RoleKeys:      body.RoleKeys,
+		ConfirmImpact: body.ConfirmImpact,
+	})
 	if err != nil {
+		var impactErr *ErrCastingImpactRequiresConfirm
+		if errors.As(err, &impactErr) {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"code":              "casting_impact_requires_confirm",
+				"error":             impactErr.Error(),
+				"message":           impactErr.Error(),
+				"affected_castings": castingImpactRowsResponse(impactErr.Impact.AffectedCastings),
+				"affected_count":    impactErr.Impact.AffectedCount,
+			})
+			return
+		}
 		writeHandlerError(w, err)
 		return
 	}
@@ -459,6 +479,53 @@ func (h *HTTPHandler) ReplaceDigitalEmployeeRoles(w http.ResponseWriter, r *http
 		keys = []string{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"role_keys": keys})
+}
+
+// GetDigitalEmployeeRoleImpact handles GET /digital-employees/{id}/role-impact.
+func (h *HTTPHandler) GetDigitalEmployeeRoleImpact(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee role impact")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var roleKeys []string
+	if raw := strings.TrimSpace(r.URL.Query().Get("role_keys")); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			if k := strings.TrimSpace(part); k != "" {
+				roleKeys = append(roleKeys, k)
+			}
+		}
+	}
+	impact, err := service.GetEmployeeRoleImpact(r.Context(), tenantID, employeeID, roleKeys)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"affected_castings": castingImpactRowsResponse(impact.AffectedCastings),
+		"affected_count":    impact.AffectedCount,
+	})
+}
+
+func castingImpactRowsResponse(rows []CastingImpactRow) []map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, map[string]any{
+			"project_id":            row.ProjectID.String(),
+			"project_name":          row.ProjectName,
+			"scenario_template_key": row.ScenarioTemplateKey,
+			"template_name":         row.TemplateName,
+			"role_key":              row.RoleKey,
+		})
+	}
+	return out
 }
 
 func (h *HTTPHandler) DeleteDigitalEmployee(w http.ResponseWriter, r *http.Request) {

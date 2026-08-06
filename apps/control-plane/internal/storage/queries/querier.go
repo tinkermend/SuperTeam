@@ -203,6 +203,8 @@ type Querier interface {
 	DeleteAutomationFiresByProject(ctx context.Context, arg DeleteAutomationFiresByProjectParams) (int64, error)
 	DeleteAutomationRule(ctx context.Context, arg DeleteAutomationRuleParams) (int64, error)
 	DeleteAutomationRulesByProject(ctx context.Context, arg DeleteAutomationRulesByProjectParams) (int64, error)
+	DeleteCastingsForEmployeeRoles(ctx context.Context, arg DeleteCastingsForEmployeeRolesParams) error
+	DeleteCastingsForRoleKey(ctx context.Context, arg DeleteCastingsForRoleKeyParams) error
 	DeleteDigitalEmployee(ctx context.Context, arg DeleteDigitalEmployeeParams) error
 	DeleteEmployeeMCPBindingV2(ctx context.Context, arg DeleteEmployeeMCPBindingV2Params) error
 	DeleteExecutionLedgerEventsForPurgedProjects(ctx context.Context, arg DeleteExecutionLedgerEventsForPurgedProjectsParams) (int64, error)
@@ -457,6 +459,10 @@ type Querier interface {
 	ListAutomationRules(ctx context.Context, arg ListAutomationRulesParams) ([]AutomationRule, error)
 	ListAutomationRulesByProject(ctx context.Context, arg ListAutomationRulesByProjectParams) ([]AutomationRule, error)
 	ListCapabilityVocabulary(ctx context.Context, tenantID uuid.UUID) ([]CapabilityVocabulary, error)
+	// Impact preview: castings held by employee for the given role_keys.
+	// Empty role_keys array means all roles for that employee.
+	ListCastingsForEmployeeRoles(ctx context.Context, arg ListCastingsForEmployeeRolesParams) ([]ListCastingsForEmployeeRolesRow, error)
+	ListCastingsForRoleKey(ctx context.Context, arg ListCastingsForRoleKeyParams) ([]ListCastingsForRoleKeyRow, error)
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, arg ListConfiguredEmployeeEnvVarNamesParams) ([]string, error)
 	ListDemandAcceptanceCriteria(ctx context.Context, arg ListDemandAcceptanceCriteriaParams) ([]DemandAcceptanceCriterium, error)
 	ListDemandConstraintExemptionsByDemand(ctx context.Context, arg ListDemandConstraintExemptionsByDemandParams) ([]ProjectDemandConstraintExemption, error)

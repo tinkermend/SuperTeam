@@ -942,17 +942,49 @@ export function submitEmployeePermissionChange(
   );
 }
 
+export type DigitalEmployeeRoleImpactCasting = {
+  project_id: string;
+  project_name: string;
+  scenario_template_key: string;
+  template_name: string;
+  role_key: string;
+};
+
+export type DigitalEmployeeRoleImpact = {
+  affected_castings: DigitalEmployeeRoleImpactCasting[];
+  affected_count: number;
+};
+
+/** 预检：移除角色对既有编制的影响面。roleKeys 省略 = 全部当前角色。 */
+export function getDigitalEmployeeRoleImpact(
+  options: ApiClientOptions,
+  employeeId: string,
+  roleKeys?: string[],
+): Promise<DigitalEmployeeRoleImpact> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const qs =
+    roleKeys && roleKeys.length > 0
+      ? `?role_keys=${encodeURIComponent(roleKeys.join(","))}`
+      : "";
+  return getJson<DigitalEmployeeRoleImpact>(
+    options,
+    `/api/v1/digital-employees/${encodedEmployeeId}/role-impact${qs}`,
+    "digital employee role impact",
+  );
+}
+
 /** 整套替换员工剧本角色绑定（词表 role_keys；即时生效，无需审批）。 */
 export function replaceDigitalEmployeeRoles(
   options: ApiClientOptions,
   employeeId: string,
   roleKeys: string[],
+  confirmImpact = false,
 ): Promise<{ role_keys: string[] }> {
   const encodedEmployeeId = encodePathSegment(employeeId);
   return putJson<{ role_keys: string[] }>(
     options,
     `/api/v1/digital-employees/${encodedEmployeeId}/roles`,
-    { role_keys: roleKeys },
+    { role_keys: roleKeys, confirm_impact: confirmImpact },
     "replace digital employee roles",
   );
 }

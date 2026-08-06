@@ -153,12 +153,17 @@ export function ProjectDetailPage({
 
 export function ProjectConfigPage({
   fetcher,
+  initialTab,
   projectId
-}: ProjectsPageProps & { projectId: string }) {
+}: ProjectsPageProps & {
+  projectId: string;
+  initialTab?: "overview" | "members" | "casting" | "coordination";
+}) {
   return (
     <ProjectConfigView
       apiBaseUrl={resolveControlPlaneUrl()}
       fetcher={fetcher}
+      initialTab={initialTab}
       projectId={projectId}
     />
   );

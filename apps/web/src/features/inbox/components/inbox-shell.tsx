@@ -1201,6 +1201,8 @@ const itemTypeOptions = [
   { label: "项目决策", value: "project_decision" },
   { label: "团队待删", value: "team_pending_delete" },
   { label: "通道告警", value: "channel_alert" },
+  { label: "自动化告警", value: "automation_alert" },
+  { label: "编制失效", value: "casting_invalidated" },
 ] satisfies Array<SelectOption<InboxItemType | "all">>;
 
 const riskOptions = [

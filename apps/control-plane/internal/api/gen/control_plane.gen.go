@@ -183,6 +183,21 @@ func (e AutomationScheduleKind) Valid() bool {
 	}
 }
 
+// Defines values for CastingImpactConfirmRequiredCode.
+const (
+	CastingImpactConfirmRequiredCodeCastingImpactRequiresConfirm CastingImpactConfirmRequiredCode = "casting_impact_requires_confirm"
+)
+
+// Valid indicates whether the value is a known member of the CastingImpactConfirmRequiredCode enum.
+func (e CastingImpactConfirmRequiredCode) Valid() bool {
+	switch e {
+	case CastingImpactConfirmRequiredCodeCastingImpactRequiresConfirm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConnectorSignDemandCriterionRequestVerdict.
 const (
 	ConnectorSignDemandCriterionRequestVerdictSatisfied   ConnectorSignDemandCriterionRequestVerdict = "satisfied"
@@ -2238,6 +2253,21 @@ func (e RoleVocabularyEntryStatus) Valid() bool {
 	}
 }
 
+// Defines values for RoleVocabularyImpactConfirmRequiredCode.
+const (
+	RoleVocabularyImpactConfirmRequiredCodeCastingImpactRequiresConfirm RoleVocabularyImpactConfirmRequiredCode = "casting_impact_requires_confirm"
+)
+
+// Valid indicates whether the value is a known member of the RoleVocabularyImpactConfirmRequiredCode enum.
+func (e RoleVocabularyImpactConfirmRequiredCode) Valid() bool {
+	switch e {
+	case RoleVocabularyImpactConfirmRequiredCodeCastingImpactRequiresConfirm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RuntimeCommandWritebackAcceptedStatus.
 const (
 	Accepted RuntimeCommandWritebackAcceptedStatus = "accepted"
@@ -3189,6 +3219,18 @@ type BindTeamDigitalEmployeeResponse struct {
 	TeamId            openapi_types.UUID `json:"team_id"`
 }
 
+// CastingImpactConfirmRequired defines model for CastingImpactConfirmRequired.
+type CastingImpactConfirmRequired struct {
+	AffectedCastings []DigitalEmployeeRoleImpactCasting `json:"affected_castings"`
+	AffectedCount    int                                `json:"affected_count"`
+	Code             CastingImpactConfirmRequiredCode   `json:"code"`
+	Error            *string                            `json:"error,omitempty"`
+	Message          string                             `json:"message"`
+}
+
+// CastingImpactConfirmRequiredCode defines model for CastingImpactConfirmRequired.Code.
+type CastingImpactConfirmRequiredCode string
+
 // CloseProjectDemandRequest defines model for CloseProjectDemandRequest.
 type CloseProjectDemandRequest struct {
 	// Reason 关闭原因（可选），写入 demand.cancelled 审计事件
@@ -4056,6 +4098,21 @@ type DigitalEmployeeRecentEventSummary struct {
 	Status     string     `json:"status"`
 }
 
+// DigitalEmployeeRoleImpact defines model for DigitalEmployeeRoleImpact.
+type DigitalEmployeeRoleImpact struct {
+	AffectedCastings []DigitalEmployeeRoleImpactCasting `json:"affected_castings"`
+	AffectedCount    int                                `json:"affected_count"`
+}
+
+// DigitalEmployeeRoleImpactCasting defines model for DigitalEmployeeRoleImpactCasting.
+type DigitalEmployeeRoleImpactCasting struct {
+	ProjectId           openapi_types.UUID `json:"project_id"`
+	ProjectName         string             `json:"project_name"`
+	RoleKey             string             `json:"role_key"`
+	ScenarioTemplateKey string             `json:"scenario_template_key"`
+	TemplateName        string             `json:"template_name"`
+}
+
 // DigitalEmployeeRun defines model for DigitalEmployeeRun.
 type DigitalEmployeeRun struct {
 	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
@@ -4913,9 +4970,11 @@ type PatchProjectEvidenceRequest struct {
 
 // PatchRoleVocabularyRequest defines model for PatchRoleVocabularyRequest.
 type PatchRoleVocabularyRequest struct {
-	Description *string                           `json:"description,omitempty"`
-	Status      *PatchRoleVocabularyRequestStatus `json:"status,omitempty"`
-	Title       *string                           `json:"title,omitempty"`
+	// ConfirmImpact Required true when disabling a role that still has casting rows
+	ConfirmImpact *bool                             `json:"confirm_impact,omitempty"`
+	Description   *string                           `json:"description,omitempty"`
+	Status        *PatchRoleVocabularyRequestStatus `json:"status,omitempty"`
+	Title         *string                           `json:"title,omitempty"`
 }
 
 // PatchRoleVocabularyRequestStatus defines model for PatchRoleVocabularyRequest.Status.
@@ -6360,7 +6419,9 @@ type RenewProjectTaskAttemptLeaseRequest struct {
 
 // ReplaceDigitalEmployeeRolesRequest defines model for ReplaceDigitalEmployeeRolesRequest.
 type ReplaceDigitalEmployeeRolesRequest struct {
-	RoleKeys []string `json:"role_keys"`
+	// ConfirmImpact Required true when the replace would cascade-delete casting rows
+	ConfirmImpact *bool    `json:"confirm_impact,omitempty"`
+	RoleKeys      []string `json:"role_keys"`
 }
 
 // ReplaceDigitalEmployeeRolesResponse defines model for ReplaceDigitalEmployeeRolesResponse.
@@ -6467,6 +6528,18 @@ type RoleVocabularyEntry struct {
 
 // RoleVocabularyEntryStatus defines model for RoleVocabularyEntry.Status.
 type RoleVocabularyEntryStatus string
+
+// RoleVocabularyImpactConfirmRequired defines model for RoleVocabularyImpactConfirmRequired.
+type RoleVocabularyImpactConfirmRequired struct {
+	CastingCount int                                     `json:"casting_count"`
+	Code         RoleVocabularyImpactConfirmRequiredCode `json:"code"`
+	Error        *string                                 `json:"error,omitempty"`
+	Message      string                                  `json:"message"`
+	References   RoleVocabularyReferences                `json:"references"`
+}
+
+// RoleVocabularyImpactConfirmRequiredCode defines model for RoleVocabularyImpactConfirmRequired.Code.
+type RoleVocabularyImpactConfirmRequiredCode string
 
 // RoleVocabularyReferences defines model for RoleVocabularyReferences.
 type RoleVocabularyReferences struct {
@@ -7601,6 +7674,12 @@ type TaskId = openapi_types.UUID
 // TeamId defines model for TeamId.
 type TeamId = openapi_types.UUID
 
+// EmployeeRoleCastingImpactRequired defines model for EmployeeRoleCastingImpactRequired.
+type EmployeeRoleCastingImpactRequired = CastingImpactConfirmRequired
+
+// RoleVocabularyCastingImpactRequired defines model for RoleVocabularyCastingImpactRequired.
+type RoleVocabularyCastingImpactRequired = RoleVocabularyImpactConfirmRequired
+
 // ListFeishuOperationalOutboxParams defines parameters for ListFeishuOperationalOutbox.
 type ListFeishuOperationalOutboxParams struct {
 	Status *string `form:"status,omitempty" json:"status,omitempty"`
@@ -7713,6 +7792,12 @@ type GetDigitalEmployeeOverviewParams struct {
 type ListProviderSessionsForDigitalEmployeeParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// GetDigitalEmployeeRoleImpactParams defines parameters for GetDigitalEmployeeRoleImpact.
+type GetDigitalEmployeeRoleImpactParams struct {
+	// RoleKeys Comma-separated role keys to preview removal for
+	RoleKeys *string `form:"role_keys,omitempty" json:"role_keys,omitempty"`
 }
 
 // GetDigitalEmployeeRunCalendarParams defines parameters for GetDigitalEmployeeRunCalendar.
@@ -9240,6 +9325,9 @@ type ServerInterface interface {
 	// Create a provider session mapping for a digital employee
 	// (POST /api/v1/digital-employees/{employeeId}/provider-sessions)
 	CreateProviderSessionForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// Preview casting impact of removing employee roles
+	// (GET /api/v1/digital-employees/{employeeId}/role-impact)
+	GetDigitalEmployeeRoleImpact(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params GetDigitalEmployeeRoleImpactParams)
 	// Replace digital employee playbook role bindings
 	// (PUT /api/v1/digital-employees/{employeeId}/roles)
 	ReplaceDigitalEmployeeRoles(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -10170,6 +10258,12 @@ func (_ Unimplemented) ListProviderSessionsForDigitalEmployee(w http.ResponseWri
 // Create a provider session mapping for a digital employee
 // (POST /api/v1/digital-employees/{employeeId}/provider-sessions)
 func (_ Unimplemented) CreateProviderSessionForDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Preview casting impact of removing employee roles
+// (GET /api/v1/digital-employees/{employeeId}/role-impact)
+func (_ Unimplemented) GetDigitalEmployeeRoleImpact(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params GetDigitalEmployeeRoleImpactParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -13174,6 +13268,48 @@ func (siw *ServerInterfaceWrapper) CreateProviderSessionForDigitalEmployee(w htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateProviderSessionForDigitalEmployee(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDigitalEmployeeRoleImpact operation middleware
+func (siw *ServerInterfaceWrapper) GetDigitalEmployeeRoleImpact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetDigitalEmployeeRoleImpactParams
+
+	// ------------- Optional query parameter "role_keys" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "role_keys", r.URL.Query(), &params.RoleKeys, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "role_keys"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "role_keys", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDigitalEmployeeRoleImpact(w, r, employeeId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -20098,6 +20234,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/provider-sessions", wrapper.CreateProviderSessionForDigitalEmployee)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/role-impact", wrapper.GetDigitalEmployeeRoleImpact)
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/roles", wrapper.ReplaceDigitalEmployeeRoles)

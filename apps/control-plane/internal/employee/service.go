@@ -35,6 +35,51 @@ type Service struct {
 	roleVocabulary RoleVocabularyValidator
 	// roleStore 读写 digital_employee_roles 多值角色绑定。
 	roleStore EmployeeRoleStore
+	// castingImpact 预检/级联解除编制（可选；未注入则移除角色不查编制）。
+	castingImpact CastingImpactGateway
+}
+
+// CastingImpactGateway previews and cascades casting rows when employee roles shrink.
+type CastingImpactGateway interface {
+	ListEmployeeRoleImpact(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) (CastingRoleImpact, error)
+	// CommitRoleReplaceWithCascade replaces role bindings and deletes affected
+	// castings in one DB transaction, then emits project events / owner alerts.
+	CommitRoleReplaceWithCascade(ctx context.Context, req RoleReplaceCascadeRequest) error
+}
+
+// RoleReplaceCascadeRequest is the same-txn write for role shrink + casting cascade.
+type RoleReplaceCascadeRequest struct {
+	TenantID      uuid.UUID
+	EmployeeID    uuid.UUID
+	ActorUserID   uuid.UUID
+	NewRoleKeys   []string
+	RemovedKeys   []string
+	EmployeeName  string
+}
+
+// CastingRoleImpact is the employee-facing impact snapshot (mirrors project impact).
+type CastingRoleImpact struct {
+	AffectedCastings []CastingImpactRow
+	AffectedCount    int
+}
+
+// CastingImpactRow is one casting row affected by a role removal.
+type CastingImpactRow struct {
+	ProjectID           uuid.UUID
+	ProjectName         string
+	ScenarioTemplateKey string
+	TemplateName        string
+	RoleKey             string
+}
+
+// ErrCastingImpactRequiresConfirm is returned when role removal would drop castings
+// without confirm_impact=true. Handler maps it to HTTP 400 with impact body.
+type ErrCastingImpactRequiresConfirm struct {
+	Impact CastingRoleImpact
+}
+
+func (e *ErrCastingImpactRequiresConfirm) Error() string {
+	return fmt.Sprintf("removing roles would invalidate %d casting row(s); pass confirm_impact=true", e.Impact.AffectedCount)
 }
 
 // RoleVocabularyValidator returns role keys not registered as active.
@@ -59,6 +104,10 @@ func (s *Service) SetEmployeeRoleStore(store EmployeeRoleStore) {
 	s.roleStore = store
 }
 
+func (s *Service) SetCastingImpactGateway(g CastingImpactGateway) {
+	s.castingImpact = g
+}
+
 func (s *Service) validateRoleKeys(ctx context.Context, tenantID uuid.UUID, roleKeys []string) error {
 	if s.roleVocabulary == nil || len(roleKeys) == 0 {
 		return nil
@@ -73,25 +122,115 @@ func (s *Service) validateRoleKeys(ctx context.Context, tenantID uuid.UUID, role
 	return nil
 }
 
+// ReplaceEmployeeRolesRequest is the write shape for PUT .../roles.
+type ReplaceEmployeeRolesRequest struct {
+	TenantID       uuid.UUID
+	EmployeeID     uuid.UUID
+	ActorUserID    uuid.UUID
+	RoleKeys       []string
+	ConfirmImpact  bool
+}
+
 // ReplaceEmployeeRoles replaces the multi-value role set for one employee.
+// Removing roles that still appear in project castings requires ConfirmImpact.
 func (s *Service) ReplaceEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) ([]string, error) {
+	return s.ReplaceEmployeeRolesWithImpact(ctx, ReplaceEmployeeRolesRequest{
+		TenantID:   tenantID,
+		EmployeeID: employeeID,
+		RoleKeys:   roleKeys,
+	})
+}
+
+// ReplaceEmployeeRolesWithImpact is the confirm_impact-aware role replace.
+func (s *Service) ReplaceEmployeeRolesWithImpact(ctx context.Context, req ReplaceEmployeeRolesRequest) ([]string, error) {
 	if s.roleStore == nil {
 		return nil, fmt.Errorf("employee role store not configured")
 	}
-	if tenantID == uuid.Nil || employeeID == uuid.Nil {
+	if req.TenantID == uuid.Nil || req.EmployeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id and employee_id are required", ErrInvalidInput)
 	}
-	if _, err := s.repository.GetDigitalEmployee(ctx, tenantID, employeeID); err != nil {
+	emp, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.EmployeeID)
+	if err != nil {
 		return nil, err
 	}
-	normalized := normalizeRoleKeys(roleKeys)
-	if err := s.validateRoleKeys(ctx, tenantID, normalized); err != nil {
+	normalized := normalizeRoleKeys(req.RoleKeys)
+	if err := s.validateRoleKeys(ctx, req.TenantID, normalized); err != nil {
 		return nil, err
 	}
-	if err := s.roleStore.ReplaceRoleKeys(ctx, tenantID, employeeID, normalized); err != nil {
+
+	// Diff removed keys against current bindings.
+	current, err := s.roleStore.ListRoleKeys(ctx, req.TenantID, req.EmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	kept := map[string]struct{}{}
+	for _, k := range normalized {
+		kept[k] = struct{}{}
+	}
+	var removed []string
+	for _, k := range current {
+		if _, ok := kept[k]; !ok {
+			removed = append(removed, k)
+		}
+	}
+
+	var impact CastingRoleImpact
+	if len(removed) > 0 && s.castingImpact != nil {
+		impact, err = s.castingImpact.ListEmployeeRoleImpact(ctx, req.TenantID, req.EmployeeID, removed)
+		if err != nil {
+			return nil, err
+		}
+		if impact.AffectedCount > 0 && !req.ConfirmImpact {
+			return nil, &ErrCastingImpactRequiresConfirm{Impact: impact}
+		}
+	}
+
+	if impact.AffectedCount > 0 && s.castingImpact != nil {
+		// Same transaction: role replace + casting deletes; events/alerts after commit.
+		if err := s.castingImpact.CommitRoleReplaceWithCascade(ctx, RoleReplaceCascadeRequest{
+			TenantID:     req.TenantID,
+			EmployeeID:   req.EmployeeID,
+			ActorUserID:  req.ActorUserID,
+			NewRoleKeys:  normalized,
+			RemovedKeys:  removed,
+			EmployeeName: emp.Name,
+		}); err != nil {
+			return nil, err
+		}
+		return normalized, nil
+	}
+
+	if err := s.roleStore.ReplaceRoleKeys(ctx, req.TenantID, req.EmployeeID, normalized); err != nil {
 		return nil, err
 	}
 	return normalized, nil
+}
+
+// GetEmployeeRoleImpact previews casting rows that would drop if roleKeys were removed.
+// Empty roleKeys = impact of removing ALL currently held roles.
+func (s *Service) GetEmployeeRoleImpact(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) (CastingRoleImpact, error) {
+	if tenantID == uuid.Nil || employeeID == uuid.Nil {
+		return CastingRoleImpact{}, fmt.Errorf("%w: tenant_id and employee_id are required", ErrInvalidInput)
+	}
+	if _, err := s.repository.GetDigitalEmployee(ctx, tenantID, employeeID); err != nil {
+		return CastingRoleImpact{}, err
+	}
+	if s.castingImpact == nil {
+		return CastingRoleImpact{AffectedCastings: []CastingImpactRow{}, AffectedCount: 0}, nil
+	}
+	keys := normalizeRoleKeys(roleKeys)
+	if len(keys) == 0 && s.roleStore != nil {
+		// role_keys omitted → all current roles
+		current, err := s.roleStore.ListRoleKeys(ctx, tenantID, employeeID)
+		if err != nil {
+			return CastingRoleImpact{}, err
+		}
+		keys = current
+	}
+	if len(keys) == 0 {
+		return CastingRoleImpact{AffectedCastings: []CastingImpactRow{}, AffectedCount: 0}, nil
+	}
+	return s.castingImpact.ListEmployeeRoleImpact(ctx, tenantID, employeeID, keys)
 }
 
 func normalizeRoleKeys(keys []string) []string {

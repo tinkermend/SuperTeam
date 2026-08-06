@@ -720,6 +720,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	employeeService.SetCapabilityVocabularyValidator(scenarioTemplateService)
 	employeeService.SetRoleVocabularyValidator(roleVocabularyService)
 	employeeService.SetEmployeeRoleStore(employee.NewPgEmployeeRoleStore(q))
+	employeeService.SetCastingImpactGateway(newEmployeeCastingImpactAdapter(projectService, q, stores.Postgres))
+	roleVocabularyService.SetCastingCascade(newRoleVocabCastingCascadeAdapter(projectService, q, stores.Postgres))
+	projectService.SetCastingInvalidationNotifier(newCastingInvalidationNotifier(inboxService))
 	if coordinationStore != nil {
 		coordinationStore.WithScenarioTemplateSource(scenarioTemplateSourceAdapter{service: scenarioTemplateService})
 		// G9 coordinator path: after accepted task completion, propose casting_expansion
@@ -812,6 +815,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		automation.NewChatRunner(runService),
 		automationScheduler,
 	)
+	automationService.SetAlertNotifier(newAutomationAlertNotifier(inboxService))
 	projectService.SetAutomationActorRemover(automationService)
 	projectService.SetAutomationProjectCascade(automationService)
 	authService.SetUserDeactivatedHook(automationUserDeactivatedHook{service: automationService})

@@ -39,12 +39,23 @@ type CreateRequest struct {
 }
 
 type PatchRequest struct {
-	TenantID    uuid.UUID
-	ActorUserID uuid.UUID
-	RoleKey     string
-	Title       *string
-	Description *string
-	Status      *string
+	TenantID      uuid.UUID
+	ActorUserID   uuid.UUID
+	RoleKey       string
+	Title         *string
+	Description   *string
+	Status        *string
+	ConfirmImpact bool
+}
+
+// ErrCastingImpactRequiresConfirm is returned when disabling a role would drop castings.
+type ErrCastingImpactRequiresConfirm struct {
+	CastingCount int
+	References   References
+}
+
+func (e *ErrCastingImpactRequiresConfirm) Error() string {
+	return "disabling role would invalidate casting rows; pass confirm_impact=true"
 }
 
 // TemplateRef is a scenario template that references a role key in its current spec.

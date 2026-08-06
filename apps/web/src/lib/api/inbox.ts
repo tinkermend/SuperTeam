@@ -9,7 +9,9 @@ export type InboxItemType =
   | "approval"
   | "project_decision"
   | "team_pending_delete"
-  | "channel_alert";
+  | "channel_alert"
+  | "automation_alert"
+  | "casting_invalidated";
 
 export type InboxSourceType =
   | "approval_request"

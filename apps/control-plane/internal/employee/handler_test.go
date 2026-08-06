@@ -112,6 +112,13 @@ func (s *fakeTemplateHandlerService) ReplaceEmployeeRoles(ctx context.Context, t
 	return roleKeys, nil
 }
 
+func (s *fakeTemplateHandlerService) ReplaceEmployeeRolesWithImpact(ctx context.Context, req ReplaceEmployeeRolesRequest) ([]string, error) {
+	return s.ReplaceEmployeeRoles(ctx, req.TenantID, req.EmployeeID, req.RoleKeys)
+}
+func (s *fakeTemplateHandlerService) GetEmployeeRoleImpact(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) (CastingRoleImpact, error) {
+	return CastingRoleImpact{}, nil
+}
+
 func (s *fakeTemplateHandlerService) ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error) {
 	return nil, nil
 }

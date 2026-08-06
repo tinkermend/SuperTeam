@@ -105,11 +105,13 @@ export function RoleVocabularyView({ apiBaseUrl }: { apiBaseUrl: string }) {
       title?: string;
       description?: string;
       status?: "active" | "disabled";
+      confirm_impact?: boolean;
     }) =>
       patchRoleVocabulary(apiOptions, input.roleKey, {
         title: input.title,
         description: input.description,
         status: input.status,
+        confirm_impact: input.confirm_impact,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["role-vocabulary"] });
@@ -294,7 +296,11 @@ export function RoleVocabularyView({ apiBaseUrl }: { apiBaseUrl: string }) {
         isLoading={patchMutation.isPending}
         handleConfirm={() => {
           if (!disableRow) return;
-          patchMutation.mutate({ roleKey: disableRow.role_key, status: "disabled" });
+          patchMutation.mutate({
+            roleKey: disableRow.role_key,
+            status: "disabled",
+            confirm_impact: true,
+          });
         }}
       />
     </>
@@ -348,7 +354,7 @@ function buildDisableDescription(
   return (
     <div className="flex flex-col gap-2 text-sm">
       <p>
-        停用后该角色不再作为编制候选；历史编制行仍保留。请确认以下引用影响：
+        停用后该角色不再作为编制候选。确认停用将级联解除既有编制并通知项目负责人。请确认以下引用影响：
       </p>
       <ul className="list-disc space-y-1 pl-5 text-ink-2">
         <li>
@@ -366,7 +372,7 @@ function buildDisableDescription(
         <li>
           <span className="font-medium text-ink">已有编制</span>：{refs.casting_count} 条
           <span className="block text-xs">
-            编制行仍在（历史事实），但可达收口会认为该角色无人可用
+            确认后这些编制行会被解除；项目负责人会收到「编制失效」告警
           </span>
         </li>
       </ul>

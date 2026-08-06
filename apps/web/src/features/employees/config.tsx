@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Eye, Pencil, Save, Send, ShieldCheck, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
 import {
   ShellPageHeader,
@@ -11,7 +12,7 @@ import { MarkdownProse, SoftCard, StatusPill , Button} from "@/components/supert
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { ApiClientOptions } from "@/lib/api/client";
+import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployeeConfigRevision,
   getDigitalEmployee,
@@ -21,6 +22,8 @@ import {
   type CapabilityBindings,
   type CreateDigitalEmployeeConfigRevisionInput,
   type DigitalEmployee,
+  type DigitalEmployeeRoleImpact,
+  type DigitalEmployeeRoleImpactCasting,
   type SubmitPermissionChangeInput
 } from "@/lib/api/employees";
 import { listRoleVocabulary } from "@/lib/api/casting";
@@ -402,6 +405,7 @@ function PlaybookRolesSection({
   const [selected, setSelected] = useState<string[]>(currentKeys);
   const [dirty, setDirty] = useState(false);
   const [hydratedEmployeeId, setHydratedEmployeeId] = useState(employee.id);
+  const [pendingImpact, setPendingImpact] = useState<DigitalEmployeeRoleImpact | null>(null);
 
   useEffect(() => {
     if (hydratedEmployeeId === employee.id && dirty) return;
@@ -426,14 +430,42 @@ function PlaybookRolesSection({
   const externalCaps = stringArray(employee.capability_bindings?.external_capabilities);
 
   const saveRoles = useMutation({
-    mutationFn: () => replaceDigitalEmployeeRoles(apiOptions, employee.id, selected),
+    mutationFn: ({ confirmImpact }: { confirmImpact: boolean }) =>
+      replaceDigitalEmployeeRoles(apiOptions, employee.id, selected, confirmImpact),
     onSuccess: (result) => {
       setSelected(result.role_keys ?? []);
       setDirty(false);
+      setPendingImpact(null);
       queryClient.invalidateQueries({ queryKey: ["digital-employee", employee.id] });
       queryClient.invalidateQueries({ queryKey: ["digital-employees"] });
     },
+    onError: (error) => {
+      if (!(error instanceof ApiRequestError) || error.status !== 400) return;
+      const payload = error.payload as
+        | {
+            code?: string;
+            affected_castings?: DigitalEmployeeRoleImpactCasting[];
+            affected_count?: number;
+          }
+        | undefined;
+      if (payload?.code !== "casting_impact_requires_confirm") return;
+      setPendingImpact({
+        affected_castings: payload.affected_castings ?? [],
+        affected_count: payload.affected_count ?? payload.affected_castings?.length ?? 0,
+      });
+    },
   });
+
+  const impactDesc = useMemo(() => {
+    if (!pendingImpact) return "";
+    const lines = pendingImpact.affected_castings.map(
+      (row) => `· ${row.project_name} / ${row.template_name} · 角色 ${row.role_key}`,
+    );
+    return [
+      `移除角色将解除以下 ${pendingImpact.affected_count} 条编制，并通知项目负责人：`,
+      ...lines,
+    ].join("\n");
+  }, [pendingImpact]);
 
   const toggle = (roleKey: string) => {
     setSelected((prev) =>
@@ -517,7 +549,7 @@ function PlaybookRolesSection({
           <Button
             type="button"
             disabled={!dirty || saveRoles.isPending}
-            onClick={() => saveRoles.mutate()}
+            onClick={() => saveRoles.mutate({ confirmImpact: false })}
           >
             <Save />
             保存剧本角色
@@ -525,7 +557,7 @@ function PlaybookRolesSection({
           {saveRoles.isSuccess && !dirty ? (
             <p className="text-sm text-green-600">已保存</p>
           ) : null}
-          {saveRoles.isError ? (
+          {saveRoles.isError && !pendingImpact ? (
             <p className="text-sm text-destructive">
               {saveRoles.error instanceof Error
                 ? saveRoles.error.message
@@ -534,6 +566,18 @@ function PlaybookRolesSection({
           ) : null}
         </div>
       </SoftCard>
+      <ConfirmDialog
+        open={pendingImpact !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingImpact(null);
+        }}
+        title="确认解除受影响编制"
+        desc={impactDesc}
+        confirmText="确认并保存"
+        destructive
+        isLoading={saveRoles.isPending}
+        handleConfirm={() => saveRoles.mutate({ confirmImpact: true })}
+      />
     </section>
   );
 }

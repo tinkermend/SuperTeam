@@ -30,6 +30,39 @@ type CastingAssignment struct {
 	DigitalEmployeeID uuid.UUID
 }
 
+// Casting invalidation reasons for read-path self-checks and automation alerts.
+const (
+	CastingReasonNotCast             = "not_cast"
+	CastingReasonEmployeeUnavailable = "employee_unavailable"
+	CastingReasonRoleNotHeld         = "role_not_held"
+)
+
+// CastingInvalidation is one role that is not effectively cast for a playbook.
+// Used by automation fire guards and failure notifications (原选谁 / 为何失效).
+type CastingInvalidation struct {
+	RoleKey      string
+	EmployeeID   uuid.UUID // uuid.Nil when never cast
+	EmployeeName string
+	Reason       string // not_cast | employee_unavailable | role_not_held
+}
+
+// AffectedCastingRow is one casting row that would be (or was) cascade-removed.
+type AffectedCastingRow struct {
+	ProjectID           uuid.UUID
+	ProjectName         string
+	ScenarioTemplateKey string
+	TemplateName        string
+	RoleKey             string
+	DigitalEmployeeID   uuid.UUID
+	EmployeeName        string
+}
+
+// EmployeeRoleImpact is the preview for removing role keys from one employee.
+type EmployeeRoleImpact struct {
+	AffectedCastings []AffectedCastingRow
+	AffectedCount    int
+}
+
 // PutCastingRequest replaces the entire casting set for one project×template.
 type PutCastingRequest struct {
 	TenantID            uuid.UUID
@@ -159,6 +192,10 @@ type CastingRepository interface {
 	// 里会多出一个「没有编制却可被 planner 选中派活」的员工——治理泄漏。
 	ReplaceProjectCasting(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, templateKey string, assignments []CastingAssignment, displayNames map[uuid.UUID]string) ([]CastingEntry, error)
 	CountCastingsForEmployee(ctx context.Context, tenantID, projectID, employeeID uuid.UUID) (int, error)
+	ListCastingsForEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) ([]AffectedCastingRow, error)
+	DeleteCastingsForEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) error
+	ListCastingsForRoleKey(ctx context.Context, tenantID uuid.UUID, roleKey string) ([]AffectedCastingRow, error)
+	DeleteCastingsForRoleKey(ctx context.Context, tenantID uuid.UUID, roleKey string) error
 }
 
 var (
@@ -322,6 +359,8 @@ func (s *Service) PutCasting(ctx context.Context, req PutCastingRequest) ([]Cast
 			"role_count":            len(entries),
 		},
 	})
+	// 重新编制是「编制失效」告警的唯一关闭者:告警无人类动词,不关就永久滞留。
+	s.ResolveCastingInvalidationAlerts(ctx, req.TenantID, req.ProjectID)
 	return entries, nil
 }
 
@@ -538,10 +577,14 @@ func (s *Service) SetPlaybookTemplateLister(l PlaybookTemplateLister) {
 	s.playbookTemplateLister = l
 }
 
-// ValidatePlaybookCastingComplete returns missing role keys for a project×template.
-// Empty missing means casting covers every role referenced by the skeleton (all exits).
+// ValidatePlaybookCastingComplete returns structured casting gaps for a project×template.
+// Empty means casting covers every role referenced by the skeleton (all exits) with
+// employees that still hold the role and are active/ready.
 // Used by automation rule save (G7) and fire-time guards (G8).
-func (s *Service) ValidatePlaybookCastingComplete(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) (missing []string, err error) {
+//
+// Read path self-checks holdings even if write-side cascade failed or rows were
+// planted out-of-band (direct DB) — readiness/automation must not trust stale rows.
+func (s *Service) ValidatePlaybookCastingComplete(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) (missing []CastingInvalidation, err error) {
 	if s.castingRepo == nil || s.scenarioTemplateSpecs == nil {
 		return nil, fmt.Errorf("casting dependencies not configured")
 	}
@@ -573,26 +616,129 @@ func (s *Service) ValidatePlaybookCastingComplete(ctx context.Context, tenantID,
 			}
 		}
 	}
-	var miss []string
+	return evaluateCastingInvalidations(ctx, s, tenantID, roles, cast)
+}
+
+// evaluateCastingInvalidations checks cast rows for hold + availability.
+func evaluateCastingInvalidations(
+	ctx context.Context,
+	s *Service,
+	tenantID uuid.UUID,
+	roles []string,
+	cast map[string]uuid.UUID,
+) ([]CastingInvalidation, error) {
+	var miss []CastingInvalidation
+	var needSummary []uuid.UUID
+	for _, role := range roles {
+		if empID, ok := cast[role]; ok && empID != uuid.Nil {
+			needSummary = append(needSummary, empID)
+		}
+	}
+	needSummary = uniqueUUIDs(needSummary)
+	var sums map[uuid.UUID]DigitalEmployeeSummary
+	if s != nil && s.employeeRoles != nil && len(needSummary) > 0 {
+		var err error
+		sums, err = s.employeeRoles.ListEmployeeSummaries(ctx, tenantID, needSummary)
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, role := range roles {
 		empID, ok := cast[role]
 		if !ok || empID == uuid.Nil {
-			miss = append(miss, role)
+			miss = append(miss, CastingInvalidation{RoleKey: role, Reason: CastingReasonNotCast})
 			continue
 		}
-		// G8: cast employee must still be active/ready
-		if s.employeeRoles != nil {
-			sums, err := s.employeeRoles.ListEmployeeSummaries(ctx, tenantID, []uuid.UUID{empID})
-			if err != nil {
-				return nil, err
-			}
-			sum, ok := sums[empID]
-			if !ok || (sum.Status != "active" && sum.Status != "ready") {
-				miss = append(miss, role+" (员工不可用)")
-			}
+		if s == nil || s.employeeRoles == nil {
+			// Without role source, keep cast row as valid (test stubs / degraded).
+			continue
+		}
+		sum, has := sums[empID]
+		if !has {
+			miss = append(miss, CastingInvalidation{
+				RoleKey:    role,
+				EmployeeID: empID,
+				Reason:     CastingReasonEmployeeUnavailable,
+			})
+			continue
+		}
+		if sum.Status != "active" && sum.Status != "ready" {
+			miss = append(miss, CastingInvalidation{
+				RoleKey:      role,
+				EmployeeID:   empID,
+				EmployeeName: sum.Name,
+				Reason:       CastingReasonEmployeeUnavailable,
+			})
+			continue
+		}
+		if !employeeHoldsRole(sum.RoleKeys, role) {
+			miss = append(miss, CastingInvalidation{
+				RoleKey:      role,
+				EmployeeID:   empID,
+				EmployeeName: sum.Name,
+				Reason:       CastingReasonRoleNotHeld,
+			})
+			continue
 		}
 	}
 	return miss, nil
+}
+
+// FormatCastingInvalidations builds a human-readable Chinese summary for alerts.
+func FormatCastingInvalidations(items []CastingInvalidation) string {
+	if len(items) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		switch item.Reason {
+		case CastingReasonNotCast:
+			parts = append(parts, fmt.Sprintf("缺角色 %s（从未编制）", item.RoleKey))
+		case CastingReasonEmployeeUnavailable:
+			name := strings.TrimSpace(item.EmployeeName)
+			if name == "" {
+				name = item.EmployeeID.String()
+			}
+			parts = append(parts, fmt.Sprintf("角色 %s 原编制 %s，员工不可用", item.RoleKey, name))
+		case CastingReasonRoleNotHeld:
+			name := strings.TrimSpace(item.EmployeeName)
+			if name == "" {
+				name = item.EmployeeID.String()
+			}
+			parts = append(parts, fmt.Sprintf("角色 %s 原编制 %s，已不再持有该角色", item.RoleKey, name))
+		default:
+			parts = append(parts, fmt.Sprintf("角色 %s 编制失效（%s）", item.RoleKey, item.Reason))
+		}
+	}
+	return strings.Join(parts, "；")
+}
+
+// CastingInvalidationRoleKeys extracts bare role keys (for callers that only need keys).
+func CastingInvalidationRoleKeys(items []CastingInvalidation) []string {
+	out := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		k := strings.TrimSpace(item.RoleKey)
+		if k == "" {
+			continue
+		}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+func employeeHoldsRole(keys []string, role string) bool {
+	role = strings.TrimSpace(role)
+	for _, k := range keys {
+		if strings.TrimSpace(k) == role {
+			return true
+		}
+	}
+	return false
 }
 
 func computePlaybookReadiness(
@@ -733,9 +879,47 @@ func missingRoles(
 	tenantID uuid.UUID,
 	ctx context.Context,
 ) []string {
+	// Self-check cast rows: a stale casting (role no longer held / employee down)
+	// does not satisfy readiness. Pool/tenant holders remain the fallback only
+	// when there is no usable cast row.
+	var castEmpIDs []uuid.UUID
+	for _, role := range roles {
+		if empID, ok := casting[role]; ok && empID != uuid.Nil {
+			castEmpIDs = append(castEmpIDs, empID)
+		}
+	}
+	castEmpIDs = uniqueUUIDs(castEmpIDs)
+	var sums map[uuid.UUID]DigitalEmployeeSummary
+	if s != nil && s.employeeRoles != nil && len(castEmpIDs) > 0 {
+		if got, err := s.employeeRoles.ListEmployeeSummaries(ctx, tenantID, castEmpIDs); err == nil {
+			sums = got
+		}
+	}
+
+	// 词表已停用的角色永远不可满足:`PutCasting` 走 UnknownKeys 会 400,员工身上
+	// 的旧绑定还在,若放任 pool 回退命中,选择器会说「这档可达」而实际再也编制不上。
+	inactive := map[string]struct{}{}
+	if s != nil && s.roleVocabulary != nil && len(roles) > 0 {
+		if unknown, err := s.roleVocabulary.UnknownKeys(ctx, tenantID, roles); err == nil {
+			for _, key := range unknown {
+				inactive[strings.TrimSpace(key)] = struct{}{}
+			}
+		}
+	}
+
 	var missing []string
 	for _, role := range roles {
-		if _, ok := casting[role]; ok {
+		if _, dead := inactive[strings.TrimSpace(role)]; dead {
+			missing = append(missing, role)
+			continue
+		}
+		if empID, ok := casting[role]; ok && empID != uuid.Nil {
+			if castingRowSatisfies(role, empID, sums, s) {
+				continue
+			}
+			// Cast row present but invalid — do not fall through to pool; the
+			// selector must surface the gap so humans fix casting explicitly.
+			missing = append(missing, role)
 			continue
 		}
 		if holders := pool[role]; len(holders) > 0 {
@@ -751,6 +935,24 @@ func missingRoles(
 		missing = append(missing, role)
 	}
 	return missing
+}
+
+func castingRowSatisfies(role string, empID uuid.UUID, sums map[uuid.UUID]DigitalEmployeeSummary, s *Service) bool {
+	if s == nil || s.employeeRoles == nil {
+		// No role source → cannot self-check; trust the row (tests / degraded).
+		return true
+	}
+	if sums == nil {
+		return false
+	}
+	sum, ok := sums[empID]
+	if !ok {
+		return false
+	}
+	if sum.Status != "active" && sum.Status != "ready" {
+		return false
+	}
+	return employeeHoldsRole(sum.RoleKeys, role)
 }
 
 func distinctRolesFromSteps(steps []scenariotemplate.SpecSkeletonStep) []string {

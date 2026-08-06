@@ -16,12 +16,24 @@ import (
 // roleKeyPattern: 下划线小写，与批一能力词表一致。
 var roleKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
+// CastingCascade disables a vocabulary role and cascades castings in one transaction.
+type CastingCascade interface {
+	// DisableRoleWithCascade deletes castings for the role and applies the patch
+	// (status→disabled and any title/description) in one DB transaction, then notifies.
+	DisableRoleWithCascade(ctx context.Context, req PatchRequest) (Entry, error)
+}
+
 type Service struct {
-	q *queries.Queries
+	q              *queries.Queries
+	castingCascade CastingCascade
 }
 
 func NewService(q *queries.Queries) *Service {
 	return &Service{q: q}
+}
+
+func (s *Service) SetCastingCascade(c CastingCascade) {
+	s.castingCascade = c
 }
 
 func (s *Service) List(ctx context.Context, tenantID uuid.UUID) ([]Entry, error) {
@@ -206,13 +218,30 @@ func (s *Service) Patch(ctx context.Context, req PatchRequest) (Entry, error) {
 	if req.Description != nil {
 		description = pgtype.Text{String: strings.TrimSpace(*req.Description), Valid: true}
 	}
+	disabling := false
 	if req.Status != nil {
 		st := strings.TrimSpace(*req.Status)
 		if st != StatusActive && st != StatusDisabled {
 			return Entry{}, fmt.Errorf("%w: status must be active or disabled", ErrInvalidInput)
 		}
 		status = pgtype.Text{String: st, Valid: true}
+		disabling = st == StatusDisabled
 	}
+
+	if disabling {
+		refs, err := s.GetReferences(ctx, req.TenantID, key)
+		if err != nil {
+			return Entry{}, err
+		}
+		if refs.CastingCount > 0 && !req.ConfirmImpact {
+			return Entry{}, &ErrCastingImpactRequiresConfirm{CastingCount: refs.CastingCount, References: refs}
+		}
+		// Same transaction: casting deletes + vocabulary status/title/description.
+		if refs.CastingCount > 0 && s.castingCascade != nil {
+			return s.castingCascade.DisableRoleWithCascade(ctx, req)
+		}
+	}
+
 	row, err := s.q.UpdateRoleVocabulary(ctx, queries.UpdateRoleVocabularyParams{
 		TenantID:    req.TenantID,
 		RoleKey:     key,

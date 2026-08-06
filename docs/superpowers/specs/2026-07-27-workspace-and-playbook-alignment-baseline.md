@@ -210,6 +210,15 @@
 
 ---
 
+### 角色词表 / 编制 / 扩编（2026-08-05～08-06 收口批核实）
+
+- **角色词表为主**：员工 `role_keys` 与剧本 `roles[].key` 都挂租户角色词表；停用角色挡新编制与模板改版校验（`validateSpecRoles`）。
+- **一角色一人**：`project_playbook_casting` 对 `(project, template, role_key)` 唯一；`PutCasting` 整套替换。
+- **PutCasting 双向硬校验**：写入时员工必须持有该 `role_key`（`ErrCastingRoleNotHeld`）；移除员工角色 / 停用词表角色须 `confirm_impact`，确认后级联删编制行 + `project.casting.invalidated` 事件 + 负责人收件箱告警。
+- **读路径自证**：`ValidatePlaybookCastingComplete` / readiness `missingRoles` 复查「持有 + active/ready」；直改 DB 的失真行也会被判 missing（不依赖上游守规矩）。
+- **扩编 = 带新编制的重规划**：`casting_expansion` 决策批准后写入编制并 replan；发现器有触发闸（编制已满才语义探测）。
+- **automation 编制失效**：fire 允许失败；`failFire` 统一发 `automation_alert` 给项目负责人集合 any-of-N；下次成功自动 resolve。
+
 ## 7. 全局非目标（本系列四份 spec 一律不做）
 
 - 批准物（proposal / authorization）一等模型与阶段验证门禁 → 待立项
@@ -232,6 +241,23 @@
 | 2 | 同单接续 → [`2026-08-01-demand-continuation-design.md`](./2026-08-01-demand-continuation-design.md)（**立项未实施**） | 「继续这一单」入口；**接续 = 新 demand + 血缘链**（§4.3）；**派发期按员工逐代上溯取回各自会话根**；卷宗按链折叠；recovery 丢血缘修复；resume 降级 | 用户最痛；挂在 #1 的容器上。原「待勘察」已收敛：决策路由已从 store 重建（§6），接续走既有 signal 模式即可，不改 workflow 输入、不改 planner |
 | 3 | 变更范围可见 | base 记录 + commit 后 diff + numstat 文件清单；attestation git 字段回填；右轨渲染器接真数据 | 只填充 #1 的一个渲染器；对运维场景无关，可独立后置 |
 | 4 | 轻发起与剧本归属 | 中枢轻发起；剧本/收口/编制缺口在计划确认卡一屏定；Prompt 模板降权改名；来源字段补齐后收敛项目对话框；项目允许剧本集 | 主要是**简化与收敛**而非新建能力；依赖 #1 已存在（发起完落到哪） |
+
+### 收口批登记（剧本可落地化，2026-08）
+
+| 批 | 文档 / commit | 状态 | 摘要 |
+|---|---|---|---|
+| 批一 | 词表两侧对齐（能力/角色）`7a7064b5` | **已入库** | 模板与员工共用词表校验 |
+| 批二 | 角色词表与编制 `7b0369de`+`1f36c944` | **已入库** | 编制矩阵、PutCasting、成员池同事务、G2 缺 operator |
+| 批三 | 语义扩编 + 角色治理台 `2c6784c2`+`9bf7ed2c` | **已入库** | 扩编决策、发现器、role-view、停用 references |
+| 角色治理台 | 批三内 | **已入库** | 词表 CRUD / 停用影响面 / 模板角色视图 |
+| 收口批 | [`2026-08-06-casting-truth-source-closure.md`](./2026-08-06-casting-truth-source-closure.md) | **本批** | 编制事实源双向闭环 + automation 失败通知 + E2E 收敛 |
+
+**#4 剩余范围**（剧本归属与编制矩阵已由批二/批三落地，不再算 #4）：
+
+- 中枢轻发起
+- Prompt 模板降权改名
+- 来源字段补齐后收敛项目对话框
+- 项目允许剧本集
 
 **被本系列取代的文档**：`2026-07-27-expert-playbook-launch-and-continue-design.md`（其内容已拆入本文与 #2 / #4；原文重心偏在「发起表单」，勿据其分期实施）。
 

@@ -36,10 +36,25 @@ func (g *ProjectServiceGateway) GetProject(ctx context.Context, tenantID, projec
 	if record.TeamID != nil {
 		info.TeamID = *record.TeamID
 	}
+	seen := map[uuid.UUID]struct{}{}
+	addOwner := func(id uuid.UUID) {
+		if id == uuid.Nil {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		info.OwnerUserIDs = append(info.OwnerUserIDs, id)
+	}
+	for _, id := range record.HumanOwnerUserIDs {
+		addOwner(id)
+	}
+	addOwner(record.HumanOwnerUserID)
 	return info, nil
 }
 
-func (g *ProjectServiceGateway) MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]string, error) {
+func (g *ProjectServiceGateway) MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]project.CastingInvalidation, error) {
 	if g == nil || g.projects == nil {
 		return nil, nil
 	}

@@ -67,6 +67,10 @@ const (
 	ItemTypeTeamPendingDelete ItemType = "team_pending_delete"
 	// 飞书通道失联告警(接入管理 P1:只进 Console 收件箱,不推飞书,防自指)。
 	ItemTypeChannelAlert ItemType = "channel_alert"
+	// 自动化规则 fire 失败告警（收口批：无人值守失败必须推到人）。
+	ItemTypeAutomationAlert ItemType = "automation_alert"
+	// 编制因角色移除/词表停用被级联解除。
+	ItemTypeCastingInvalidated ItemType = "casting_invalidated"
 )
 
 type SourceType string
@@ -76,6 +80,8 @@ const (
 	SourceTypeProjectDecisionRequest SourceType = "project_decision_request"
 	SourceTypeTeamPendingDelete      SourceType = "team_pending_delete"
 	SourceTypeChannelAlert           SourceType = "feishu_channel"
+	SourceTypeAutomationRule         SourceType = "automation_rule"
+	SourceTypeProjectCasting         SourceType = "project_casting"
 )
 
 type Action struct {

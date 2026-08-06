@@ -158,3 +158,73 @@ func pgTimestamptz(ts pgtype.Timestamptz) time.Time {
 	}
 	return ts.Time
 }
+
+func (r *PgCastingRepository) ListCastingsForEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) ([]AffectedCastingRow, error) {
+	if roleKeys == nil {
+		roleKeys = []string{}
+	}
+	rows, err := r.q.ListCastingsForEmployeeRoles(ctx, queries.ListCastingsForEmployeeRolesParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		RoleKeys:          roleKeys,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AffectedCastingRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, AffectedCastingRow{
+			ProjectID:           row.ProjectID,
+			ProjectName:         row.ProjectName,
+			ScenarioTemplateKey: row.ScenarioTemplateKey,
+			TemplateName:        row.TemplateName,
+			RoleKey:             row.RoleKey,
+			DigitalEmployeeID:   row.DigitalEmployeeID,
+		})
+	}
+	return out, nil
+}
+
+func (r *PgCastingRepository) DeleteCastingsForEmployeeRoles(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) error {
+	if len(roleKeys) == 0 {
+		return nil
+	}
+	return r.q.DeleteCastingsForEmployeeRoles(ctx, queries.DeleteCastingsForEmployeeRolesParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		RoleKeys:          roleKeys,
+	})
+}
+
+func (r *PgCastingRepository) ListCastingsForRoleKey(ctx context.Context, tenantID uuid.UUID, roleKey string) ([]AffectedCastingRow, error) {
+	rows, err := r.q.ListCastingsForRoleKey(ctx, queries.ListCastingsForRoleKeyParams{
+		TenantID: tenantID,
+		RoleKey:  roleKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AffectedCastingRow, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, AffectedCastingRow{
+			ProjectID:           row.ProjectID,
+			ProjectName:         row.ProjectName,
+			ScenarioTemplateKey: row.ScenarioTemplateKey,
+			TemplateName:        row.TemplateName,
+			RoleKey:             row.RoleKey,
+			DigitalEmployeeID:   row.DigitalEmployeeID,
+		})
+	}
+	return out, nil
+}
+
+func (r *PgCastingRepository) DeleteCastingsForRoleKey(ctx context.Context, tenantID uuid.UUID, roleKey string) error {
+	roleKey = strings.TrimSpace(roleKey)
+	if roleKey == "" {
+		return nil
+	}
+	return r.q.DeleteCastingsForRoleKey(ctx, queries.DeleteCastingsForRoleKeyParams{
+		TenantID: tenantID,
+		RoleKey:  roleKey,
+	})
+}

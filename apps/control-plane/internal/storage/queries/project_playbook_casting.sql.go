@@ -33,6 +33,40 @@ func (q *Queries) CountProjectPlaybookCastingsForEmployee(ctx context.Context, a
 	return count, err
 }
 
+const DeleteCastingsForEmployeeRoles = `-- name: DeleteCastingsForEmployeeRoles :exec
+DELETE FROM project_playbook_casting
+WHERE tenant_id = $1::uuid
+  AND digital_employee_id = $2::uuid
+  AND role_key = ANY($3::text[])
+`
+
+type DeleteCastingsForEmployeeRolesParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	RoleKeys          []string  `json:"role_keys"`
+}
+
+func (q *Queries) DeleteCastingsForEmployeeRoles(ctx context.Context, arg DeleteCastingsForEmployeeRolesParams) error {
+	_, err := q.db.Exec(ctx, DeleteCastingsForEmployeeRoles, arg.TenantID, arg.DigitalEmployeeID, arg.RoleKeys)
+	return err
+}
+
+const DeleteCastingsForRoleKey = `-- name: DeleteCastingsForRoleKey :exec
+DELETE FROM project_playbook_casting
+WHERE tenant_id = $1::uuid
+  AND role_key = $2::text
+`
+
+type DeleteCastingsForRoleKeyParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	RoleKey  string    `json:"role_key"`
+}
+
+func (q *Queries) DeleteCastingsForRoleKey(ctx context.Context, arg DeleteCastingsForRoleKeyParams) error {
+	_, err := q.db.Exec(ctx, DeleteCastingsForRoleKey, arg.TenantID, arg.RoleKey)
+	return err
+}
+
 const DeleteProjectPlaybookCastingsByTemplate = `-- name: DeleteProjectPlaybookCastingsByTemplate :exec
 DELETE FROM project_playbook_casting
 WHERE tenant_id = $1::uuid
@@ -104,6 +138,163 @@ func (q *Queries) InsertProjectPlaybookCasting(ctx context.Context, arg InsertPr
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const ListCastingsForEmployeeRoles = `-- name: ListCastingsForEmployeeRoles :many
+SELECT
+    c.id,
+    c.tenant_id,
+    c.project_id,
+    c.scenario_template_key,
+    c.role_key,
+    c.digital_employee_id,
+    c.cast_by_user_id,
+    c.created_at,
+    c.updated_at,
+    p.name AS project_name,
+    COALESCE(st.name, c.scenario_template_key) AS template_name
+FROM project_playbook_casting c
+JOIN projects p ON p.id = c.project_id AND p.tenant_id = c.tenant_id
+LEFT JOIN scenario_templates st
+  ON st.tenant_id = c.tenant_id
+ AND st.template_key = c.scenario_template_key
+ AND st.deleted_at IS NULL
+WHERE c.tenant_id = $1::uuid
+  AND c.digital_employee_id = $2::uuid
+  AND (
+    COALESCE(cardinality($3::text[]), 0) = 0
+    OR c.role_key = ANY($3::text[])
+  )
+ORDER BY p.name ASC, c.scenario_template_key ASC, c.role_key ASC
+`
+
+type ListCastingsForEmployeeRolesParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	RoleKeys          []string  `json:"role_keys"`
+}
+
+type ListCastingsForEmployeeRolesRow struct {
+	ID                  uuid.UUID          `json:"id"`
+	TenantID            uuid.UUID          `json:"tenant_id"`
+	ProjectID           uuid.UUID          `json:"project_id"`
+	ScenarioTemplateKey string             `json:"scenario_template_key"`
+	RoleKey             string             `json:"role_key"`
+	DigitalEmployeeID   uuid.UUID          `json:"digital_employee_id"`
+	CastByUserID        uuid.UUID          `json:"cast_by_user_id"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ProjectName         string             `json:"project_name"`
+	TemplateName        string             `json:"template_name"`
+}
+
+// Impact preview: castings held by employee for the given role_keys.
+// Empty role_keys array means all roles for that employee.
+func (q *Queries) ListCastingsForEmployeeRoles(ctx context.Context, arg ListCastingsForEmployeeRolesParams) ([]ListCastingsForEmployeeRolesRow, error) {
+	rows, err := q.db.Query(ctx, ListCastingsForEmployeeRoles, arg.TenantID, arg.DigitalEmployeeID, arg.RoleKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCastingsForEmployeeRolesRow{}
+	for rows.Next() {
+		var i ListCastingsForEmployeeRolesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ScenarioTemplateKey,
+			&i.RoleKey,
+			&i.DigitalEmployeeID,
+			&i.CastByUserID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectName,
+			&i.TemplateName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListCastingsForRoleKey = `-- name: ListCastingsForRoleKey :many
+SELECT
+    c.id,
+    c.tenant_id,
+    c.project_id,
+    c.scenario_template_key,
+    c.role_key,
+    c.digital_employee_id,
+    c.cast_by_user_id,
+    c.created_at,
+    c.updated_at,
+    p.name AS project_name,
+    COALESCE(st.name, c.scenario_template_key) AS template_name
+FROM project_playbook_casting c
+JOIN projects p ON p.id = c.project_id AND p.tenant_id = c.tenant_id
+LEFT JOIN scenario_templates st
+  ON st.tenant_id = c.tenant_id
+ AND st.template_key = c.scenario_template_key
+ AND st.deleted_at IS NULL
+WHERE c.tenant_id = $1::uuid
+  AND c.role_key = $2::text
+ORDER BY p.name ASC, c.scenario_template_key ASC
+`
+
+type ListCastingsForRoleKeyParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	RoleKey  string    `json:"role_key"`
+}
+
+type ListCastingsForRoleKeyRow struct {
+	ID                  uuid.UUID          `json:"id"`
+	TenantID            uuid.UUID          `json:"tenant_id"`
+	ProjectID           uuid.UUID          `json:"project_id"`
+	ScenarioTemplateKey string             `json:"scenario_template_key"`
+	RoleKey             string             `json:"role_key"`
+	DigitalEmployeeID   uuid.UUID          `json:"digital_employee_id"`
+	CastByUserID        uuid.UUID          `json:"cast_by_user_id"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	ProjectName         string             `json:"project_name"`
+	TemplateName        string             `json:"template_name"`
+}
+
+func (q *Queries) ListCastingsForRoleKey(ctx context.Context, arg ListCastingsForRoleKeyParams) ([]ListCastingsForRoleKeyRow, error) {
+	rows, err := q.db.Query(ctx, ListCastingsForRoleKey, arg.TenantID, arg.RoleKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCastingsForRoleKeyRow{}
+	for rows.Next() {
+		var i ListCastingsForRoleKeyRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ScenarioTemplateKey,
+			&i.RoleKey,
+			&i.DigitalEmployeeID,
+			&i.CastByUserID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectName,
+			&i.TemplateName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListProjectPlaybookCastings = `-- name: ListProjectPlaybookCastings :many

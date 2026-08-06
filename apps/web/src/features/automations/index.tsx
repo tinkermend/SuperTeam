@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import type { AutomationsSearch } from "@/routes/_authenticated/automations/index";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, Plus, Search } from "lucide-react";
 import {
@@ -82,7 +84,9 @@ function healthLabel(rule: AutomationRule): { text: string; tone: Tone } {
 export function AutomationsPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
   const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const routeSearch = useSearch({ strict: false }) as AutomationsSearch;
+  const [selectedId, setSelectedId] = useState<string | null>(routeSearch.rule ?? null);
   const [filter, setFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [modeFilter, setModeFilter] = useState<"all" | AutomationCoordinationMode>("all");
   const [search, setSearch] = useState("");
@@ -113,6 +117,22 @@ export function AutomationsPage() {
 });
 
   const allRows = rulesQuery.data?.items ?? [];
+
+  useEffect(() => {
+    if (routeSearch.rule && routeSearch.rule !== selectedId) {
+      setSelectedId(routeSearch.rule);
+    }
+  }, [routeSearch.rule]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectRule = (id: string | null) => {
+    setSelectedId(id);
+    void navigate({
+      to: ".",
+      search: id ? { rule: id } : {},
+      replace: true,
+    });
+  };
+
   const selected = allRows.find((row) => row.id === selectedId) ?? null;
 
   const nextFireById = useMemo(() => buildNextFireById(allRows), [allRows]);
@@ -148,7 +168,7 @@ export function AutomationsPage() {
       setDraft(null);
       setFormError(null);
       await invalidate();
-      setSelectedId(rule.id);
+      selectRule(rule.id);
     },
     onError: (error) => setFormError(errorMessage(error))
 });
@@ -202,7 +222,7 @@ export function AutomationsPage() {
     mutationFn: (ruleId: string) => deleteAutomationRule({ baseUrl: apiBaseUrl }, ruleId),
     onSuccess: async () => {
       setPendingDelete(null);
-      setSelectedId(null);
+      selectRule(null);
       await invalidate();
     },
     onError: (error) => setActionError(errorMessage(error))
@@ -252,7 +272,7 @@ export function AutomationsPage() {
       firesLoading={firesQuery.isPending}
       nextFireIso={nextFireById.get(selected.id) ?? null}
       rule={selected}
-      onClose={() => setSelectedId(null)}
+      onClose={() => selectRule(null)}
       onDelete={() => setPendingDelete(selected)}
       onDisable={() => disableMutation.mutate(selected.id)}
       onEdit={() => {
@@ -273,7 +293,7 @@ export function AutomationsPage() {
       rules={allRows}
       onSelectRule={(ruleId) => {
         setActionError(null);
-        setSelectedId(ruleId);
+        selectRule(ruleId);
       }}
     />
   );
@@ -442,7 +462,7 @@ export function AutomationsPage() {
                             tone={warn ? "warn" : undefined}
                             onClick={() => {
                               setActionError(null);
-                              setSelectedId(row.id);
+                              selectRule(row.id);
                             }}
                           >
                             <Td>
@@ -501,7 +521,7 @@ export function AutomationsPage() {
               </WorkSurface>
             }
             narrowDetail="stack"
-            onDetailDismiss={() => setSelectedId(null)}
+            onDetailDismiss={() => selectRule(null)}
             rail="lg"
           />
         </div>

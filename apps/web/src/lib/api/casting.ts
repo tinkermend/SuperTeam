@@ -84,6 +84,7 @@ export type PatchRoleVocabularyInput = {
   title?: string;
   description?: string;
   status?: "active" | "disabled";
+  confirm_impact?: boolean;
 };
 
 export type RoleVocabularyTemplateRef = {

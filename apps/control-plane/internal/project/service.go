@@ -44,6 +44,8 @@ type Service struct {
 	// 批三：语义扩编缺口发现器（可选；未注入则编制满后静默跳过）
 	roleVocabularyLister RoleVocabularyActiveLister
 	castingGapDiscoverer CastingGapDiscoverer
+	// 收口批：编制级联解除后通知项目负责人（可选）
+	castingInvalidationNotifier CastingInvalidationNotifier
 }
 
 // AutomationActorRemover disables automation rules when a human actor loses

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/project"
 )
 
 type Repository interface {
@@ -33,16 +34,17 @@ type Repository interface {
 type ProjectGateway interface {
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectInfo, error)
 	IsEligibleInitiator(ctx context.Context, tenantID, projectID, userID uuid.UUID) (bool, error)
-	// MissingCastingRoles returns role keys still uncast (or cast to unavailable
-	// employees) for the project×template. Empty = complete. Used at rule save
-	// (G7) and fire time (G8). Nil-safe: implementers may return (nil, nil).
-	MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]string, error)
+	// MissingCastingRoles returns structured casting gaps for the project×template.
+	// Empty = complete. Used at rule save (G7) and fire time (G8).
+	// Nil-safe: implementers may return (nil, nil).
+	MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]project.CastingInvalidation, error)
 }
 
 type ProjectInfo struct {
-	ID     uuid.UUID
-	TeamID uuid.UUID
-	Name   string
+	ID           uuid.UUID
+	TeamID       uuid.UUID
+	Name         string
+	OwnerUserIDs []uuid.UUID // human_owner_user_ids (+ primary); any-of-N alert recipients
 }
 
 // DemandSubmitter submits plan/loop demands into the task hub.

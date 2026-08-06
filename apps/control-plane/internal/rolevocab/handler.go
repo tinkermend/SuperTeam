@@ -79,23 +79,49 @@ func (h *HTTPHandler) PatchRoleVocabulary(w http.ResponseWriter, r *http.Request
 	}
 	roleKey := chi.URLParam(r, "roleKey")
 	var body struct {
-		Title       *string `json:"title"`
-		Description *string `json:"description"`
-		Status      *string `json:"status"`
+		Title         *string `json:"title"`
+		Description   *string `json:"description"`
+		Status        *string `json:"status"`
+		ConfirmImpact bool    `json:"confirm_impact"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	entry, err := h.service.Patch(r.Context(), PatchRequest{
-		TenantID:    tenantID,
-		ActorUserID: userID,
-		RoleKey:     roleKey,
-		Title:       body.Title,
-		Description: body.Description,
-		Status:      body.Status,
+		TenantID:      tenantID,
+		ActorUserID:   userID,
+		RoleKey:       roleKey,
+		Title:         body.Title,
+		Description:   body.Description,
+		Status:        body.Status,
+		ConfirmImpact: body.ConfirmImpact,
 	})
 	if err != nil {
+		var impactErr *ErrCastingImpactRequiresConfirm
+		if errors.As(err, &impactErr) {
+			templates := make([]templateRefResponse, 0, len(impactErr.References.ScenarioTemplates))
+			for _, t := range impactErr.References.ScenarioTemplates {
+				templates = append(templates, templateRefResponse{Key: t.Key, Name: t.Name})
+			}
+			employees := make([]employeeRefResponse, 0, len(impactErr.References.Employees))
+			for _, e := range impactErr.References.Employees {
+				employees = append(employees, employeeRefResponse{ID: e.ID, Name: e.Name})
+			}
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"code":    "casting_impact_requires_confirm",
+				"error":   impactErr.Error(),
+				"message": impactErr.Error(),
+				"references": referencesResponse{
+					ScenarioTemplates: templates,
+					Employees:         employees,
+					EmployeeCount:     impactErr.References.EmployeeCount,
+					CastingCount:      impactErr.References.CastingCount,
+				},
+				"casting_count": impactErr.CastingCount,
+			})
+			return
+		}
 		writeError(w, err)
 		return
 	}

@@ -1889,6 +1889,13 @@ func (s *routeEmployeeService) ReplaceEmployeeRoles(ctx context.Context, tenantI
 	return roleKeys, nil
 }
 
+func (s *routeEmployeeService) ReplaceEmployeeRolesWithImpact(ctx context.Context, req employee.ReplaceEmployeeRolesRequest) ([]string, error) {
+	return s.ReplaceEmployeeRoles(ctx, req.TenantID, req.EmployeeID, req.RoleKeys)
+}
+func (s *routeEmployeeService) GetEmployeeRoleImpact(ctx context.Context, tenantID, employeeID uuid.UUID, roleKeys []string) (employee.CastingRoleImpact, error) {
+	return employee.CastingRoleImpact{}, nil
+}
+
 func (s *routeEmployeeService) UpdateProfile(ctx context.Context, req employee.UpdateProfileRequest) (*employee.DigitalEmployee, error) {
 	s.updateProfileCalled = true
 	s.updateProfileReq = req

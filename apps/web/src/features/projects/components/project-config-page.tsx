@@ -82,10 +82,13 @@ import { ShellPageHeaderBack } from "@/components/layout/shell-page-header";
 import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
 import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
 
+type ProjectConfigTabValue = "overview" | "members" | "casting" | "coordination";
+
 type ProjectConfigViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
   projectId: string;
+  initialTab?: ProjectConfigTabValue;
 };
 
 type ConfigDraft = {
@@ -115,7 +118,8 @@ function statusTone(status: string): Tone {
 export function ProjectConfigView({
   apiBaseUrl,
   fetcher,
-  projectId
+  projectId,
+  initialTab = "overview",
 }: ProjectConfigViewProps) {
   const queryClient = useQueryClient();
   const apiOptions = useMemo<ApiClientOptions>(
@@ -510,7 +514,7 @@ export function ProjectConfigView({
             }
           />
 
-          <SoftTabs defaultValue="overview" className="gap-4">
+          <SoftTabs defaultValue={initialTab} className="gap-4">
             <SoftTabsList
               className="inline-flex h-auto w-fit flex-wrap gap-1 rounded-[14px] bg-card p-1.5 text-ink-2 shadow-card"
               data-slot="page-tab-list"

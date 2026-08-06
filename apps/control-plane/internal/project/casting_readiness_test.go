@@ -62,6 +62,19 @@ func (r *castingTxProbeRepo) CountCastingsForEmployee(context.Context, uuid.UUID
 	return 0, nil
 }
 
+func (r *castingTxProbeRepo) ListCastingsForEmployeeRoles(context.Context, uuid.UUID, uuid.UUID, []string) ([]AffectedCastingRow, error) {
+	return nil, nil
+}
+func (r *castingTxProbeRepo) DeleteCastingsForEmployeeRoles(context.Context, uuid.UUID, uuid.UUID, []string) error {
+	return nil
+}
+func (r *castingTxProbeRepo) ListCastingsForRoleKey(context.Context, uuid.UUID, string) ([]AffectedCastingRow, error) {
+	return nil, nil
+}
+func (r *castingTxProbeRepo) DeleteCastingsForRoleKey(context.Context, uuid.UUID, string) error {
+	return nil
+}
+
 // ReplaceProjectCasting 模拟真实仓储的事务语义：入池写在同一事务里，
 // 因此编制失败时入池也必须一起回滚（joined 保持为空）。
 func (r *castingTxProbeRepo) ReplaceProjectCasting(_ context.Context, _, _, _ uuid.UUID, _ string, assignments []CastingAssignment, displayNames map[uuid.UUID]string) ([]CastingEntry, error) {
@@ -200,7 +213,8 @@ func TestPutCastingRejectsEmployeeWithoutTheRole(t *testing.T) {
 }
 
 type castingRoleSourceStub struct {
-	roleKeys map[uuid.UUID][]string
+	roleKeys  map[uuid.UUID][]string
+	summaries map[uuid.UUID]DigitalEmployeeSummary
 }
 
 func (s *castingRoleSourceStub) ListEmployeesByRoleKey(context.Context, uuid.UUID, string) ([]DigitalEmployeeRoleHolder, error) {
@@ -220,7 +234,14 @@ func (s *castingRoleSourceStub) ListEmployeeRoleKeys(_ context.Context, _ uuid.U
 func (s *castingRoleSourceStub) ListEmployeeSummaries(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID]DigitalEmployeeSummary, error) {
 	out := map[uuid.UUID]DigitalEmployeeSummary{}
 	for _, id := range employeeIDs {
-		out[id] = DigitalEmployeeSummary{ID: id, Name: "探针员工"}
+		if s.summaries != nil {
+			if sum, ok := s.summaries[id]; ok {
+				out[id] = sum
+				continue
+			}
+		}
+		keys := s.roleKeys[id]
+		out[id] = DigitalEmployeeSummary{ID: id, Name: "探针员工", Status: "active", RoleKeys: keys}
 	}
 	return out, nil
 }
@@ -247,4 +268,103 @@ func newCastingTxProbeService(t *testing.T, repo CastingRepository) *Service {
 	}
 	service.SetCastingRepository(repo)
 	return service
+}
+
+
+func TestValidatePlaybookCastingCompleteRejectsStaleHold(t *testing.T) {
+	// C4-style: casting row points at employee who no longer holds the role.
+	holder := uuid.New()
+	roles := &castingRoleSourceStub{
+		roleKeys: map[uuid.UUID][]string{
+			holder: {"reviewer"}, // no longer holds developer
+		},
+		summaries: map[uuid.UUID]DigitalEmployeeSummary{
+			holder: {ID: holder, Name: "开发-A", Status: "active", RoleKeys: []string{"reviewer"}},
+		},
+	}
+	repo := &castingListStub{
+		entries: []CastingEntry{{
+			RoleKey:           "developer",
+			DigitalEmployeeID: holder,
+		}},
+	}
+	svc := newCastingTxProbeService(t, repo)
+	svc.SetDigitalEmployeeRoleSource(roles)
+	svc.SetScenarioTemplateSpecSource(&castingSpecStub{spec: scenariotemplate.SpecV2{
+		Skeleton: []scenariotemplate.SpecSkeletonStep{{Role: "developer"}},
+	}})
+
+	missing, err := svc.ValidatePlaybookCastingComplete(context.Background(), castingProbeTenantID, castingProbeProjectID, "software_delivery")
+	if err != nil {
+		t.Fatalf("ValidatePlaybookCastingComplete: %v", err)
+	}
+	if len(missing) != 1 {
+		t.Fatalf("want 1 invalidation, got %#v", missing)
+	}
+	if missing[0].Reason != CastingReasonRoleNotHeld {
+		t.Fatalf("reason=%q want %q", missing[0].Reason, CastingReasonRoleNotHeld)
+	}
+	if missing[0].RoleKey != "developer" {
+		t.Fatalf("role=%q", missing[0].RoleKey)
+	}
+	if missing[0].EmployeeName != "开发-A" {
+		t.Fatalf("employee_name=%q", missing[0].EmployeeName)
+	}
+}
+
+func TestMissingRolesRejectsStaleCastRow(t *testing.T) {
+	holder := uuid.New()
+	roles := &castingRoleSourceStub{
+		roleKeys: map[uuid.UUID][]string{holder: {}},
+		summaries: map[uuid.UUID]DigitalEmployeeSummary{
+			holder: {ID: holder, Name: "开发-A", Status: "active", RoleKeys: nil},
+		},
+	}
+	svc := &Service{}
+	svc.SetDigitalEmployeeRoleSource(roles)
+	got := missingRoles(
+		[]string{"developer"},
+		map[string]uuid.UUID{"developer": holder},
+		nil,
+		svc,
+		castingProbeTenantID,
+		context.Background(),
+	)
+	if len(got) != 1 || got[0] != "developer" {
+		t.Fatalf("want [developer], got %v", got)
+	}
+}
+
+type castingListStub struct {
+	entries []CastingEntry
+}
+
+func (r *castingListStub) ListProjectCastings(context.Context, uuid.UUID, uuid.UUID, *string) ([]CastingEntry, error) {
+	return r.entries, nil
+}
+func (r *castingListStub) ReplaceProjectCasting(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, []CastingAssignment, map[uuid.UUID]string) ([]CastingEntry, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (r *castingListStub) CountCastingsForEmployee(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (int, error) {
+	return 0, nil
+}
+func (r *castingListStub) ListCastingsForEmployeeRoles(context.Context, uuid.UUID, uuid.UUID, []string) ([]AffectedCastingRow, error) {
+	return nil, nil
+}
+func (r *castingListStub) DeleteCastingsForEmployeeRoles(context.Context, uuid.UUID, uuid.UUID, []string) error {
+	return nil
+}
+func (r *castingListStub) ListCastingsForRoleKey(context.Context, uuid.UUID, string) ([]AffectedCastingRow, error) {
+	return nil, nil
+}
+func (r *castingListStub) DeleteCastingsForRoleKey(context.Context, uuid.UUID, string) error {
+	return nil
+}
+
+type castingSpecStub struct {
+	spec scenariotemplate.SpecV2
+}
+
+func (s *castingSpecStub) GetParsedSpec(context.Context, uuid.UUID, string) (scenariotemplate.SpecV2, string, error) {
+	return s.spec, "stub", nil
 }

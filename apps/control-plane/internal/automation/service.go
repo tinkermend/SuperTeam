@@ -13,12 +13,33 @@ import (
 	"github.com/superteam/control-plane/internal/project"
 )
 
+// AlertNotifier fans out automation fire failure alerts to project owners.
+// Implemented in app/ against inbox.Service (channel_alert pattern).
+type AlertNotifier interface {
+	OpenRuleFailureAlert(ctx context.Context, req RuleFailureAlert) error
+	ResolveRuleAlerts(ctx context.Context, tenantID, ruleID uuid.UUID) error
+}
+
+// RuleFailureAlert is one fire-failed notification payload.
+type RuleFailureAlert struct {
+	TenantID     uuid.UUID
+	RuleID       uuid.UUID
+	RuleName     string
+	ProjectID    uuid.UUID
+	ProjectName  string
+	OwnerUserIDs []uuid.UUID
+	ErrorCode    string
+	ErrorMessage string
+	FireID       uuid.UUID
+}
+
 type Service struct {
 	repo      Repository
 	projects  ProjectGateway
 	demands   DemandSubmitter
 	chats     ChatRunner
 	schedules ScheduleSyncer
+	alerts    AlertNotifier
 	now       func() time.Time
 }
 
@@ -30,6 +51,13 @@ func NewService(repo Repository, projects ProjectGateway, demands DemandSubmitte
 		chats:     chats,
 		schedules: schedules,
 		now:       time.Now,
+	}
+}
+
+// SetAlertNotifier wires optional inbox alerts for fire failures.
+func (s *Service) SetAlertNotifier(n AlertNotifier) {
+	if s != nil {
+		s.alerts = n
 	}
 }
 
@@ -269,7 +297,17 @@ func (s *Service) DeleteRule(ctx context.Context, tenantID, ruleID, actorUserID 
 			slog.Warn("automation schedule delete failed", "schedule_id", *rule.TemporalScheduleID, "error", err)
 		}
 	}
-	return s.repo.DeleteRule(ctx, tenantID, ruleID)
+	if err := s.repo.DeleteRule(ctx, tenantID, ruleID); err != nil {
+		return err
+	}
+	// 规则没了，指向它的失败告警就是死链:告警无人类动词,只能由"下一次成功"关闭,
+	// 而删掉的规则永远不会再成功——不在这里关就永久滞留。
+	if s.alerts != nil {
+		if err := s.alerts.ResolveRuleAlerts(ctx, tenantID, ruleID); err != nil {
+			slog.Warn("automation resolve rule alerts on delete failed", "rule_id", ruleID, "error", err)
+		}
+	}
+	return nil
 }
 
 func (s *Service) Enable(ctx context.Context, tenantID, ruleID, actorUserID uuid.UUID) (Rule, error) {
@@ -422,7 +460,7 @@ func (s *Service) Fire(ctx context.Context, tenantID, ruleID uuid.UUID, schedule
 		if missing, castErr := s.projects.MissingCastingRoles(ctx, tenantID, rule.ProjectID, *rule.ScenarioTemplateKey); castErr != nil {
 			return s.failFire(ctx, rule, fire, "casting_check_failed", castErr.Error())
 		} else if len(missing) > 0 {
-			msg := "剧本编制不完整或编制员工不可用: " + strings.Join(missing, ", ")
+			msg := "剧本编制不完整或编制员工不可用: " + project.FormatCastingInvalidations(missing)
 			return s.failFire(ctx, rule, fire, "casting_incomplete", msg)
 		}
 	}
@@ -526,7 +564,7 @@ func (s *Service) validateCastingForTemplate(ctx context.Context, tenantID, proj
 		return err
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("%w: 剧本编制不完整，缺角色: %s", ErrInvalidInput, strings.Join(missing, ", "))
+		return fmt.Errorf("%w: 剧本编制不完整，缺角色: %s", ErrInvalidInput, strings.Join(project.CastingInvalidationRoleKeys(missing), ", "))
 	}
 	return nil
 }
@@ -593,6 +631,11 @@ func (s *Service) succeedFire(ctx context.Context, rule Rule, fire Fire, demandI
 	if _, err := s.repo.ResetFailureCount(ctx, rule.TenantID, rule.ID); err != nil {
 		slog.Warn("automation reset failure count failed", "rule_id", rule.ID, "error", err)
 	}
+	if s.alerts != nil {
+		if err := s.alerts.ResolveRuleAlerts(ctx, rule.TenantID, rule.ID); err != nil {
+			slog.Warn("automation resolve rule alerts failed", "rule_id", rule.ID, "error", err)
+		}
+	}
 	return finished, nil
 }
 
@@ -601,6 +644,7 @@ func (s *Service) failFire(ctx context.Context, rule Rule, fire Fire, code, mess
 	if err != nil {
 		return Fire{}, err
 	}
+	s.openFailureAlert(ctx, rule, finished, code, message)
 	updated, err := s.repo.IncrementFailureCount(ctx, rule.TenantID, rule.ID)
 	if err != nil {
 		return finished, nil
@@ -609,6 +653,33 @@ func (s *Service) failFire(ctx context.Context, rule Rule, fire Fire, code, mess
 		_, _ = s.disableSystem(ctx, updated, DisabledReasonConsecutiveFireFailures)
 	}
 	return finished, nil
+}
+
+func (s *Service) openFailureAlert(ctx context.Context, rule Rule, fire Fire, code, message string) {
+	if s == nil || s.alerts == nil || s.projects == nil {
+		return
+	}
+	info, err := s.projects.GetProject(ctx, rule.TenantID, rule.ProjectID)
+	if err != nil {
+		slog.Warn("automation failure alert project lookup failed", "rule_id", rule.ID, "error", err)
+		return
+	}
+	if len(info.OwnerUserIDs) == 0 {
+		return
+	}
+	if err := s.alerts.OpenRuleFailureAlert(ctx, RuleFailureAlert{
+		TenantID:     rule.TenantID,
+		RuleID:       rule.ID,
+		RuleName:     rule.Name,
+		ProjectID:    rule.ProjectID,
+		ProjectName:  info.Name,
+		OwnerUserIDs: info.OwnerUserIDs,
+		ErrorCode:    code,
+		ErrorMessage: message,
+		FireID:       fire.ID,
+	}); err != nil {
+		slog.Warn("automation open failure alert failed", "rule_id", rule.ID, "error", err)
+	}
 }
 
 func (s *Service) finishFire(ctx context.Context, fire Fire, status string, demandID, runID *uuid.UUID, code, message string) (Fire, error) {

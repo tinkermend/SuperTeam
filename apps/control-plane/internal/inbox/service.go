@@ -374,6 +374,14 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 		if req.SourceType != SourceTypeChannelAlert {
 			return UpsertItemRequest{}, ErrInvalidItem
 		}
+	case ItemTypeAutomationAlert:
+		if req.SourceType != SourceTypeAutomationRule {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
+	case ItemTypeCastingInvalidated:
+		if req.SourceType != SourceTypeProjectCasting {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
 	}
 	if req.SourceApprovalRequestID != nil && *req.SourceApprovalRequestID == uuid.Nil {
 		return UpsertItemRequest{}, ErrInvalidItem
@@ -414,7 +422,7 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 	// handler for kinds like demand_acceptance and silently overrode the
 	// deliberate action contract — the F1 dead-button deadlock. Action legality
 	// for project decisions is owned by (kind → handler), not by itemType.
-	if len(req.Actions) == 0 && req.ItemType != ItemTypeProjectDecision && req.ItemType != ItemTypeChannelAlert {
+	if len(req.Actions) == 0 && req.ItemType != ItemTypeProjectDecision && req.ItemType != ItemTypeChannelAlert && req.ItemType != ItemTypeAutomationAlert && req.ItemType != ItemTypeCastingInvalidated {
 		req.Actions = DefaultActions(req.ItemType)
 	}
 	actions, err := normalizeActions(req.Actions)
@@ -447,8 +455,8 @@ func normalizeActions(actions []Action) ([]Action, error) {
 }
 
 func DefaultActions(itemType ItemType) []Action {
-	if itemType == ItemTypeChannelAlert {
-		// 通道告警由看门狗自动 resolve,无人类裁决动词。
+	if itemType == ItemTypeChannelAlert || itemType == ItemTypeAutomationAlert || itemType == ItemTypeCastingInvalidated {
+		// 告警类由系统自动 resolve,无人类裁决动词。
 		return nil
 	}
 	actions := []Action{
@@ -514,7 +522,7 @@ func validScope(scope string) bool {
 
 func validItemType(itemType ItemType) bool {
 	switch itemType {
-	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete, ItemTypeChannelAlert:
+	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete, ItemTypeChannelAlert, ItemTypeAutomationAlert, ItemTypeCastingInvalidated:
 		return true
 	default:
 		return false
@@ -523,7 +531,7 @@ func validItemType(itemType ItemType) bool {
 
 func validSourceType(sourceType SourceType) bool {
 	switch sourceType {
-	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete, SourceTypeChannelAlert:
+	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete, SourceTypeChannelAlert, SourceTypeAutomationRule, SourceTypeProjectCasting:
 		return true
 	default:
 		return false

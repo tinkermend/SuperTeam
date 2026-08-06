@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/project"
 )
 
 func TestRenderTemplateUsesTimezone(t *testing.T) {
@@ -375,7 +376,7 @@ type fakeProjects struct {
 	name     string
 }
 
-func (f *fakeProjects) MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]string, error) {
+func (f *fakeProjects) MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]project.CastingInvalidation, error) {
 	return nil, nil
 }
 
