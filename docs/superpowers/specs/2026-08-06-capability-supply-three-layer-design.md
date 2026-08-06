@@ -243,8 +243,23 @@ payload.skills[] / payload.mcp_servers[] = 上述结果
 | `PUT /api/v1/projects/{projectId}/mcp-bindings` | `project.config.edit` | 同上；**补 072 遗留的小债**：缺 `items` 键须 400，不得宽容为清空 |
 
 - 项目负责人即可操作（决策 10，第一期技能均为公共）；每次写入落 `project_events`（`project.capability_binding.changed`）与审计
-- Web 落点：项目配置页新增「能力绑定」tab（与既有「成员」「MCP 绑定」同级；后者是本次复原的那个页面）
 - 归档项目 disabled
+
+### 8.1 读路径必须同批带上（否则 UI 期会被迫二次改契约）
+
+UI 设计另立一份 spec（见 §10 说明），但**它依赖的读字段必须在 P0 就定好**，否则契约要改两遍：
+
+1. **`Skill` schema 增 `project_bindings: SkillProjectBinding[]`**，与既有 `team_bindings` / `agent_bindings` **对称内联**。
+   - 用途一：员工配置页显示"这个技能限定了哪些项目"——没有它，场地过滤对用户就是黑盒，会复现 `project_placements` 时代"绑了没效果"那类误导交互。
+   - 用途二：技能停用/删除前的影响面（形态可抄角色词表的 `references`）。
+2. **MCP server 读模型同样补 `project_bindings`**，理由同上。
+3. **依赖闭包对前端可算**：确认 `SkillRuntimeDependencies` 是否已含 MCP 依赖项；含则前端可直接据它做"绑定该技能将一并投影 X、Y"的预览，**不需要新端点**；不含则在 P0 补上该字段（仍不新增端点）。
+
+这三条都是**字段级增量**，不改端点形状，放进 P0 的 codegen 一并出。
+
+### 8.2 项目配置页 tab 现状（实施前确认）
+
+当前 tab 只有 **概览 / 成员 / 剧本编制 / 协调策略**——07-18 落地的「MCP 绑定」tab 已随 07-22 退役一并删除。UI spec 落地时是**复原 + 扩为「能力绑定」**（技能与 MCP 两个区同 tab），不是"在既有 tab 旁新增"。相关前端代码可从 git 历史 `05567dec` 附近检出参考。
 
 ---
 
@@ -278,12 +293,13 @@ payload.skills[] / payload.mcp_servers[] = 上述结果
 
 | 切片 | 内容 | 可独立验收 |
 |---|---|---|
-| **P0** | 迁移（`project_skill_bindings` 新建 + `project_mcp_bindings` 复原）+ 两组 CRUD API + 绑定时逻辑校验 + 契约与 codegen | API + `verify:contracts` |
+| **P0** | 迁移（`project_skill_bindings` 新建 + `project_mcp_bindings` 复原）+ 两组 CRUD API + 绑定时逻辑校验 + **§8.1 三条读字段** + 契约与 codegen | API + `verify:contracts` |
 | **P1** | 控制平面投影合并：§5 五步（并集 → 过滤 → 闭包 → 去重 → 冲突留痕），落进 `payload.skills[]` / `payload.mcp_servers[]` | 单测覆盖 §4.2 真值表三行 + 闭包补全 |
 | **P2** | runtime git 屏蔽（§7） | runtime 单测 + 真实工作区 `git status` |
-| **P3** | Web「能力绑定」tab | 浏览器 |
 
 P0 必须先于 P1（没有绑定数据就没法验合并）。P2 可与 P1 并行。
+
+**UI 不在本文范围**（人类拍板 2026-08-06）：P0–P2 落地并经复检之后，另立一份 UI spec，对着**已经跑起来的后端**设计，避免对着未落地的契约画界面。届时的范围至少包含——项目配置页「能力绑定」tab（复原 + 扩展，含依赖闭包预览）、员工配置页的场地可见性、技能被项目引用的影响面、派发投影的可见性（哪些来自项目/哪些是闭包补的/有无冲突）。本文 §8.1 的读字段是那份 spec 的前置，**必须在 P0 就位**。
 
 ---
 
