@@ -18,7 +18,7 @@ use crate::commands::payload::RuntimeMCPServerPayload;
 use crate::mcp_config::{
     materialize_session_mcp_config, prepare_codex_session_overlay,
 };
-use crate::project_workspace::{SkillLinkReport, link_provider_skills, unlink_provider_skills};
+use crate::project_workspace::{SkillLinkReport, link_provider_skills, shield_projected_capability_paths, unlink_provider_skills};
 use crate::workspace_files::atomic_write;
 
 const SESSIONS_DIR: &str = ".superteam/sessions";
@@ -135,6 +135,8 @@ fn install_project_session_inner(
 
     let link_report: SkillLinkReport =
         link_provider_skills(agent_home_dir, workspace_path, provider_type, skill_keys)?;
+    // §7: projected skill symlinks + .superteam/mcp must not pollute user git status.
+    shield_projected_capability_paths(workspace_path, provider_type, &link_report.linked)?;
 
     let manifest = ProjectSessionManifest {
         command_id: command_id.to_string(),

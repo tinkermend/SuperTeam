@@ -152,6 +152,7 @@ type Querier interface {
 	CreateProjectEvent(ctx context.Context, arg CreateProjectEventParams) (ProjectEvent, error)
 	CreateProjectEvidenceRef(ctx context.Context, arg CreateProjectEvidenceRefParams) (ProjectEvidenceRef, error)
 	CreateProjectExecutionSummary(ctx context.Context, arg CreateProjectExecutionSummaryParams) (ProjectExecutionSummary, error)
+	CreateProjectMCPBinding(ctx context.Context, arg CreateProjectMCPBindingParams) (ProjectMcpBinding, error)
 	CreateProjectMember(ctx context.Context, arg CreateProjectMemberParams) (ProjectMember, error)
 	CreateProjectPlanDecompositionClaim(ctx context.Context, arg CreateProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	CreateProjectPlanRevision(ctx context.Context, arg CreateProjectPlanRevisionParams) (ProjectPlanRevision, error)
@@ -522,6 +523,9 @@ type Querier interface {
 	// required_env_vars with ListConfiguredEmployeeEnvVarNames. credential values are never
 	// returned here.
 	ListEffectiveMCPBindingsV2ForEmployee(ctx context.Context, arg ListEffectiveMCPBindingsV2ForEmployeeParams) ([]ListEffectiveMCPBindingsV2ForEmployeeRow, error)
+	// 项目绑定的运行时投影行：只取未删除绑定 × 未删除注册表定义。缺失 env 判定由调用方
+	// 用目标员工的已配置 env 集合完成，凭据值不经此路。
+	ListEffectiveProjectMCPBindingsForRuntime(ctx context.Context, arg ListEffectiveProjectMCPBindingsForRuntimeParams) ([]ListEffectiveProjectMCPBindingsForRuntimeRow, error)
 	ListEmployeeMCPBindingsV2(ctx context.Context, arg ListEmployeeMCPBindingsV2Params) ([]ListEmployeeMCPBindingsV2Row, error)
 	ListEmployeeTemplateLabels(ctx context.Context, tenantID uuid.UUID) ([]ListEmployeeTemplateLabelsRow, error)
 	// apps/control-plane/internal/storage/queries/digital_employee_templates.sql
@@ -542,6 +546,7 @@ type Querier interface {
 	// 收件箱来源补名:批量取项目任务标题。
 	ListInboxProjectTaskTitles(ctx context.Context, arg ListInboxProjectTaskTitlesParams) ([]ListInboxProjectTaskTitlesRow, error)
 	ListMCPServerDefinitions(ctx context.Context, tenantID uuid.UUID) ([]McpServer, error)
+	ListMCPServerProjectBindings(ctx context.Context, arg ListMCPServerProjectBindingsParams) ([]ListMCPServerProjectBindingsRow, error)
 	ListOnlineNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOnlineRuntimeNodes(ctx context.Context, lastHeartbeatAt pgtype.Timestamptz) ([]RuntimeNode, error)
 	ListOpenFGAMembers(ctx context.Context) ([]ListOpenFGAMembersRow, error)
@@ -588,6 +593,7 @@ type Querier interface {
 	ListProjectExecutionLedgerEvents(ctx context.Context, arg ListProjectExecutionLedgerEventsParams) ([]ExecutionLedgerEvent, error)
 	ListProjectExecutionSummaries(ctx context.Context, arg ListProjectExecutionSummariesParams) ([]ProjectExecutionSummary, error)
 	ListProjectExecutionSummariesByTaskIDs(ctx context.Context, arg ListProjectExecutionSummariesByTaskIDsParams) ([]ProjectExecutionSummary, error)
+	ListProjectMCPBindings(ctx context.Context, arg ListProjectMCPBindingsParams) ([]ListProjectMCPBindingsRow, error)
 	ListProjectMembers(ctx context.Context, arg ListProjectMembersParams) ([]ProjectMember, error)
 	ListProjectPlanRevisions(ctx context.Context, arg ListProjectPlanRevisionsParams) ([]ProjectPlanRevision, error)
 	ListProjectPlanRevisionsForDemand(ctx context.Context, arg ListProjectPlanRevisionsForDemandParams) ([]ProjectPlanRevision, error)
@@ -655,6 +661,8 @@ type Querier interface {
 	ListServiceTokensByTenant(ctx context.Context, tenantID uuid.UUID) ([]AuthServiceToken, error)
 	ListSkillMCPDependencies(ctx context.Context, arg ListSkillMCPDependenciesParams) ([]ListSkillMCPDependenciesRow, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
+	// LEFT JOIN (including soft-deleted servers) so bind-time validation can name missing deps.
+	ListSkillMCPDependenciesIncludingMissing(ctx context.Context, arg ListSkillMCPDependenciesIncludingMissingParams) ([]ListSkillMCPDependenciesIncludingMissingRow, error)
 	// 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
 	ListStalePendingDeleteTeams(ctx context.Context, staleBefore pgtype.Timestamptz) ([]TenantTeam, error)
 	// 看门狗清扫(残债交接 §1 第 2 层):跨租户列出停留在预确认态超过时限的
@@ -808,6 +816,7 @@ type Querier interface {
 	SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error)
+	SoftDeleteProjectMCPBindingsForProject(ctx context.Context, arg SoftDeleteProjectMCPBindingsForProjectParams) error
 	// 删除进入待确认态:全站不可见(deleted_at),管理员恢复或确认后才物理删除。
 	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
 	SoftDeleteTeamMCPBindings(ctx context.Context, arg SoftDeleteTeamMCPBindingsParams) error

@@ -37,6 +37,7 @@ type Skill struct {
 	CreatedByName       string
 	TeamBindings        []*SkillTeamBinding
 	AgentBindings       []*SkillAgentBinding
+	ProjectBindings     []*SkillProjectBinding
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }
@@ -55,6 +56,12 @@ type SkillAgentBinding struct {
 	RuntimeDependencyStatus *SkillRuntimeDependencyStatus
 }
 
+// SkillProjectBinding is a project that has bound this skill (venue supply + venue filter).
+type SkillProjectBinding struct {
+	ProjectID   uuid.UUID
+	ProjectName string
+}
+
 type SkillRuntimeRecord struct {
 	ID                  uuid.UUID
 	Slug                string
@@ -64,6 +71,52 @@ type SkillRuntimeRecord struct {
 	ArchiveChecksum     string
 	ArchiveSizeBytes    int64
 	ArchiveFileCount    int
+	SourceScope         string
+	Version             string
+}
+
+// SkillRuntimeConflict records a same-slug multi-source resolution where the
+// non-winning side was dropped. Source marks the winning side (e.g. project_binding).
+type SkillRuntimeConflict struct {
+	Slug            string
+	WinningSkillID  uuid.UUID
+	DroppedSkillID  uuid.UUID
+	WinningSource   string
+	DroppedSource   string
+	Source          string // attestation marker, e.g. project_binding
+}
+
+// RuntimeSkillsResult is the control-plane projection of skills for one dispatch.
+type RuntimeSkillsResult struct {
+	Skills    []SkillRuntimeRecord
+	Conflicts []SkillRuntimeConflict
+}
+
+type ProjectSkillBinding struct {
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	SkillID         uuid.UUID
+	CreatedByUserID *uuid.UUID
+	CreatedAt       time.Time
+	Skill           *Skill
+}
+
+type ListProjectSkillBindingsRequest struct {
+	TenantID  uuid.UUID
+	UserID    uuid.UUID
+	ProjectID uuid.UUID
+}
+
+type PutProjectSkillBindingsRequest struct {
+	TenantID  uuid.UUID
+	UserID    uuid.UUID
+	ProjectID uuid.UUID
+	Items     []ProjectSkillBindingInput
+}
+
+type ProjectSkillBindingInput struct {
+	SkillID uuid.UUID
 }
 
 type SkillRuntimeDependencyStatus struct {
@@ -73,8 +126,17 @@ type SkillRuntimeDependencyStatus struct {
 }
 
 type RuntimeDependencies struct {
-	Tools []string `json:"tools,omitempty"`
-	Env   []string `json:"env,omitempty"`
+	Tools      []string                   `json:"tools"`
+	Env        []string                   `json:"env"`
+	MCPServers []SkillRuntimeMCPServerRef `json:"mcp_servers"`
+}
+
+// SkillRuntimeMCPServerRef is one skill→MCP dependency surfaced for bind-time preview
+// and frontend closure calculation (capability supply three-layer §8.1).
+type SkillRuntimeMCPServerRef struct {
+	MCPServerID uuid.UUID `json:"mcp_server_id"`
+	ServerKey   string    `json:"server_key"`
+	ServerName  string    `json:"server_name"`
 }
 
 type SkillRuntimeDependencies = RuntimeDependencies

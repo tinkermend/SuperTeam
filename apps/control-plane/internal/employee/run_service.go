@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"path"
 	"strings"
 	"time"
@@ -43,7 +44,7 @@ type AuditLogger interface {
 }
 
 type RuntimeSkillLister interface {
-	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]skill.SkillRuntimeRecord, error)
+	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) (skill.RuntimeSkillsResult, error)
 }
 
 type RuntimeCapabilityLister interface {
@@ -58,6 +59,12 @@ type RuntimeEnvironmentLister interface {
 // env-satisfied bindings, ready to project into the runtime start-session payload.
 // projectID 可选（目录与能力投影修订 spec §3.2）：项目任务与 chat 派发携带项目维度，
 // 结果并入项目级 MCP 绑定且同 server_key 项目侧优先；legacy standalone 派发传 nil。
+// RuntimeMCPDefinitionResolver materializes one MCP registry definition into a runtime
+// payload row for dependency-closure completion.
+type RuntimeMCPDefinitionResolver interface {
+	ResolveRuntimeMCPServer(ctx context.Context, tenantID, serverID uuid.UUID) (*RuntimeMCPServerPayload, error)
+}
+
 type RuntimeMCPLister interface {
 	ListRuntimeMCPServersForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) ([]RuntimeMCPServerPayload, error)
 }
@@ -78,6 +85,7 @@ type DigitalEmployeeRunService struct {
 	envLister                RuntimeEnvironmentLister
 	mcpLister                RuntimeMCPLister
 	skillMCPDependencyLister SkillMCPDependencyLister
+	mcpDefinitionResolver    RuntimeMCPDefinitionResolver
 	nodeResolver             ProjectTaskNodeResolver
 	chatAnchorValidator      ChatAnchorProjectValidator
 	dispatchFacts            ProjectDispatchFactsReader
@@ -115,6 +123,10 @@ func (s *DigitalEmployeeRunService) SetMCPLister(l RuntimeMCPLister) {
 
 func (s *DigitalEmployeeRunService) SetSkillMCPDependencyLister(l SkillMCPDependencyLister) {
 	s.skillMCPDependencyLister = l
+}
+
+func (s *DigitalEmployeeRunService) SetMCPDefinitionResolver(r RuntimeMCPDefinitionResolver) {
+	s.mcpDefinitionResolver = r
 }
 
 // SetProjectTaskNodeResolver injects the three-layer runtime node resolver used
@@ -567,7 +579,8 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 }
 
 type startSessionDependencies struct {
-	runtimeSkills []skill.SkillRuntimeRecord
+	runtimeSkills     []skill.SkillRuntimeRecord
+	skillConflicts    []skill.SkillRuntimeConflict
 	runtimeEnv    []RuntimeEnvironmentVariablePayload
 	runtimeMCP    []RuntimeMCPServerPayload
 	configInput   EmployeeConfigInput
@@ -634,7 +647,7 @@ func (s *DigitalEmployeeRunService) dispatchStartSession(ctx context.Context, re
 	if s.skillLister != nil {
 		capabilityManifestVersion = computeCapabilityManifestFingerprint(deps.runtimeSkills, deps.runtimeMCP)
 	}
-	payload := buildStartSessionPayload(req, objective, prompt, preflightForPayload, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP, capabilityManifestVersion, deps.teamConstitution)
+	payload := buildStartSessionPayload(req, objective, prompt, preflightForPayload, run, deps.configInput, deps.runtimeSkills, deps.runtimeEnv, deps.runtimeMCP, capabilityManifestVersion, deps.teamConstitution, deps.skillConflicts)
 	receipt, err := s.repository.GetCommandReceipt(ctx, req.TenantID, run.CommandID)
 	if err != nil {
 		if !errors.Is(err, ErrNotFound) {
@@ -757,11 +770,12 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 		deps.teamConstitution = constitution
 	}
 	if s.skillLister != nil {
-		runtimeSkills, err := s.skillLister.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
+		runtimeResult, err := s.skillLister.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID, projectID)
 		if err != nil {
 			return deps, fmt.Errorf("list runtime skills: %w", err)
 		}
-		deps.runtimeSkills = runtimeSkills
+		deps.runtimeSkills = runtimeResult.Skills
+		deps.skillConflicts = runtimeResult.Conflicts
 	}
 	var capabilities []cpruntime.RuntimeCapability
 	if s.capabilityLister != nil {
@@ -788,6 +802,12 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 		}
 		deps.runtimeMCP = runtimeMCP
 	}
+	// Dependency closure (§4.3): skills that entered the projection drag their declared MCP
+	// dependencies along, even when those MCPs are not project-bound. Source marked
+	// dependency_closure for audit.
+	if err := s.applySkillMCPDependencyClosure(ctx, tenantID, &deps); err != nil {
+		return deps, err
+	}
 
 	availableTools := map[string]struct{}{}
 	for _, capability := range capabilities {
@@ -813,6 +833,122 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 		return deps, err
 	}
 	return deps, nil
+}
+
+// applySkillMCPDependencyClosure unions MCP servers required by projected skills into
+// deps.runtimeMCP with source_scope=dependency_closure when missing (three-layer §4.3 / §5).
+//
+// **闭包只补「员工已具备全部必需环境变量」的依赖**。无条件补全会让紧随其后的
+// validateSkillMCPDependencies 永真——那道闸的契约是 "dependency validates, never
+// grants"（依赖只校验、绝不授予），闭包若把它要找的东西一并塞进去，"缺失阻断派发"
+// 就再也不会触发，凭据缺失从派发期清晰拦截退化成运行期莫名失败。
+//
+// 因此分工是：**注册表里没绑但环境齐** → 闭包补（技能不能半残，spec §4.3 的本意）；
+// **环境变量没配** → 不补，让门禁拦并报清晰原因。
+func (s *DigitalEmployeeRunService) applySkillMCPDependencyClosure(ctx context.Context, tenantID uuid.UUID, deps *startSessionDependencies) error {
+	if s == nil || deps == nil || s.skillMCPDependencyLister == nil || len(deps.runtimeSkills) == 0 {
+		return nil
+	}
+	skillIDs := make([]uuid.UUID, 0, len(deps.runtimeSkills))
+	for _, runtimeSkill := range deps.runtimeSkills {
+		skillIDs = append(skillIDs, runtimeSkill.ID)
+	}
+	records, err := s.skillMCPDependencyLister.ListSkillMCPDependenciesForSkills(ctx, tenantID, skillIDs)
+	if err != nil {
+		return fmt.Errorf("list skill mcp dependencies for closure: %w", err)
+	}
+	if len(records) == 0 {
+		return nil
+	}
+	presentID := make(map[string]struct{}, len(deps.runtimeMCP))
+	presentKey := make(map[string]struct{}, len(deps.runtimeMCP))
+	for _, server := range deps.runtimeMCP {
+		if server.ServerID != "" {
+			presentID[server.ServerID] = struct{}{}
+		}
+		if server.ServerKey != "" {
+			presentKey[server.ServerKey] = struct{}{}
+		}
+	}
+	// Closure needs full MCP definition projection. When a dependency is already present we
+	// skip; when missing we ask the MCP lister is insufficient (employee/project only). Use
+	// a dedicated resolver if available.
+	if s.mcpDefinitionResolver == nil {
+		// Without resolver we cannot invent payload rows; leave validation to block dispatch
+		// if still missing after employee/project merge — matches prior gate semantics when
+		// closure data cannot be materialized.
+		return nil
+	}
+	// deps.runtimeEnv 在本函数之前已装载（见 collect 顺序），故 env 满足性可就地判定，
+	// 无需额外查询。
+	provisionedEnv := make(map[string]struct{}, len(deps.runtimeEnv))
+	for _, envVar := range deps.runtimeEnv {
+		provisionedEnv[envVar.Name] = struct{}{}
+	}
+	for _, rec := range records {
+		serverID := strings.TrimSpace(rec.MCPServerID)
+		if serverID == "" {
+			continue
+		}
+		if _, ok := presentID[serverID]; ok {
+			continue
+		}
+		if rec.ServerKey != "" {
+			if _, ok := presentKey[rec.ServerKey]; ok {
+				continue
+			}
+		}
+		parsedID, err := uuid.Parse(serverID)
+		if err != nil {
+			return fmt.Errorf("invalid dependency mcp server id %q: %w", serverID, err)
+		}
+		resolved, err := s.mcpDefinitionResolver.ResolveRuntimeMCPServer(ctx, tenantID, parsedID)
+		if err != nil {
+			return fmt.Errorf("resolve dependency closure mcp %s: %w", serverID, err)
+		}
+		if resolved == nil {
+			// 注册表查不到定义：不静默——门禁随后会以「未绑定或缺环境变量」拦住派发，
+			// 但日志要能说明是定义缺失而不是环境变量缺失。
+			slog.Warn("dependency closure skipped: mcp definition not resolvable",
+				"tenant_id", tenantID.String(),
+				"mcp_server_id", serverID,
+				"server_key", rec.ServerKey,
+			)
+			continue
+		}
+		if missing := missingProvisionedEnvVars(resolved.RequiredEnvVars, provisionedEnv); len(missing) > 0 {
+			// 不授予：留给 validateSkillMCPDependencies 拦截并报出可读原因。
+			slog.Info("dependency closure skipped: required env vars not provisioned",
+				"tenant_id", tenantID.String(),
+				"server_key", resolved.ServerKey,
+				"missing_env_vars", strings.Join(missing, ","),
+			)
+			continue
+		}
+		resolved.SourceScope = "dependency_closure"
+		deps.runtimeMCP = append(deps.runtimeMCP, *resolved)
+		presentID[resolved.ServerID] = struct{}{}
+		if resolved.ServerKey != "" {
+			presentKey[resolved.ServerKey] = struct{}{}
+		}
+	}
+	return nil
+}
+
+// missingProvisionedEnvVars returns the required env var names the employee has not
+// provisioned. Empty result means the server is env-satisfied for this employee.
+func missingProvisionedEnvVars(required []string, provisioned map[string]struct{}) []string {
+	var missing []string
+	for _, name := range required {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := provisioned[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	return missing
 }
 
 // validateSkillMCPDependencies enforces "dependency validates, never grants": every MCP
@@ -1577,10 +1713,26 @@ func buildRunParams(req CreateDigitalEmployeeRunRequest, objective, prompt strin
 	}
 }
 
-func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload, capabilityManifestVersion string, teamConstitution TeamConstitutionForDispatch) map[string]any {
+func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, prompt string, preflight RunPreflight, run *DigitalEmployeeRun, configInput EmployeeConfigInput, runtimeSkills []skill.SkillRuntimeRecord, runtimeEnv []RuntimeEnvironmentVariablePayload, runtimeMCPServers []RuntimeMCPServerPayload, capabilityManifestVersion string, teamConstitution TeamConstitutionForDispatch, skillConflicts []skill.SkillRuntimeConflict) map[string]any {
 	metadata := cloneMap(req.Metadata)
 	if capabilityManifestVersion != "" {
 		metadata["capability_manifest_version"] = capabilityManifestVersion
+	}
+	if len(skillConflicts) > 0 {
+		// Control-plane conflict resolution (project wins). Runtime may append workspace-native
+		// collisions separately; both land in attestation metadata.skill_conflicts.
+		items := make([]map[string]any, 0, len(skillConflicts))
+		for _, c := range skillConflicts {
+			items = append(items, map[string]any{
+				"slug":              c.Slug,
+				"winning_skill_id":  c.WinningSkillID.String(),
+				"dropped_skill_id":  c.DroppedSkillID.String(),
+				"winning_source":    c.WinningSource,
+				"dropped_source":    c.DroppedSource,
+				"source":            c.Source, // e.g. project_binding
+			})
+		}
+		metadata["skill_conflicts"] = items
 	}
 	if metadata["source"] == "project_task_dispatch" {
 		metadata["runtime_node_id"] = preflight.RuntimeNodeID.String()

@@ -65,6 +65,7 @@ type ProjectEventNarrative struct {
 var projectEventNarratives = map[ProjectEventType]ProjectEventNarrative{
 	ProjectEventCreated:         {Kind: TimelineKindOther, Title: "项目创建", Severity: NarrativeSeverityInfo},
 	ProjectEventConfigChanged:   {Kind: TimelineKindOther, Title: "项目配置变更", Severity: NarrativeSeverityInfo},
+	ProjectEventCapabilityBindingChanged: {Kind: TimelineKindOther, Title: "项目能力绑定变更", Severity: NarrativeSeverityInfo},
 	ProjectEventArchived:        {Kind: TimelineKindOther, Title: "项目归档", Severity: NarrativeSeverityInfo},
 	ProjectEventUnarchived:      {Kind: TimelineKindOther, Title: "项目取消归档", Severity: NarrativeSeverityInfo},
 	ProjectEventDemandSubmitted: {Kind: TimelineKindDemandSubmitted, Title: "需求已提交", Severity: NarrativeSeverityInfo},

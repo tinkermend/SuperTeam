@@ -317,3 +317,88 @@ SELECT
 FROM team_mcps tm
 CROSS JOIN team_employees te
 ORDER BY tm.server_key ASC, te.name ASC;
+
+-- name: CreateProjectMCPBinding :one
+INSERT INTO project_mcp_bindings (
+    tenant_id,
+    project_id,
+    mcp_server_id,
+    credential_env_var,
+    metadata,
+    created_by
+)
+VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('mcp_server_id')::uuid,
+    sqlc.narg('credential_env_var')::text,
+    COALESCE(sqlc.arg('metadata')::jsonb, '{}'::jsonb),
+    sqlc.narg('created_by')::uuid
+)
+RETURNING *;
+
+-- name: ListProjectMCPBindings :many
+SELECT
+    pb.*,
+    m.name AS server_name,
+    m.server_key,
+    m.url,
+    m.transport,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.risk_level
+FROM project_mcp_bindings pb
+JOIN mcp_servers m ON m.id = pb.mcp_server_id
+    AND m.tenant_id = pb.tenant_id
+    AND m.deleted_at IS NULL
+WHERE pb.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pb.project_id = sqlc.arg('project_id')::uuid
+  AND pb.deleted_at IS NULL
+ORDER BY pb.created_at DESC;
+
+-- name: SoftDeleteProjectMCPBindingsForProject :exec
+UPDATE project_mcp_bindings
+SET deleted_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND deleted_at IS NULL;
+
+-- name: ListEffectiveProjectMCPBindingsForRuntime :many
+-- 项目绑定的运行时投影行：只取未删除绑定 × 未删除注册表定义。缺失 env 判定由调用方
+-- 用目标员工的已配置 env 集合完成，凭据值不经此路。
+SELECT
+    m.id AS server_id,
+    m.tenant_id,
+    m.name,
+    m.server_key,
+    m.transport,
+    m.url,
+    m.auth_strategy,
+    m.required_env_vars,
+    m.tool_allowlist,
+    m.risk_level,
+    pb.credential_env_var,
+    'project'::text AS source_scope
+FROM project_mcp_bindings pb
+JOIN mcp_servers m ON m.id = pb.mcp_server_id
+    AND m.tenant_id = pb.tenant_id
+    AND m.deleted_at IS NULL
+WHERE pb.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pb.project_id = sqlc.arg('project_id')::uuid
+  AND pb.deleted_at IS NULL
+ORDER BY m.name ASC;
+
+
+-- name: ListMCPServerProjectBindings :many
+SELECT
+    pb.mcp_server_id,
+    pb.project_id,
+    COALESCE(p.name, '')::text AS project_name
+FROM project_mcp_bindings pb
+LEFT JOIN projects p ON p.id = pb.project_id
+    AND p.tenant_id = pb.tenant_id
+    AND p.deleted_at IS NULL
+WHERE pb.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pb.deleted_at IS NULL
+  AND pb.mcp_server_id = ANY(sqlc.arg('mcp_server_ids')::uuid[])
+ORDER BY project_name ASC, pb.project_id ASC;

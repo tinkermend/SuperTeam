@@ -174,6 +174,9 @@ func (r *PgRepository) DeleteSkill(ctx context.Context, req DeleteSkillRequest) 
 	if _, err = tx.Exec(ctx, `DELETE FROM skill_agent_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, req.SkillID); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(ctx, `DELETE FROM project_skill_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, req.SkillID); err != nil {
+		return err
+	}
 	tag, err := tx.Exec(ctx, `UPDATE skills SET deleted_at = NOW() WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`, req.TenantID, req.SkillID)
 	if err != nil {
 		return err
@@ -588,10 +591,11 @@ ORDER BY inherited DESC, name ASC`, req.TenantID, req.DigitalEmployeeID)
 	return skills, rows.Err()
 }
 
-func (r *PgRepository) ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]SkillRuntimeRecord, error) {
+func (r *PgRepository) ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) (RuntimeSkillsResult, error) {
 	if r == nil || r.db == nil {
-		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+		return RuntimeSkillsResult{}, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
 	}
+	// Employee-carried skills (team ∪ personal). Source scopes preserved for conflict tracing.
 	rows, err := r.db.Query(ctx, `
 WITH target_employee AS (
     SELECT tenant_id, id AS digital_employee_id, team_id
@@ -603,46 +607,370 @@ WITH target_employee AS (
 SELECT
     s.id,
     s.slug,
+    s.version,
     COALESCE(s.metadata, '{}'::jsonb) AS metadata,
     s.archive_object_ref,
     s.archive_checksum_sha256,
     s.archive_size_bytes,
-    s.archive_file_count
+    s.archive_file_count,
+    'team'::text AS source_scope
 FROM target_employee
-JOIN skills s ON s.tenant_id = target_employee.tenant_id
+JOIN team_skill_bindings stb ON stb.tenant_id = target_employee.tenant_id
+    AND stb.team_id = target_employee.team_id
+JOIN skills s ON s.tenant_id = stb.tenant_id
+    AND s.id = stb.skill_id
     AND s.deleted_at IS NULL
     AND s.archive_object_ref IS NOT NULL
     AND s.archive_object_ref <> ''
-WHERE EXISTS (
-    SELECT 1 FROM team_skill_bindings stb
-    WHERE stb.tenant_id = target_employee.tenant_id
-      AND stb.team_id = target_employee.team_id
-      AND stb.skill_id = s.id
-) OR EXISTS (
-    SELECT 1 FROM skill_agent_bindings sab
-    WHERE sab.tenant_id = target_employee.tenant_id
-      AND sab.digital_employee_id = target_employee.digital_employee_id
-      AND sab.skill_id = s.id
-      AND sab.status = 'enabled'
+UNION ALL
+SELECT
+    s.id,
+    s.slug,
+    s.version,
+    COALESCE(s.metadata, '{}'::jsonb) AS metadata,
+    s.archive_object_ref,
+    s.archive_checksum_sha256,
+    s.archive_size_bytes,
+    s.archive_file_count,
+    'employee'::text AS source_scope
+FROM target_employee
+JOIN skill_agent_bindings sab ON sab.tenant_id = target_employee.tenant_id
+    AND sab.digital_employee_id = target_employee.digital_employee_id
+    AND sab.status = 'enabled'
+JOIN skills s ON s.tenant_id = sab.tenant_id
+    AND s.id = sab.skill_id
+    AND s.deleted_at IS NULL
+    AND s.archive_object_ref IS NOT NULL
+    AND s.archive_object_ref <> ''
+WHERE NOT EXISTS (
+    SELECT 1 FROM team_skill_bindings inherited_binding
+    WHERE inherited_binding.tenant_id = target_employee.tenant_id
+      AND inherited_binding.team_id = target_employee.team_id
+      AND inherited_binding.skill_id = sab.skill_id
 )
-ORDER BY s.slug ASC`, tenantID, digitalEmployeeID)
+ORDER BY slug ASC`, tenantID, digitalEmployeeID)
+	if err != nil {
+		return RuntimeSkillsResult{}, err
+	}
+	defer rows.Close()
+	employeeSide := make([]SkillRuntimeRecord, 0)
+	for rows.Next() {
+		rec, scanErr := scanSkillRuntimeRecord(rows)
+		if scanErr != nil {
+			return RuntimeSkillsResult{}, scanErr
+		}
+		employeeSide = append(employeeSide, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return RuntimeSkillsResult{}, err
+	}
+
+	if projectID == nil || *projectID == uuid.Nil {
+		// No project context: keep prior behavior (employee-carried only, dedupe by id).
+		return RuntimeSkillsResult{Skills: dedupeSkillsByID(employeeSide)}, nil
+	}
+
+	projectSide, err := r.listProjectBoundSkillsForRuntime(ctx, tenantID, *projectID)
+	if err != nil {
+		return RuntimeSkillsResult{}, err
+	}
+
+	// Venue filter (§4.2 ①): drop employee-carried skills that are bound to other projects only.
+	skillIDs := make([]uuid.UUID, 0, len(employeeSide)+len(projectSide))
+	for _, rec := range employeeSide {
+		skillIDs = append(skillIDs, rec.ID)
+	}
+	for _, rec := range projectSide {
+		skillIDs = append(skillIDs, rec.ID)
+	}
+	bindingsBySkill, err := r.ListSkillIDsWithAnyProjectBinding(ctx, tenantID, skillIDs)
+	if err != nil {
+		return RuntimeSkillsResult{}, err
+	}
+
+	filteredEmployee := make([]SkillRuntimeRecord, 0, len(employeeSide))
+	for _, rec := range employeeSide {
+		boundProjects := bindingsBySkill[rec.ID]
+		if len(boundProjects) == 0 {
+			// universal skill
+			filteredEmployee = append(filteredEmployee, rec)
+			continue
+		}
+		allowed := false
+		for _, pid := range boundProjects {
+			if pid == *projectID {
+				allowed = true
+				break
+			}
+		}
+		if allowed {
+			filteredEmployee = append(filteredEmployee, rec)
+		}
+	}
+
+	// Union project supply (§4.2 ②) with filtered employee-carried; project wins on slug conflict.
+	return mergeRuntimeSkills(filteredEmployee, projectSide), nil
+}
+
+func scanSkillRuntimeRecord(rows interface {
+	Scan(dest ...any) error
+}) (SkillRuntimeRecord, error) {
+	var rec SkillRuntimeRecord
+	var metadataBytes []byte
+	if err := rows.Scan(
+		&rec.ID,
+		&rec.Slug,
+		&rec.Version,
+		&metadataBytes,
+		&rec.ArchiveObjectRef,
+		&rec.ArchiveChecksum,
+		&rec.ArchiveSizeBytes,
+		&rec.ArchiveFileCount,
+		&rec.SourceScope,
+	); err != nil {
+		return SkillRuntimeRecord{}, err
+	}
+	if err := applyRuntimeRecordMetadata(&rec, metadataBytes); err != nil {
+		return SkillRuntimeRecord{}, err
+	}
+	return rec, nil
+}
+
+func dedupeSkillsByID(records []SkillRuntimeRecord) []SkillRuntimeRecord {
+	seen := make(map[uuid.UUID]struct{}, len(records))
+	out := make([]SkillRuntimeRecord, 0, len(records))
+	for _, rec := range records {
+		if _, ok := seen[rec.ID]; ok {
+			continue
+		}
+		seen[rec.ID] = struct{}{}
+		out = append(out, rec)
+	}
+	return out
+}
+
+// mergeRuntimeSkills unions employee-side and project-side skills. Same slug prefers project
+// (source_scope=project) and records a conflict with source=project_binding.
+func mergeRuntimeSkills(employeeSide, projectSide []SkillRuntimeRecord) RuntimeSkillsResult {
+	type ranked struct {
+		rec      SkillRuntimeRecord
+		priority int // lower wins: project=0, team=1, employee=2
+	}
+	priorityOf := func(scope string) int {
+		switch scope {
+		case "project":
+			return 0
+		case "team":
+			return 1
+		default:
+			return 2
+		}
+	}
+	bySlug := map[string]ranked{}
+	conflicts := make([]SkillRuntimeConflict, 0)
+	order := make([]string, 0)
+
+	consider := func(rec SkillRuntimeRecord) {
+		slug := rec.Slug
+		p := priorityOf(rec.SourceScope)
+		existing, ok := bySlug[slug]
+		if !ok {
+			bySlug[slug] = ranked{rec: rec, priority: p}
+			order = append(order, slug)
+			return
+		}
+		if existing.rec.ID == rec.ID {
+			// same skill from multiple sources; keep higher-priority scope label
+			if p < existing.priority {
+				bySlug[slug] = ranked{rec: rec, priority: p}
+			}
+			return
+		}
+		// different skill ids, same slug → conflict
+		if p < existing.priority {
+			conflicts = append(conflicts, SkillRuntimeConflict{
+				Slug:           slug,
+				WinningSkillID: rec.ID,
+				DroppedSkillID: existing.rec.ID,
+				WinningSource:  rec.SourceScope,
+				DroppedSource:  existing.rec.SourceScope,
+				Source:         conflictSourceMarker(rec.SourceScope),
+			})
+			bySlug[slug] = ranked{rec: rec, priority: p}
+			return
+		}
+		if p > existing.priority {
+			conflicts = append(conflicts, SkillRuntimeConflict{
+				Slug:           slug,
+				WinningSkillID: existing.rec.ID,
+				DroppedSkillID: rec.ID,
+				WinningSource:  existing.rec.SourceScope,
+				DroppedSource:  rec.SourceScope,
+				Source:         conflictSourceMarker(existing.rec.SourceScope),
+			})
+			return
+		}
+		// equal priority: keep first
+	}
+
+	for _, rec := range employeeSide {
+		consider(rec)
+	}
+	for _, rec := range projectSide {
+		consider(rec)
+	}
+
+	skills := make([]SkillRuntimeRecord, 0, len(order))
+	for _, slug := range order {
+		skills = append(skills, bySlug[slug].rec)
+	}
+	return RuntimeSkillsResult{Skills: skills, Conflicts: conflicts}
+}
+
+func conflictSourceMarker(winningScope string) string {
+	if winningScope == "project" {
+		return "project_binding"
+	}
+	return winningScope
+}
+
+func (r *PgRepository) listProjectBoundSkillsForRuntime(ctx context.Context, tenantID, projectID uuid.UUID) ([]SkillRuntimeRecord, error) {
+	rows, err := r.db.Query(ctx, `
+SELECT
+    s.id,
+    s.slug,
+    s.version,
+    COALESCE(s.metadata, '{}'::jsonb) AS metadata,
+    s.archive_object_ref,
+    s.archive_checksum_sha256,
+    s.archive_size_bytes,
+    s.archive_file_count,
+    'project'::text AS source_scope
+FROM project_skill_bindings psb
+JOIN skills s ON s.tenant_id = psb.tenant_id
+    AND s.id = psb.skill_id
+    AND s.deleted_at IS NULL
+    AND s.archive_object_ref IS NOT NULL
+    AND s.archive_object_ref <> ''
+WHERE psb.tenant_id = $1
+  AND psb.project_id = $2
+ORDER BY s.slug ASC`, tenantID, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var records []SkillRuntimeRecord
+	out := make([]SkillRuntimeRecord, 0)
 	for rows.Next() {
-		var rec SkillRuntimeRecord
-		var metadataBytes []byte
-		if err := rows.Scan(&rec.ID, &rec.Slug, &metadataBytes, &rec.ArchiveObjectRef, &rec.ArchiveChecksum, &rec.ArchiveSizeBytes, &rec.ArchiveFileCount); err != nil {
-			return nil, err
+		rec, scanErr := scanSkillRuntimeRecord(rows)
+		if scanErr != nil {
+			return nil, scanErr
 		}
-		if err := applyRuntimeRecordMetadata(&rec, metadataBytes); err != nil {
-			return nil, err
-		}
-		records = append(records, rec)
+		out = append(out, rec)
 	}
-	return records, rows.Err()
+	return out, rows.Err()
+}
+
+func (r *PgRepository) ListSkillIDsWithAnyProjectBinding(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	result := make(map[uuid.UUID][]uuid.UUID)
+	if len(skillIDs) == 0 {
+		return result, nil
+	}
+	rows, err := r.db.Query(ctx, `
+SELECT skill_id, project_id
+FROM project_skill_bindings
+WHERE tenant_id = $1
+  AND skill_id = ANY($2::uuid[])`, tenantID, skillIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var skillID, projectID uuid.UUID
+		if err := rows.Scan(&skillID, &projectID); err != nil {
+			return nil, err
+		}
+		result[skillID] = append(result[skillID], projectID)
+	}
+	return result, rows.Err()
+}
+
+func (r *PgRepository) ListProjectSkillBindings(ctx context.Context, req ListProjectSkillBindingsRequest) ([]ProjectSkillBinding, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	rows, err := r.db.Query(ctx, `
+SELECT
+    psb.id, psb.tenant_id, psb.project_id, psb.skill_id, psb.created_by_user_id, psb.created_at,
+    s.id, s.tenant_id, s.slug, s.name, s.description, s.version, s.source, s.risk_level,
+    s.icon_key, s.color_token, s.tags, COALESCE(s.metadata, '{}'::jsonb), s.archive_object_ref, s.archive_filename,
+    s.archive_size_bytes, s.archive_checksum_sha256, s.archive_file_count,
+    COALESCE(s.created_by::text, ''), s.created_at, s.updated_at
+FROM project_skill_bindings psb
+JOIN skills s ON s.tenant_id = psb.tenant_id AND s.id = psb.skill_id AND s.deleted_at IS NULL
+WHERE psb.tenant_id = $1 AND psb.project_id = $2
+ORDER BY s.name ASC`, req.TenantID, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]ProjectSkillBinding, 0)
+	for rows.Next() {
+		var b ProjectSkillBinding
+		var skill Skill
+		var createdByUser *uuid.UUID
+		var metadataBytes []byte
+		var createdByStr string
+		if err := rows.Scan(
+			&b.ID, &b.TenantID, &b.ProjectID, &b.SkillID, &createdByUser, &b.CreatedAt,
+			&skill.ID, &skill.TenantID, &skill.Slug, &skill.Name, &skill.Description, &skill.Version, &skill.Source, &skill.RiskLevel,
+			&skill.IconKey, &skill.ColorToken, &skill.Tags, &metadataBytes, &skill.ArchiveObjectRef, &skill.ArchiveFilename,
+			&skill.ArchiveSizeBytes, &skill.ArchiveChecksum, &skill.ArchiveFileCount,
+			&createdByStr, &skill.CreatedAt, &skill.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		b.CreatedByUserID = createdByUser
+		if createdByStr != "" {
+			skill.CreatedBy, _ = uuid.Parse(createdByStr)
+		}
+		if err := applySkillMetadata(&skill, metadataBytes); err != nil {
+			return nil, err
+		}
+		b.Skill = &skill
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+func (r *PgRepository) ReplaceProjectSkillBindings(ctx context.Context, req PutProjectSkillBindingsRequest) ([]ProjectSkillBinding, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
+DELETE FROM project_skill_bindings
+WHERE tenant_id = $1 AND project_id = $2`, req.TenantID, req.ProjectID); err != nil {
+		return nil, err
+	}
+	for _, item := range req.Items {
+		if _, err := tx.Exec(ctx, `
+INSERT INTO project_skill_bindings (tenant_id, project_id, skill_id, created_by_user_id)
+VALUES ($1, $2, $3, $4)`, req.TenantID, req.ProjectID, item.SkillID, req.UserID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return r.ListProjectSkillBindings(ctx, ListProjectSkillBindingsRequest{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+	})
 }
 
 func (r *PgRepository) ensureTeamExists(ctx context.Context, tenantID, teamID uuid.UUID) error {
@@ -678,8 +1006,69 @@ func (r *PgRepository) loadChildren(ctx context.Context, item *Skill) error {
 		return err
 	}
 	item.AgentBindings = agents
+	projects, err := r.listProjectBindings(ctx, item.TenantID, item.ID)
+	if err != nil {
+		return err
+	}
+	item.ProjectBindings = projects
+	mcpDeps, err := r.listSkillMCPDependencyRefs(ctx, item.TenantID, item.ID)
+	if err != nil {
+		return err
+	}
+	if item.RuntimeDependencies.Tools == nil {
+		item.RuntimeDependencies.Tools = []string{}
+	}
+	if item.RuntimeDependencies.Env == nil {
+		item.RuntimeDependencies.Env = []string{}
+	}
+	item.RuntimeDependencies.MCPServers = mcpDeps
 	return nil
 }
+
+func (r *PgRepository) listProjectBindings(ctx context.Context, tenantID, skillID uuid.UUID) ([]*SkillProjectBinding, error) {
+	rows, err := r.db.Query(ctx, `
+SELECT psb.project_id, COALESCE(p.name, '') AS project_name
+FROM project_skill_bindings psb
+LEFT JOIN projects p ON p.id = psb.project_id AND p.tenant_id = psb.tenant_id AND p.deleted_at IS NULL
+WHERE psb.tenant_id = $1 AND psb.skill_id = $2
+ORDER BY project_name ASC, psb.project_id ASC`, tenantID, skillID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]*SkillProjectBinding, 0)
+	for rows.Next() {
+		var b SkillProjectBinding
+		if err := rows.Scan(&b.ProjectID, &b.ProjectName); err != nil {
+			return nil, err
+		}
+		out = append(out, &b)
+	}
+	return out, rows.Err()
+}
+
+func (r *PgRepository) listSkillMCPDependencyRefs(ctx context.Context, tenantID, skillID uuid.UUID) ([]SkillRuntimeMCPServerRef, error) {
+	rows, err := r.db.Query(ctx, `
+SELECT d.mcp_server_id, COALESCE(m.server_key, ''), COALESCE(m.name, '')
+FROM skill_mcp_dependencies d
+LEFT JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.tenant_id = d.tenant_id AND m.deleted_at IS NULL
+WHERE d.tenant_id = $1 AND d.skill_id = $2
+ORDER BY COALESCE(m.server_key, d.mcp_server_id::text) ASC`, tenantID, skillID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]SkillRuntimeMCPServerRef, 0)
+	for rows.Next() {
+		var ref SkillRuntimeMCPServerRef
+		if err := rows.Scan(&ref.MCPServerID, &ref.ServerKey, &ref.ServerName); err != nil {
+			return nil, err
+		}
+		out = append(out, ref)
+	}
+	return out, rows.Err()
+}
+
 
 func (r *PgRepository) listTeamBindings(ctx context.Context, tenantID, skillID uuid.UUID) ([]*SkillTeamBinding, error) {
 	rows, err := r.db.Query(ctx, `

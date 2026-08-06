@@ -3,6 +3,7 @@ package capability
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"errors"
 	"fmt"
 	"net/http"
@@ -32,6 +33,8 @@ type HandlerService interface {
 	ReplaceSkillMCPDependencies(ctx context.Context, req ReplaceSkillMCPDependenciesRequest) ([]SkillMCPDependency, error)
 	ListDependentSkills(ctx context.Context, req ListDependentSkillsRequest) ([]DependentSkill, error)
 	EvaluateEmployeeSkillMCPDependencies(ctx context.Context, req EvaluateEmployeeSkillMCPDependenciesRequest) ([]EmployeeSkillMCPDependencyStatus, error)
+	ListProjectMCPBindings(ctx context.Context, req ProjectScopedRequest) ([]MCPBinding, error)
+	PutProjectMCPBindings(ctx context.Context, req PutProjectMCPBindingsRequest) ([]MCPBinding, error)
 }
 
 type HTTPHandler struct {
@@ -559,16 +562,18 @@ type mcpDefinitionResponse struct {
 	OptionalEnvVars    []string        `json:"optional_env_vars"`
 	ProviderVisibility map[string]bool `json:"provider_visibility,omitempty"`
 	ToolAllowlist      []string        `json:"tool_allowlist"`
-	RiskLevel          string          `json:"risk_level"`
-	Status             string          `json:"status"`
-	CreatedAt          string          `json:"created_at,omitempty"`
-	UpdatedAt          string          `json:"updated_at,omitempty"`
+	RiskLevel          string                      `json:"risk_level"`
+	Status             string                      `json:"status"`
+	ProjectBindings    []mcpProjectBindingResponse `json:"project_bindings"`
+	CreatedAt          string                      `json:"created_at,omitempty"`
+	UpdatedAt          string                      `json:"updated_at,omitempty"`
 }
 
 type mcpBindingResponse struct {
 	ID                string   `json:"id"`
 	TenantID          string   `json:"tenant_id"`
 	TeamID            string   `json:"team_id,omitempty"`
+	ProjectID         string `json:"project_id,omitempty"`
 	DigitalEmployeeID string   `json:"digital_employee_id,omitempty"`
 	MCPServerID       string   `json:"mcp_server_id"`
 	ServerKey         string   `json:"server_key,omitempty"`
@@ -611,6 +616,13 @@ func mcpDefinitionResponses(definitions []MCPDefinition) []mcpDefinitionResponse
 }
 
 func mcpDefinitionResponseFromDomain(item MCPDefinition) mcpDefinitionResponse {
+	bindings := make([]mcpProjectBindingResponse, 0, len(item.ProjectBindings))
+	for _, b := range item.ProjectBindings {
+		bindings = append(bindings, mcpProjectBindingResponse{
+			ProjectID:   b.ProjectID.String(),
+			ProjectName: b.ProjectName,
+		})
+	}
 	return mcpDefinitionResponse{
 		ID:                 item.ID.String(),
 		TenantID:           item.TenantID.String(),
@@ -627,11 +639,94 @@ func mcpDefinitionResponseFromDomain(item MCPDefinition) mcpDefinitionResponse {
 		RiskLevel:          item.RiskLevel,
 		// 注册表定义只有创建/删除两态（迁移 087）：可见即 active，常量投影
 		// 保持 Web /mcp 页零改动。
-		Status:    MCPBindingStatusActive,
-		CreatedAt: formatTime(item.CreatedAt),
-		UpdatedAt: formatTime(item.UpdatedAt),
+		Status:          MCPBindingStatusActive,
+		ProjectBindings: bindings,
+		CreatedAt:       formatTime(item.CreatedAt),
+		UpdatedAt:       formatTime(item.UpdatedAt),
 	}
 }
+
+type mcpProjectBindingResponse struct {
+	ProjectID   string `json:"project_id"`
+	ProjectName string `json:"project_name"`
+}
+
+
+// ListProjectMCPBindings 走项目级 authz（ResourceProject + project.config.read）。
+func (h *HTTPHandler) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := uuidParam(w, r, "projectId", "invalid project id")
+	if !ok {
+		return
+	}
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionProjectConfigRead, authz.ResourceRef{Type: authz.ResourceProject, ID: projectID.String()}, "project mcp binding read", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	bindings, err := service.ListProjectMCPBindings(r.Context(), ProjectScopedRequest{TenantID: tenantID, UserID: userID, ProjectID: projectID})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, mcpBindingResponses(bindings))
+}
+
+// PutProjectMCPBindings 声明式全量替换项目绑定；缺 items 键必须 400（不得宽容为空）。
+func (h *HTTPHandler) PutProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := uuidParam(w, r, "projectId", "invalid project id")
+	if !ok {
+		return
+	}
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionProjectConfigEdit, authz.ResourceRef{Type: authz.ResourceProject, ID: projectID.String()}, "project mcp binding write", nil)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body struct {
+		Items *[]struct {
+			MCPServerID      string `json:"mcp_server_id"`
+			CredentialEnvVar string `json:"credential_env_var"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Items == nil {
+		http.Error(w, "items is required", http.StatusBadRequest)
+		return
+	}
+	items := make([]ProjectMCPBindingInput, 0, len(*body.Items))
+	for _, raw := range *body.Items {
+		serverID, err := uuid.Parse(strings.TrimSpace(raw.MCPServerID))
+		if err != nil {
+			http.Error(w, "invalid mcp_server_id", http.StatusBadRequest)
+			return
+		}
+		items = append(items, ProjectMCPBindingInput{
+			MCPServerID:      serverID,
+			CredentialEnvVar: raw.CredentialEnvVar,
+		})
+	}
+	bindings, err := service.PutProjectMCPBindings(r.Context(), PutProjectMCPBindingsRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		UserID:    userID,
+		Items:     items,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, mcpBindingResponses(bindings))
+}
+
 
 func mcpBindingResponses(items []MCPBinding) []mcpBindingResponse {
 	responses := make([]mcpBindingResponse, 0, len(items))
@@ -665,6 +760,9 @@ func mcpBindingResponseFromDomain(item MCPBinding) mcpBindingResponse {
 	}
 	if item.DigitalEmployeeID != nil {
 		response.DigitalEmployeeID = item.DigitalEmployeeID.String()
+	}
+	if item.ProjectID != nil {
+		response.ProjectID = item.ProjectID.String()
 	}
 	return response
 }

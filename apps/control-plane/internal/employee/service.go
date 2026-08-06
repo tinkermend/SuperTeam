@@ -1271,7 +1271,7 @@ func runtimeSkillsPayload(skills []skill.SkillRuntimeRecord) []map[string]any {
 			ArchiveSizeBytes:      s.ArchiveSizeBytes,
 			ArchiveFileCount:      s.ArchiveFileCount,
 		}
-		out = append(out, map[string]any{
+		item := map[string]any{
 			"skill_id":                payload.SkillID,
 			"skill_key":               payload.SkillKey,
 			"revision_id":             payload.RevisionID,
@@ -1279,7 +1279,14 @@ func runtimeSkillsPayload(skills []skill.SkillRuntimeRecord) []map[string]any {
 			"archive_checksum_sha256": payload.ArchiveChecksumSHA256,
 			"archive_size_bytes":      payload.ArchiveSizeBytes,
 			"archive_file_count":      payload.ArchiveFileCount,
-		})
+		}
+		if s.SourceScope != "" {
+			item["source_scope"] = s.SourceScope
+		}
+		if s.Version != "" {
+			item["version"] = s.Version
+		}
+		out = append(out, item)
 	}
 	return out
 }

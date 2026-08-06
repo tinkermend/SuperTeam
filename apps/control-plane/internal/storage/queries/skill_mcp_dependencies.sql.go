@@ -209,6 +209,72 @@ func (q *Queries) ListSkillMCPDependenciesForSkills(ctx context.Context, arg Lis
 	return items, nil
 }
 
+const ListSkillMCPDependenciesIncludingMissing = `-- name: ListSkillMCPDependenciesIncludingMissing :many
+SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
+       COALESCE(m.server_key, '')::text AS server_key,
+       COALESCE(m.name, '')::text AS server_name,
+       COALESCE(m.auth_strategy, '')::text AS auth_strategy,
+       COALESCE(m.risk_level, '')::text AS risk_level,
+       (m.id IS NULL OR m.deleted_at IS NOT NULL)::bool AS missing
+FROM skill_mcp_dependencies d
+LEFT JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.tenant_id = d.tenant_id
+WHERE d.tenant_id = $1::uuid
+  AND d.skill_id = ANY($2::uuid[])
+ORDER BY d.skill_id, server_key ASC
+`
+
+type ListSkillMCPDependenciesIncludingMissingParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	SkillIds []uuid.UUID `json:"skill_ids"`
+}
+
+type ListSkillMCPDependenciesIncludingMissingRow struct {
+	ID           uuid.UUID          `json:"id"`
+	TenantID     uuid.UUID          `json:"tenant_id"`
+	SkillID      uuid.UUID          `json:"skill_id"`
+	McpServerID  uuid.UUID          `json:"mcp_server_id"`
+	Note         string             `json:"note"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ServerKey    string             `json:"server_key"`
+	ServerName   string             `json:"server_name"`
+	AuthStrategy string             `json:"auth_strategy"`
+	RiskLevel    string             `json:"risk_level"`
+	Missing      bool               `json:"missing"`
+}
+
+// LEFT JOIN (including soft-deleted servers) so bind-time validation can name missing deps.
+func (q *Queries) ListSkillMCPDependenciesIncludingMissing(ctx context.Context, arg ListSkillMCPDependenciesIncludingMissingParams) ([]ListSkillMCPDependenciesIncludingMissingRow, error) {
+	rows, err := q.db.Query(ctx, ListSkillMCPDependenciesIncludingMissing, arg.TenantID, arg.SkillIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSkillMCPDependenciesIncludingMissingRow{}
+	for rows.Next() {
+		var i ListSkillMCPDependenciesIncludingMissingRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.SkillID,
+			&i.McpServerID,
+			&i.Note,
+			&i.CreatedAt,
+			&i.ServerKey,
+			&i.ServerName,
+			&i.AuthStrategy,
+			&i.RiskLevel,
+			&i.Missing,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const SkillExistsForTenant = `-- name: SkillExistsForTenant :one
 SELECT EXISTS(
     SELECT 1 FROM skills

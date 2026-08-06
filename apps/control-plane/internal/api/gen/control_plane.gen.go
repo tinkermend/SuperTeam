@@ -4912,24 +4912,31 @@ type MCPBinding struct {
 	Url               *string             `json:"url,omitempty"`
 }
 
+// MCPProjectBinding defines model for MCPProjectBinding.
+type MCPProjectBinding struct {
+	ProjectId   openapi_types.UUID `json:"project_id"`
+	ProjectName string             `json:"project_name"`
+}
+
 // MCPServerDefinition defines model for MCPServerDefinition.
 type MCPServerDefinition struct {
-	AuthStrategy       MCPAuthStrategy    `json:"auth_strategy"`
-	CreatedAt          *time.Time         `json:"created_at,omitempty"`
-	Description        *string            `json:"description,omitempty"`
-	Id                 openapi_types.UUID `json:"id"`
-	Name               string             `json:"name"`
-	OptionalEnvVars    *[]string          `json:"optional_env_vars,omitempty"`
-	ProviderVisibility *map[string]bool   `json:"provider_visibility,omitempty"`
-	RequiredEnvVars    *[]string          `json:"required_env_vars,omitempty"`
-	RiskLevel          *string            `json:"risk_level,omitempty"`
-	ServerKey          string             `json:"server_key"`
-	Status             string             `json:"status"`
-	TenantId           openapi_types.UUID `json:"tenant_id"`
-	ToolAllowlist      *[]string          `json:"tool_allowlist,omitempty"`
-	Transport          MCPTransport       `json:"transport"`
-	UpdatedAt          *time.Time         `json:"updated_at,omitempty"`
-	Url                string             `json:"url"`
+	AuthStrategy       MCPAuthStrategy     `json:"auth_strategy"`
+	CreatedAt          *time.Time          `json:"created_at,omitempty"`
+	Description        *string             `json:"description,omitempty"`
+	Id                 openapi_types.UUID  `json:"id"`
+	Name               string              `json:"name"`
+	OptionalEnvVars    *[]string           `json:"optional_env_vars,omitempty"`
+	ProjectBindings    []MCPProjectBinding `json:"project_bindings"`
+	ProviderVisibility *map[string]bool    `json:"provider_visibility,omitempty"`
+	RequiredEnvVars    *[]string           `json:"required_env_vars,omitempty"`
+	RiskLevel          *string             `json:"risk_level,omitempty"`
+	ServerKey          string              `json:"server_key"`
+	Status             string              `json:"status"`
+	TenantId           openapi_types.UUID  `json:"tenant_id"`
+	ToolAllowlist      *[]string           `json:"tool_allowlist,omitempty"`
+	Transport          MCPTransport        `json:"transport"`
+	UpdatedAt          *time.Time          `json:"updated_at,omitempty"`
+	Url                string              `json:"url"`
 }
 
 // MCPTransport defines model for MCPTransport.
@@ -5954,6 +5961,17 @@ type ProjectRuntimePlacementReadiness struct {
 // ProjectRuntimePlacementStatus defines model for ProjectRuntimePlacementStatus.
 type ProjectRuntimePlacementStatus string
 
+// ProjectSkillBinding defines model for ProjectSkillBinding.
+type ProjectSkillBinding struct {
+	CreatedAt       *time.Time          `json:"created_at,omitempty"`
+	CreatedByUserId *openapi_types.UUID `json:"created_by_user_id,omitempty"`
+	Id              openapi_types.UUID  `json:"id"`
+	ProjectId       openapi_types.UUID  `json:"project_id"`
+	Skill           *Skill              `json:"skill,omitempty"`
+	SkillId         openapi_types.UUID  `json:"skill_id"`
+	TenantId        openapi_types.UUID  `json:"tenant_id"`
+}
+
 // ProjectStatus defines model for ProjectStatus.
 type ProjectStatus string
 
@@ -6380,6 +6398,21 @@ type PutProjectCastingsRequest struct {
 		RoleKey           string             `json:"role_key"`
 	} `json:"assignments"`
 	ScenarioTemplateKey string `json:"scenario_template_key"`
+}
+
+// PutProjectMCPBindingsRequest defines model for PutProjectMCPBindingsRequest.
+type PutProjectMCPBindingsRequest struct {
+	Items []struct {
+		CredentialEnvVar *string            `json:"credential_env_var,omitempty"`
+		McpServerId      openapi_types.UUID `json:"mcp_server_id"`
+	} `json:"items"`
+}
+
+// PutProjectSkillBindingsRequest defines model for PutProjectSkillBindingsRequest.
+type PutProjectSkillBindingsRequest struct {
+	Items []struct {
+		SkillId openapi_types.UUID `json:"skill_id"`
+	} `json:"items"`
 }
 
 // ReassignDigitalEmployeeTeamRequest defines model for ReassignDigitalEmployeeTeamRequest.
@@ -7010,6 +7043,7 @@ type Skill struct {
 	IconKey             string                   `json:"icon_key"`
 	Id                  openapi_types.UUID       `json:"id"`
 	Name                string                   `json:"name"`
+	ProjectBindings     []SkillProjectBinding    `json:"project_bindings"`
 	RiskLevel           string                   `json:"risk_level"`
 	RuntimeDependencies SkillRuntimeDependencies `json:"runtime_dependencies"`
 	Slug                string                   `json:"slug"`
@@ -7055,10 +7089,26 @@ type SkillMCPDependency struct {
 	SkillId      openapi_types.UUID `json:"skill_id"`
 }
 
+// SkillProjectBinding defines model for SkillProjectBinding.
+type SkillProjectBinding struct {
+	ProjectId   openapi_types.UUID `json:"project_id"`
+	ProjectName string             `json:"project_name"`
+}
+
 // SkillRuntimeDependencies defines model for SkillRuntimeDependencies.
 type SkillRuntimeDependencies struct {
-	Env   []string `json:"env"`
-	Tools []string `json:"tools"`
+	Env []string `json:"env"`
+
+	// McpServers Skill-declared MCP registry dependencies for bind-time closure preview
+	McpServers []SkillRuntimeMCPServerRef `json:"mcp_servers"`
+	Tools      []string                   `json:"tools"`
+}
+
+// SkillRuntimeMCPServerRef defines model for SkillRuntimeMCPServerRef.
+type SkillRuntimeMCPServerRef struct {
+	McpServerId openapi_types.UUID `json:"mcp_server_id"`
+	ServerKey   string             `json:"server_key"`
+	ServerName  string             `json:"server_name"`
 }
 
 // SkillTeamBinding defines model for SkillTeamBinding.
@@ -8355,11 +8405,17 @@ type CreateProjectEvidenceJSONRequestBody = CreateProjectEvidenceRequest
 // PatchProjectEvidenceJSONRequestBody defines body for PatchProjectEvidence for application/json ContentType.
 type PatchProjectEvidenceJSONRequestBody = PatchProjectEvidenceRequest
 
+// PutProjectMCPBindingsJSONRequestBody defines body for PutProjectMCPBindings for application/json ContentType.
+type PutProjectMCPBindingsJSONRequestBody = PutProjectMCPBindingsRequest
+
 // ReplaceProjectMembersJSONRequestBody defines body for ReplaceProjectMembers for application/json ContentType.
 type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
 
 // AddProjectRuntimeNodeJSONRequestBody defines body for AddProjectRuntimeNode for application/json ContentType.
 type AddProjectRuntimeNodeJSONRequestBody AddProjectRuntimeNodeJSONBody
+
+// PutProjectSkillBindingsJSONRequestBody defines body for PutProjectSkillBindings for application/json ContentType.
+type PutProjectSkillBindingsJSONRequestBody = PutProjectSkillBindingsRequest
 
 // MarkProjectWorkspaceReadyJSONRequestBody defines body for MarkProjectWorkspaceReady for application/json ContentType.
 type MarkProjectWorkspaceReadyJSONRequestBody = ProjectWorkspaceManualActionRequest
@@ -9526,6 +9582,12 @@ type ServerInterface interface {
 	// Get project execution trace
 	// (GET /api/v1/projects/{projectId}/execution-trace)
 	GetProjectExecutionTrace(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectExecutionTraceParams)
+	// List project MCP bindings to registered MCP servers
+	// (GET /api/v1/projects/{projectId}/mcp-bindings)
+	ListProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Declaratively replace the project's MCP bindings with the desired set
+	// (PUT /api/v1/projects/{projectId}/mcp-bindings)
+	PutProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// List project members
 	// (GET /api/v1/projects/{projectId}/members)
 	ListProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -9565,6 +9627,12 @@ type ServerInterface interface {
 	// Get project Runtime execution readiness
 	// (GET /api/v1/projects/{projectId}/runtime-readiness)
 	GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// List project skill bindings
+	// (GET /api/v1/projects/{projectId}/skill-bindings)
+	ListProjectSkillBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Declaratively replace the project's skill bindings with the desired set
+	// (PUT /api/v1/projects/{projectId}/skill-bindings)
+	PutProjectSkillBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Get project task graph read model
 	// (GET /api/v1/projects/{projectId}/task-graph)
 	GetProjectTaskGraph(w http.ResponseWriter, r *http.Request, projectId ProjectId, params GetProjectTaskGraphParams)
@@ -10663,6 +10731,18 @@ func (_ Unimplemented) GetProjectExecutionTrace(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List project MCP bindings to registered MCP servers
+// (GET /api/v1/projects/{projectId}/mcp-bindings)
+func (_ Unimplemented) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Declaratively replace the project's MCP bindings with the desired set
+// (PUT /api/v1/projects/{projectId}/mcp-bindings)
+func (_ Unimplemented) PutProjectMCPBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // List project members
 // (GET /api/v1/projects/{projectId}/members)
 func (_ Unimplemented) ListProjectMembers(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
@@ -10738,6 +10818,18 @@ func (_ Unimplemented) AddProjectRuntimeNode(w http.ResponseWriter, r *http.Requ
 // Get project Runtime execution readiness
 // (GET /api/v1/projects/{projectId}/runtime-readiness)
 func (_ Unimplemented) GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List project skill bindings
+// (GET /api/v1/projects/{projectId}/skill-bindings)
+func (_ Unimplemented) ListProjectSkillBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Declaratively replace the project's skill bindings with the desired set
+// (PUT /api/v1/projects/{projectId}/skill-bindings)
+func (_ Unimplemented) PutProjectSkillBindings(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -15864,6 +15956,58 @@ func (siw *ServerInterfaceWrapper) GetProjectExecutionTrace(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// ListProjectMCPBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectMCPBindings(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutProjectMCPBindings operation middleware
+func (siw *ServerInterfaceWrapper) PutProjectMCPBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutProjectMCPBindings(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListProjectMembers operation middleware
 func (siw *ServerInterfaceWrapper) ListProjectMembers(w http.ResponseWriter, r *http.Request) {
 
@@ -16365,6 +16509,58 @@ func (siw *ServerInterfaceWrapper) GetProjectRuntimeReadiness(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetProjectRuntimeReadiness(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjectSkillBindings operation middleware
+func (siw *ServerInterfaceWrapper) ListProjectSkillBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjectSkillBindings(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutProjectSkillBindings operation middleware
+func (siw *ServerInterfaceWrapper) PutProjectSkillBindings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutProjectSkillBindings(w, r, projectId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -20437,6 +20633,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/execution-trace", wrapper.GetProjectExecutionTrace)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/mcp-bindings", wrapper.ListProjectMCPBindings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/mcp-bindings", wrapper.PutProjectMCPBindings)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/members", wrapper.ListProjectMembers)
 	})
 	r.Group(func(r chi.Router) {
@@ -20474,6 +20676,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/runtime-readiness", wrapper.GetProjectRuntimeReadiness)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/skill-bindings", wrapper.ListProjectSkillBindings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/skill-bindings", wrapper.PutProjectSkillBindings)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/task-graph", wrapper.GetProjectTaskGraph)

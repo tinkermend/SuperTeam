@@ -18,6 +18,13 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 )
 
+
+func (s *handlerService) ListProjectMCPBindings(context.Context, ProjectScopedRequest) ([]MCPBinding, error) {
+	return nil, nil
+}
+func (s *handlerService) PutProjectMCPBindings(context.Context, PutProjectMCPBindingsRequest) ([]MCPBinding, error) {
+	return nil, nil
+}
 func TestHandlerMapsCapabilityErrors(t *testing.T) {
 	tenantID := uuid.New()
 	userID := uuid.New()

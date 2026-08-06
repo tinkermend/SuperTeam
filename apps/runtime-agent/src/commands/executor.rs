@@ -2291,17 +2291,29 @@ fn project_task_attestation_writeback(
         "provider_auth_mode".to_string(),
         serde_json::Value::String(spec.provider_auth_mode.clone()),
     );
-    if !spec.skill_conflicts.is_empty() {
-        // spec §3.1:项目原生技能覆盖员工技能不得静默,冲突 key 入 attestation。
-        metadata.insert(
-            "skill_conflicts".to_string(),
-            serde_json::Value::Array(
-                spec.skill_conflicts
-                    .iter()
-                    .map(|key| serde_json::Value::String(key.clone()))
-                    .collect(),
-            ),
-        );
+    {
+        // Merge control-plane conflicts (source=project_binding etc.) with workspace-native
+        // skill key collisions (project-native path wins). Both must be auditable (S7).
+        let mut conflicts: Vec<serde_json::Value> = Vec::new();
+        if let Some(ctx) = &spec.command_context {
+            if let Some(arr) = ctx.metadata.get("skill_conflicts").and_then(|v| v.as_array()) {
+                for item in arr {
+                    conflicts.push(item.clone());
+                }
+            }
+        }
+        for key in &spec.skill_conflicts {
+            conflicts.push(serde_json::json!({
+                "slug": key,
+                "source": "workspace_native",
+            }));
+        }
+        if !conflicts.is_empty() {
+            metadata.insert(
+                "skill_conflicts".to_string(),
+                serde_json::Value::Array(conflicts),
+            );
+        }
     }
     if let Some(skill_convergence) = &spec.skill_convergence {
         // 技能懒收敛报告(capability-binding-unification):materialized/reused/
@@ -4370,7 +4382,7 @@ mod tests {
         );
         assert_eq!(
             body.metadata["skill_conflicts"],
-            serde_json::json!(["beta"]),
+            serde_json::json!([{"slug":"beta","source":"workspace_native"}]),
             "spec §3.1: project-native skill conflicts must reach the attestation metadata"
         );
         assert_eq!(

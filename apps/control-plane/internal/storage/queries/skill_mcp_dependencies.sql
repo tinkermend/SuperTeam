@@ -41,3 +41,17 @@ SELECT EXISTS(
       AND id = sqlc.arg('id')::uuid
       AND deleted_at IS NULL
 ) AS exists;
+
+-- name: ListSkillMCPDependenciesIncludingMissing :many
+-- LEFT JOIN (including soft-deleted servers) so bind-time validation can name missing deps.
+SELECT d.id, d.tenant_id, d.skill_id, d.mcp_server_id, d.note, d.created_at,
+       COALESCE(m.server_key, '')::text AS server_key,
+       COALESCE(m.name, '')::text AS server_name,
+       COALESCE(m.auth_strategy, '')::text AS auth_strategy,
+       COALESCE(m.risk_level, '')::text AS risk_level,
+       (m.id IS NULL OR m.deleted_at IS NOT NULL)::bool AS missing
+FROM skill_mcp_dependencies d
+LEFT JOIN mcp_servers m ON m.id = d.mcp_server_id AND m.tenant_id = d.tenant_id
+WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND d.skill_id = ANY(sqlc.arg('skill_ids')::uuid[])
+ORDER BY d.skill_id, server_key ASC;

@@ -2317,6 +2317,7 @@ func TestBuildStartSessionPayloadIncludesEffectiveMCPServers(t *testing.T) {
 		}},
 		"cmv1:sha256:test-fingerprint",
 		TeamConstitutionForDispatch{},
+		nil,
 	)
 
 	metadata, ok := payload["metadata"].(map[string]any)
@@ -2652,8 +2653,8 @@ func (f *fakeRunServiceRepository) GetLatestDigitalEmployeeConfigRevision(contex
 	return f.latestConfigInput, nil
 }
 
-func (f *fakeRunServiceRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]skill.SkillRuntimeRecord, error) {
-	return f.runtimeSkills, nil
+func (f *fakeRunServiceRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID, *uuid.UUID) (skill.RuntimeSkillsResult, error) {
+	return skill.RuntimeSkillsResult{Skills: f.runtimeSkills}, nil
 }
 
 func (f *fakeRunServiceRepository) ListRuntimeCapabilitiesForNode(context.Context, uuid.UUID, string) ([]cpruntime.RuntimeCapability, error) {
@@ -2885,8 +2886,8 @@ type fakeRuntimeSkillLister struct {
 	records []skill.SkillRuntimeRecord
 }
 
-func (f *fakeRuntimeSkillLister) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]skill.SkillRuntimeRecord, error) {
-	return f.records, nil
+func (f *fakeRuntimeSkillLister) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID, *uuid.UUID) (skill.RuntimeSkillsResult, error) {
+	return skill.RuntimeSkillsResult{Skills: f.records}, nil
 }
 
 // fakeRuntimeMCPLister is a standalone RuntimeMCPLister fake used to project a fixed

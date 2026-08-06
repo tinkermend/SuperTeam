@@ -4032,6 +4032,88 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/mcp-bindings:
+    get:
+      operationId: listProjectMCPBindings
+      summary: List project MCP bindings to registered MCP servers
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project MCP binding list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPBinding"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: putProjectMCPBindings
+      summary: Declaratively replace the project's MCP bindings with the desired set
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutProjectMCPBindingsRequest"
+      responses:
+        "200":
+          description: Project MCP binding list after replacement
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPBinding"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/skill-bindings:
+    get:
+      operationId: listProjectSkillBindings
+      summary: List project skill bindings
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project skill binding list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectSkillBinding"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: putProjectSkillBindings
+      summary: Declaratively replace the project's skill bindings with the desired set
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutProjectSkillBindingsRequest"
+      responses:
+        "200":
+          description: Project skill binding list after replacement
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectSkillBinding"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/digital-employees/{employeeId}/mcp-bindings-v2:
     get:
       operationId: listEmployeeMCPBindingsV2
@@ -12167,6 +12249,7 @@ components:
         - runtime_dependencies
         - team_bindings
         - agent_bindings
+        - project_bindings
       properties:
         id:
           type: string
@@ -12223,6 +12306,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SkillAgentBinding"
+        project_bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkillProjectBinding"
         created_at:
           type: string
           format: date-time
@@ -12234,6 +12321,7 @@ components:
       required:
         - tools
         - env
+        - mcp_servers
       properties:
         tools:
           type: array
@@ -12243,6 +12331,25 @@ components:
           type: array
           items:
             type: string
+        mcp_servers:
+          type: array
+          description: Skill-declared MCP registry dependencies for bind-time closure preview
+          items:
+            $ref: "#/components/schemas/SkillRuntimeMCPServerRef"
+    SkillRuntimeMCPServerRef:
+      type: object
+      required:
+        - mcp_server_id
+        - server_key
+        - server_name
+      properties:
+        mcp_server_id:
+          type: string
+          format: uuid
+        server_key:
+          type: string
+        server_name:
+          type: string
     SkillTeamBinding:
       type: object
       required:
@@ -12253,6 +12360,17 @@ components:
           type: string
           format: uuid
         team_name:
+          type: string
+    SkillProjectBinding:
+      type: object
+      required:
+        - project_id
+        - project_name
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        project_name:
           type: string
     SkillAgentBinding:
       type: object
@@ -12718,6 +12836,7 @@ components:
         - url
         - auth_strategy
         - status
+        - project_bindings
       properties:
         id:
           type: string
@@ -12758,12 +12877,27 @@ components:
           type: string
         status:
           type: string
+        project_bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/MCPProjectBinding"
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+    MCPProjectBinding:
+      type: object
+      required:
+        - project_id
+        - project_name
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        project_name:
+          type: string
     SkillMCPDependency:
       type: object
       required:
@@ -12884,6 +13018,66 @@ components:
           format: uuid
         credential_env_var:
           type: string
+    PutProjectMCPBindingsRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - mcp_server_id
+            properties:
+              mcp_server_id:
+                type: string
+                format: uuid
+              credential_env_var:
+                type: string
+    PutProjectSkillBindingsRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - skill_id
+            properties:
+              skill_id:
+                type: string
+                format: uuid
+    ProjectSkillBinding:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - skill_id
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        skill_id:
+          type: string
+          format: uuid
+        created_by_user_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        skill:
+          $ref: "#/components/schemas/Skill"
     MCPBinding:
       type: object
       required:

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -32,7 +33,10 @@ type Repository interface {
 	BindSkillToEmployee(ctx context.Context, req BindEmployeeSkillRequest) (*Skill, error)
 	UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error
 	ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error)
-	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]SkillRuntimeRecord, error)
+	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) (RuntimeSkillsResult, error)
+	ListProjectSkillBindings(ctx context.Context, req ListProjectSkillBindingsRequest) ([]ProjectSkillBinding, error)
+	ReplaceProjectSkillBindings(ctx context.Context, req PutProjectSkillBindingsRequest) ([]ProjectSkillBinding, error)
+	ListSkillIDsWithAnyProjectBinding(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
 	IsSkillBoundToEmployeeTeam(ctx context.Context, req BindEmployeeSkillRequest) (bool, error)
 	DeleteSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID) error
 }
@@ -49,10 +53,18 @@ type ObjectStore interface {
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
 
+
+// CapabilityBindingEventRecorder records project capability binding changes (best-effort).
+type CapabilityBindingEventRecorder interface {
+	RecordProjectCapabilityBindingChanged(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, bindingKind string, skillIDs []uuid.UUID) error
+}
+
 type Service struct {
-	repository   Repository
-	objectStore  ObjectStore
-	systemConfig systemconfig.Reader
+	repository                 Repository
+	objectStore                ObjectStore
+	systemConfig               systemconfig.Reader
+	skillMCPDependencyChecker  SkillMCPDependencyChecker
+	eventRecorder               CapabilityBindingEventRecorder
 }
 
 func NewService(repository Repository, objectStore ObjectStore) *Service {
@@ -434,17 +446,133 @@ func (s *Service) ListEffectiveEmployeeSkills(ctx context.Context, req ListEffec
 	return s.repository.ListEffectiveEmployeeSkills(ctx, req)
 }
 
-func (s *Service) ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]SkillRuntimeRecord, error) {
+func (s *Service) ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) (RuntimeSkillsResult, error) {
+	if s == nil || s.repository == nil {
+		return RuntimeSkillsResult{}, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if tenantID == uuid.Nil {
+		return RuntimeSkillsResult{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if digitalEmployeeID == uuid.Nil {
+		return RuntimeSkillsResult{}, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID, projectID)
+}
+
+func (s *Service) ListProjectSkillBindings(ctx context.Context, req ListProjectSkillBindingsRequest) ([]ProjectSkillBinding, error) {
 	if s == nil || s.repository == nil {
 		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
 	}
-	if tenantID == uuid.Nil {
-		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	if req.TenantID == uuid.Nil || req.UserID == uuid.Nil || req.ProjectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, user_id and project_id are required", ErrInvalidInput)
 	}
-	if digitalEmployeeID == uuid.Nil {
-		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
+	return s.repository.ListProjectSkillBindings(ctx, req)
+}
+
+// PutProjectSkillBindings validates each skill (exists, artifact present, MCP deps
+// registered) then declaratively replaces the project's skill bindings.
+func (s *Service) PutProjectSkillBindings(ctx context.Context, req PutProjectSkillBindingsRequest) ([]ProjectSkillBinding, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
 	}
-	return s.repository.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
+	if req.TenantID == uuid.Nil || req.UserID == uuid.Nil || req.ProjectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, user_id and project_id are required", ErrInvalidInput)
+	}
+	seen := map[uuid.UUID]struct{}{}
+	for _, item := range req.Items {
+		if item.SkillID == uuid.Nil {
+			return nil, fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+		}
+		if _, dup := seen[item.SkillID]; dup {
+			return nil, fmt.Errorf("%w: duplicate skill_id %s", ErrInvalidInput, item.SkillID)
+		}
+		seen[item.SkillID] = struct{}{}
+		skill, err := s.repository.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: item.SkillID})
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: skill %s not found", ErrInvalidInput, item.SkillID)
+			}
+			return nil, err
+		}
+		if strings.TrimSpace(skill.ArchiveObjectRef) == "" {
+			return nil, fmt.Errorf("%w: skill %s has no installable archive", ErrInvalidInput, item.SkillID)
+		}
+	}
+	// Dependency closure validation: every declared MCP dependency must exist.
+	// Missing deps are named in the error (GATE S2).
+	if err := s.validateSkillMCPDependenciesExist(ctx, req.TenantID, req.Items); err != nil {
+		return nil, err
+	}
+	items, err := s.repository.ReplaceProjectSkillBindings(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if s.eventRecorder != nil {
+		ids := make([]uuid.UUID, 0, len(req.Items))
+		for _, item := range req.Items {
+			ids = append(ids, item.SkillID)
+		}
+		_ = s.eventRecorder.RecordProjectCapabilityBindingChanged(ctx, req.TenantID, req.ProjectID, req.UserID, "skill", ids)
+	}
+	return items, nil
+}
+
+// SkillMCPDependencyChecker is optionally wired for bind-time MCP dependency validation.
+type SkillMCPDependencyChecker interface {
+	ListSkillMCPDependenciesForSkills(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDepRef, error)
+}
+
+// SkillMCPDepRef is a minimal dependency row used at bind-time validation.
+type SkillMCPDepRef struct {
+	SkillID     uuid.UUID
+	MCPServerID uuid.UUID
+	ServerKey   string
+	ServerName  string
+	Missing     bool // true when MCP definition is absent/deleted
+}
+
+func (s *Service) SetSkillMCPDependencyChecker(checker SkillMCPDependencyChecker) {
+	s.skillMCPDependencyChecker = checker
+}
+
+func (s *Service) SetCapabilityBindingEventRecorder(r CapabilityBindingEventRecorder) {
+	s.eventRecorder = r
+}
+
+func (s *Service) validateSkillMCPDependenciesExist(ctx context.Context, tenantID uuid.UUID, items []ProjectSkillBindingInput) error {
+	if s.skillMCPDependencyChecker == nil || len(items) == 0 {
+		return nil
+	}
+	skillIDs := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
+		skillIDs = append(skillIDs, item.SkillID)
+	}
+	deps, err := s.skillMCPDependencyChecker.ListSkillMCPDependenciesForSkills(ctx, tenantID, skillIDs)
+	if err != nil {
+		return err
+	}
+	missing := make([]string, 0)
+	seenMiss := map[string]struct{}{}
+	for _, dep := range deps {
+		if !dep.Missing {
+			continue
+		}
+		label := strings.TrimSpace(dep.ServerKey)
+		if label == "" {
+			label = dep.MCPServerID.String()
+		}
+		key := dep.SkillID.String() + ":" + label
+		if _, ok := seenMiss[key]; ok {
+			continue
+		}
+		seenMiss[key] = struct{}{}
+		missing = append(missing, fmt.Sprintf("skill %s missing MCP dependency %s", dep.SkillID, label))
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	return fmt.Errorf("%w: %s", ErrInvalidInput, strings.Join(missing, "; "))
 }
 
 func (s *Service) ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]string, error) {
@@ -630,7 +758,11 @@ func normalizeRuntimeDependencies(input SkillRuntimeDependencies) (SkillRuntimeD
 	if err != nil {
 		return SkillRuntimeDependencies{}, err
 	}
-	return SkillRuntimeDependencies{Tools: tools, Env: env}, nil
+	mcpServers := input.MCPServers
+	if mcpServers == nil {
+		mcpServers = []SkillRuntimeMCPServerRef{}
+	}
+	return SkillRuntimeDependencies{Tools: tools, Env: env, MCPServers: mcpServers}, nil
 }
 
 func normalizeDependencyList(values []string, pattern *regexp.Regexp, label string) ([]string, error) {

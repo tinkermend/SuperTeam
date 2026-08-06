@@ -24,7 +24,8 @@ type serviceRepo struct {
 	skillMCPDependencies map[uuid.UUID][]SkillMCPDependency // keyed by skill ID
 	effectiveByEmployee  map[uuid.UUID][]EffectiveMCPServer // keyed by digital employee ID
 	existingSkills       map[uuid.UUID]bool                 // keyed by skill ID, for SkillExistsForTenant
-
+	projectServers       []EffectiveMCPServer
+	effectiveServers     []EffectiveMCPServer
 }
 
 func (r *serviceRepo) CreateMCPServerDefinition(_ context.Context, req CreateMCPServerDefinitionRequest) (MCPDefinition, error) {
@@ -101,7 +102,23 @@ func (r *serviceRepo) DeleteEmployeeMCPBindingV2(context.Context, DeleteEmployee
 }
 
 func (r *serviceRepo) ListEffectiveMCPBindingsV2(_ context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error) {
+	if r.effectiveServers != nil {
+		return r.effectiveServers, nil
+	}
 	return r.effectiveByEmployee[req.DigitalEmployeeID], nil
+}
+
+func (r *serviceRepo) PutProjectMCPBindings(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []ProjectMCPBindingInput) ([]MCPBinding, error) {
+	return nil, nil
+}
+func (r *serviceRepo) ListProjectMCPBindings(context.Context, ProjectScopedRequest) ([]MCPBinding, error) {
+	return nil, nil
+}
+func (r *serviceRepo) ListEffectiveProjectMCPServers(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) ([]EffectiveMCPServer, error) {
+	return r.projectServers, nil
+}
+func (r *serviceRepo) ListSkillMCPDependenciesIncludingMissing(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error) {
+	return r.ListSkillMCPDependenciesForSkills(ctx, tenantID, skillIDs)
 }
 
 func (r *serviceRepo) ListConfiguredEmployeeEnvVarNames(context.Context, uuid.UUID, uuid.UUID) ([]string, error) {
@@ -396,35 +413,60 @@ func TestServiceEvaluateEmployeeSkillMCPDependenciesReturnsEmptyWhenEmployeeHasN
 // TestServiceRuntimeProjectionIgnoresProjectID verifies that after project MCP binding
 // retirement, ListEffectiveMCPConfigForRuntime always returns employee-side servers only,
 // regardless of whether a projectID is provided.
-func TestServiceRuntimeProjectionIgnoresProjectID(t *testing.T) {
+func TestServiceRuntimeProjectionMergesProjectMCP(t *testing.T) {
 	tenantID := uuid.New()
 	employeeID := uuid.New()
 	projectID := uuid.New()
-	employeeServerID := uuid.New()
-
-	repo := &serviceRepo{}
-	repo.effectiveByEmployee = map[uuid.UUID][]EffectiveMCPServer{
-		employeeID: {
-			{ServerID: employeeServerID, ServerKey: "search-mcp", CredentialEnvVar: "SEARCH_TOKEN", SourceScope: "employee"},
-		},
+	employeeServer := EffectiveMCPServer{ServerID: uuid.New(), ServerKey: "shared", Name: "Employee Shared", SourceScope: "employee"}
+	projectServer := EffectiveMCPServer{ServerID: uuid.New(), ServerKey: "shared", Name: "Project Shared", SourceScope: "project"}
+	projectOnly := EffectiveMCPServer{ServerID: uuid.New(), ServerKey: "project-only", Name: "Project Only", SourceScope: "project"}
+	repo := &serviceRepo{
+		effectiveServers: []EffectiveMCPServer{employeeServer},
+		projectServers:   []EffectiveMCPServer{projectServer, projectOnly},
 	}
 	service := NewService(repo, nil)
 
-	// With projectID provided: should still return only employee side.
 	withProject, err := service.ListEffectiveMCPConfigForRuntime(context.Background(), tenantID, employeeID, &projectID)
 	if err != nil {
-		t.Fatalf("list effective mcp config with project: %v", err)
+		t.Fatalf("with project: %v", err)
 	}
-	if len(withProject) != 1 || withProject[0].ServerID != employeeServerID {
-		t.Fatalf("expected employee-side only, got %#v", withProject)
+	if len(withProject) != 2 {
+		t.Fatalf("expected employee∪project with project win on shared key, got %#v", withProject)
+	}
+	byKey := map[string]EffectiveMCPServer{}
+	for _, s := range withProject {
+		byKey[s.ServerKey] = s
+	}
+	if byKey["shared"].SourceScope != "project" || byKey["shared"].Name != "Project Shared" {
+		t.Fatalf("expected project to win shared key, got %#v", byKey["shared"])
+	}
+	if byKey["project-only"].SourceScope != "project" {
+		t.Fatalf("expected project-only present, got %#v", byKey["project-only"])
 	}
 
-	// Without projectID: same result.
 	withoutProject, err := service.ListEffectiveMCPConfigForRuntime(context.Background(), tenantID, employeeID, nil)
 	if err != nil {
-		t.Fatalf("list effective mcp config without project: %v", err)
+		t.Fatalf("without project: %v", err)
 	}
-	if len(withoutProject) != 1 || withoutProject[0].ServerID != employeeServerID {
-		t.Fatalf("expected employee-side only, got %#v", withoutProject)
+	if len(withoutProject) != 1 || withoutProject[0].SourceScope != "employee" {
+		t.Fatalf("expected employee-only without project, got %#v", withoutProject)
+	}
+}
+
+func TestMergeDependencyClosureMCPServersMarksSource(t *testing.T) {
+	baseID := uuid.New()
+	depID := uuid.New()
+	base := []EffectiveMCPServer{{ServerID: baseID, ServerKey: "base", SourceScope: "employee"}}
+	closure := []EffectiveMCPServer{{ServerID: depID, ServerKey: "dep", SourceScope: "team"}}
+	merged := MergeDependencyClosureMCPServers(base, closure)
+	if len(merged) != 2 {
+		t.Fatalf("expected 2 servers, got %#v", merged)
+	}
+	if merged[1].ServerKey != "dep" || merged[1].SourceScope != "dependency_closure" {
+		t.Fatalf("expected dependency_closure source, got %#v", merged[1])
+	}
+	again := MergeDependencyClosureMCPServers(merged, []EffectiveMCPServer{{ServerID: uuid.New(), ServerKey: "dep", SourceScope: "project"}})
+	if len(again) != 2 {
+		t.Fatalf("expected no duplicate on server_key, got %#v", again)
 	}
 }

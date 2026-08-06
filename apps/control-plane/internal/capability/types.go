@@ -71,6 +71,13 @@ type MCPDefinition struct {
 	CreatedBy          *uuid.UUID
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	ProjectBindings    []MCPProjectBinding
+}
+
+// MCPProjectBinding is a project that has bound this MCP server definition.
+type MCPProjectBinding struct {
+	ProjectID   uuid.UUID
+	ProjectName string
 }
 
 // MCPBinding represents a team or employee binding to a registered MCP definition,
@@ -81,6 +88,7 @@ type MCPBinding struct {
 	TenantID          uuid.UUID
 	TeamID            *uuid.UUID
 	DigitalEmployeeID *uuid.UUID
+	ProjectID         *uuid.UUID
 	MCPServerID       uuid.UUID
 	CredentialEnvVar  string
 	ServerName        string
@@ -145,6 +153,7 @@ type SkillMCPDependency struct {
 	ServerName   string
 	AuthStrategy MCPAuthStrategy
 	RiskLevel    string
+	Missing      bool // true when MCP definition is absent/deleted (bind-time validation)
 }
 
 // DependentSkill is a reverse lookup row: an active skill depending on an MCP definition.
@@ -209,6 +218,27 @@ type DeleteTeamMCPBindingRequest struct {
 	TeamID    uuid.UUID
 	UserID    uuid.UUID
 	BindingID uuid.UUID
+}
+
+type ProjectScopedRequest struct {
+	TenantID  uuid.UUID
+	UserID    uuid.UUID
+	ProjectID uuid.UUID
+}
+
+// ProjectMCPBindingInput is one desired project binding in a declarative replace.
+type ProjectMCPBindingInput struct {
+	MCPServerID      uuid.UUID
+	CredentialEnvVar string
+}
+
+// PutProjectMCPBindingsRequest declaratively replaces a project's MCP bindings
+// with the desired set. Items may be empty to clear all bindings.
+type PutProjectMCPBindingsRequest struct {
+	TenantID  uuid.UUID
+	ProjectID uuid.UUID
+	UserID    uuid.UUID
+	Items     []ProjectMCPBindingInput
 }
 
 type ListSkillMCPDependenciesRequest struct {

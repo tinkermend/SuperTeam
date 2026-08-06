@@ -293,6 +293,13 @@ func (s *routeCapabilityService) EvaluateEmployeeSkillMCPDependencies(ctx contex
 	return nil, nil
 }
 
+func (s *routeCapabilityService) ListProjectMCPBindings(context.Context, capability.ProjectScopedRequest) ([]capability.MCPBinding, error) {
+	return nil, nil
+}
+func (s *routeCapabilityService) PutProjectMCPBindings(context.Context, capability.PutProjectMCPBindingsRequest) ([]capability.MCPBinding, error) {
+	return nil, nil
+}
+
 func TestTeamRoutesRequireConsoleAuth(t *testing.T) {
 	service := &routeTeamService{}
 	server := NewServer(

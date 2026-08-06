@@ -200,6 +200,7 @@ type ProjectEventType string
 const (
 	ProjectEventCreated         ProjectEventType = "project.created"
 	ProjectEventConfigChanged   ProjectEventType = "project.config.changed"
+	ProjectEventCapabilityBindingChanged ProjectEventType = "project.capability_binding.changed"
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventUnarchived      ProjectEventType = "project.unarchived"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"

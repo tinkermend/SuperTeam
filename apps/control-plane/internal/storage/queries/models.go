@@ -1260,6 +1260,30 @@ type ProjectExecutionSummary struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+// 项目对注册表 MCP 的绑定：任务运行时与员工侧集合并集投影，同 server_key 项目侧优先；依赖闭包补全的 MCP 另标 source=dependency_closure
+type ProjectMcpBinding struct {
+	// 项目 MCP 绑定主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 绑定所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 绑定所属项目 ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 引用的注册表 MCP 定义 ID
+	McpServerID uuid.UUID `json:"mcp_server_id"`
+	// 该绑定使用的凭据环境变量名，值由数字员工环境变量提供
+	CredentialEnvVar pgtype.Text `json:"credential_env_var"`
+	// 绑定扩展元数据 JSON
+	Metadata []byte `json:"metadata"`
+	// 绑定软删除时间
+	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
+	// 创建绑定的用户 ID
+	CreatedBy uuid.NullUUID `json:"created_by"`
+	// 绑定创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 绑定更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // 项目成员与数字员工池
 type ProjectMember struct {
 	// 项目成员记录ID
@@ -1457,6 +1481,22 @@ type ProjectRuntimeNode struct {
 	ProjectID     uuid.UUID          `json:"project_id"`
 	RuntimeNodeID uuid.UUID          `json:"runtime_node_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+// 项目技能绑定：同时表达场地限定与场地供给（见能力供给三层模型 §4.2）
+type ProjectSkillBinding struct {
+	// 项目技能绑定主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 绑定所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 绑定所属项目 ID
+	ProjectID uuid.UUID `json:"project_id"`
+	// 绑定的技能 ID
+	SkillID uuid.UUID `json:"skill_id"`
+	// 创建绑定的用户 ID
+	CreatedByUserID uuid.NullUUID `json:"created_by_user_id"`
+	// 绑定创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // 项目内可分派、可执行的工作项

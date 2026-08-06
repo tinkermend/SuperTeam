@@ -1759,6 +1759,35 @@ func (s *Service) ListProjectTaskLiveness(ctx context.Context, tenantID, project
 	return items, nil
 }
 
+func (s *Service) RecordCapabilityBindingChanged(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, bindingKind string, resourceIDs []uuid.UUID) error {
+	if s == nil || s.repository == nil {
+		return fmt.Errorf("project service is not configured")
+	}
+	ids := make([]string, 0, len(resourceIDs))
+	for _, id := range resourceIDs {
+		ids = append(ids, id.String())
+	}
+	summary := "更新了项目能力绑定"
+	if bindingKind == "skill" {
+		summary = "更新了项目技能绑定"
+	} else if bindingKind == "mcp" {
+		summary = "更新了项目 MCP 绑定"
+	}
+	_, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		EventType: ProjectEventCapabilityBindingChanged,
+		ActorType: "user",
+		ActorID:   actorUserID.String(),
+		Summary:   summary,
+		Payload: map[string]any{
+			"binding_kind": bindingKind,
+			"resource_ids": ids,
+		},
+	})
+	return err
+}
+
 func (s *Service) ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject

@@ -32,6 +32,8 @@ type HandlerService interface {
 	UnbindSkillFromEmployee(ctx context.Context, req BindEmployeeSkillRequest) error
 	ListEffectiveEmployeeSkills(ctx context.Context, req ListEffectiveEmployeeSkillsRequest) ([]EffectiveEmployeeSkill, error)
 	InstallSkill(ctx context.Context, req InstallSkillRequest) (InstallSkillResult, error)
+	ListProjectSkillBindings(ctx context.Context, req ListProjectSkillBindingsRequest) ([]ProjectSkillBinding, error)
+	PutProjectSkillBindings(ctx context.Context, req PutProjectSkillBindingsRequest) ([]ProjectSkillBinding, error)
 }
 
 type HTTPHandler struct {
@@ -430,10 +432,11 @@ type skillResponse struct {
 	RuntimeDependencies SkillRuntimeDependencies    `json:"runtime_dependencies"`
 	CreatedBy           string                      `json:"created_by"`
 	CreatedByName       string                      `json:"created_by_name"`
-	TeamBindings        []skillTeamBindingResponse  `json:"team_bindings"`
-	AgentBindings       []skillAgentBindingResponse `json:"agent_bindings"`
-	CreatedAt           string                      `json:"created_at,omitempty"`
-	UpdatedAt           string                      `json:"updated_at,omitempty"`
+	TeamBindings        []skillTeamBindingResponse    `json:"team_bindings"`
+	AgentBindings       []skillAgentBindingResponse   `json:"agent_bindings"`
+	ProjectBindings     []skillProjectBindingResponse `json:"project_bindings"`
+	CreatedAt           string                        `json:"created_at,omitempty"`
+	UpdatedAt           string                        `json:"updated_at,omitempty"`
 }
 
 type skillTeamBindingResponse struct {
@@ -524,6 +527,7 @@ func skillResponseFromDomain(item *Skill) skillResponse {
 		CreatedByName:       item.CreatedByName,
 		TeamBindings:        skillTeamBindingResponses(item.TeamBindings),
 		AgentBindings:       skillAgentBindingResponses(item.AgentBindings),
+		ProjectBindings:     skillProjectBindingResponses(item.ProjectBindings),
 		CreatedAt:           formatTime(item.CreatedAt),
 		UpdatedAt:           formatTime(item.UpdatedAt),
 	}
@@ -564,12 +568,35 @@ func skillAgentBindingResponses(bindings []*SkillAgentBinding) []skillAgentBindi
 	return responses
 }
 
+type skillProjectBindingResponse struct {
+	ProjectID   string `json:"project_id"`
+	ProjectName string `json:"project_name"`
+}
+
+func skillProjectBindingResponses(items []*SkillProjectBinding) []skillProjectBindingResponse {
+	out := make([]skillProjectBindingResponse, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		out = append(out, skillProjectBindingResponse{
+			ProjectID:   item.ProjectID.String(),
+			ProjectName: item.ProjectName,
+		})
+	}
+	return out
+}
+
+
 func runtimeDependenciesForResponse(deps SkillRuntimeDependencies) SkillRuntimeDependencies {
 	if deps.Tools == nil {
 		deps.Tools = []string{}
 	}
 	if deps.Env == nil {
 		deps.Env = []string{}
+	}
+	if deps.MCPServers == nil {
+		deps.MCPServers = []SkillRuntimeMCPServerRef{}
 	}
 	return deps
 }
@@ -704,6 +731,127 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
 }
+
+
+func (h *HTTPHandler) ListProjectSkillBindings(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := projectIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionProjectConfigRead, authz.ResourceRef{Type: authz.ResourceProject, ID: projectID.String()}, "project skill binding read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	items, err := service.ListProjectSkillBindings(r.Context(), ListProjectSkillBindingsRequest{
+		TenantID:  tenantID,
+		UserID:    middleware.GetUserID(r.Context()),
+		ProjectID: projectID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectSkillBindingResponses(items))
+}
+
+func (h *HTTPHandler) PutProjectSkillBindings(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := projectIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionProjectConfigEdit, authz.ResourceRef{Type: authz.ResourceProject, ID: projectID.String()}, "project skill binding write")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body struct {
+		Items *[]struct {
+			SkillID string `json:"skill_id"`
+		} `json:"items"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Items == nil {
+		http.Error(w, "items is required", http.StatusBadRequest)
+		return
+	}
+	items := make([]ProjectSkillBindingInput, 0, len(*body.Items))
+	for _, raw := range *body.Items {
+		skillID, err := uuid.Parse(strings.TrimSpace(raw.SkillID))
+		if err != nil {
+			http.Error(w, "invalid skill_id", http.StatusBadRequest)
+			return
+		}
+		items = append(items, ProjectSkillBindingInput{SkillID: skillID})
+	}
+	bound, err := service.PutProjectSkillBindings(r.Context(), PutProjectSkillBindingsRequest{
+		TenantID:  tenantID,
+		UserID:    middleware.GetUserID(r.Context()),
+		ProjectID: projectID,
+		Items:     items,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectSkillBindingResponses(bound))
+}
+
+func projectIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	raw := strings.TrimSpace(chi.URLParam(r, "projectId"))
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		http.Error(w, "invalid project id", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+func projectSkillBindingResponses(items []ProjectSkillBinding) []projectSkillBindingResponse {
+	out := make([]projectSkillBindingResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, projectSkillBindingResponseFromDomain(item))
+	}
+	return out
+}
+
+type projectSkillBindingResponse struct {
+	ID              string         `json:"id"`
+	TenantID        string         `json:"tenant_id"`
+	ProjectID       string         `json:"project_id"`
+	SkillID         string         `json:"skill_id"`
+	CreatedByUserID string         `json:"created_by_user_id,omitempty"`
+	CreatedAt       string         `json:"created_at,omitempty"`
+	Skill           *skillResponse `json:"skill,omitempty"`
+}
+
+func projectSkillBindingResponseFromDomain(item ProjectSkillBinding) projectSkillBindingResponse {
+	resp := projectSkillBindingResponse{
+		ID:        item.ID.String(),
+		TenantID:  item.TenantID.String(),
+		ProjectID: item.ProjectID.String(),
+		SkillID:   item.SkillID.String(),
+		CreatedAt: formatTime(item.CreatedAt),
+	}
+	if item.CreatedByUserID != nil {
+		resp.CreatedByUserID = item.CreatedByUserID.String()
+	}
+	if item.Skill != nil {
+		sr := skillResponseFromDomain(item.Skill)
+		resp.Skill = &sr
+	}
+	return resp
+}
+
 
 func writeHandlerError(w http.ResponseWriter, err error) {
 	// 结构化 coded error 优先（apierror 约定）：命中即输出 {code, message} JSON。

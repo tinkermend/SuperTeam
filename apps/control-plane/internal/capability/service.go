@@ -35,6 +35,9 @@ type Repository interface {
 	ListEmployeeMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]MCPBinding, error)
 	DeleteEmployeeMCPBindingV2(ctx context.Context, req DeleteEmployeeMCPBindingV2Request) error
 	ListEffectiveMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error)
+	PutProjectMCPBindings(ctx context.Context, tenantID, projectID, createdBy uuid.UUID, items []ProjectMCPBindingInput) ([]MCPBinding, error)
+	ListProjectMCPBindings(ctx context.Context, req ProjectScopedRequest) ([]MCPBinding, error)
+	ListEffectiveProjectMCPServers(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) ([]EffectiveMCPServer, error)
 	ListConfiguredEmployeeEnvVarNames(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]string, error)
 
 	// Skill <-> MCP registry dependency declarations (migration 062).
@@ -43,6 +46,7 @@ type Repository interface {
 	ReplaceSkillMCPDependencies(ctx context.Context, tenantID, skillID uuid.UUID, items []SkillMCPDependencyInput) ([]SkillMCPDependency, error)
 	ListDependentSkills(ctx context.Context, tenantID, serverID uuid.UUID) ([]DependentSkill, error)
 	ListSkillMCPDependenciesForSkills(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error)
+	ListSkillMCPDependenciesIncludingMissing(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error)
 }
 
 // EmployeeRuntimeSkillLister resolves the runtime-effective skill set for a digital employee.
@@ -52,10 +56,16 @@ type EmployeeRuntimeSkillLister interface {
 	ListEmployeeRuntimeSkillRefs(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID) ([]RuntimeSkillRef, error)
 }
 
+// CapabilityBindingEventRecorder records project capability binding changes (best-effort).
+type CapabilityBindingEventRecorder interface {
+	RecordProjectCapabilityBindingChanged(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, bindingKind string, resourceIDs []uuid.UUID) error
+}
+
 type Service struct {
 	repository                 Repository
 	sealer                     CredentialSealer
 	employeeRuntimeSkillLister EmployeeRuntimeSkillLister
+	eventRecorder              CapabilityBindingEventRecorder
 }
 
 func NewService(repository Repository, sealer CredentialSealer) *Service {
@@ -66,6 +76,10 @@ func NewService(repository Repository, sealer CredentialSealer) *Service {
 // EvaluateEmployeeSkillMCPDependencies. Optional: if unset, that method returns an empty result.
 func (s *Service) SetEmployeeRuntimeSkillLister(l EmployeeRuntimeSkillLister) {
 	s.employeeRuntimeSkillLister = l
+}
+
+func (s *Service) SetCapabilityBindingEventRecorder(r CapabilityBindingEventRecorder) {
+	s.eventRecorder = r
 }
 
 // CreateMCPServerDefinition registers a tenant-level MCP HTTP definition after enforcing
@@ -195,6 +209,27 @@ func (s *Service) ListDependentSkills(ctx context.Context, req ListDependentSkil
 
 // ListSkillMCPDependenciesForRuntime skips user validation: it serves the run-service
 // dispatch gate, mirroring ListEffectiveMCPConfigForRuntime.
+// GetMCPServerDefinitionForRuntime loads an MCP definition without console user validation.
+func (s *Service) GetMCPServerDefinitionForRuntime(ctx context.Context, tenantID, serverID uuid.UUID) (MCPDefinition, error) {
+	if err := s.requireRepository(); err != nil {
+		return MCPDefinition{}, err
+	}
+	if tenantID == uuid.Nil || serverID == uuid.Nil {
+		return MCPDefinition{}, fmt.Errorf("%w: tenant_id and server_id are required", ErrInvalidInput)
+	}
+	return s.repository.GetMCPServerDefinition(ctx, tenantID, serverID)
+}
+
+func (s *Service) ListSkillMCPDependenciesIncludingMissing(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if tenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListSkillMCPDependenciesIncludingMissing(ctx, tenantID, skillIDs)
+}
+
 func (s *Service) ListSkillMCPDependenciesForRuntime(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error) {
 	if err := s.requireRepository(); err != nil {
 		return nil, err
@@ -353,9 +388,10 @@ func (s *Service) ListEffectiveMCPConfig(ctx context.Context, req EmployeeScoped
 }
 
 // ListEffectiveMCPConfigForRuntime resolves effective MCP servers for an employee in a system
-// (runtime) context where there is no console user. It performs the same resolution as
-// ListEffectiveMCPConfig but skips the user-scoped validation. projectID is accepted for
-// backward compatibility but ignored: project-level MCP bindings have been retired.
+// (runtime) context where there is no console user. When projectID is non-nil, project-bound
+// MCP servers are unioned in; same server_key prefers the project side (capability supply
+// three-layer model §5). Dependency-closure MCP entries are merged by the run-service after
+// skill projection (source_scope=dependency_closure).
 func (s *Service) ListEffectiveMCPConfigForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) ([]EffectiveMCPServer, error) {
 	if err := s.requireRepository(); err != nil {
 		return nil, err
@@ -366,10 +402,154 @@ func (s *Service) ListEffectiveMCPConfigForRuntime(ctx context.Context, tenantID
 	if digitalEmployeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: digital_employee_id is required", ErrInvalidInput)
 	}
-	return s.repository.ListEffectiveMCPBindingsV2(ctx, EmployeeScopedRequest{
+	employeeSide, err := s.repository.ListEffectiveMCPBindingsV2(ctx, EmployeeScopedRequest{
 		TenantID:          tenantID,
 		DigitalEmployeeID: digitalEmployeeID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if projectID == nil || *projectID == uuid.Nil {
+		return employeeSide, nil
+	}
+	projectSide, err := s.repository.ListEffectiveProjectMCPServers(ctx, tenantID, *projectID, digitalEmployeeID)
+	if err != nil {
+		return nil, err
+	}
+	return mergeEffectiveMCPServers(employeeSide, projectSide), nil
+}
+
+// PutProjectMCPBindings declaratively replaces a project's MCP bindings after validating each
+// referenced server exists and belongs to the tenant. Empty items clears all bindings.
+func (s *Service) PutProjectMCPBindings(ctx context.Context, req PutProjectMCPBindingsRequest) ([]MCPBinding, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.ProjectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: project_id is required", ErrInvalidInput)
+	}
+	if req.UserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+	seen := map[uuid.UUID]struct{}{}
+	items := make([]ProjectMCPBindingInput, 0, len(req.Items))
+	for _, item := range req.Items {
+		if item.MCPServerID == uuid.Nil {
+			return nil, fmt.Errorf("%w: mcp_server_id is required", ErrInvalidInput)
+		}
+		if _, dup := seen[item.MCPServerID]; dup {
+			return nil, fmt.Errorf("%w: duplicate mcp_server_id %s", ErrInvalidInput, item.MCPServerID)
+		}
+		seen[item.MCPServerID] = struct{}{}
+		if err := validateCredentialEnvVar(item.CredentialEnvVar); err != nil {
+			return nil, err
+		}
+		if _, err := s.requireActiveMCPDefinition(ctx, req.TenantID, item.MCPServerID); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("%w: mcp server %s not found", ErrInvalidInput, item.MCPServerID)
+			}
+			return nil, err
+		}
+		item.CredentialEnvVar = strings.TrimSpace(item.CredentialEnvVar)
+		items = append(items, item)
+	}
+	bound, err := s.repository.PutProjectMCPBindings(ctx, req.TenantID, req.ProjectID, req.UserID, items)
+	if err != nil {
+		return nil, err
+	}
+	if s.eventRecorder != nil {
+		ids := make([]uuid.UUID, 0, len(items))
+		for _, item := range items {
+			ids = append(ids, item.MCPServerID)
+		}
+		_ = s.eventRecorder.RecordProjectCapabilityBindingChanged(ctx, req.TenantID, req.ProjectID, req.UserID, "mcp", ids)
+	}
+	return bound, nil
+}
+
+func (s *Service) ListProjectMCPBindings(ctx context.Context, req ProjectScopedRequest) ([]MCPBinding, error) {
+	if err := s.requireRepository(); err != nil {
+		return nil, err
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.UserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+	if req.ProjectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: project_id is required", ErrInvalidInput)
+	}
+	return s.repository.ListProjectMCPBindings(ctx, req)
+}
+
+// mergeEffectiveMCPServers unions employee-side and project-side MCP sets. Same server_key
+// prefers project. Project-only keys are appended after employee order is preserved for
+// non-overridden entries.
+func mergeEffectiveMCPServers(employeeSide, projectSide []EffectiveMCPServer) []EffectiveMCPServer {
+	byKey := make(map[string]EffectiveMCPServer, len(employeeSide)+len(projectSide))
+	order := make([]string, 0, len(employeeSide)+len(projectSide))
+	for _, server := range employeeSide {
+		key := strings.TrimSpace(server.ServerKey)
+		if key == "" {
+			key = server.ServerID.String()
+		}
+		if _, exists := byKey[key]; !exists {
+			order = append(order, key)
+		}
+		byKey[key] = server
+	}
+	for _, server := range projectSide {
+		key := strings.TrimSpace(server.ServerKey)
+		if key == "" {
+			key = server.ServerID.String()
+		}
+		if _, exists := byKey[key]; !exists {
+			order = append(order, key)
+		}
+		// project always wins on collision
+		byKey[key] = server
+	}
+	out := make([]EffectiveMCPServer, 0, len(order))
+	for _, key := range order {
+		out = append(out, byKey[key])
+	}
+	return out
+}
+
+// MergeDependencyClosureMCPServers appends MCP servers required by projected skills that are
+// not already present. Added entries keep source_scope=dependency_closure for audit.
+func MergeDependencyClosureMCPServers(base []EffectiveMCPServer, closure []EffectiveMCPServer) []EffectiveMCPServer {
+	if len(closure) == 0 {
+		return base
+	}
+	present := make(map[uuid.UUID]struct{}, len(base))
+	presentKey := make(map[string]struct{}, len(base))
+	for _, server := range base {
+		present[server.ServerID] = struct{}{}
+		if key := strings.TrimSpace(server.ServerKey); key != "" {
+			presentKey[key] = struct{}{}
+		}
+	}
+	out := append([]EffectiveMCPServer{}, base...)
+	for _, server := range closure {
+		if _, ok := present[server.ServerID]; ok {
+			continue
+		}
+		if key := strings.TrimSpace(server.ServerKey); key != "" {
+			if _, ok := presentKey[key]; ok {
+				continue
+			}
+			presentKey[key] = struct{}{}
+		}
+		present[server.ServerID] = struct{}{}
+		server.SourceScope = "dependency_closure"
+		out = append(out, server)
+	}
+	return out
 }
 
 // EvaluateEmployeeSkillMCPDependencies is the employee panel data source: for each skill

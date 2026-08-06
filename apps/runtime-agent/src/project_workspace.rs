@@ -607,6 +607,116 @@ fn materialize_git_worktree(
     Ok(())
 }
 
+
+/// Shield projected capability paths from git visibility (capability supply three-layer §7).
+/// Prefer `.git/info/exclude` (local, not committed). Tracked paths fall back to skip-worktree.
+/// Idempotent: existing exclude lines are skipped. No-op when workspace is not a git work tree.
+pub fn shield_projected_capability_paths(
+    workspace_path: &Path,
+    provider_type: &str,
+    skill_keys: &[String],
+) -> Result<()> {
+    let is_repo = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(workspace_path)
+        .output()
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true")
+        .unwrap_or(false);
+    if !is_repo {
+        return Ok(());
+    }
+
+    let mut patterns: Vec<String> = Vec::new();
+    if let Ok(skills_rel) = provider_skills_rel(provider_type) {
+        for key in skill_keys {
+            patterns.push(format!("{skills_rel}/{key}"));
+        }
+        if !skill_keys.is_empty() {
+            // Ignore the skills root so empty-dir / residual entries do not surface as ?? .claude/
+            patterns.push(format!("{skills_rel}/"));
+        }
+    }
+    // Session MCP lives under .superteam/sessions/{cmd}/mcp (current); legacy
+    // task projection used .superteam/mcp/. Exclude the whole tree so neither
+    // pollutes git status (S10).
+    patterns.push(".superteam/".to_string());
+    patterns.push(".superteam/**".to_string());
+
+    append_git_info_exclude(workspace_path, &patterns)?;
+
+    for pattern in &patterns {
+        let rel = pattern.trim_end_matches('/');
+        let candidate = workspace_path.join(rel);
+        if candidate.exists() {
+            let _ = run_git(
+                workspace_path,
+                &[
+                    OsString::from("update-index"),
+                    OsString::from("--skip-worktree"),
+                    OsString::from(rel),
+                ],
+            );
+        }
+    }
+    Ok(())
+}
+
+fn append_git_info_exclude(workspace_path: &Path, patterns: &[String]) -> Result<()> {
+    let exclude_path = {
+        let out = Command::new("git")
+            .args(["rev-parse", "--git-path", "info/exclude"])
+            .current_dir(workspace_path)
+            .output()
+            .with_context(|| format!("resolve git info/exclude in {}", workspace_path.display()))?;
+        if out.status.success() {
+            let rel = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let p = PathBuf::from(&rel);
+            if p.is_absolute() {
+                p
+            } else {
+                workspace_path.join(p)
+            }
+        } else {
+            workspace_path.join(".git/info/exclude")
+        }
+    };
+    if let Some(parent) = exclude_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create {}", parent.display()))?;
+    }
+    let existing = std::fs::read_to_string(&exclude_path).unwrap_or_default();
+    let existing_set: std::collections::BTreeSet<&str> = existing
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut additions = Vec::new();
+    for pattern in patterns {
+        let p = pattern.trim();
+        if p.is_empty() || existing_set.contains(p) {
+            continue;
+        }
+        additions.push(p.to_string());
+    }
+    if additions.is_empty() {
+        return Ok(());
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&exclude_path)
+        .with_context(|| format!("open {}", exclude_path.display()))?;
+    use std::io::Write;
+    if !existing.is_empty() && !existing.ends_with('\n') {
+        writeln!(file)?;
+    }
+    writeln!(file, "# superteam projected capabilities (do not commit)")?;
+    for pattern in additions {
+        writeln!(file, "{pattern}")?;
+    }
+    Ok(())
+}
+
 /// 用 skip-worktree + 删除屏蔽仓库原生配置:文件从工作区消失,而 git
 /// status/diff 对该路径保持沉默——不弄脏 worktree,不污染 diff 证据链。
 /// 幂等:重放/续聊时文件已不在则跳过。
@@ -1444,4 +1554,67 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+
+    #[test]
+    fn shield_projected_capability_paths_excludes_from_git_status() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        run_git(&repo, &[OsString::from("init")]).unwrap();
+        run_git(
+            &repo,
+            &[
+                OsString::from("config"),
+                OsString::from("user.email"),
+                OsString::from("test@example.com"),
+            ],
+        )
+        .unwrap();
+        run_git(
+            &repo,
+            &[
+                OsString::from("config"),
+                OsString::from("user.name"),
+                OsString::from("test"),
+            ],
+        )
+        .unwrap();
+        // tracked base file
+        std::fs::write(repo.join("README.md"), "hi\n").unwrap();
+        run_git(&repo, &[OsString::from("add"), OsString::from("README.md")]).unwrap();
+        run_git(
+            &repo,
+            &[
+                OsString::from("commit"),
+                OsString::from("-m"),
+                OsString::from("init"),
+            ],
+        )
+        .unwrap();
+
+        let skills = repo.join(".claude/skills/demo");
+        std::fs::create_dir_all(&skills).unwrap();
+        std::fs::write(skills.join("SKILL.md"), "x\n").unwrap();
+        std::fs::create_dir_all(repo.join(".superteam/mcp")).unwrap();
+        std::fs::write(repo.join(".superteam/mcp/claude.mcp.json"), "{}\n").unwrap();
+
+        shield_projected_capability_paths(&repo, "claude-code", &["demo".to_string()]).unwrap();
+
+        let status = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(status.status.success());
+        let porcelain = String::from_utf8_lossy(&status.stdout);
+        assert!(
+            !porcelain.contains(".claude/skills/demo"),
+            "skill path must be excluded: {porcelain}"
+        );
+        assert!(
+            !porcelain.contains(".superteam"),
+            "superteam projection path must be excluded: {porcelain}"
+        );
+    }
+
 }

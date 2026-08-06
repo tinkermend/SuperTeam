@@ -60,24 +60,62 @@ func (r *PgRepository) ListMCPServerDefinitions(ctx context.Context, req ListMCP
 		return nil, err
 	}
 	definitions := make([]MCPDefinition, 0, len(rows))
+	ids := make([]uuid.UUID, 0, len(rows))
 	for _, row := range rows {
 		definitions = append(definitions, mcpDefinitionFromQuery(row))
+		ids = append(ids, row.ID)
+	}
+	if err := r.attachMCPProjectBindings(ctx, req.TenantID, definitions); err != nil {
+		return nil, err
 	}
 	return definitions, nil
+}
+
+func (r *PgRepository) attachMCPProjectBindings(ctx context.Context, tenantID uuid.UUID, definitions []MCPDefinition) error {
+	if len(definitions) == 0 {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(definitions))
+	index := make(map[uuid.UUID]int, len(definitions))
+	for i, def := range definitions {
+		ids = append(ids, def.ID)
+		index[def.ID] = i
+		definitions[i].ProjectBindings = []MCPProjectBinding{}
+	}
+	rows, err := r.q.ListMCPServerProjectBindings(ctx, queries.ListMCPServerProjectBindingsParams{
+		TenantID:     tenantID,
+		McpServerIds: ids,
+	})
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		i, ok := index[row.McpServerID]
+		if !ok {
+			continue
+		}
+		definitions[i].ProjectBindings = append(definitions[i].ProjectBindings, MCPProjectBinding{
+			ProjectID:   row.ProjectID,
+			ProjectName: row.ProjectName,
+		})
+	}
+	return nil
 }
 
 func (r *PgRepository) GetMCPServerDefinition(ctx context.Context, tenantID, serverID uuid.UUID) (MCPDefinition, error) {
 	if err := r.requireQueries(); err != nil {
 		return MCPDefinition{}, err
 	}
-	row, err := r.q.GetMCPServerDefinition(ctx, queries.GetMCPServerDefinitionParams{
-		TenantID: tenantID,
-		ID:       serverID,
-	})
+	row, err := r.q.GetMCPServerDefinition(ctx, queries.GetMCPServerDefinitionParams{TenantID: tenantID, ID: serverID})
 	if err != nil {
 		return MCPDefinition{}, mapNoRows(err)
 	}
-	return mcpDefinitionFromQuery(row), nil
+	def := mcpDefinitionFromQuery(row)
+	defs := []MCPDefinition{def}
+	if err := r.attachMCPProjectBindings(ctx, tenantID, defs); err != nil {
+		return MCPDefinition{}, err
+	}
+	return defs[0], nil
 }
 
 func (r *PgRepository) DeleteMCPServerDefinition(ctx context.Context, req DeleteMCPServerDefinitionRequest) error {
@@ -376,6 +414,112 @@ func (r *PgRepository) DeleteEmployeeMCPBindingV2(ctx context.Context, req Delet
 	})
 }
 
+
+func (r *PgRepository) PutProjectMCPBindings(ctx context.Context, tenantID, projectID, createdBy uuid.UUID, items []ProjectMCPBindingInput) ([]MCPBinding, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	if err := r.q.SoftDeleteProjectMCPBindingsForProject(ctx, queries.SoftDeleteProjectMCPBindingsForProjectParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	}); err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if _, err := r.q.CreateProjectMCPBinding(ctx, queries.CreateProjectMCPBindingParams{
+			TenantID:         tenantID,
+			ProjectID:        projectID,
+			McpServerID:      item.MCPServerID,
+			CredentialEnvVar: textFromString(item.CredentialEnvVar),
+			Metadata:         nil,
+			CreatedBy:        nullUUIDFromValue(createdBy),
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return r.ListProjectMCPBindings(ctx, ProjectScopedRequest{TenantID: tenantID, ProjectID: projectID})
+}
+
+func (r *PgRepository) ListProjectMCPBindings(ctx context.Context, req ProjectScopedRequest) ([]MCPBinding, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	rows, err := r.q.ListProjectMCPBindings(ctx, queries.ListProjectMCPBindingsParams{
+		TenantID:  req.TenantID,
+		ProjectID: req.ProjectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	bindings := make([]MCPBinding, 0, len(rows))
+	for _, row := range rows {
+		projectID := row.ProjectID
+		bindings = append(bindings, MCPBinding{
+			ID:               row.ID,
+			TenantID:         row.TenantID,
+			ProjectID:        &projectID,
+			MCPServerID:      row.McpServerID,
+			CredentialEnvVar: row.CredentialEnvVar.String,
+			ServerName:       row.ServerName,
+			ServerKey:        row.ServerKey,
+			URL:              row.Url,
+			Transport:        MCPTransport(row.Transport),
+			AuthStrategy:     MCPAuthStrategy(row.AuthStrategy),
+			RequiredEnvVars:  row.RequiredEnvVars,
+			RiskLevel:        row.RiskLevel,
+			SourceScope:      "project",
+			CreatedAt:        timeFromTimestamptz(row.CreatedAt),
+			UpdatedAt:        timeFromTimestamptz(row.UpdatedAt),
+		})
+	}
+	return bindings, nil
+}
+
+// ListEffectiveProjectMCPServers resolves project-bound MCP servers for runtime projection.
+// MissingEnvVars uses the target employee's configured env set — same filter as employee side.
+func (r *PgRepository) ListEffectiveProjectMCPServers(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) ([]EffectiveMCPServer, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	rows, err := r.q.ListEffectiveProjectMCPBindingsForRuntime(ctx, queries.ListEffectiveProjectMCPBindingsForRuntimeParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	configured, err := r.q.ListConfiguredEmployeeEnvVarNames(ctx, queries.ListConfiguredEmployeeEnvVarNamesParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: digitalEmployeeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	configuredSet := make(map[string]struct{}, len(configured))
+	for _, name := range configured {
+		configuredSet[name] = struct{}{}
+	}
+	servers := make([]EffectiveMCPServer, 0, len(rows))
+	for _, row := range rows {
+		server := EffectiveMCPServer{
+			ServerID:         row.ServerID,
+			ServerKey:        row.ServerKey,
+			Name:             row.Name,
+			Transport:        MCPTransport(row.Transport),
+			URL:              row.Url,
+			AuthStrategy:     MCPAuthStrategy(row.AuthStrategy),
+			CredentialEnvVar: row.CredentialEnvVar.String,
+			RequiredEnvVars:  row.RequiredEnvVars,
+			ToolAllowlist:    row.ToolAllowlist,
+			RiskLevel:        row.RiskLevel,
+			SourceScope:      row.SourceScope,
+		}
+		server.MissingEnvVars = missingFromSet(row.RequiredEnvVars, configuredSet)
+		servers = append(servers, server)
+	}
+	return servers, nil
+}
+
 func (r *PgRepository) ListEffectiveMCPBindingsV2(ctx context.Context, req EmployeeScopedRequest) ([]EffectiveMCPServer, error) {
 	if err := r.requireQueries(); err != nil {
 		return nil, err
@@ -551,6 +695,26 @@ func (r *PgRepository) ListSkillMCPDependenciesForSkills(ctx context.Context, te
 	}
 	return deps, nil
 }
+func (r *PgRepository) ListSkillMCPDependenciesIncludingMissing(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]SkillMCPDependency, error) {
+	if err := r.requireQueries(); err != nil {
+		return nil, err
+	}
+	if len(skillIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.q.ListSkillMCPDependenciesIncludingMissing(ctx, queries.ListSkillMCPDependenciesIncludingMissingParams{TenantID: tenantID, SkillIds: skillIDs})
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]SkillMCPDependency, 0, len(rows))
+	for _, row := range rows {
+		dep := skillMCPDependencyFromRow(row.ID, row.TenantID, row.SkillID, row.McpServerID, row.Note, timeFromTimestamptz(row.CreatedAt), row.ServerKey, row.ServerName, row.AuthStrategy, row.RiskLevel)
+		dep.Missing = row.Missing
+		deps = append(deps, dep)
+	}
+	return deps, nil
+}
+
 
 func skillMCPDependencyFromRow(id, tenantID, skillID, serverID uuid.UUID, note string, createdAt time.Time, serverKey, serverName, authStrategy, riskLevel string) SkillMCPDependency {
 	return SkillMCPDependency{

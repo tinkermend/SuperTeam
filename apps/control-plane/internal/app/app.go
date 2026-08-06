@@ -117,8 +117,7 @@ func (a runtimeMCPListerAdapter) ListRuntimeMCPServersForRuntime(ctx context.Con
 	if a.capability == nil {
 		return nil, nil
 	}
-	// projectID 保留调用签名兼容，但已退役项目级 MCP 绑定（spec 2026-07-22），
-	// 投影仅为员工侧（团队继承 ∪ 个人绑定）；真实项目 MCP 来自仓库 .mcp.json。
+	// projectID 非 nil 时并入项目级 MCP 绑定（同 server_key 项目侧优先）。
 	effective, err := a.capability.ListEffectiveMCPConfigForRuntime(ctx, tenantID, digitalEmployeeID, projectID)
 	if err != nil {
 		return nil, err
@@ -153,6 +152,68 @@ type skillMCPDependencyListerAdapter struct {
 	capability *capability.Service
 }
 
+type runtimeMCPDefinitionResolverAdapter struct {
+	capability *capability.Service
+}
+
+func (a runtimeMCPDefinitionResolverAdapter) ResolveRuntimeMCPServer(ctx context.Context, tenantID, serverID uuid.UUID) (*employee.RuntimeMCPServerPayload, error) {
+	if a.capability == nil {
+		return nil, nil
+	}
+	def, err := a.capability.GetMCPServerDefinitionForRuntime(ctx, tenantID, serverID)
+	if err != nil {
+		return nil, err
+	}
+	return &employee.RuntimeMCPServerPayload{
+		ServerID:         def.ID.String(),
+		ServerKey:        def.ServerKey,
+		Name:             def.Name,
+		Transport:        string(def.Transport),
+		URL:              def.URL,
+		AuthStrategy:     string(def.AuthStrategy),
+		RequiredEnvVars:  def.RequiredEnvVars,
+		SourceScope:      "dependency_closure",
+		PermissionScope:  map[string]any{"tool_allowlist": def.ToolAllowlist},
+	}, nil
+}
+
+
+type projectCapabilityBindingEventRecorder struct {
+	projects *project.Service
+}
+
+func (r projectCapabilityBindingEventRecorder) RecordProjectCapabilityBindingChanged(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, bindingKind string, resourceIDs []uuid.UUID) error {
+	if r.projects == nil {
+		return nil
+	}
+	return r.projects.RecordCapabilityBindingChanged(ctx, tenantID, projectID, actorUserID, bindingKind, resourceIDs)
+}
+
+type skillMCPDependencyCheckerAdapter struct {
+	capability *capability.Service
+}
+
+func (a skillMCPDependencyCheckerAdapter) ListSkillMCPDependenciesForSkills(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]skill.SkillMCPDepRef, error) {
+	if a.capability == nil {
+		return nil, nil
+	}
+	deps, err := a.capability.ListSkillMCPDependenciesIncludingMissing(ctx, tenantID, skillIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]skill.SkillMCPDepRef, 0, len(deps))
+	for _, dep := range deps {
+		out = append(out, skill.SkillMCPDepRef{
+			SkillID:     dep.SkillID,
+			MCPServerID: dep.MCPServerID,
+			ServerKey:   dep.ServerKey,
+			ServerName:  dep.ServerName,
+			Missing:     dep.Missing,
+		})
+	}
+	return out, nil
+}
+
 func (a skillMCPDependencyListerAdapter) ListSkillMCPDependenciesForSkills(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) ([]employee.SkillMCPDependencyRecord, error) {
 	if a.capability == nil {
 		return nil, nil
@@ -183,12 +244,13 @@ func (a employeeRuntimeSkillListerAdapter) ListEmployeeRuntimeSkillRefs(ctx cont
 	if a.skills == nil {
 		return nil, nil
 	}
-	records, err := a.skills.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID)
+	// Console panel has no project context — employee-carried only.
+	result, err := a.skills.ListSkillsForRuntime(ctx, tenantID, digitalEmployeeID, nil)
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]capability.RuntimeSkillRef, 0, len(records))
-	for _, record := range records {
+	refs := make([]capability.RuntimeSkillRef, 0, len(result.Skills))
+	for _, record := range result.Skills {
 		refs = append(refs, capability.RuntimeSkillRef{ID: record.ID, Slug: record.Slug})
 	}
 	return refs, nil
@@ -734,7 +796,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	}
 	runService.SetMCPLister(runtimeMCPListerAdapter{capability: capabilityService})
 	runService.SetSkillMCPDependencyLister(skillMCPDependencyListerAdapter{capability: capabilityService})
+	runService.SetMCPDefinitionResolver(runtimeMCPDefinitionResolverAdapter{capability: capabilityService})
 	capabilityService.SetEmployeeRuntimeSkillLister(employeeRuntimeSkillListerAdapter{skills: skillService})
+	skillService.SetSkillMCPDependencyChecker(skillMCPDependencyCheckerAdapter{capability: capabilityService})
+	recorder := projectCapabilityBindingEventRecorder{projects: projectService}
+	skillService.SetCapabilityBindingEventRecorder(recorder)
+	capabilityService.SetCapabilityBindingEventRecorder(recorder)
 
 	authRepository := auth.NewPgRepository(q, stores.Postgres)
 	authService, err := auth.NewService(authRepository, auth.WithCaptchaEnabled(cfg.Auth.CaptchaEnabled))

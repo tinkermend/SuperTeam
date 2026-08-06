@@ -650,8 +650,17 @@ func (r *serviceTestRepository) ListEffectiveEmployeeSkills(context.Context, Lis
 	return r.effectiveSkills, nil
 }
 
-func (r *serviceTestRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID) ([]SkillRuntimeRecord, error) {
+func (r *serviceTestRepository) ListSkillsForRuntime(context.Context, uuid.UUID, uuid.UUID, *uuid.UUID) (RuntimeSkillsResult, error) {
+	return RuntimeSkillsResult{}, nil
+}
+func (r *serviceTestRepository) ListProjectSkillBindings(context.Context, ListProjectSkillBindingsRequest) ([]ProjectSkillBinding, error) {
 	return nil, nil
+}
+func (r *serviceTestRepository) ReplaceProjectSkillBindings(context.Context, PutProjectSkillBindingsRequest) ([]ProjectSkillBinding, error) {
+	return nil, nil
+}
+func (r *serviceTestRepository) ListSkillIDsWithAnyProjectBinding(context.Context, uuid.UUID, []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	return map[uuid.UUID][]uuid.UUID{}, nil
 }
 
 func (r *serviceTestRepository) DeleteSkill(context.Context, DeleteSkillRequest) error {

@@ -468,6 +468,13 @@ func (s *routeSkillService) ListEffectiveEmployeeSkills(_ context.Context, req s
 	}, nil
 }
 
+func (s *routeSkillService) ListProjectSkillBindings(context.Context, skill.ListProjectSkillBindingsRequest) ([]skill.ProjectSkillBinding, error) {
+	return nil, nil
+}
+func (s *routeSkillService) PutProjectSkillBindings(context.Context, skill.PutProjectSkillBindingsRequest) ([]skill.ProjectSkillBinding, error) {
+	return nil, nil
+}
+
 func (s *routeSkillService) InstallSkill(_ context.Context, req skill.InstallSkillRequest) (skill.InstallSkillResult, error) {
 	s.installCalled = true
 	s.installReq = req
