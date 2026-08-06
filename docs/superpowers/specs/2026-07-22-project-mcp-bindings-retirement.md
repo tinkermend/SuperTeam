@@ -1,6 +1,12 @@
 # 项目级 MCP 绑定退役
 
-**状态**: 已落地  
+> ⚠️ **已被 [`2026-08-06-capability-supply-three-layer-design.md`](./2026-08-06-capability-supply-three-layer-design.md) 取代（2026-08-06 人类拍板）。本文两条理由均不成立：**
+> 1. 「该表从未有运行时消费者」与 2026-07-17 的 GATE 证据矛盾——当时真实验证过「员工零 MCP 绑定时工作区 `.superteam/mcp/claude.mcp.json` 为纯项目投影」。
+> 2. 「统一走 `.mcp.json` 文件管理」这条替代路径**至今未兑现**：`providers/claude.rs` 仍带 `--strict-mcp-config`，`project_workspace.rs` 的 `shield_repo_configs` 仍屏蔽 opencode 原生配置。净结果是项目级 MCP 两条路都不通。
+>
+> **不要据本文再次拆除项目级绑定。** 背景与替代方案见新 spec §1.1 / §9.1。
+
+**状态**: **已作废（被 2026-08-06 spec 取代）**  
 **日期**: 2026-07-22  
 
 ## 背景
