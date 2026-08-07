@@ -233,8 +233,14 @@ const DECISION_TYPE_LABELS: Record<string, string> = {
   project_acceptance: "项目验收",
   project_task_acceptance: "任务验收",
   project_task_approval: "任务审批",
+  project_task_budget_approval: "预算审批确认",
   project_task_clarification: "任务澄清",
+  project_task_human_wait: "人工等待",
+  project_task_missing_context: "缺失上下文",
+  project_task_permission: "权限确认",
+  project_task_plan_invalid: "计划失效",
   project_task_recovery: "任务恢复",
+  project_task_runtime_recovery: "运行时恢复",
   route_review: "路由复核",
 };
 

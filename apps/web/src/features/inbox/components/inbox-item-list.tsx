@@ -1,15 +1,17 @@
 import { AlertTriangle, ArrowUpRight, Clock, FileText, Lightbulb } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import {
+  Button,
   IconTile,
   StatusPill,
   WorkSurface,
   type Tone
 } from "@/components/superteam";
-import type { InboxItem } from "@/lib/api/inbox";
+import type { InboxAction, InboxItem, InboxViewMode } from "@/lib/api/inbox";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-time";
 import { decisionTypeLabel, humanTaskKindLabel, missingObjectLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
+import { formatInboxActionLabel } from "./action-format";
 
 export { formatDateTime, formatRelativeTime };
 
@@ -17,6 +19,9 @@ type InboxItemListProps = {
   items: InboxItem[];
   onSelect: (item: InboxItem) => void;
   selectedItemId: string | null;
+  /** 行内主 CTA：打开决策弹窗（不提交），仅 mine + open + 高风险。 */
+  onAction?: (item: InboxItem, action: InboxAction) => void;
+  view?: InboxViewMode;
 };
 
 export const riskLabel: Record<string, string> = {
@@ -106,7 +111,13 @@ export function groupInboxItems(items: InboxItem[]): InboxSection[] {
  * 紧凑列表：每行带风险 accent bar + 图标 + 标题 + 风险pill + 摘要 + 来源·节点 + 时间。
  * 装入 WorkSurface 软壳，保持 v3 脆数据面容器语义。
  */
-export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemListProps) {
+export function InboxItemList({
+  items,
+  onSelect,
+  selectedItemId,
+  onAction,
+  view = "mine",
+}: InboxItemListProps) {
   const highRiskCount = items.filter(
     (item) => item.risk_level === "blocked" || item.risk_level === "high",
   ).length;
@@ -136,6 +147,17 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
           ) : (
             <FileText />
           );
+          const descriptionParagraphs = inboxListDescriptionParagraphs(item);
+          const contextLabel = formatContext(item) ?? formatSourceType(item);
+          // 列表 meta 只渲染真实工作流节点；无节点时不回退 kind（与分组表头恒等重复）。
+          const realNode = formatRealCurrentNode(item);
+          const primaryAction =
+            view === "mine" &&
+            item.status === "open" &&
+            isHighRisk &&
+            onAction
+              ? firstPositiveAction(item)
+              : undefined;
 
           return (
             <div
@@ -181,16 +203,14 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
                     </StatusPill>
                   ) : null}
                 </div>
-                {item.summary ? (
-                  <p className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-ink-2">
-                    {item.summary}
+                {descriptionParagraphs.map((paragraph, index) => (
+                  <p
+                    key={`desc-${index}`}
+                    className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-ink-2"
+                  >
+                    {paragraph}
                   </p>
-                ) : null}
-                {item.why ? (
-                  <p className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-ink-2">
-                    {item.why}
-                  </p>
-                ) : null}
+                ))}
                 <InboxProgressBar progress={readInboxProgress(item)} />
                 <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-ink-3">
                   <StatusPill
@@ -201,12 +221,28 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
                     {formatItemType(item)}
                   </StatusPill>
                   <span className="min-w-0 truncate text-[11px] text-ink-3">
-                    {formatContext(item) ?? formatSourceType(item)} · {formatCurrentNode(item)}
+                    {realNode ? `${contextLabel} · ${realNode}` : contextLabel}
                   </span>
                   <span className="inline-flex items-center gap-1 whitespace-nowrap">
                     <Clock aria-hidden className="size-3" />
                     {formatRelativeTime(item.last_activity_at)}
                   </span>
+                  {primaryAction ? (
+                    <Button
+                      aria-label={`行内决策：${formatInboxActionLabel(primaryAction)}`}
+                      className="h-6 px-2 text-[11px]"
+                      size="sm"
+                      type="button"
+                      variant="primary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelect(item);
+                        onAction?.(item, primaryAction);
+                      }}
+                    >
+                      {formatInboxActionLabel(primaryAction)}
+                    </Button>
+                  ) : null}
                   <Link
                     className="inline-flex w-fit items-center gap-1 font-semibold text-brand-deep hover:text-brand"
                     onClick={(event) => event.stopPropagation()}
@@ -222,7 +258,7 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
   };
 
   return (
-    <WorkSurface className="flex min-h-0 flex-col xl:h-full">
+    <WorkSurface className="flex min-h-0 flex-col @5xl/master-detail:h-full">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-card-soft px-5 py-3.5">
         <span className="text-sm font-bold text-ink">待处理事项</span>
         <div className="flex items-center gap-2">
@@ -248,6 +284,31 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
       </div>
     </WorkSurface>
   );
+}
+
+/** 行内主 CTA：actions[] 中首个 positive/primary 动作。 */
+function firstPositiveAction(item: InboxItem): InboxAction | undefined {
+  const actions = Array.isArray(item.actions) ? item.actions : [];
+  return actions.find((action) => action.tone === "positive" || action.tone === "primary");
+}
+
+/**
+ * 列表说明段落：summary 与 why 并列渲染，但 trim 后相同只保留一段
+ * （服务端未登记 kind 会把 summary 回填到 why，见 humanTaskWhy）。
+ */
+export function inboxListDescriptionParagraphs(
+  item: Pick<InboxItem, "summary" | "why">,
+): string[] {
+  const summaryText = item.summary?.trim() ?? "";
+  const whyText = item.why?.trim() ?? "";
+  const paragraphs: string[] = [];
+  if (summaryText) {
+    paragraphs.push(summaryText);
+  }
+  if (whyText && whyText !== summaryText) {
+    paragraphs.push(whyText);
+  }
+  return paragraphs;
 }
 
 export type InboxProgress = {
@@ -315,10 +376,17 @@ export function readDemandRefs(item: InboxItem): InboxDemandRef[] {
       if (!entry || typeof entry !== "object") continue;
       const record = entry as Record<string, unknown>;
       const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : undefined;
-      const title =
+      const rawTitle =
         typeof record.title === "string" && record.title.trim()
           ? record.title.trim()
-          : (id ?? "");
+          : "";
+      // 标题缺失或等于 id（服务端/历史载荷把 UUID 当 title）时走 D3 兜底，禁止裸 UUID。
+      let title = "";
+      if (rawTitle && rawTitle !== id) {
+        title = rawTitle;
+      } else if (id) {
+        title = missingObjectLabel("demand", id);
+      }
       if (!title) continue;
       const taskTitles: string[] = [];
       if (Array.isArray(record.task_titles)) {
@@ -352,12 +420,20 @@ export function readDemandRefs(item: InboxItem): InboxDemandRef[] {
     readContextText(context, ["primary_demand_id", "demand_id"]) ?? undefined;
   const demandTitle = readContextText(context, ["demand_title"]);
   if (demandTitle || demandId) {
+    let title: string;
+    if (demandTitle && demandTitle !== demandId) {
+      title = demandTitle;
+    } else if (demandId) {
+      title = missingObjectLabel("demand", demandId);
+    } else {
+      title = demandTitle ?? "";
+    }
     return [
       {
         id: demandId,
-        title: demandTitle ?? demandId!,
-        taskTitles: []
-},
+        title,
+        taskTitles: [],
+      },
     ];
   }
   return [];
@@ -415,13 +491,29 @@ export function formatSourceType(item: InboxItem) {
   return sourceTypeLabel[item.source_type] ?? item.source_type;
 }
 
+/**
+ * 只读真实工作流节点字段。列表 meta 用此函数——无值时不渲染节点段，
+ * 避免与分组表头（同 kind）或类型 pill 重复。
+ */
+export function formatRealCurrentNode(item: InboxItem): string | undefined {
+  return readContextText(item.context, [
+    "current_node",
+    "node_title",
+    "workflow_node",
+    "stage",
+  ]);
+}
+
+/**
+ * 详情面板「当前节点」：真实节点优先，再回退 kind / decision_type / itemType。
+ * 详情无分组表头，kind 回退有价值。
+ */
 export function formatCurrentNode(item: InboxItem) {
-  const node = readContextText(item.context, ["current_node", "node_title", "workflow_node", "stage"]);
+  const node = formatRealCurrentNode(item);
   if (node) {
     return node;
   }
-  // §6.1/§12 + F3：meta 行禁止裸英文技术枚举。规范化 kind(§4.2 中文名)优先,再退
-  // decision_type 词表映射,最后 itemType——一律经 status-labels.ts,不留 project_acceptance 之类原文。
+  // §6.1/§12 + F3：禁止裸英文技术枚举。规范化 kind 优先,再退 decision_type,最后 itemType。
   if (item.kind) {
     return humanTaskKindLabel(item.kind);
   }

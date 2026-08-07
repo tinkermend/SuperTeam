@@ -141,7 +141,7 @@ function StatusPill({
 
 /**
  * tone → 顶部色条渐变（对齐 TrendStatCard 的 accentGradient 语言）。
- * loud 时强制用 warn 渐变；mute 保持低调双灰。
+ * mute 保持低调双灰。
  */
 const toneAccentGradient: Record<Tone, string> = {
   brand:    "from-brand    to-brand/40",
@@ -153,11 +153,28 @@ const toneAccentGradient: Record<Tone, string> = {
   artifact: "from-artifact to-artifact/40"
 };
 
+/** loud 底色：按 iconTone 语义，高风险用 danger、阻断用 warn。 */
+const toneLoudSoftBg: Partial<Record<Tone, string>> = {
+  danger: "bg-gradient-to-b from-danger-soft to-card",
+  warn: "bg-gradient-to-b from-warn-soft to-card",
+  ok: "bg-gradient-to-b from-ok-soft to-card",
+  brand: "bg-gradient-to-b from-brand-soft to-card",
+  info: "bg-gradient-to-b from-info-soft to-card",
+};
+
+const toneLoudValueText: Partial<Record<Tone, string>> = {
+  danger: "text-danger",
+  warn: "text-warn",
+  ok: "text-ok",
+  brand: "text-brand",
+  info: "text-info",
+};
+
 /**
  * 概览指标卡。动效对齐数字员工 TrendStatCard：
  * shadow-card 基础阴影 → hover shadow-pop（可感知的深度变化）+ -translate-y-0.5 上浮 + 200ms。
  * 顶部 3px 色条作为视觉锚，与员工卡片保持同一设计语言。
- * loud=需人介入时，色条和数值切换为 warn 色。
+ * loud=需人介入时，色条/底/数值跟随 iconTone（不再一律强制 warn）。
  */
 function MetricCard({
   className,
@@ -178,7 +195,7 @@ function MetricCard({
   loud?: boolean;
   action?: ReactNode;
 }) {
-  const accentTone = loud ? "warn" : iconTone;
+  const accentTone = iconTone;
   return (
     // 裸 div：不走 SoftCard，避免其 shadow-sm 与 shadow-card 并存导致 tailwind-merge
     // 无法解决冲突（自定义 shadow token 不在 merge 内置组）。
@@ -192,7 +209,7 @@ function MetricCard({
         "shadow-card",
         "px-4 py-4",
         "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-pop active:scale-[0.98]",
-        loud && "bg-gradient-to-b from-warn-soft to-card",
+        loud && (toneLoudSoftBg[accentTone] ?? "bg-gradient-to-b from-warn-soft to-card"),
         className,
       )}
     >
@@ -220,7 +237,7 @@ function MetricCard({
       <p
         className={cn(
           "truncate text-[1.875rem] font-bold leading-none tracking-tight tabular-nums",
-          loud && "text-warn",
+          loud && (toneLoudValueText[accentTone] ?? "text-warn"),
         )}
       >
         {value}

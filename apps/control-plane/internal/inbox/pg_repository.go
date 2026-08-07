@@ -160,6 +160,21 @@ func (r *PgRepository) ProjectTaskTitles(ctx context.Context, tenantID uuid.UUID
 	return titles, nil
 }
 
+func (r *PgRepository) DemandTitles(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+	rows, err := r.q.ListInboxDemandTitles(ctx, queries.ListInboxDemandTitlesParams{TenantID: tenantID, Ids: ids})
+	if err != nil {
+		return nil, err
+	}
+	titles := make(map[uuid.UUID]string, len(rows))
+	for _, row := range rows {
+		titles[row.ID] = row.Title
+	}
+	return titles, nil
+}
+
 func (r *PgRepository) UserDisplayName(ctx context.Context, userID uuid.UUID) (string, error) {
 	user, err := r.q.GetUserByID(ctx, userID)
 	if err != nil {

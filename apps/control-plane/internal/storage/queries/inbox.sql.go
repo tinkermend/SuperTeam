@@ -234,6 +234,43 @@ func (q *Queries) GetInboxItemByApprovalSource(ctx context.Context, arg GetInbox
 	return i, err
 }
 
+const ListInboxDemandTitles = `-- name: ListInboxDemandTitles :many
+SELECT id, title FROM project_demands
+WHERE tenant_id = $1::uuid
+  AND id = ANY($2::uuid[])
+`
+
+type ListInboxDemandTitlesParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	Ids      []uuid.UUID `json:"ids"`
+}
+
+type ListInboxDemandTitlesRow struct {
+	ID    uuid.UUID `json:"id"`
+	Title string    `json:"title"`
+}
+
+// 收件箱来源补名:批量取需求标题(读时解析,不入库快照)。
+func (q *Queries) ListInboxDemandTitles(ctx context.Context, arg ListInboxDemandTitlesParams) ([]ListInboxDemandTitlesRow, error) {
+	rows, err := q.db.Query(ctx, ListInboxDemandTitles, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListInboxDemandTitlesRow{}
+	for rows.Next() {
+		var i ListInboxDemandTitlesRow
+		if err := rows.Scan(&i.ID, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListInboxItems = `-- name: ListInboxItems :many
 SELECT id, tenant_id, team_id, target_user_id, scope, item_type, source_type, source_id, source_project_id, source_task_id, source_approval_request_id, title, summary, risk_level, priority, status, action_schema, context_payload, deep_link, resolved_at, last_activity_at, created_at, updated_at FROM inbox_items
 WHERE tenant_id = $1::uuid

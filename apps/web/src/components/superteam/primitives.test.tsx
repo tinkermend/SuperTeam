@@ -64,13 +64,20 @@ describe("v3 组件族 · 基础渲染", () => {
     await expect.element(pill).toHaveClass("bg-warn-soft");
   });
 
-  it("MetricCard 渲染标签、大数字；loud 时数值点亮为 warn", async () => {
+  it("MetricCard 渲染标签、大数字；loud 时数值跟随 iconTone", async () => {
     const { getByText } = await render(
-      <MetricCard label="待审批" value="4" loud meta="2 个高风险" />,
+      <MetricCard label="待审批" value="4" loud iconTone="warn" meta="2 个高风险" />,
     );
     await expect.element(getByText("待审批")).toBeInTheDocument();
     await expect.element(getByText("4")).toHaveClass("text-warn");
     await expect.element(getByText("2 个高风险")).toBeInTheDocument();
+  });
+
+  it("MetricCard loud + danger 时数值点亮为 danger", async () => {
+    const { getByText } = await render(
+      <MetricCard label="高风险" value="3" loud iconTone="danger" />,
+    );
+    await expect.element(getByText("3")).toHaveClass("text-danger");
   });
 
   it("SignatureCard 渲染并写入蓝色渐变 style", async () => {

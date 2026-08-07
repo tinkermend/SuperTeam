@@ -960,6 +960,235 @@ func TestServiceListItemsEnrichesSourceNames(t *testing.T) {
 	}
 }
 
+func TestServiceListItemsContinuesWhenDemandTitlesFail(t *testing.T) {
+	repo := newMemoryRepository()
+	repo.failDemandTitles = true
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	repo.projectNames[projectID] = "官网重构"
+	if _, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    actorUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &projectID,
+		Title:           "补名失败仍应返回列表",
+		LastActivityAt:  time.Now().UTC(),
+		ContextPayload: map[string]any{
+			"kind":      "plan_review",
+			"demand_id": demandID.String(),
+		},
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	result, err := service.ListItems(context.Background(), ListItemsRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		View:        ViewMine,
+	})
+	if err != nil {
+		t.Fatalf("list must succeed when DemandTitles fails: %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(result.Items))
+	}
+	if _, has := result.Items[0].ContextPayload["demand_title"]; has {
+		t.Fatalf("demand_title must stay unset when DemandTitles fails, payload=%#v", result.Items[0].ContextPayload)
+	}
+	// 局部失败不得拖垮其它维度：项目名仍应补上。
+	if result.Items[0].SourceProjectName == nil || *result.Items[0].SourceProjectName != "官网重构" {
+		t.Fatalf("expected project name still enriched, got %#v", result.Items[0].SourceProjectName)
+	}
+}
+
+func TestServiceEnrichSourceNamesAcceptsTypedDemandMaps(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	demandID := uuid.New()
+	repo.demandTitles[demandID] = "类型断言兼容需求"
+	items := []Item{{
+		ContextPayload: map[string]any{
+			"demands": []map[string]any{
+				{"id": demandID.String(), "title": ""},
+			},
+		},
+	}}
+	if err := service.enrichSourceNames(context.Background(), uuid.New(), items); err != nil {
+		t.Fatalf("enrich: %v", err)
+	}
+	raw, ok := items[0].ContextPayload["demands"].([]any)
+	if !ok || len(raw) != 1 {
+		t.Fatalf("expected demands rewritten to []any, got %#v", items[0].ContextPayload["demands"])
+	}
+	rec, ok := raw[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected demand record map, got %#v", raw[0])
+	}
+	if got, _ := rec["title"].(string); got != "类型断言兼容需求" {
+		t.Fatalf("expected demand title enriched, got %#v", rec["title"])
+	}
+}
+
+func TestServiceListItemsEnrichesDemandTitles(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	danglingDemandID := uuid.New()
+	demandsArrayID := uuid.New()
+	repo.demandTitles[demandID] = "Runtime 接入验收"
+	repo.demandTitles[demandsArrayID] = "扩编角色需求"
+
+	if _, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    actorUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &projectID,
+		Title:           "计划确认",
+		LastActivityAt:  time.Now().UTC(),
+		ContextPayload: map[string]any{
+			"kind":      "plan_review",
+			"demand_id": demandID.String(),
+		},
+	}); err != nil {
+		t.Fatalf("upsert demand_id only: %v", err)
+	}
+	if _, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    actorUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &projectID,
+		Title:           "扩编",
+		LastActivityAt:  time.Now().UTC().Add(-time.Minute),
+		ContextPayload: map[string]any{
+			"kind": "casting_expansion",
+			"demands": []any{
+				map[string]any{
+					"id":    demandsArrayID.String(),
+					"title": demandsArrayID.String(), // 标题被写成 UUID 的存量形态
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("upsert demands array: %v", err)
+	}
+	if _, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    actorUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &projectID,
+		Title:           "悬垂需求",
+		LastActivityAt:  time.Now().UTC().Add(-2 * time.Minute),
+		ContextPayload: map[string]any{
+			"kind":      "plan_review",
+			"demand_id": danglingDemandID.String(),
+		},
+	}); err != nil {
+		t.Fatalf("upsert dangling demand: %v", err)
+	}
+	// 顶层 demand_title 被写成 UUID 的存量形态（与 demands[].title 对称）。
+	uuidAsTitleID := uuid.New()
+	repo.demandTitles[uuidAsTitleID] = "UUID 当标题应被覆盖"
+	if _, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    actorUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        uuid.New(),
+		SourceProjectID: &projectID,
+		Title:           "顶层UUID标题",
+		LastActivityAt:  time.Now().UTC().Add(-3 * time.Minute),
+		ContextPayload: map[string]any{
+			"kind":         "plan_review",
+			"demand_id":    uuidAsTitleID.String(),
+			"demand_title": uuidAsTitleID.String(),
+		},
+	}); err != nil {
+		t.Fatalf("upsert uuid-as-title: %v", err)
+	}
+
+	writesBefore := repo.writeCalls
+	result, err := service.ListItems(context.Background(), ListItemsRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		View:        ViewMine,
+	})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if repo.writeCalls != writesBefore {
+		t.Fatalf("enrich must not write to repository, writeCalls %d -> %d", writesBefore, repo.writeCalls)
+	}
+	if len(result.Items) != 4 {
+		t.Fatalf("expected 4 items, got %d", len(result.Items))
+	}
+
+	byTitle := map[string]Item{}
+	for _, item := range result.Items {
+		byTitle[item.Title] = item
+	}
+
+	plan := byTitle["计划确认"]
+	if got, _ := plan.ContextPayload["demand_title"].(string); got != "Runtime 接入验收" {
+		t.Fatalf("expected demand_title enriched, got %#v payload=%#v", plan.ContextPayload["demand_title"], plan.ContextPayload)
+	}
+	// 仓库内原始条目不得被回写 demand_title
+	stored, ok := repo.itemByID(plan.ID)
+	if !ok {
+		t.Fatal("stored plan item missing")
+	}
+	if _, has := stored.ContextPayload["demand_title"]; has {
+		t.Fatalf("enrich must not persist demand_title, stored payload=%#v", stored.ContextPayload)
+	}
+
+	expansion := byTitle["扩编"]
+	rawDemands, _ := expansion.ContextPayload["demands"].([]any)
+	if len(rawDemands) != 1 {
+		t.Fatalf("expected 1 demand ref, got %#v", expansion.ContextPayload["demands"])
+	}
+	demandRec, _ := rawDemands[0].(map[string]any)
+	if got, _ := demandRec["title"].(string); got != "扩编角色需求" {
+		t.Fatalf("expected demands[].title enriched, got %#v", demandRec["title"])
+	}
+
+	dangling := byTitle["悬垂需求"]
+	if _, has := dangling.ContextPayload["demand_title"]; has {
+		t.Fatalf("expected dangling demand_title unset, got %#v", dangling.ContextPayload["demand_title"])
+	}
+
+	uuidTitled := byTitle["顶层UUID标题"]
+	if got, _ := uuidTitled.ContextPayload["demand_title"].(string); got != "UUID 当标题应被覆盖" {
+		t.Fatalf("expected top-level UUID demand_title overwritten, got %#v", uuidTitled.ContextPayload["demand_title"])
+	}
+}
+
 func TestServiceListItemsNilStatusReturnsAllStatuses(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -1044,9 +1273,14 @@ type memoryRepository struct {
 	itemsByApproval             map[uuid.UUID]uuid.UUID
 	projectNames                map[uuid.UUID]string
 	taskTitles                  map[uuid.UUID]string
+	demandTitles                map[uuid.UUID]string
 	userNames                   map[uuid.UUID]string
 	upsertItemCalls             int
 	upsertByApprovalSourceCalls int
+	// writeCalls tracks any mutation after construction (enrich must not write).
+	writeCalls int
+	// failDemandTitles simulates DemandTitles repository error (ListItems must still succeed).
+	failDemandTitles bool
 }
 
 func newMemoryRepository() *memoryRepository {
@@ -1056,6 +1290,7 @@ func newMemoryRepository() *memoryRepository {
 		itemsByApproval: map[uuid.UUID]uuid.UUID{},
 		projectNames:    map[uuid.UUID]string{},
 		taskTitles:      map[uuid.UUID]string{},
+		demandTitles:    map[uuid.UUID]string{},
 		userNames:       map[uuid.UUID]string{},
 	}
 }
@@ -1086,6 +1321,22 @@ func (r *memoryRepository) ProjectTaskTitles(_ context.Context, _ uuid.UUID, ids
 	return titles, nil
 }
 
+func (r *memoryRepository) DemandTitles(_ context.Context, _ uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.failDemandTitles {
+		return nil, context.DeadlineExceeded
+	}
+	titles := map[uuid.UUID]string{}
+	for _, id := range ids {
+		if title, ok := r.demandTitles[id]; ok {
+			titles[id] = title
+		}
+	}
+	return titles, nil
+}
+
 func (r *memoryRepository) UserDisplayName(_ context.Context, userID uuid.UUID) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1098,6 +1349,7 @@ func (r *memoryRepository) UpsertItem(_ context.Context, req UpsertItemRequest) 
 	defer r.mu.Unlock()
 
 	r.upsertItemCalls++
+	r.writeCalls++
 	sourceKey := sourceKey(req.TenantID, req.SourceType, req.SourceID)
 	item, ok := r.itemByID(r.itemsBySource[sourceKey])
 	if !ok {
@@ -1118,6 +1370,7 @@ func (r *memoryRepository) UpsertItemByApprovalSource(_ context.Context, req Ups
 	defer r.mu.Unlock()
 
 	r.upsertByApprovalSourceCalls++
+	r.writeCalls++
 	if req.SourceApprovalRequestID == nil {
 		return Item{}, ErrInvalidItem
 	}
@@ -1254,6 +1507,7 @@ func (r *memoryRepository) CountHighRiskOpenItems(_ context.Context, tenantID uu
 func (r *memoryRepository) ResolveOpenItemsBySource(_ context.Context, tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.writeCalls++
 	now := time.Now().UTC()
 	for id, item := range r.itemsByID {
 		if item.TenantID != tenantID || item.SourceType != sourceType || item.SourceID != sourceID || item.Status != StatusOpen {

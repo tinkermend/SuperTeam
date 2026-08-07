@@ -546,6 +546,8 @@ type Querier interface {
 	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
 	ListFeishuIdentitiesByUsers(ctx context.Context, arg ListFeishuIdentitiesByUsersParams) ([]UserFeishuIdentity, error)
 	ListFeishuOutboxByStatuses(ctx context.Context, arg ListFeishuOutboxByStatusesParams) ([]FeishuOutbox, error)
+	// 收件箱来源补名:批量取需求标题(读时解析,不入库快照)。
+	ListInboxDemandTitles(ctx context.Context, arg ListInboxDemandTitlesParams) ([]ListInboxDemandTitlesRow, error)
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
 	// 收件箱来源补名:批量取项目名称(读时解析,不入库快照)。
 	ListInboxProjectNames(ctx context.Context, arg ListInboxProjectNamesParams) ([]ListInboxProjectNamesRow, error)

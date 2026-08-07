@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowUpRight,
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronsUpDown,
   Clock,
   FileText,
   FolderKanban,
@@ -16,18 +18,21 @@ import {
   ShieldCheck,
   ShieldQuestion,
   SlidersHorizontal,
-  Sparkles,
   X,
   Zap
 } from "lucide-react";
 import {
+  MasterDetailLayout,
+  MetricCard,
+  MetricGrid,
   ObjectRef,
   SoftCard,
   StatusPill,
   Button,
   StateSurface,
   PageTabs,
-  PageTab
+  PageTab,
+  UserSearchSelect
 } from "@/components/superteam";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -42,7 +47,14 @@ import type {
   InboxStatus,
   InboxViewMode
 } from "@/lib/api/inbox";
-import { demandStatusLabel, missingObjectLabel, relatedRefMetaLabel } from "@/lib/status-labels";
+import { getProject, listProjects, type Project } from "@/lib/api/projects";
+import type { UserSummary } from "@/lib/api/auth";
+import {
+  demandStatusLabel,
+  missingObjectLabel,
+  relatedRefMetaLabel,
+  shortObjectId,
+} from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 import type { InboxStreamConnection } from "../inbox-stream-status";
 import { formatInboxActionLabel } from "./action-format";
@@ -65,9 +77,6 @@ import {
 } from "./inbox-item-list";
 
 export type InboxFilterKey = "status" | "item_type" | "risk_level" | "project_id" | "target_user_id";
-export type InboxUuidFilterKey = Extract<InboxFilterKey, "project_id" | "target_user_id">;
-export type InboxUuidFilterDrafts = Record<InboxUuidFilterKey, string>;
-export type InboxUuidFilterErrors = Partial<Record<InboxUuidFilterKey, string | undefined>>;
 export type InboxFilterChangeValue<Key extends InboxFilterKey> = {
   item_type: InboxItemType | "all";
   project_id: string;
@@ -81,10 +90,12 @@ type InboxFilterChangeHandler = <Key extends InboxFilterKey>(
 ) => void;
 
 type InboxShellProps = {
+  apiBaseUrl: string;
   data?: InboxListResponse;
   /** React Query dataUpdatedAt（ms）；用于「同步于 …」提示。 */
   dataUpdatedAt?: number;
   error: Error | null;
+  fetcher?: typeof fetch;
   filters: InboxListFilters;
   isFetching?: boolean;
   isLoading: boolean;
@@ -97,15 +108,15 @@ type InboxShellProps = {
   onResetFilters: () => void;
   onViewChange: (view: InboxViewMode) => void;
   streamConnection: InboxStreamConnection;
-  uuidFilterDrafts: InboxUuidFilterDrafts;
-  uuidFilterErrors: InboxUuidFilterErrors;
   view: InboxViewMode;
 };
 
 export function InboxShell({
+  apiBaseUrl,
   data,
   dataUpdatedAt,
   error,
+  fetcher,
   filters,
   isFetching = false,
   isLoading,
@@ -117,8 +128,6 @@ export function InboxShell({
   onResetFilters,
   onViewChange,
   streamConnection,
-  uuidFilterDrafts,
-  uuidFilterErrors,
   view
 }: InboxShellProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -153,10 +162,11 @@ export function InboxShell({
         iconTone="brand"
       />
       <Main width="wide" fixed className="flex min-h-0 flex-col gap-3 py-4 text-ink">
-        {/* 顶部：4 张对等小卡概览 + 视图分段 + 筛选工具条 */}
         <InboxSummaryCards summary={data?.summary} maxWaitMs={maxWaitMs} />
         <InboxToolbar
+          apiBaseUrl={apiBaseUrl}
           dataUpdatedAt={dataUpdatedAt}
+          fetcher={fetcher}
           view={view}
           onViewChange={onViewChange}
           filters={filters}
@@ -165,8 +175,6 @@ export function InboxShell({
           onRefresh={onRefresh}
           onResetFilters={onResetFilters}
           streamConnection={streamConnection}
-          uuidFilterDrafts={uuidFilterDrafts}
-          uuidFilterErrors={uuidFilterErrors}
         />
 
         {mutationError ? (
@@ -179,8 +187,8 @@ export function InboxShell({
           </div>
         ) : null}
 
-        {/* 工作台：三栏在桌面端填满视口，各自内部滚动；移动端整列纵向滚动 */}
-        <div className="min-h-0 flex-1 overflow-y-auto xl:overflow-hidden">
+        {/* 主从：未选中列表独占全宽；选中后详情+动作合一右栏（裁决工作台）。 */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <StateSurface
             isLoading={isLoading && !data}
             isError={Boolean(error && !data)}
@@ -196,18 +204,30 @@ export function InboxShell({
             }
           >
             {data && hasItems ? (
-              <div className="grid min-h-0 gap-3 xl:h-full xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_300px]">
-                {/* 左栏：紧凑列表 */}
-                <InboxItemList
-                  items={data.items}
-                  onSelect={(item) => setSelectedItemId(item.id)}
-                  selectedItemId={selectedItemId}
-                />
-                {/* 中栏：详情 */}
-                <InboxDetailPanel data={data} item={selectedItem} view={view} />
-                {/* 右栏：操作面板 */}
-                <InboxActionPanel item={selectedItem} onAction={onAction} view={view} />
-              </div>
+              <MasterDetailLayout
+                className="min-h-0"
+                rail="lg"
+                detailLabel="事项详情"
+                onDetailDismiss={() => setSelectedItemId(null)}
+                master={
+                  <InboxItemList
+                    items={data.items}
+                    onAction={onAction}
+                    onSelect={(item) => setSelectedItemId(item.id)}
+                    selectedItemId={selectedItemId}
+                    view={view}
+                  />
+                }
+                detail={
+                  selectedItem ? (
+                    <InboxDetailWorkbench
+                      item={selectedItem}
+                      onAction={onAction}
+                      view={view}
+                    />
+                  ) : undefined
+                }
+              />
             ) : null}
           </StateSurface>
         </div>
@@ -217,35 +237,8 @@ export function InboxShell({
 }
 
 // ---------------------------------------------------------------------------
-// 顶部概览：4 张对等小卡（照搬项目管理 KPI 卡：语义色 + 图标圆底 + 顶条 + hover 上浮）
+// 顶部概览：MetricGrid + MetricCard（语义色仅 >0 点亮）
 // ---------------------------------------------------------------------------
-
-type InboxSummaryTone = "brand" | "danger" | "warn" | "info" | "mute";
-
-const summaryCardSoftBg: Record<InboxSummaryTone, string> = {
-  brand: "bg-brand-soft",
-  danger: "bg-danger-soft",
-  warn: "bg-warn-soft",
-  info: "bg-info-soft",
-  mute: "bg-mute-soft"
-};
-
-// 与项目管理 KPI 卡一致：语义 text 层做数字与图标色（过 AA），保持色彩搭配
-const summaryCardNumText: Record<InboxSummaryTone, string> = {
-  brand: "text-brand-deep",
-  danger: "text-danger-text",
-  warn: "text-warn-text",
-  info: "text-info-text",
-  mute: "text-mute-text"
-};
-
-const summaryCardAccent: Record<InboxSummaryTone, string> = {
-  brand: "bg-brand",
-  danger: "bg-danger",
-  warn: "bg-warn",
-  info: "bg-info",
-  mute: "bg-line-strong"
-};
 
 function InboxSummaryCards({
   summary,
@@ -256,76 +249,37 @@ function InboxSummaryCards({
 }) {
   const highRisk = summary?.high_risk_count ?? 0;
   const blocked = summary?.blocked_count ?? 0;
-  const cards: Array<{
-    icon: typeof Inbox;
-    label: string;
-    value: React.ReactNode;
-    tone: InboxSummaryTone;
-  }> = [
-    {
-      icon: Inbox,
-      label: "开放事项",
-      value: summary ? summary.open_count : "—",
-      tone: "brand"
-},
-    {
-      icon: AlertTriangle,
-      label: "高风险",
-      value: summary ? highRisk : "—",
-      // 语义色只在需要人工介入（>0）时点亮，0 保持灰阶（对齐 DESIGN.md）
-      tone: highRisk > 0 ? "danger" : "mute"
-},
-    {
-      icon: ShieldCheck,
-      label: "阻断",
-      value: summary ? blocked : "—",
-      tone: blocked > 0 ? "warn" : "mute"
-},
-    {
-      icon: Clock,
-      label: "等待最久",
-      value: maxWaitMs > 0 ? formatWaitShort(maxWaitMs) : "—",
-      tone: "info"
-},
-  ];
 
   return (
-    <section
-      aria-label="收件箱概览"
-      className="grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-4"
-    >
-      {cards.map((card) => {
-        const Icon = card.icon;
-        return (
-          <SoftCard
-            key={card.label}
-            className="group relative flex flex-col gap-2 overflow-hidden px-4 py-3.5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-pop"
-          >
-            <span
-              aria-hidden
-              className={cn("absolute inset-x-0 top-0 h-0.5", summaryCardAccent[card.tone])}
-            />
-            <span
-              className={cn(
-                "flex size-8 items-center justify-center rounded-full transition-transform duration-200 ease-out group-hover:scale-110",
-                summaryCardSoftBg[card.tone],
-              )}
-            >
-              <Icon aria-hidden className={cn("size-[15px]", summaryCardNumText[card.tone])} />
-            </span>
-            <span
-              className={cn(
-                "text-2xl font-extrabold leading-none tabular-nums",
-                summaryCardNumText[card.tone],
-              )}
-            >
-              {card.value}
-            </span>
-            <p className="text-[11.5px] font-medium leading-none text-ink-3">{card.label}</p>
-          </SoftCard>
-        );
-      })}
-    </section>
+    <MetricGrid aria-label="收件箱概览" className="shrink-0">
+      <MetricCard
+        icon={<Inbox />}
+        iconTone="brand"
+        label="开放事项"
+        value={summary ? summary.open_count : "—"}
+      />
+      <MetricCard
+        icon={<AlertTriangle />}
+        iconTone={highRisk > 0 ? "danger" : "mute"}
+        label="高风险"
+        // 语义色只在需要人工介入（>0）时点亮，0 保持灰阶（对齐 DESIGN.md）
+        loud={highRisk > 0}
+        value={summary ? highRisk : "—"}
+      />
+      <MetricCard
+        icon={<ShieldCheck />}
+        iconTone={blocked > 0 ? "warn" : "mute"}
+        label="阻断"
+        loud={blocked > 0}
+        value={summary ? blocked : "—"}
+      />
+      <MetricCard
+        icon={<Clock />}
+        iconTone="info"
+        label="等待最久"
+        value={maxWaitMs > 0 ? formatWaitShort(maxWaitMs) : "—"}
+      />
+    </MetricGrid>
   );
 }
 
@@ -334,7 +288,9 @@ function InboxSummaryCards({
 // ---------------------------------------------------------------------------
 
 type InboxToolbarProps = {
+  apiBaseUrl: string;
   dataUpdatedAt?: number;
+  fetcher?: typeof fetch;
   view: InboxViewMode;
   onViewChange: (view: InboxViewMode) => void;
   filters: InboxListFilters;
@@ -343,12 +299,12 @@ type InboxToolbarProps = {
   onRefresh: () => void;
   onResetFilters: () => void;
   streamConnection: InboxStreamConnection;
-  uuidFilterDrafts: InboxUuidFilterDrafts;
-  uuidFilterErrors: InboxUuidFilterErrors;
 };
 
 function InboxToolbar({
+  apiBaseUrl,
   dataUpdatedAt,
+  fetcher,
   view,
   onViewChange,
   filters,
@@ -356,9 +312,7 @@ function InboxToolbar({
   onFilterChange,
   onRefresh,
   onResetFilters,
-  streamConnection,
-  uuidFilterDrafts,
-  uuidFilterErrors
+  streamConnection
 }: InboxToolbarProps) {
   return (
     <SoftCard className="flex shrink-0 flex-wrap items-center gap-2 p-3">
@@ -382,13 +336,14 @@ function InboxToolbar({
           团队待办
         </PageTab>
       </PageTabs>
-      <span aria-hidden className="hidden h-6 w-px bg-line sm:block" />
+      <span aria-hidden className="hidden h-6 w-px bg-line @md/content:block" />
       <InboxFilters
+        apiBaseUrl={apiBaseUrl}
+        fetcher={fetcher}
         filters={filters}
         onFilterChange={onFilterChange}
         onReset={onResetFilters}
-        uuidFilterDrafts={uuidFilterDrafts}
-        uuidFilterErrors={uuidFilterErrors}
+        view={view}
       />
       <InboxSyncControls
         dataUpdatedAt={dataUpdatedAt}
@@ -423,7 +378,7 @@ function InboxSyncControls({
     <div className="ml-auto flex shrink-0 items-center gap-2">
       <p
         className={cn(
-          "hidden items-center gap-1.5 text-[11.5px] font-medium sm:flex",
+          "hidden items-center gap-1.5 text-[11.5px] font-medium @md/content:flex",
           disconnected ? "text-warn-text" : "text-ink-3",
         )}
         role="status"
@@ -453,31 +408,45 @@ function InboxSyncControls({
 }
 
 // ---------------------------------------------------------------------------
-// 中栏：详情面板
+// 详情工作台：动作置顶 + 详情正文（裁决工作台口径）
 // ---------------------------------------------------------------------------
 
+function InboxDetailWorkbench({
+  item,
+  onAction,
+  view
+}: {
+  item: InboxItem;
+  onAction: (item: InboxItem, action: InboxAction) => void;
+  view: InboxViewMode;
+}) {
+  return (
+    <div className="flex min-h-0 flex-col gap-3 @5xl/master-detail:h-full @5xl/master-detail:overflow-y-auto">
+      <InboxActionPanel item={item} onAction={onAction} view={view} />
+      <InboxDetailPanel item={item} view={view} />
+    </div>
+  );
+}
+
 type InboxDetailPanelProps = {
-  data: InboxListResponse;
-  item: InboxItem | null;
+  item: InboxItem;
   view: InboxViewMode;
 };
 
-function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
-  if (!item) {
-    return <InboxEmptyDetailPanel data={data} />;
-  }
+function InboxDetailPanel({ item, view }: InboxDetailPanelProps) {
+  const waitMs = computeWaitMs(item);
+  const waitLabel = item.status === "open" ? "已等待" : "处理耗时";
 
   return (
-    <SoftCard className="flex min-h-0 flex-col overflow-hidden xl:h-full">
-      {/* 详情头：KI 编号 + 更新时间 kicker + 标题 + pills（固定，不随正文滚动） */}
+    <SoftCard className="flex min-h-0 flex-col overflow-hidden">
+      {/* 详情头：KI 编号 + 等待时长 meta + 标题 + pills */}
       <div className="shrink-0 border-b border-line px-5 py-4">
-        {/* 数据真实性修正 #2：KI 编号 = item_type + source_id 前 8 位 */}
         <div className="mb-2 flex items-center justify-between gap-3">
           <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-brand-deep">
             {formatKiNumber(item)}
           </p>
           <p className="shrink-0 font-mono text-[11px] text-ink-3">
-            更新 {formatRelativeTime(item.last_activity_at)}
+            {waitLabel} {formatElapsedDuration(waitMs)} · 更新 {formatRelativeTime(item.last_activity_at)}
           </p>
         </div>
         <h2 className="text-lg font-extrabold leading-tight text-ink">{item.title}</h2>
@@ -490,7 +459,6 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
               {riskLabel[item.risk_level] ?? item.risk_level}
             </StatusPill>
           ) : null}
-          {/* 状态徽标必须看 item.status——"已处理"过滤下选中的事项不再是待办 */}
           <StatusPill
             tone={item.status === "resolved" ? "ok" : item.status === "cancelled" ? "mute" : view === "mine" ? "warn" : "mute"}
           >
@@ -685,7 +653,7 @@ function RelatedObjectSummary({ item }: { item: InboxItem }) {
     );
   }
 
-  return <>{formatContext(item) ?? item.source_id}</>;
+  return <>{formatContext(item) ?? missingObjectLabel("object", item.source_id)}</>;
 }
 
 function buildRelatedReferences(item: InboxItem): RelatedReference[] {
@@ -800,7 +768,7 @@ function RelatedReferenceRow({ reference }: { reference: RelatedReference }) {
 // ---------------------------------------------------------------------------
 
 type InboxActionPanelProps = {
-  item: InboxItem | null;
+  item: InboxItem;
   onAction: (item: InboxItem, action: InboxAction) => void;
   view: InboxViewMode;
 };
@@ -822,38 +790,12 @@ const actionToneClass: Record<string, string> = {
 };
 
 function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
-  if (!item) {
-    return (
-      <div className="flex min-h-0 flex-col gap-3 xl:h-full xl:overflow-y-auto">
-        <SoftCard className="px-5 py-8 text-center">
-          <Sparkles aria-hidden className="mx-auto mb-3 size-8 text-ink-3" />
-          <p className="text-sm font-bold text-ink">选择事项后可操作</p>
-          <p className="mt-1.5 text-xs text-ink-3">
-            从左侧列表选择一条事项，这里会展示已等待时长、可执行动作和快速跳转。
-          </p>
-        </SoftCard>
-      </div>
-    );
-  }
-
   const actions = Array.isArray(item.actions) ? item.actions : [];
   const detailHref = resolveInboxHref(item);
-  const waitMs = computeWaitMs(item);
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 xl:h-full xl:overflow-y-auto">
-      {/* 已等待/处理耗时 — 数据真实性修正 #5:open 用 now-created_at;终态用 resolved_at-created_at */}
-      <SoftCard className="overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-3 text-[13px] font-bold text-ink">
-          <Clock aria-hidden className="size-3.5" />
-          {item.status === "open" ? "已等待时长" : "处理耗时"}
-        </div>
-        <div className="px-4 py-3.5">
-          <WaitTimeRing waitMs={waitMs} riskLevel={item.risk_level} settled={item.status !== "open"} />
-        </div>
-      </SoftCard>
-
-      {/* 可执行动作 — 仅 open 事项渲染按钮;终态事项动作已失效 */}
+    <div className="flex min-h-0 flex-col gap-3">
+      {/* 可执行动作置顶 — 裁决工作台：选中即见可决断项 */}
       <SoftCard className="overflow-hidden">
         <div className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-3 text-[13px] font-bold text-ink">
           <Zap aria-hidden className="size-3.5" />
@@ -894,75 +836,18 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
         </div>
       </SoftCard>
 
-      {/* 快速跳转 */}
+      {/* 快速跳转：仅保留服务端 primary_surface 的唯一落点 */}
       <SoftCard className="overflow-hidden">
         <div className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-3 text-[13px] font-bold text-ink">
           <Layers aria-hidden className="size-3.5" />
           快速跳转
         </div>
         <div className="flex flex-col gap-0.5 px-2 py-1.5">
-          {/* F3(§5.4.3): 唯一权威落点 detailHref 来自服务端 primary_surface。原"进入流程
-              实例/查看流程编排"两个各自推导的入口已下线,避免同一待办多入口跳不同页。 */}
           <QuickLink to={detailHref} icon={<ArrowUpRight className="size-3.5" />}>
             查看完整详情
           </QuickLink>
-          {item.source_task_id ? (
-            <QuickLink to={detailHref} icon={<FileText className="size-3.5" />}>
-              查看关联任务
-            </QuickLink>
-          ) : null}
         </div>
       </SoftCard>
-    </div>
-  );
-}
-
-function WaitTimeRing({ waitMs, riskLevel, settled }: { waitMs: number; riskLevel?: string; settled?: boolean }) {
-  const clamped = Math.max(0, waitMs);
-  const totalHours = clamped / 3600000;
-  const ringPercentage = Math.min(100, Math.max(0, (totalHours / 24) * 100));
-  // 终态事项没有紧迫度可言,统一降为非紧急配色。
-  const isUrgent = !settled && (riskLevel === "blocked" || riskLevel === "high");
-  const ringColor = isUrgent ? "var(--danger)" : "var(--warn)";
-  const ringSoft = isUrgent ? "var(--danger-soft)" : "var(--warn-soft)";
-  const shortLabel = totalHours >= 1 ? `${Math.floor(totalHours)}h` : `${Math.floor(clamped / 60000)}m`;
-
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 rounded-inner border px-3.5 py-3",
-        isUrgent
-          ? "border-danger/20 bg-gradient-to-br from-danger-soft to-card"
-          : "border-warn/20 bg-gradient-to-br from-warn-soft to-card",
-      )}
-    >
-      <div
-        className="relative grid size-12 shrink-0 place-items-center rounded-full text-[13px] font-extrabold"
-        style={{
-          background: `conic-gradient(${ringColor} ${ringPercentage}%, ${ringSoft} 0)`,
-          color: isUrgent ? "var(--danger)" : "var(--warn)"
-}}
-      >
-        <span className="absolute inset-1 rounded-full bg-card" />
-        <span className="relative z-10">{shortLabel}</span>
-      </div>
-      <div className="min-w-0 flex-1">
-        <p
-          className={cn(
-            "text-[11px] font-bold uppercase tracking-wide",
-            isUrgent ? "text-danger-text" : "text-warn-text",
-          )}
-        >
-          {settled ? "处理耗时" : "已等待"}
-        </p>
-        <p className="mt-0.5 text-lg font-extrabold tabular-nums text-ink">
-          {formatElapsedDuration(clamped)}
-        </p>
-        <p className="mt-0.5 text-[11px] text-ink-3">
-          {settled ? "created_at 至 resolved_at" : "基于 created_at 计算"}
-          {isUrgent ? " · 阻断级建议尽快处理" : ""}
-        </p>
-      </div>
     </div>
   );
 }
@@ -1072,73 +957,6 @@ export function resolvedActionDisabledMessage(item: InboxItem): string {
   return `已由 ${who} 经 ${channel} ${verb}，无需再操作。`;
 }
 
-// 空状态详情面板
-
-// ---------------------------------------------------------------------------
-
-function InboxEmptyDetailPanel({ data }: { data: InboxListResponse }) {
-  return (
-    <SoftCard className="min-h-0 overflow-y-auto xl:h-full">
-      <div className="border-b border-line px-5 py-5">
-        <h2 className="text-lg font-extrabold text-ink">选择一条事项查看详情</h2>
-        <p className="mt-2 text-[13px] leading-5 text-ink-2">
-          左侧列出所有需要你同意、审核、确认或验收的事项。选择任一事项后，这里会展示过程记录、关联引用和可执行动作。
-        </p>
-      </div>
-      <section className="border-b border-line px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-ink">今日待处理摘要</h3>
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <MiniSummary label="待我处理" value={data.summary.open_count} />
-          <MiniSummary label="高风险" value={data.summary.high_risk_count} tone="danger" />
-          <MiniSummary label="阻断" value={data.summary.blocked_count} tone="warn" />
-        </div>
-      </section>
-      <section className="border-b border-line px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-ink">处理顺序建议</h3>
-        <ol className="mt-3 space-y-2 text-[13px] text-ink-2">
-          <li className="flex gap-2"><span className="font-bold text-ink">1.</span>先处理阻断与高风险审批。</li>
-          <li className="flex gap-2"><span className="font-bold text-ink">2.</span>再处理等待最久的事项。</li>
-          <li className="flex gap-2"><span className="font-bold text-ink">3.</span>最后处理普通同意或复核事项。</li>
-        </ol>
-      </section>
-      <section className="px-5 py-4">
-        <h3 className="text-[13px] font-extrabold text-ink">选择事项后可执行</h3>
-        <div className="mt-3 grid gap-2 text-[13px] text-ink-2">
-          {["查看完整详情", "查看过程记录", "查看关联引用", "按事项可用动作处理", "跳转到关联流程或项目"].map((label) => (
-            <div className="flex items-center gap-2" key={label}>
-              <CheckCircle2 className="size-4 text-ok" />
-              <span>{label}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-    </SoftCard>
-  );
-}
-
-function MiniSummary({
-  label,
-  tone = "info",
-  value
-}: {
-  label: string;
-  tone?: "danger" | "info" | "warn";
-  value: number;
-}) {
-  const valueToneClass = {
-    danger: "text-danger",
-    info: "text-brand",
-    warn: "text-warn"
-}[tone];
-
-  return (
-    <div className="rounded-inner border border-line bg-card-soft px-3 py-2">
-      <p className="text-[11px] font-bold text-ink-2">{label}</p>
-      <p className={cn("mt-1 text-2xl font-extrabold tabular-nums", valueToneClass)}>{value}</p>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // 辅助函数
 // ---------------------------------------------------------------------------
@@ -1176,11 +994,12 @@ function readStringFromContext(context: Record<string, unknown>, keys: string[])
 // ---------------------------------------------------------------------------
 
 type InboxFiltersProps = {
+  apiBaseUrl: string;
+  fetcher?: typeof fetch;
   filters: InboxListFilters;
   onFilterChange: InboxFilterChangeHandler;
   onReset: () => void;
-  uuidFilterDrafts: InboxUuidFilterDrafts;
-  uuidFilterErrors: InboxUuidFilterErrors;
+  view: InboxViewMode;
 };
 
 type SelectOption<Value extends string> = {
@@ -1214,19 +1033,18 @@ const riskOptions = [
 ] satisfies Array<SelectOption<string>>;
 
 function InboxFilters({
+  apiBaseUrl,
+  fetcher,
   filters,
   onFilterChange,
   onReset,
-  uuidFilterDrafts,
-  uuidFilterErrors
+  view
 }: InboxFiltersProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const hasUuidFilterError = Boolean(
-    uuidFilterErrors.project_id || uuidFilterErrors.target_user_id,
-  );
-  const activeUuidCount = [
-    uuidFilterDrafts.project_id.trim(),
-    uuidFilterDrafts.target_user_id.trim(),
+  const showTargetUser = view === "team";
+  const activeAdvancedCount = [
+    filters.project_id?.trim(),
+    showTargetUser ? filters.target_user_id?.trim() : undefined,
   ].filter(Boolean).length;
 
   return (
@@ -1253,30 +1071,25 @@ function InboxFilters({
         onValueChange={(value) => onFilterChange("risk_level", value)}
       />
       <MoreFiltersButton
-        active={showAdvanced || activeUuidCount > 0}
-        count={activeUuidCount}
+        active={showAdvanced || activeAdvancedCount > 0}
+        count={activeAdvancedCount}
         onToggle={() => setShowAdvanced((v) => !v)}
       />
       {showAdvanced ? (
         <div className="flex w-full flex-wrap items-center gap-2 border-t border-dashed border-line-strong pt-3">
-          <FilterInput
-            invalid={Boolean(uuidFilterErrors.project_id)}
-            label="项目 ID"
-            placeholder="项目 ID"
-            value={uuidFilterDrafts.project_id}
-            onValueChange={(value) => onFilterChange("project_id", value)}
+          <InboxProjectFilter
+            apiBaseUrl={apiBaseUrl}
+            fetcher={fetcher}
+            value={filters.project_id ?? ""}
+            onChange={(projectId) => onFilterChange("project_id", projectId)}
           />
-          <FilterInput
-            invalid={Boolean(uuidFilterErrors.target_user_id)}
-            label="目标用户 ID"
-            placeholder="目标用户 ID"
-            value={uuidFilterDrafts.target_user_id}
-            onValueChange={(value) => onFilterChange("target_user_id", value)}
-          />
-          {hasUuidFilterError ? (
-            <p className="text-xs font-semibold text-danger" role="alert">
-              请输入有效 UUID
-            </p>
+          {showTargetUser ? (
+            <InboxTargetUserFilter
+              apiBaseUrl={apiBaseUrl}
+              fetcher={fetcher}
+              value={filters.target_user_id ?? ""}
+              onChange={(userId) => onFilterChange("target_user_id", userId)}
+            />
           ) : null}
         </div>
       ) : null}
@@ -1291,6 +1104,254 @@ function InboxFilters({
         重置
       </Button>
     </div>
+  );
+}
+
+/** 按项目名称搜索筛选（无 UUID 输入；服务端 q 搜索，避免 limit 100 截断）。 */
+function InboxProjectFilter({
+  apiBaseUrl,
+  fetcher,
+  value,
+  onChange
+}: {
+  apiBaseUrl: string;
+  fetcher?: typeof fetch;
+  value: string;
+  onChange: (projectId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  // 选中后缓存显示名，避免列表未命中时误显「全部项目」。
+  const [selectedName, setSelectedName] = useState<string | undefined>();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 280);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    if (!value) setSelectedName(undefined);
+  }, [value]);
+
+  const apiOptions = useMemo(
+    () => ({ baseUrl: apiBaseUrl, fetcher }),
+    [apiBaseUrl, fetcher],
+  );
+
+  // 仅展开筛选时拉 browse 列表；已选项目靠 selectedName / selectedById 展示，避免进页就 listProjects。
+  const browseQuery = useQuery({
+    enabled: open,
+    queryKey: ["inbox", "filter-projects", apiBaseUrl],
+    queryFn: () => listProjects(apiOptions, { limit: 100, offset: 0 }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const searchEnabled = debouncedQuery.length > 0;
+  const searchQuery = useQuery({
+    enabled: open && searchEnabled,
+    placeholderData: keepPreviousData,
+    queryKey: ["inbox", "filter-projects-search", apiBaseUrl, debouncedQuery],
+    queryFn: () =>
+      listProjects(apiOptions, { limit: 50, offset: 0, q: debouncedQuery }),
+    staleTime: 30 * 1000,
+  });
+
+  const list: Project[] = searchEnabled
+    ? (searchQuery.data ?? [])
+    : (browseQuery.data ?? []);
+  const selectedFromList =
+    list.find((project) => project.id === value) ??
+    (browseQuery.data ?? []).find((project) => project.id === value);
+  // 仅当列表与本地缓存都未解析到名称时才按 id 回查，避免每次筛选多打一枪。
+  const needsSelectedById = Boolean(value) && !selectedFromList && !selectedName;
+  const selectedByIdQuery = useQuery({
+    enabled: needsSelectedById,
+    queryKey: ["inbox", "filter-project", apiBaseUrl, value],
+    queryFn: () => getProject(apiOptions, value),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  const selected = selectedFromList ?? selectedByIdQuery.data;
+  const triggerLabel = value
+    ? selected?.name ||
+      selectedName ||
+      (selectedByIdQuery.isError
+        ? missingObjectLabel("project", value)
+        : selectedByIdQuery.isFetching
+          ? `项目 (${shortObjectId(value)})`
+          : missingObjectLabel("project", value))
+    : "全部项目";
+  // isLoading 在 keepPreviousData 下为 false；用 isFetching 表示搜索在飞，并弱提示旧结果。
+  const listLoading = searchEnabled
+    ? searchQuery.isFetching && list.length === 0
+    : browseQuery.isLoading;
+  const listStale = searchEnabled && searchQuery.isFetching && list.length > 0;
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setQuery("");
+          setDebouncedQuery("");
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          aria-label="筛选项目"
+          className={cn(
+            "inline-flex max-w-[16rem] items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[13px] font-semibold transition-all",
+            value
+              ? "border-brand/30 bg-brand-soft text-brand-deep"
+              : "border-line bg-card text-ink-2 hover:text-ink",
+          )}
+          type="button"
+        >
+          <FolderKanban aria-hidden className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{triggerLabel}</span>
+          <ChevronsUpDown aria-hidden className="size-3.5 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-2">
+        <Input
+          aria-label="搜索项目"
+          className="mb-2 h-8"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索项目名称…"
+          value={query}
+        />
+        <div
+          aria-busy={listStale || listLoading || undefined}
+          className={cn(
+            "flex max-h-56 flex-col gap-0.5 overflow-y-auto",
+            listStale && "opacity-70",
+          )}
+          role="listbox"
+          aria-label="项目列表"
+        >
+          <button
+            className="rounded-inner px-2 py-1.5 text-left text-[13px] font-semibold text-ink-2 hover:bg-card-soft"
+            onClick={() => {
+              setSelectedName(undefined);
+              onChange("");
+              setOpen(false);
+            }}
+            role="option"
+            type="button"
+          >
+            全部项目
+          </button>
+          {listLoading ? (
+            <p className="px-2 py-1.5 text-xs text-ink-3">加载项目中…</p>
+          ) : list.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs text-ink-3">无匹配项目</p>
+          ) : (
+            list.map((project: Project) => (
+              <button
+                aria-selected={value === project.id}
+                className={cn(
+                  "rounded-inner px-2 py-1.5 text-left text-[13px] font-semibold hover:bg-card-soft",
+                  value === project.id ? "bg-brand-soft text-brand-deep" : "text-ink",
+                )}
+                key={project.id}
+                onClick={() => {
+                  setSelectedName(project.name);
+                  onChange(project.id);
+                  setOpen(false);
+                }}
+                role="option"
+                type="button"
+              >
+                <span className="block truncate">{project.name}</span>
+              </button>
+            ))
+          )}
+          {listStale ? (
+            <p className="px-2 py-1 text-[11px] text-ink-3">更新匹配结果中…</p>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** 团队视图：按成员名筛选目标用户。 */
+function InboxTargetUserFilter({
+  apiBaseUrl,
+  fetcher,
+  value,
+  onChange
+}: {
+  apiBaseUrl: string;
+  fetcher?: typeof fetch;
+  value: string;
+  onChange: (userId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<UserSummary | undefined>();
+
+  useEffect(() => {
+    if (!value) setSelected(undefined);
+  }, [value]);
+
+  // value 有 id 但尚未 onSelect 缓存时：短 id 明示已筛选，禁止假「全部用户」。
+  const triggerLabel =
+    selected?.display_name ||
+    selected?.username ||
+    (value ? `用户 (${shortObjectId(value)})` : "全部用户");
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          aria-label="筛选目标用户"
+          className={cn(
+            "inline-flex max-w-[14rem] items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[13px] font-semibold transition-all",
+            value
+              ? "border-brand/30 bg-brand-soft text-brand-deep"
+              : "border-line bg-card text-ink-2 hover:text-ink",
+          )}
+          type="button"
+        >
+          <span className="min-w-0 truncate">{triggerLabel}</span>
+          <ChevronsUpDown aria-hidden className="size-3.5 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 p-3">
+        {value ? (
+          <Button
+            className="mb-2 w-full"
+            onClick={() => {
+              onChange("");
+              setSelected(undefined);
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            清除用户筛选
+          </Button>
+        ) : null}
+        <UserSearchSelect
+          apiBaseUrl={apiBaseUrl}
+          fetcher={fetcher}
+          inputLabel="搜索目标用户"
+          onSelect={(user) => {
+            setSelected(user);
+            onChange(user.id);
+            setOpen(false);
+          }}
+          placeholder="搜索用户名或显示名…"
+          value={selected}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -1401,29 +1462,5 @@ function MoreFiltersButton({
         </span>
       ) : null}
     </button>
-  );
-}
-
-type FilterInputProps = {
-  invalid?: boolean;
-  label: string;
-  onValueChange: (value: string) => void;
-  placeholder: string;
-  value: string;
-};
-
-function FilterInput({ invalid = false, label, onValueChange, placeholder, value }: FilterInputProps) {
-  const inputId = `inbox-filter-${label}`;
-
-  return (
-    <Input
-      aria-invalid={invalid || undefined}
-      aria-label={label}
-      id={inputId}
-      className="h-9 w-[10.5rem] rounded-xl border-line bg-card-soft text-[13px] text-ink shadow-none placeholder:text-ink-3 aria-invalid:border-danger"
-      onChange={(event) => onValueChange(event.target.value)}
-      placeholder={placeholder}
-      value={value}
-    />
   );
 }

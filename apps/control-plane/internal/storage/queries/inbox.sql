@@ -317,3 +317,9 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 SELECT id, title FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = ANY(sqlc.arg('ids')::uuid[]);
+
+-- name: ListInboxDemandTitles :many
+-- 收件箱来源补名:批量取需求标题(读时解析,不入库快照)。
+SELECT id, title FROM project_demands
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = ANY(sqlc.arg('ids')::uuid[]);

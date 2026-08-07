@@ -2,7 +2,10 @@ package inbox
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -127,19 +130,23 @@ func (s *Service) ListItems(ctx context.Context, req ListItemsRequest) (ListItem
 	if hasMore {
 		items = items[:req.Limit]
 	}
+	// 补名是展示字段：失败不挡列表（与 ResolveAction 一致），前端 missingObjectLabel 兜底。
 	if err := s.enrichSourceNames(ctx, req.TenantID, items); err != nil {
-		return ListItemsResult{}, err
+		slog.Warn("inbox list: enrich source names failed", "tenant_id", req.TenantID, "error", err)
 	}
 	return ListItemsResult{Items: items, Limit: req.Limit, Offset: req.Offset, HasMore: hasMore, OpenCount: openCount, HighRiskCount: highRiskCount}, nil
 }
 
-// enrichSourceNames 就地为 items 批量补 source_project_name/source_task_name。
-// 名称是展示字段:来源行已删除时保持 nil,由前端回退显示 id。
+// enrichSourceNames 就地为 items 批量补 source_project_name/source_task_name，
+// 并补全 ContextPayload 内 demand_title / demands[].title（仅本次响应序列化，不回写库）。
+// 名称是展示字段:来源行已删除时保持不写，由前端 missingObjectLabel 兜底。
 func (s *Service) enrichSourceNames(ctx context.Context, tenantID uuid.UUID, items []Item) error {
 	projectIDs := make([]uuid.UUID, 0, len(items))
 	taskIDs := make([]uuid.UUID, 0, len(items))
+	demandIDs := make([]uuid.UUID, 0, len(items))
 	seenProjects := map[uuid.UUID]struct{}{}
 	seenTasks := map[uuid.UUID]struct{}{}
+	seenDemands := map[uuid.UUID]struct{}{}
 	for _, item := range items {
 		if item.SourceProjectID != nil {
 			if _, ok := seenProjects[*item.SourceProjectID]; !ok {
@@ -153,36 +160,60 @@ func (s *Service) enrichSourceNames(ctx context.Context, tenantID uuid.UUID, ite
 				taskIDs = append(taskIDs, *item.SourceTaskID)
 			}
 		}
+		collectDemandIDs(item.ContextPayload, &demandIDs, seenDemands)
 	}
-	if len(projectIDs) == 0 && len(taskIDs) == 0 {
+	if len(projectIDs) == 0 && len(taskIDs) == 0 && len(demandIDs) == 0 {
 		return nil
 	}
+	// 三维补名互不取消：任一维失败仍应用已成功的结果，避免 DemandTitles 挂掉时项目/任务名也全丢。
 	var (
-		projectNames map[uuid.UUID]string
-		taskTitles   map[uuid.UUID]string
+		projectNames = map[uuid.UUID]string{}
+		taskTitles   = map[uuid.UUID]string{}
+		demandTitles = map[uuid.UUID]string{}
+		mu           sync.Mutex
+		lookupErrs   []error
 	)
 	group, groupCtx := errgroup.WithContext(ctx)
 	if len(projectIDs) > 0 {
 		group.Go(func() error {
-			var err error
-			projectNames, err = s.repository.ProjectNames(groupCtx, tenantID, projectIDs)
-			return err
+			names, err := s.repository.ProjectNames(groupCtx, tenantID, projectIDs)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				lookupErrs = append(lookupErrs, err)
+				return nil
+			}
+			projectNames = names
+			return nil
 		})
-	} else {
-		projectNames = map[uuid.UUID]string{}
 	}
 	if len(taskIDs) > 0 {
 		group.Go(func() error {
-			var err error
-			taskTitles, err = s.repository.ProjectTaskTitles(groupCtx, tenantID, taskIDs)
-			return err
+			titles, err := s.repository.ProjectTaskTitles(groupCtx, tenantID, taskIDs)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				lookupErrs = append(lookupErrs, err)
+				return nil
+			}
+			taskTitles = titles
+			return nil
 		})
-	} else {
-		taskTitles = map[uuid.UUID]string{}
 	}
-	if err := group.Wait(); err != nil {
-		return err
+	if len(demandIDs) > 0 {
+		group.Go(func() error {
+			titles, err := s.repository.DemandTitles(groupCtx, tenantID, demandIDs)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				lookupErrs = append(lookupErrs, err)
+				return nil
+			}
+			demandTitles = titles
+			return nil
+		})
 	}
+	_ = group.Wait()
 	for i := range items {
 		if items[i].SourceProjectID != nil {
 			if name, ok := projectNames[*items[i].SourceProjectID]; ok {
@@ -196,8 +227,147 @@ func (s *Service) enrichSourceNames(ctx context.Context, tenantID uuid.UUID, ite
 				items[i].SourceTaskName = &value
 			}
 		}
+		// ContextPayload 补名只影响本次响应：克隆后再写，避免污染 repository 持有的原 map。
+		// 真实 Pg 路径每次 List 从 JSON 解码出新 map，本克隆对内存仓储/测试同样成立。
+		if len(demandTitles) > 0 && items[i].ContextPayload != nil {
+			items[i].ContextPayload = cloneContextPayload(items[i].ContextPayload)
+			applyDemandTitles(items[i].ContextPayload, demandTitles)
+		}
+	}
+	if len(lookupErrs) > 0 {
+		return errors.Join(lookupErrs...)
 	}
 	return nil
+}
+
+func cloneContextPayload(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		// demands 切片内的 map 也要浅拷贝，避免 apply 写回共享 entry。
+		if k == "demands" {
+			if records := demandRecordSlice(v); records != nil {
+				copied := make([]any, len(records))
+				for i, rec := range records {
+					recCopy := make(map[string]any, len(rec))
+					for rk, rv := range rec {
+						recCopy[rk] = rv
+					}
+					copied[i] = recCopy
+				}
+				dst[k] = copied
+				continue
+			}
+		}
+		dst[k] = v
+	}
+	return dst
+}
+
+// demandRecordSlice 兼容 JSON 解码的 []any 与进程内 []map[string]any。
+func demandRecordSlice(raw any) []map[string]any {
+	switch v := raw.(type) {
+	case []any:
+		out := make([]map[string]any, 0, len(v))
+		for _, entry := range v {
+			if rec, ok := entry.(map[string]any); ok {
+				out = append(out, rec)
+			}
+		}
+		return out
+	case []map[string]any:
+		return v
+	default:
+		return nil
+	}
+}
+
+// collectDemandIDs 从 context 收集 primary_demand_id / demand_id / demands[].id。
+func collectDemandIDs(payload map[string]any, ids *[]uuid.UUID, seen map[uuid.UUID]struct{}) {
+	if payload == nil {
+		return
+	}
+	for _, key := range []string{"primary_demand_id", "demand_id"} {
+		if id, ok := parseContextUUID(payload[key]); ok {
+			if _, exists := seen[id]; !exists {
+				seen[id] = struct{}{}
+				*ids = append(*ids, id)
+			}
+		}
+	}
+	for _, record := range demandRecordSlice(payload["demands"]) {
+		if id, ok := parseContextUUID(record["id"]); ok {
+			if _, exists := seen[id]; !exists {
+				seen[id] = struct{}{}
+				*ids = append(*ids, id)
+			}
+		}
+	}
+}
+
+// applyDemandTitles 就地补 demand_title / demands[].title（仅响应用，不落库）。
+// 查不到的 id 保持不写，交给前端 missingObjectLabel 兜底。
+func applyDemandTitles(payload map[string]any, titles map[uuid.UUID]string) {
+	if payload == nil || len(titles) == 0 {
+		return
+	}
+	// 顶层 demand_title：空，或等于 demand id（存量把 UUID 当标题）时按 primary_demand_id / demand_id 补。
+	// 与 demands[].title 条件对称，避免只修数组分支、顶层仍吐 UUID。
+	existingTitle, _ := payload["demand_title"].(string)
+	existingTitle = strings.TrimSpace(existingTitle)
+	for _, key := range []string{"primary_demand_id", "demand_id"} {
+		id, ok := parseContextUUID(payload[key])
+		if !ok {
+			continue
+		}
+		title, found := titles[id]
+		if !found || strings.TrimSpace(title) == "" {
+			continue
+		}
+		if existingTitle == "" || existingTitle == id.String() {
+			payload["demand_title"] = title
+			break
+		}
+	}
+	records := demandRecordSlice(payload["demands"])
+	if len(records) == 0 {
+		return
+	}
+	// 写回为 []any，与 JSON 解码形态一致，避免后续路径只认一种类型。
+	out := make([]any, len(records))
+	for i, record := range records {
+		id, hasID := parseContextUUID(record["id"])
+		if hasID {
+			if title, found := titles[id]; found && strings.TrimSpace(title) != "" {
+				current, _ := record["title"].(string)
+				current = strings.TrimSpace(current)
+				// 空标题，或标题等于 id 字符串（前端曾把 UUID 当标题）时补上真名。
+				if current == "" || current == id.String() {
+					record["title"] = title
+				}
+			}
+		}
+		out[i] = record
+	}
+	payload["demands"] = out
+}
+
+func parseContextUUID(value any) (uuid.UUID, bool) {
+	raw, ok := value.(string)
+	if !ok {
+		return uuid.Nil, false
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil || id == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 func (s *Service) ResolveOpenItemsBySource(ctx context.Context, tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) error {

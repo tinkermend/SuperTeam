@@ -131,6 +131,7 @@ function createInboxFetcher(
     actionStatuses?: Record<string, number>;
     mineItem?: InboxItem;
     mineItems?: InboxItem[];
+    projects?: Array<{ id: string; name: string; status: "running" | "draft" | "archived" }>;
     slowTeamView?: boolean;
     teamItem?: InboxItem;
   } = {},
@@ -144,7 +145,7 @@ function createInboxFetcher(
       method,
       pathname: url.pathname,
       url: url.toString()
-});
+    });
 
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
       const view = url.searchParams.get("view") ?? "mine";
@@ -162,7 +163,7 @@ function createInboxFetcher(
                 summary: "团队负责人需要确认发布窗口。",
                 target_user_id: "human-owner-1",
                 title: "团队发布窗口确认"
-}),
+              }),
           ]),
         );
       }
@@ -170,6 +171,33 @@ function createInboxFetcher(
       return jsonResponse(
         makeListResponse(options.mineItems ?? [options.mineItem ?? makeInboxItem()]),
       );
+    }
+
+    if (url.pathname === "/api/v1/projects" && method === "GET") {
+      let projects = options.projects ?? [];
+      const q = url.searchParams.get("q")?.trim().toLowerCase();
+      if (q) {
+        projects = projects.filter(
+          (project) =>
+            project.name.toLowerCase().includes(q) ||
+            (project.status ?? "").toLowerCase().includes(q),
+        );
+      }
+      return jsonResponse(projects);
+    }
+
+    const projectMatch = url.pathname.match(/^\/api\/v1\/projects\/([^/]+)$/);
+    if (projectMatch && method === "GET") {
+      const projectId = decodeURIComponent(projectMatch[1]);
+      const project = (options.projects ?? []).find((entry) => entry.id === projectId);
+      if (project) {
+        return jsonResponse(project);
+      }
+      return jsonResponse({ error: "project not found" }, 404);
+    }
+
+    if (url.pathname === "/api/auth/users" && method === "GET") {
+      return jsonResponse({ items: [], total: 0 });
     }
 
     const actionMatch = url.pathname.match(/^\/api\/v1\/inbox\/items\/([^/]+)\/actions$/);
@@ -190,18 +218,28 @@ function createInboxFetcher(
           source_id: "approval-1",
           source_type: "approval_request",
           status: "approved"
-}
-});
+        }
+      });
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
       status: 404
-});
+    });
   }) as unknown as typeof fetch & { requests: typeof requests };
 
   Object.assign(fetcher, { requests });
   return fetcher;
+}
+
+function actionRequestBodies(fetcher: typeof fetch) {
+  return (
+    fetcher as unknown as {
+      requests: Array<{ body?: string; method: string; pathname: string }>;
+    }
+  ).requests.filter(
+    (request) => request.method === "POST" && request.pathname.includes("/actions"),
+  );
 }
 
 function inboxRequestUrls(fetcher: typeof fetch) {
@@ -265,15 +303,18 @@ describe("InboxView", () => {
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
   });
 
-  it("shows a default guidance panel until a human decision item is selected", async () => {
+  it("keeps the list full-width until a human decision item is selected", async () => {
     const screen = await renderInboxView();
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
-    await expect.element(screen.getByRole("heading", { name: "选择一条事项查看详情" })).toBeVisible();
-    await expect.element(screen.getByText("今日待处理摘要")).toBeVisible();
-    await expect.element(screen.getByText("选择事项后可执行")).toBeVisible();
-    expect(screen.getByRole("button", { name: "同意" }).query()).toBeNull();
+    // 布局宪法：未选中不渲染详情/空态占位栏
+    expect(screen.getByRole("heading", { name: "选择一条事项查看详情" }).query()).toBeNull();
+    expect(screen.getByText("今日待处理摘要").query()).toBeNull();
+    expect(screen.getByText("选择事项后可执行").query()).toBeNull();
+    expect(screen.getByText("过程记录").query()).toBeNull();
+    // 详情栏动作未展开；高风险 open 卡可有行内 CTA
     expect(screen.getByRole("button", { name: "驳回" }).query()).toBeNull();
+    await expect.element(screen.getByRole("button", { name: "行内决策：同意" })).toBeVisible();
   });
 
   it("opens item details with process records, evidence, actions, and flow links", async () => {
@@ -372,7 +413,8 @@ describe("InboxView", () => {
   it("opens item details when clicking the pending item row body", async () => {
     const screen = await renderInboxView();
 
-    await expect.element(screen.getByRole("heading", { name: "选择一条事项查看详情" })).toBeVisible();
+    // 未选中：列表独占，无常驻空态详情栏
+    expect(screen.getByRole("heading", { name: "选择一条事项查看详情" }).query()).toBeNull();
     await userEvent.click(screen.getByText("需要确认客户侧 Runtime 节点接入证据。"));
 
     await expect.element(screen.getByRole("heading", { name: "确认客户 Runtime 接入" })).toBeVisible();
@@ -395,7 +437,9 @@ describe("InboxView", () => {
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
 
     expect(document.body.querySelector('[data-slot="page-header"] [data-slot="icon-tile"]')).not.toBeNull();
-    expect(document.body.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThanOrEqual(2);
+    // KPI 走 MetricCard（data-slot=metric-card）；工具条/列表用 SoftCard / WorkSurface
+    expect(document.body.querySelectorAll('[data-slot="metric-card"]').length).toBeGreaterThanOrEqual(4);
+    expect(document.body.querySelectorAll('[data-slot="soft-card"]').length).toBeGreaterThanOrEqual(1);
     expect(document.body.querySelector('[data-slot="work-surface"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="page-tabs"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="status-pill"]')).not.toBeNull();
@@ -411,7 +455,7 @@ describe("InboxView", () => {
     expect(pageHeader?.textContent).not.toContain("开放 1");
     expect(pageHeader?.textContent).not.toContain("高风险 1");
     expect(pageHeader?.textContent).not.toContain("阻断 1");
-    const metricLabels = Array.from(document.body.querySelectorAll('[data-slot="soft-card"] p'))
+    const metricLabels = Array.from(document.body.querySelectorAll('[data-slot="metric-card"] p'))
       .map((node) => node.textContent?.trim())
       .filter(Boolean);
     expect(metricLabels).toContain("开放事项");
@@ -512,10 +556,17 @@ describe("InboxView", () => {
     await expect
       .element(screen.getByRole("link", { name: /关联需求 · 帮我分析 Claude Code/ }))
       .toHaveAttribute("href", `/projects/project-1?demand=${demandId}&tab=demands`);
+    // 列表 meta 与详情「关联对象」同文案，取详情区内可见的那份即可。
     await expect
-      .element(screen.getByText("帮我分析 Claude Code（任务：分析服务器中的Claude Code配置合理性）", { exact: true }))
+      .element(
+        screen
+          .getByText("帮我分析 Claude Code（任务：分析服务器中的Claude Code配置合理性）", {
+            exact: true,
+          })
+          .first(),
+      )
       .toBeVisible();
-    await expect.element(screen.getByText("项目 · 测试项目", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("项目 · 测试项目", { exact: true }).first()).toBeVisible();
   });
 
   // 兜底不能丢：旧数据/飞书历史卡片没有项目身份时仍走 /workflows/{id} 重定向壳。
@@ -594,32 +645,27 @@ describe("InboxView", () => {
     });
   });
 
-  it("validates project and target user UUID filters before applying them", async () => {
-    const fetcher = createInboxFetcher();
-    const screen = await renderInboxView(fetcher);
+  it("filters by project name picker without UUID inputs", async () => {
     const projectId = "11111111-1111-4111-8111-111111111111";
-    const targetUserId = "22222222-2222-4222-8222-222222222222";
+    const fetcher = createInboxFetcher({
+      projects: [{ id: projectId, name: "客户接入项目", status: "running" }],
+    });
+    const screen = await renderInboxView(fetcher);
 
     await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "更多筛选" }));
-    await userEvent.fill(screen.getByLabelText("项目 ID"), "project-42");
-    await userEvent.fill(screen.getByLabelText("目标用户 ID"), "human-owner-42");
+    // 无手输 UUID 字段
+    expect(screen.getByLabelText("项目 ID").query()).toBeNull();
+    expect(screen.getByLabelText("目标用户 ID").query()).toBeNull();
+    // 我的待办下无目标用户筛选
+    expect(screen.getByRole("button", { name: "筛选目标用户" }).query()).toBeNull();
 
-    await vi.waitFor(() => {
-      const requestUrl = latestInboxRequestUrl(fetcher);
-      expect(requestUrl?.searchParams.has("project_id")).toBe(false);
-      expect(requestUrl?.searchParams.has("target_user_id")).toBe(false);
-      expect(requestUrl?.searchParams.get("offset")).toBe("0");
-    });
-    await expect.element(screen.getByText("请输入有效 UUID")).toBeVisible();
-
-    await userEvent.fill(screen.getByLabelText("项目 ID"), projectId);
-    await userEvent.fill(screen.getByLabelText("目标用户 ID"), targetUserId);
+    await userEvent.click(screen.getByRole("button", { name: "筛选项目" }));
+    await userEvent.click(screen.getByRole("option", { name: "客户接入项目" }));
 
     await vi.waitFor(() => {
       const requestUrl = latestInboxRequestUrl(fetcher);
       expect(requestUrl?.searchParams.get("project_id")).toBe(projectId);
-      expect(requestUrl?.searchParams.get("target_user_id")).toBe(targetUserId);
       expect(requestUrl?.searchParams.get("offset")).toBe("0");
     });
 
@@ -628,15 +674,38 @@ describe("InboxView", () => {
     await vi.waitFor(() => {
       const requestUrl = latestInboxRequestUrl(fetcher);
       expect(requestUrl?.searchParams.has("project_id")).toBe(false);
-      expect(requestUrl?.searchParams.has("target_user_id")).toBe(false);
       expect(requestUrl?.searchParams.get("status")).toBe("open");
       expect(requestUrl?.searchParams.get("offset")).toBe("0");
     });
-    await expect.element(screen.getByLabelText("项目 ID")).toHaveValue("");
-    await expect.element(screen.getByLabelText("目标用户 ID")).toHaveValue("");
     await expect.element(screen.getByRole("button", { name: "状态" })).toHaveTextContent(
       "开放",
     );
+  });
+
+  it("shows target user filter only in team view", async () => {
+    const screen = await renderInboxView();
+
+    await userEvent.click(screen.getByRole("button", { name: "更多筛选" }));
+    expect(screen.getByRole("button", { name: "筛选目标用户" }).query()).toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: "团队待办" }));
+    // 更多筛选已展开时保持展开；切视图不自动收起
+    await expect.element(screen.getByRole("button", { name: "筛选目标用户" })).toBeVisible();
+  });
+
+  it("opens the decision dialog from the high-risk inline CTA without submitting", async () => {
+    const fetcher = createInboxFetcher();
+    const screen = await renderInboxView(fetcher);
+
+    await expect.element(screen.getByText("确认客户 Runtime 接入")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "行内决策：同意" }));
+
+    await expect.element(screen.getByRole("dialog")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "同意" })).toBeVisible();
+    // 仅打开弹窗，未提交
+    expect(
+      actionRequestBodies(fetcher).length,
+    ).toBe(0);
   });
 
   it("refetches the inbox list when the SSE stream pushes inbox-changed", async () => {
@@ -836,6 +905,8 @@ describe("InboxView", () => {
 
     // 第一条仍在提交:弹窗可直接关闭,提交在后台继续。
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+    // 窄容器下详情为 Sheet，先关抽屉再选下一项（避免遮罩挡住列表）。
+    await userEvent.keyboard("{Escape}");
     await userEvent.click(screen.getByRole("button", { name: "打开事项：确认二号任务" }));
     await userEvent.click(screen.getByRole("button", { name: "同意" }));
     await userEvent.click(screen.getByRole("button", { name: "提交" }));

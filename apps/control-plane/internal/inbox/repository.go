@@ -16,9 +16,11 @@ type Repository interface {
 	CountHighRiskOpenItems(ctx context.Context, tenantID uuid.UUID, targetUserID *uuid.UUID) (int64, error)
 	// PeekChange 返回可见范围内游标之后最新的变更行;无变更时返回 nil。
 	PeekChange(ctx context.Context, req PeekChangeRequest) (*ChangeCursor, error)
-	// 来源补名:批量解析项目名/任务标题,缺失的 id 不出现在结果里。
+	// 来源补名:批量解析项目名/任务标题/需求标题,缺失的 id 不出现在结果里。
 	ProjectNames(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
 	ProjectTaskTitles(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
+	// DemandTitles 批量解析需求标题(读时补名,不落库)。
+	DemandTitles(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
 	// 指定处理人补名:仅用于 403 提示文案;用户不存在时返回空串(不报错)。
 	UserDisplayName(ctx context.Context, userID uuid.UUID) (string, error)
 	// ResolveOpenItemsBySource 按来源关闭 open 条目(通道恢复告警回收)。
