@@ -3,6 +3,7 @@ package employee
 import (
 	"context"
 	"encoding/json"
+	"github.com/superteam/control-plane/internal/capabilityprojection"
 	"net/http"
 	"strconv"
 	"strings"
@@ -274,10 +275,10 @@ type digitalEmployeeRunCalendarItemResponse struct {
 }
 
 type digitalEmployeeRunCalendarResponse struct {
-	From       string                                  `json:"from"`
-	To         string                                  `json:"to"`
-	TotalCount int64                                   `json:"total_count"`
-	Truncated  bool                                    `json:"truncated"`
+	From       string                                   `json:"from"`
+	To         string                                   `json:"to"`
+	TotalCount int64                                    `json:"total_count"`
+	Truncated  bool                                     `json:"truncated"`
 	Items      []digitalEmployeeRunCalendarItemResponse `json:"items"`
 }
 
@@ -430,45 +431,46 @@ func parseRunPagination(r *http.Request) (int32, int32, string) {
 }
 
 type digitalEmployeeRunResponse struct {
-	ID                        string                   `json:"id"`
-	TenantID                  string                   `json:"tenant_id"`
-	TaskID                    string                   `json:"task_id"`
-	DigitalEmployeeID         string                   `json:"digital_employee_id"`
-	ExecutionInstanceID       string                   `json:"execution_instance_id"`
-	RuntimeNodeID             string                   `json:"runtime_node_id"`
-	NodeID                    string                   `json:"node_id"`
-	CommandID                 string                   `json:"command_id"`
-	ProviderType              string                   `json:"provider_type"`
-	ProviderSessionID         *string                  `json:"provider_session_id,omitempty"`
-	ProviderSessionExternalID *string                  `json:"provider_session_external_id,omitempty"`
-	RunKind                   string                   `json:"run_kind"`
-	ResumeOfRunID             *string                  `json:"resume_of_run_id,omitempty"`
-	ChatThreadID              *string                  `json:"chat_thread_id,omitempty"`
-	Status                    DigitalEmployeeRunStatus `json:"status"`
-	Result                    map[string]any           `json:"result"`
-	Diagnostic                map[string]any           `json:"diagnostic"`
-	LogRef                    *string                  `json:"log_ref,omitempty"`
-	RawResultRef              *string                  `json:"raw_result_ref,omitempty"`
-	WorkProducts              []WorkProduct            `json:"work_products"`
-	SessionState              map[string]any           `json:"session_state"`
-	ErrorMessage              *string                  `json:"error_message,omitempty"`
-	ErrorCode                 *string                  `json:"error_code,omitempty"`
-	ErrorFamily               *string                  `json:"error_family,omitempty"`
-	ExitCode                  *int32                   `json:"exit_code,omitempty"`
-	Signal                    *string                  `json:"signal,omitempty"`
-	TimedOut                  bool                     `json:"timed_out"`
-	IdempotencyKey            *string                  `json:"idempotency_key,omitempty"`
-	TimeoutSec                *int32                   `json:"timeout_sec,omitempty"`
-	GraceSec                  *int32                   `json:"grace_sec,omitempty"`
-	FailureAcknowledgedAt     *string                  `json:"failure_acknowledged_at,omitempty"`
-	StartedAt                 string                   `json:"started_at,omitempty"`
-	CompletedAt               *string                  `json:"completed_at,omitempty"`
-	FinishedAt                *string                  `json:"finished_at,omitempty"`
-	CreatedAt                 string                   `json:"created_at,omitempty"`
-	UpdatedAt                 string                   `json:"updated_at,omitempty"`
-	ProjectID                 *string                  `json:"project_id,omitempty"`
-	ProjectName               *string                  `json:"project_name,omitempty"`
-	ProjectDeleted            bool                     `json:"project_deleted,omitempty"`
+	ID                        string                                             `json:"id"`
+	TenantID                  string                                             `json:"tenant_id"`
+	TaskID                    string                                             `json:"task_id"`
+	DigitalEmployeeID         string                                             `json:"digital_employee_id"`
+	ExecutionInstanceID       string                                             `json:"execution_instance_id"`
+	RuntimeNodeID             string                                             `json:"runtime_node_id"`
+	NodeID                    string                                             `json:"node_id"`
+	CommandID                 string                                             `json:"command_id"`
+	ProviderType              string                                             `json:"provider_type"`
+	ProviderSessionID         *string                                            `json:"provider_session_id,omitempty"`
+	ProviderSessionExternalID *string                                            `json:"provider_session_external_id,omitempty"`
+	RunKind                   string                                             `json:"run_kind"`
+	ResumeOfRunID             *string                                            `json:"resume_of_run_id,omitempty"`
+	ChatThreadID              *string                                            `json:"chat_thread_id,omitempty"`
+	Status                    DigitalEmployeeRunStatus                           `json:"status"`
+	Result                    map[string]any                                     `json:"result"`
+	Diagnostic                map[string]any                                     `json:"diagnostic"`
+	LogRef                    *string                                            `json:"log_ref,omitempty"`
+	RawResultRef              *string                                            `json:"raw_result_ref,omitempty"`
+	WorkProducts              []WorkProduct                                      `json:"work_products"`
+	SessionState              map[string]any                                     `json:"session_state"`
+	ErrorMessage              *string                                            `json:"error_message,omitempty"`
+	ErrorCode                 *string                                            `json:"error_code,omitempty"`
+	ErrorFamily               *string                                            `json:"error_family,omitempty"`
+	ExitCode                  *int32                                             `json:"exit_code,omitempty"`
+	Signal                    *string                                            `json:"signal,omitempty"`
+	TimedOut                  bool                                               `json:"timed_out"`
+	IdempotencyKey            *string                                            `json:"idempotency_key,omitempty"`
+	TimeoutSec                *int32                                             `json:"timeout_sec,omitempty"`
+	GraceSec                  *int32                                             `json:"grace_sec,omitempty"`
+	FailureAcknowledgedAt     *string                                            `json:"failure_acknowledged_at,omitempty"`
+	StartedAt                 string                                             `json:"started_at,omitempty"`
+	CompletedAt               *string                                            `json:"completed_at,omitempty"`
+	FinishedAt                *string                                            `json:"finished_at,omitempty"`
+	CreatedAt                 string                                             `json:"created_at,omitempty"`
+	UpdatedAt                 string                                             `json:"updated_at,omitempty"`
+	ProjectID                 *string                                            `json:"project_id,omitempty"`
+	ProjectName               *string                                            `json:"project_name,omitempty"`
+	ProjectDeleted            bool                                               `json:"project_deleted,omitempty"`
+	CapabilityProjection      *capabilityprojection.CapabilityProjectionSnapshot `json:"capability_projection,omitempty"`
 }
 
 func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
@@ -511,6 +513,7 @@ func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 		UpdatedAt:                 timeString(run.UpdatedAt),
 		ProjectName:               run.ProjectName,
 		ProjectDeleted:            run.ProjectDeleted,
+		CapabilityProjection:      run.CapabilityProjection,
 	}
 	if run.ProjectID != nil {
 		id := run.ProjectID.String()

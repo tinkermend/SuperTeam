@@ -899,6 +899,48 @@ export type ProjectExecutionTraceAttemptSummary = {
   created_at: string;
 };
 
+
+export type CapabilityProjectionSummary = {
+  skill_count: number;
+  mcp_count: number;
+  conflict_count: number;
+  by_source: Record<string, number>;
+};
+
+export type ProjectedSkillItem = {
+  skill_id: string;
+  skill_key: string;
+  skill_name?: string;
+  version?: string;
+  source_scope: string;
+};
+
+export type ProjectedMcpItem = {
+  server_id: string;
+  server_key: string;
+  server_name?: string;
+  source_scope: string;
+};
+
+export type ProjectedSkillConflict = {
+  slug: string;
+  source: string;
+  winning_skill_id?: string;
+  dropped_skill_id?: string;
+  winning_source?: string;
+  dropped_source?: string;
+  winning_skill_name?: string;
+  dropped_skill_name?: string;
+};
+
+export type CapabilityProjectionSnapshot = {
+  available: boolean;
+  skills: ProjectedSkillItem[];
+  mcp_servers: ProjectedMcpItem[];
+  skill_conflicts: ProjectedSkillConflict[];
+  summary: CapabilityProjectionSummary;
+};
+
 export type ProjectExecutionTraceAttempt = {
   project_task_id: string;
   attempt_id: string;
@@ -915,6 +957,7 @@ export type ProjectExecutionTraceAttempt = {
   retryable?: boolean;
   events: ExecutionLedgerEvent[];
   summary?: ProjectExecutionTraceAttemptSummary;
+  capability_projection?: CapabilityProjectionSnapshot;
 };
 
 export type ProjectExecutionTrace = {

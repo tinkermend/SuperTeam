@@ -10407,6 +10407,118 @@ components:
           format: int32
         latest_error_family:
           type: string
+
+    CapabilityProjectionSnapshot:
+      type: object
+      required:
+        - available
+        - skills
+        - mcp_servers
+        - skill_conflicts
+        - summary
+      description: >
+        Console-safe capability projection for one project-task attempt (three-layer model P3).
+        Extracted from start_session command receipt; never includes environment values or secrets.
+      properties:
+        available:
+          type: boolean
+          description: false when run/command/payload cannot be resolved
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectedSkillItem"
+        mcp_servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectedMcpItem"
+        skill_conflicts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectedSkillConflict"
+        summary:
+          $ref: "#/components/schemas/CapabilityProjectionSummary"
+    CapabilityProjectionSummary:
+      type: object
+      required:
+        - skill_count
+        - mcp_count
+        - conflict_count
+        - by_source
+      properties:
+        skill_count:
+          type: integer
+        mcp_count:
+          type: integer
+        conflict_count:
+          type: integer
+        by_source:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Counts keyed by source_scope (team/employee/project/dependency_closure)
+    ProjectedSkillItem:
+      type: object
+      required:
+        - skill_id
+        - skill_key
+        - source_scope
+      properties:
+        skill_id:
+          type: string
+          format: uuid
+        skill_key:
+          type: string
+        skill_name:
+          type: string
+          description: Display name when resolvable; UI falls back to skill_key
+        version:
+          type: string
+        source_scope:
+          type: string
+          description: team | employee | project
+    ProjectedMcpItem:
+      type: object
+      required:
+        - server_id
+        - server_key
+        - source_scope
+      properties:
+        server_id:
+          type: string
+          format: uuid
+        server_key:
+          type: string
+        server_name:
+          type: string
+        source_scope:
+          type: string
+          description: team | employee | project | dependency_closure
+    ProjectedSkillConflict:
+      type: object
+      required:
+        - slug
+        - source
+      properties:
+        slug:
+          type: string
+        source:
+          type: string
+          description: project_binding | workspace_native | …
+        winning_skill_id:
+          type: string
+          format: uuid
+        dropped_skill_id:
+          type: string
+          format: uuid
+        winning_source:
+          type: string
+        dropped_source:
+          type: string
+        winning_skill_name:
+          type: string
+        dropped_skill_name:
+          type: string
+
     ProjectExecutionTraceAttempt:
       type: object
       required:
@@ -10456,6 +10568,9 @@ components:
             $ref: "#/components/schemas/ExecutionLedgerEvent"
         summary:
           $ref: "#/components/schemas/ProjectExecutionTraceAttemptSummary"
+        capability_projection:
+          $ref: "#/components/schemas/CapabilityProjectionSnapshot"
+          description: Dispatched skill/MCP projection with sources and conflicts (P3)
     ExecutionLedgerEvent:
       type: object
       required:
@@ -14984,6 +15099,9 @@ components:
         project_deleted:
           type: boolean
           description: True when the linked project exists but has been soft-deleted; UI should keep the name and not link to project detail.
+        capability_projection:
+          $ref: "#/components/schemas/CapabilityProjectionSnapshot"
+          description: Console-safe skill/MCP projection for this run (P3); available=false when unresolvable
     DigitalEmployeeRunStats:
       type: object
       required:

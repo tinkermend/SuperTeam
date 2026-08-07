@@ -123,6 +123,9 @@ type ProjectExecutionTraceAttempt struct {
 	Retryable           *bool
 	Events              []ExecutionLedgerEvent
 	Summary             *ProjectExecutionTraceAttemptSummary
+	// CapabilityProjection is the console-safe skill/MCP snapshot for this attempt (P3).
+	// Always set by GetExecutionTrace (available=false when unresolvable).
+	CapabilityProjection *CapabilityProjectionSnapshot
 }
 
 type ProjectExecutionTraceAttemptSummary struct {

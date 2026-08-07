@@ -6,12 +6,14 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { MarkdownProse, StatusPill, Button, type Tone } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
+  getDigitalEmployeeRun,
   listDigitalEmployeeRunEvents,
   stopDigitalEmployeeRun,
   type DigitalEmployeeRun,
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus
 } from "@/lib/api/employees";
+import { AttemptCapabilityProjection } from "@/features/projects/components/attempt-capability-projection";
 import { formatDateTime } from "@/lib/format-time";
 import { runStatusLabel, statusLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
@@ -85,6 +87,12 @@ export function RunDetailDrawer({
     queryFn: () =>
       listDigitalEmployeeRunEvents(apiOptions, employeeId, run?.id ?? "", { limit: EVENT_DISPLAY_LIMIT + 1 }),
     refetchInterval: run && isActiveRun(run.status) ? 2500 : false
+});
+  const runDetail = useQuery({
+    enabled: Boolean(run?.id) && open,
+    queryKey: ["digital-employee-run", employeeId, run?.id],
+    queryFn: () => getDigitalEmployeeRun(apiOptions, employeeId, run?.id ?? ""),
+    refetchInterval: run && isActiveRun(run.status) ? 5000 : false
 });
   const stopRun = useMutation({
     mutationFn: (target: DigitalEmployeeRunListItem) =>
@@ -198,6 +206,14 @@ export function RunDetailDrawer({
               <p className="text-sm font-semibold">事件流</p>
               {displayedEvents ? <span className="text-xs text-ink-3">{displayedEvents.length} 条</span> : null}
             </div>
+          <AttemptCapabilityProjection projection={runDetail.data?.capability_projection} />
+          {runDetail.isLoading ? (
+            <p className="text-xs text-ink-3">能力投影加载中…</p>
+          ) : null}
+          {runDetail.isError ? (
+            <p className="text-xs text-destructive">能力投影加载失败</p>
+          ) : null}
+
             {events.isLoading ? <p className="text-sm text-ink-2">事件加载中</p> : null}
             {events.isError ? <p className="text-sm text-destructive">事件加载失败</p> : null}
             {displayedEvents?.length ? (

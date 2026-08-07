@@ -169,3 +169,49 @@ CROSS JOIN LATERAL create_execution_ledger_event(
     source.occurred_at,
     source.idempotency_key
 ) AS ledger;
+
+-- name: ListCapabilityProjectionSourcesForAttempts :many
+-- Attempt → task_runs.command_id → runtime_command_receipts.payload (start_session).
+-- Missing run/receipt yields NULL payload; caller marks available=false.
+SELECT
+    pta.id AS attempt_id,
+    tr.command_id,
+    rcr.payload
+FROM project_task_attempts pta
+LEFT JOIN task_runs tr
+  ON tr.tenant_id = pta.tenant_id
+ AND tr.id = pta.digital_employee_run_id
+LEFT JOIN runtime_command_receipts rcr
+  ON rcr.tenant_id = pta.tenant_id
+ AND rcr.command_id = tr.command_id
+WHERE pta.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND pta.id = ANY(sqlc.arg('attempt_ids')::uuid[]);
+
+-- name: ListSkillNamesByIDs :many
+SELECT id, name, slug
+FROM skills
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = ANY(sqlc.arg('skill_ids')::uuid[]);
+
+-- name: ListProjectTaskAttestationMetadataByAttemptIDs :many
+SELECT
+    id,
+    attempt_id,
+    metadata
+FROM project_task_attestations
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND attempt_id = ANY(sqlc.arg('attempt_ids')::uuid[])
+ORDER BY created_at ASC;
+
+-- name: ListProjectTaskAttestationMetadataByRunID :many
+SELECT
+    pta.attempt_id,
+    pta.metadata
+FROM project_task_attestations pta
+INNER JOIN project_task_attempts att
+  ON att.tenant_id = pta.tenant_id
+ AND att.project_task_id = pta.project_task_id
+ AND att.id = pta.attempt_id
+WHERE pta.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND att.digital_employee_run_id = sqlc.arg('run_id')::uuid
+ORDER BY pta.created_at ASC;

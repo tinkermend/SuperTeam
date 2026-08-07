@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -589,7 +590,6 @@ func TestGetExecutionTraceGroupsEventsByAttempt(t *testing.T) {
 	require.Equal(t, summaryID, trace.Attempts[0].Summary.ExecutionSummaryID)
 }
 
-
 func TestGetExecutionTraceProjectsSessionResumeFromAttemptPacket(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -650,6 +650,112 @@ func TestSessionResumeFieldsFromExecutionContext(t *testing.T) {
 	require.Equal(t, "resumed", *status)
 	require.NotNil(t, label)
 	require.Equal(t, "已接上上次会话", *label)
+}
+
+func TestGetExecutionTraceAttachesCapabilityProjection(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	skillID := uuid.New()
+	mcpID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID, Name: "p"}
+	repo.tasks = []ProjectTask{{
+		ID: taskID, TenantID: tenantID, ProjectID: projectID, Title: "t", Status: ProjectTaskStatusCompleted,
+	}}
+	repo.projectTaskAttempts = []ProjectTaskAttempt{{
+		ID:            attemptID,
+		TenantID:      tenantID,
+		ProjectTaskID: taskID,
+		AttemptNo:     1,
+		Status:        "succeeded",
+	}}
+	payload, _ := json.Marshal(map[string]any{
+		"skills": []any{
+			map[string]any{
+				"skill_id": skillID.String(), "skill_key": "linux", "source_scope": "project", "version": "1",
+			},
+		},
+		"mcp_servers": []any{
+			map[string]any{
+				"server_id": mcpID.String(), "server_key": "gh", "name": "GitHub", "source_scope": "dependency_closure",
+				"url": "https://should-not-leak.example",
+			},
+		},
+		"environment": []any{map[string]any{"name": "TOKEN", "value": "sekrit"}},
+		"metadata": map[string]any{
+			"skill_conflicts": []any{
+				map[string]any{"slug": "linux", "source": "project_binding", "winning_skill_id": skillID.String(), "winning_source": "project", "dropped_source": "employee"},
+			},
+		},
+	})
+	repo.capabilityProjectionPayloads = map[uuid.UUID][]byte{attemptID: payload}
+	repo.skillNamesByID = map[uuid.UUID]string{skillID: "Linux 排障"}
+	repo.projectTaskAttestations = []ProjectTaskAttestation{{
+		TenantID:  tenantID,
+		AttemptID: attemptID,
+		Metadata: map[string]any{
+			"skill_conflicts": []any{
+				map[string]any{"slug": "beta", "source": "workspace_native"},
+			},
+		},
+	}}
+
+	trace, err := service.GetExecutionTrace(context.Background(), GetExecutionTraceRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		t.Fatalf("GetExecutionTrace: %v", err)
+	}
+	if len(trace.Attempts) != 1 || trace.Attempts[0].CapabilityProjection == nil {
+		t.Fatalf("missing projection: %#v", trace.Attempts)
+	}
+	snap := trace.Attempts[0].CapabilityProjection
+	if !snap.Available || snap.Summary.SkillCount != 1 || snap.Summary.MCPCount != 1 || snap.Summary.ConflictCount != 2 {
+		t.Fatalf("snap summary %#v available=%v", snap.Summary, snap.Available)
+	}
+	if snap.Skills[0].SkillName != "Linux 排障" || snap.Skills[0].SourceScope != "project" {
+		t.Fatalf("skill %#v", snap.Skills[0])
+	}
+	if snap.MCPServers[0].SourceScope != "dependency_closure" {
+		t.Fatalf("mcp %#v", snap.MCPServers[0])
+	}
+	raw, _ := json.Marshal(snap)
+	if strings.Contains(string(raw), "sekrit") || strings.Contains(string(raw), "should-not-leak") {
+		t.Fatalf("secret leaked: %s", raw)
+	}
+}
+
+func TestGetExecutionTraceCapabilityProjectionUnavailableWithoutPayload(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	attemptID := uuid.New()
+	repo.projects[projectID] = Project{ID: projectID, TenantID: tenantID}
+	taskID := uuid.New()
+	repo.tasks = []ProjectTask{{
+		ID: taskID, TenantID: tenantID, ProjectID: projectID, Title: "t", Status: ProjectTaskStatusRunning,
+	}}
+	repo.projectTaskAttempts = []ProjectTaskAttempt{{
+		ID: attemptID, TenantID: tenantID, ProjectTaskID: taskID, AttemptNo: 1, Status: "running",
+	}}
+	trace, err := service.GetExecutionTrace(context.Background(), GetExecutionTraceRequest{TenantID: tenantID, ProjectID: projectID})
+	if err != nil {
+		t.Fatalf("err %v", err)
+	}
+	if trace.Attempts[0].CapabilityProjection == nil || trace.Attempts[0].CapabilityProjection.Available {
+		t.Fatalf("expected unavailable snapshot, got %#v", trace.Attempts[0].CapabilityProjection)
+	}
 }
 
 func TestGetExecutionTraceDoesNotFallbackSummaryWhenTaskHasMatchedSummaryEvent(t *testing.T) {
@@ -11026,7 +11132,6 @@ func TestArchiveProjectAllowsEmptyProjectWithNoDemands(t *testing.T) {
 	}
 }
 
-
 func TestUnarchiveProjectRestoresRunning(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -11931,6 +12036,8 @@ type memoryRepository struct {
 	executionLedgerEvents            []ExecutionLedgerEvent
 	projectTaskResults               []ProjectTaskResult
 	projectTaskAttestations          []ProjectTaskAttestation
+	capabilityProjectionPayloads     map[uuid.UUID][]byte // attempt_id -> start_session payload
+	skillNamesByID                   map[uuid.UUID]string
 	transferRequests                 []TransferRequest
 	decisionRequests                 []DecisionRequest
 	planRevisions                    []PlanRevision
@@ -11960,21 +12067,21 @@ type memoryRepository struct {
 	lastExecutionSummariesOffset     int32
 	executionLedgerEventListRequests []GetExecutionTraceRequest
 
-	taskStatusBeforeUpdate        *string
-	appendProjectEventErr         error
-	createExecutionSummaryErr     error
-	createExecutionLedgerEventErr error
-	createTransferRequestErr      error
-	archiveProjectErr             error
-	projectTaskRunRuntimeNodes    map[uuid.UUID]uuid.UUID
-	projectTaskRunWorkProducts    map[uuid.UUID][]any
-	projectRuntimeNodes           map[uuid.UUID][]ProjectRuntimeNode
-	projectEmployeeNodeAffinity   map[uuid.UUID]map[uuid.UUID]ProjectEmployeeNodeAffinity
-	deleteBlockers                []ProjectDeleteBlocker
-	deletePreviewCounts           ProjectDeleteWarnings
-	deleteCascadeResult           ProjectDeleteCascadeResult
-	deleteAuditEvents             []ProjectDeleteAuditEventParams
-	deleteAuditEventErr           error
+	taskStatusBeforeUpdate           *string
+	appendProjectEventErr            error
+	createExecutionSummaryErr        error
+	createExecutionLedgerEventErr    error
+	createTransferRequestErr         error
+	archiveProjectErr                error
+	projectTaskRunRuntimeNodes       map[uuid.UUID]uuid.UUID
+	projectTaskRunWorkProducts       map[uuid.UUID][]any
+	projectRuntimeNodes              map[uuid.UUID][]ProjectRuntimeNode
+	projectEmployeeNodeAffinity      map[uuid.UUID]map[uuid.UUID]ProjectEmployeeNodeAffinity
+	deleteBlockers                   []ProjectDeleteBlocker
+	deletePreviewCounts              ProjectDeleteWarnings
+	deleteCascadeResult              ProjectDeleteCascadeResult
+	deleteAuditEvents                []ProjectDeleteAuditEventParams
+	deleteAuditEventErr              error
 	ensureDecisionCardsTerminalCalls []ensureDecisionCardsTerminalCall
 }
 
@@ -14260,6 +14367,55 @@ func (r *memoryRepository) ListProjectTaskAttemptsForExecutionTrace(ctx context.
 	return filtered, nil
 }
 
+func (r *memoryRepository) ListCapabilityProjectionSourcesForAttempts(_ context.Context, _ uuid.UUID, attemptIDs []uuid.UUID) ([]CapabilityProjectionSourceRow, error) {
+	out := make([]CapabilityProjectionSourceRow, 0, len(attemptIDs))
+	for _, id := range attemptIDs {
+		row := CapabilityProjectionSourceRow{AttemptID: id}
+		if r.capabilityProjectionPayloads != nil {
+			if payload, ok := r.capabilityProjectionPayloads[id]; ok {
+				row.Payload = payload
+				row.CommandID = "cmd-" + id.String()
+			}
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) ListSkillNamesByIDs(_ context.Context, _ uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := map[uuid.UUID]string{}
+	for _, id := range skillIDs {
+		if r.skillNamesByID != nil {
+			if name, ok := r.skillNamesByID[id]; ok {
+				out[id] = name
+			}
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) ListAttestationMetadataByAttemptIDs(_ context.Context, tenantID uuid.UUID, attemptIDs []uuid.UUID) (map[uuid.UUID][][]byte, error) {
+	want := map[uuid.UUID]struct{}{}
+	for _, id := range attemptIDs {
+		want[id] = struct{}{}
+	}
+	out := map[uuid.UUID][][]byte{}
+	for _, att := range r.projectTaskAttestations {
+		if att.TenantID != tenantID {
+			continue
+		}
+		if _, ok := want[att.AttemptID]; !ok {
+			continue
+		}
+		raw, err := json.Marshal(att.Metadata)
+		if err != nil {
+			return nil, err
+		}
+		out[att.AttemptID] = append(out[att.AttemptID], raw)
+	}
+	return out, nil
+}
+
 func (r *memoryRepository) CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error) {
 	if r.createTransferRequestErr != nil {
 		return TransferRequest{}, r.createTransferRequestErr
@@ -15334,7 +15490,6 @@ func (r *memoryRepository) ListTransferRequests(ctx context.Context, tenantID, p
 	}
 	return filtered, nil
 }
-
 
 func (r *memoryRepository) ListOrphanWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
 	out := make([]ProjectTask, 0)

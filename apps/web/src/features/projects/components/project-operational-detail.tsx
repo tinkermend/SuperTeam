@@ -689,6 +689,7 @@ export function ProjectOperationalDetail({
       <ProjectTaskDetailDialog
         decisionRequests={decisionRequests}
         demands={demands}
+        executionTrace={executionTrace}
         fetchTaskGraph={fetchTaskGraph}
         onOpenChange={(open) => {
           if (!open) setDetailTaskId(undefined);

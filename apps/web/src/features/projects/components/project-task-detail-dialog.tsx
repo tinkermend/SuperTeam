@@ -12,8 +12,10 @@ import {
 import { StatusPill, IconTile } from "@/components/superteam";
 import { cn } from "@/lib/utils";
 import type {
+  CapabilityProjectionSnapshot,
   ProjectDecisionRequest,
   ProjectDemand,
+  ProjectExecutionTrace,
   ProjectOverview,
   ProjectTask,
   ProjectTaskGraph
@@ -43,6 +45,8 @@ type ProjectTaskDetailDialogProps = {
   taskGraph?: ProjectTaskGraph;
   overview?: ProjectOverview;
   principalNamesById?: ReadonlyMap<string, string>;
+  /** 已加载的执行轨迹；用于展示最近 attempt 的能力投影摘要（P3）。 */
+  executionTrace?: ProjectExecutionTrace;
   onResolveDecision: (decisionId: string, decision: string) => void;
   /**
    * 按 demand 懒查执行图：页面只预载最新 demand 的图，历史需求的任务打开弹层时
@@ -66,6 +70,7 @@ export function ProjectTaskDetailDialog({
   taskGraph,
   overview,
   principalNamesById,
+  executionTrace,
   onResolveDecision,
   fetchTaskGraph
 }: ProjectTaskDetailDialogProps) {
@@ -98,6 +103,7 @@ export function ProjectTaskDetailDialog({
   const result = activeGraph?.execution_summaries.find(
     (item) => item.project_task_id === task.id,
   );
+  const latestProjection = latestCapabilityProjectionForTask(executionTrace, task.id);
   const openDecisionStatuses = new Set(["pending", "waiting", "requested", "open"]);
   const pendingDecisions = decisionRequests.filter((item) => {
     if (item.project_task_id !== task.id) return false;
@@ -333,6 +339,14 @@ export function ProjectTaskDetailDialog({
                 <span className="text-ink-3">暂无运行记录</span>
               )}
             </div>
+            {latestProjection?.available ? (
+              <p className="text-[12px] text-ink-2" data-testid="task-detail-capability-projection-summary">
+                <span className="text-ink-3">最近投影</span>{" "}
+                技能 {latestProjection.summary.skill_count} · MCP{" "}
+                {latestProjection.summary.mcp_count} · 冲突{" "}
+                {latestProjection.summary.conflict_count}
+              </p>
+            ) : null}
             {run?.started_at ? (
               <p className="text-[12px] tabular-nums text-ink-2">
                 <span className="text-ink-3">起</span>{" "}
@@ -596,4 +610,17 @@ function runDotClass(status: string): string {
     default:
       return "bg-ink-3/60";
   }
+}
+
+
+function latestCapabilityProjectionForTask(
+  trace: ProjectExecutionTrace | undefined,
+  taskId: string,
+): CapabilityProjectionSnapshot | undefined {
+  if (!trace?.attempts?.length) return undefined;
+  const attempts = trace.attempts.filter((item) => item.project_task_id === taskId);
+  if (attempts.length === 0) return undefined;
+  // attempts already ordered by attempt_no asc in API; pick last.
+  const latest = attempts[attempts.length - 1];
+  return latest.capability_projection;
 }

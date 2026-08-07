@@ -2534,6 +2534,8 @@ type fakeRunServiceRepository struct {
 	listRunEventsTaskID                   uuid.UUID
 	listRunEventsRunID                    uuid.UUID
 	commandReceipt                        *RuntimeCommandReceipt
+	skillNamesByID                        map[uuid.UUID]string
+	attestationMetaByRun                  map[uuid.UUID][][]byte
 	commandReceipts                       []CreateRuntimeCommandReceiptRequest
 	receiptUpdates                        []UpdateRuntimeCommandReceiptRequest
 	runtimeSkills                         []skill.SkillRuntimeRecord
@@ -2553,10 +2555,10 @@ type fakeRunServiceRepository struct {
 	// providerSessionForRoot maps a task-lineage root id to the session id
 	// FindProviderSessionForTaskRoot should return for it (empty string /
 	// absent means "no active session for this root").
-	providerSessionForRoot      map[uuid.UUID]string
+	providerSessionForRoot map[uuid.UUID]string
 	// providerSessionCandidate 覆盖 resume 预检看到的候选事实；未设置时由
 	// providerSessionForRoot 合成一条"新鲜且同节点"的候选。
-	providerSessionCandidate *ProviderSessionResumeCandidate
+	providerSessionCandidate    *ProviderSessionResumeCandidate
 	providerSessionForRootCalls []findProviderSessionForRootCall
 
 	// taskMetadata maps a task id to the metadata GetRunTaskMetadata should
@@ -2813,6 +2815,25 @@ func (f *fakeRunServiceRepository) GetCommandReceipt(_ context.Context, tenantID
 
 func (f *fakeRunServiceRepository) GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
 	return f.GetCommandReceipt(ctx, tenantID, commandID)
+}
+
+func (f *fakeRunServiceRepository) ListSkillNamesByIDs(_ context.Context, _ uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := map[uuid.UUID]string{}
+	for _, id := range skillIDs {
+		if f.skillNamesByID != nil {
+			if name, ok := f.skillNamesByID[id]; ok {
+				out[id] = name
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRunServiceRepository) ListAttestationMetadataByRunID(_ context.Context, _ uuid.UUID, runID uuid.UUID) ([][]byte, error) {
+	if f.attestationMetaByRun == nil {
+		return nil, nil
+	}
+	return f.attestationMetaByRun[runID], nil
 }
 
 func (f *fakeRunServiceRepository) UpdateCommandReceipt(_ context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error) {
@@ -3219,5 +3240,52 @@ func TestStandaloneDispatchCommandTypeResumesAnyRunKindWithSession(t *testing.T)
 		if got := standaloneDispatchCommandType(tc.req); got != tc.want {
 			t.Fatalf("%s: expected %s, got %s", tc.name, tc.want, got)
 		}
+	}
+}
+
+func TestGetRunAttachesCapabilityProjection(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	run := validRunServiceRun(DigitalEmployeeRunStatusCompleted)
+	skillID := uuid.New()
+	run.CommandID = "cmd-projection-1"
+	repo.run = run
+	repo.commandReceipt = &RuntimeCommandReceipt{
+		TenantID:  run.TenantID,
+		CommandID: run.CommandID,
+		Payload: map[string]any{
+			"skills": []any{
+				map[string]any{
+					"skill_id": skillID.String(), "skill_key": "linux", "source_scope": "project",
+				},
+			},
+			"mcp_servers": []any{
+				map[string]any{
+					"server_id": uuid.New().String(), "server_key": "gh", "name": "GitHub", "source_scope": "dependency_closure",
+					"url": "https://should-not-leak.example",
+				},
+			},
+			"environment": []any{map[string]any{"name": "TOKEN", "value": "sekrit"}},
+		},
+	}
+	// optional skill name enrichment via override - extend fake to return names
+	// Use method override by setting a custom map on fake if we add field
+	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+	// monkey: temporarily wrap ListSkillNames - fake returns empty names, skill_key still shown
+	got, err := service.GetRun(context.Background(), run.TenantID, run.DigitalEmployeeID, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.CapabilityProjection == nil || !got.CapabilityProjection.Available {
+		t.Fatalf("expected available projection, got %#v", got.CapabilityProjection)
+	}
+	if got.CapabilityProjection.Summary.SkillCount != 1 || got.CapabilityProjection.Summary.MCPCount != 1 {
+		t.Fatalf("summary %#v", got.CapabilityProjection.Summary)
+	}
+	if got.CapabilityProjection.MCPServers[0].SourceScope != "dependency_closure" {
+		t.Fatalf("mcp %#v", got.CapabilityProjection.MCPServers[0])
+	}
+	raw, _ := json.Marshal(got.CapabilityProjection)
+	if strings.Contains(string(raw), "sekrit") || strings.Contains(string(raw), "should-not-leak") {
+		t.Fatalf("leaked secrets: %s", raw)
 	}
 }

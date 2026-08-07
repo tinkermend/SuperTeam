@@ -15,6 +15,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/superteam/control-plane/internal/capabilityprojection"
+
 	cpruntime "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/skill"
 )
@@ -459,12 +461,12 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		return StartProjectTaskRunResult{}, err
 	}
 	return StartProjectTaskRunResult{
-		RunID:          run.ID,
-		RuntimeTaskID:  run.TaskID,
-		RuntimeNodeID:  run.RuntimeNodeID,
-		NodeID:         run.NodeID,
-		ProviderType:   run.ProviderType,
-		SessionResume:  sessionResume,
+		RunID:         run.ID,
+		RuntimeTaskID: run.TaskID,
+		RuntimeNodeID: run.RuntimeNodeID,
+		NodeID:        run.NodeID,
+		ProviderType:  run.ProviderType,
+		SessionResume: sessionResume,
 	}, nil
 }
 
@@ -577,11 +579,11 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 }
 
 type startSessionDependencies struct {
-	runtimeSkills     []skill.SkillRuntimeRecord
-	skillConflicts    []skill.SkillRuntimeConflict
-	runtimeEnv    []RuntimeEnvironmentVariablePayload
-	runtimeMCP    []RuntimeMCPServerPayload
-	configInput   EmployeeConfigInput
+	runtimeSkills  []skill.SkillRuntimeRecord
+	skillConflicts []skill.SkillRuntimeConflict
+	runtimeEnv     []RuntimeEnvironmentVariablePayload
+	runtimeMCP     []RuntimeMCPServerPayload
+	configInput    EmployeeConfigInput
 	// 团队宪法（spec §5.3，D9）：已渲染的约束文本 + 生效版本号，随 payload 下发。
 	teamConstitution TeamConstitutionForDispatch
 }
@@ -1286,7 +1288,47 @@ func (s *DigitalEmployeeRunService) GetRun(ctx context.Context, tenantID, employ
 	if runID == uuid.Nil {
 		return nil, fmt.Errorf("%w: run_id is required", ErrInvalidInput)
 	}
-	return s.repository.GetRun(ctx, tenantID, employeeID, runID)
+	run, err := s.repository.GetRun(ctx, tenantID, employeeID, runID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachCapabilityProjection(ctx, tenantID, run); err != nil {
+		return nil, err
+	}
+	return run, nil
+}
+
+func (s *DigitalEmployeeRunService) attachCapabilityProjection(ctx context.Context, tenantID uuid.UUID, run *DigitalEmployeeRun) error {
+	if run == nil {
+		return nil
+	}
+	var payloadJSON []byte
+	if strings.TrimSpace(run.CommandID) != "" {
+		receipt, err := s.repository.GetCommandReceipt(ctx, tenantID, run.CommandID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return fmt.Errorf("get command receipt for capability projection: %w", err)
+		}
+		if receipt != nil && len(receipt.Payload) > 0 {
+			raw, err := json.Marshal(receipt.Payload)
+			if err != nil {
+				return fmt.Errorf("marshal command receipt payload: %w", err)
+			}
+			payloadJSON = raw
+		}
+	}
+	attestationMeta, err := s.repository.ListAttestationMetadataByRunID(ctx, tenantID, run.ID)
+	if err != nil {
+		return fmt.Errorf("list attestation metadata for capability projection: %w", err)
+	}
+	snap := capabilityprojection.Extract(payloadJSON, attestationMeta)
+	ids := capabilityprojection.CollectSkillIDs(snap)
+	names, err := s.repository.ListSkillNamesByIDs(ctx, tenantID, ids)
+	if err != nil {
+		return fmt.Errorf("list skill names for capability projection: %w", err)
+	}
+	capabilityprojection.EnrichNames(&snap, names)
+	run.CapabilityProjection = &snap
+	return nil
 }
 
 func (s *DigitalEmployeeRunService) ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error) {
@@ -1740,12 +1782,12 @@ func buildStartSessionPayload(req CreateDigitalEmployeeRunRequest, objective, pr
 		items := make([]map[string]any, 0, len(skillConflicts))
 		for _, c := range skillConflicts {
 			items = append(items, map[string]any{
-				"slug":              c.Slug,
-				"winning_skill_id":  c.WinningSkillID.String(),
-				"dropped_skill_id":  c.DroppedSkillID.String(),
-				"winning_source":    c.WinningSource,
-				"dropped_source":    c.DroppedSource,
-				"source":            c.Source, // e.g. project_binding
+				"slug":             c.Slug,
+				"winning_skill_id": c.WinningSkillID.String(),
+				"dropped_skill_id": c.DroppedSkillID.String(),
+				"winning_source":   c.WinningSource,
+				"dropped_source":   c.DroppedSource,
+				"source":           c.Source, // e.g. project_binding
 			})
 		}
 		metadata["skill_conflicts"] = items

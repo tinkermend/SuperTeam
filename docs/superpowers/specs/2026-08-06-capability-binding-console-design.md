@@ -1,8 +1,7 @@
 # 能力绑定控制台：项目场地供给的配置与可见性
 
 - 日期：2026-08-06
-> 复核状态：状态行已过时（写"已立项，可直接开工"），实际已在commit 9dc4e975全量实施入main，含真实浏览器U1-U9验证、并修复了依赖闭包预览对已保存绑定恒不显示的缺陷。建议将文件状态行更新为"已实施"并注明commit。
-- 状态：**已立项，可直接开工**（交接给实施会话）
+- 状态：**P0–P2 已实施**（2026-08-06，commit 见 CHANGELOG / `9dc4e975` 一带）；**P3 已另立** → [`2026-08-07-capability-projection-visibility-design.md`](./2026-08-07-capability-projection-visibility-design.md)
 - 系列：能力供给三层模型的 UI 面（后端 P0–P2 已入库 `4f4a3033`）
 - 交付性质：**纯前端 + 两条文案纠正**。后端零改动——读字段已在 §8.1 随 P0 就位
 - 目标读者：实施会话（本文自包含；实施前必读 `2026-08-06-capability-supply-three-layer-design.md` §4.2/§4.3/§5，以及 `DESIGN.md`）
@@ -58,7 +57,7 @@ Skill.runtime_dependencies.mcp_servers[]  {mcp_server_id, server_key, server_nam
 |---|---|
 | 后端任何改动 | 读字段 §8.1 已随 P0 就位 |
 | 技能/MCP 注册表本身的管理页改造 | 已有，本批只加"被哪些项目引用" |
-| 派发期投影的完整可视化（哪些来自项目/哪些是闭包补的/有无冲突） | 数据已进 attestation，展示面归 P3，见 §7 |
+| 派发期投影的完整可视化（哪些来自项目/哪些是闭包补的/有无冲突） | **P3 已立项**：见 `2026-08-07-capability-projection-visibility-design.md`（纠正：不能只靠 attestation，需从 command receipt 抽读模型） |
 | 项目层门禁配置 | 三层模型决策 4：项目只做供给，门禁在剧本层 `requires` |
 | 团队级绑定页改造 | 现有团队配置页不动 |
 
@@ -190,9 +189,9 @@ project_binding: "项目绑定"    ← 补（冲突留痕的 source）
 | **P0** | §3 项目配置页「能力绑定」tab（两区 + 草稿态 + 闭包预览） | 浏览器 |
 | **P1** | §4 员工侧场地标记 + §5 技能详情页文案纠正与引用面 | 浏览器 |
 | **P2** | §6 词表 | `verify:web` |
-| **P3（不在本批）** | 派发投影可见性：任务详情/attestation 面展示本次投影了哪些能力、来源分别是什么、有无冲突 | 待立项 |
+| **P3** | 派发投影可见性：执行轨迹 attempt 展示本次投影技能/MCP、来源、冲突 | **已实施** → [`2026-08-07-capability-projection-visibility-design.md`](./2026-08-07-capability-projection-visibility-design.md) |
 
-P3 单独说明：数据在 attestation 里已经齐了（`skill_conflicts` + `source_scope`），缺的只是展示面。等 P0/P1 上线、真实用起来之后再判断它值不值得做——现在做容易做成没人看的面板。
+P3 说明（2026-08-07 更正）：原先假设「数据在 attestation 已齐、纯展示即可」**不准确**——完整 `skills[]`/`mcp_servers[]`/`source_scope` 在 `runtime_command_receipts.payload`（start_session）；attestation 主要补 `workspace_native` 冲突。P3 spec 要求小后端读路径 + 执行轨迹 UI，挂在已有排障路径上，避免做成独立大盘。
 
 ---
 

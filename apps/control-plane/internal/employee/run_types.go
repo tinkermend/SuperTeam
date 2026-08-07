@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/superteam/control-plane/internal/capabilityprojection"
 )
 
 // RunKindTask and RunKindChat are the two supported values of a run's run_kind:
@@ -112,6 +114,8 @@ type DigitalEmployeeRun struct {
 	ProjectID      *uuid.UUID
 	ProjectName    *string
 	ProjectDeleted bool
+	// CapabilityProjection is the console-safe skill/MCP snapshot for this run (P3).
+	CapabilityProjection *capabilityprojection.CapabilityProjectionSnapshot
 }
 
 type DigitalEmployeeRunStats struct {

@@ -926,7 +926,6 @@ func validProvisioningReceipt(commandID string) *RuntimeCommandReceipt {
 	}
 }
 
-
 var (
 	runWritebackTenantID            = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	runWritebackEmployeeID          = uuid.MustParse("00000000-0000-0000-0000-000000000501")
@@ -985,7 +984,6 @@ func (f *fakeRunWritebackRepository) putReceipt(receipt *RuntimeCommandReceipt) 
 	copied := *receipt
 	f.receipts[receipt.CommandID] = &copied
 }
-
 
 func (f *fakeRunWritebackRepository) GetRunPreflight(context.Context, uuid.UUID, uuid.UUID) (RunPreflight, error) {
 	return RunPreflight{}, ErrNotFound
@@ -1180,6 +1178,14 @@ func (f *fakeRunWritebackRepository) GetCommandReceiptForUpdate(ctx context.Cont
 	return f.GetCommandReceipt(ctx, tenantID, commandID)
 }
 
+func (f *fakeRunWritebackRepository) ListSkillNamesByIDs(context.Context, uuid.UUID, []uuid.UUID) (map[uuid.UUID]string, error) {
+	return map[uuid.UUID]string{}, nil
+}
+
+func (f *fakeRunWritebackRepository) ListAttestationMetadataByRunID(context.Context, uuid.UUID, uuid.UUID) ([][]byte, error) {
+	return nil, nil
+}
+
 func (f *fakeRunWritebackRepository) UpdateCommandReceipt(_ context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error) {
 	f.receiptUpdates = append(f.receiptUpdates, req)
 	receipt, ok := f.receipts[req.CommandID]
@@ -1213,7 +1219,6 @@ func (f *fakeRunWritebackRepository) ListCommandReceiptsByResource(_ context.Con
 	return out, nil
 }
 
-
 func (f *fakeRunWritebackRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenantID, employeeID uuid.UUID, status DigitalEmployeeStatus) (DigitalEmployeeRecord, error) {
 	f.employeeStatusUpdates = append(f.employeeStatusUpdates, fakeEmployeeStatusUpdate{
 		tenantID:   tenantID,
@@ -1228,7 +1233,6 @@ func (f *fakeRunWritebackRepository) UpdateDigitalEmployeeStatus(_ context.Conte
 		UpdatedAt: time.Now().UTC(),
 	}, nil
 }
-
 
 func (f *fakeRunWritebackRepository) DeleteDigitalEmployee(_ context.Context, tenantID, employeeID uuid.UUID) error {
 	f.deletedEmployees = append(f.deletedEmployees, employeeID)

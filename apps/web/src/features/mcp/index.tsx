@@ -151,6 +151,7 @@ export function McpManagementPage() {
                     <Th className="w-32">传输</Th>
                     <Th className="w-28">鉴权</Th>
                     <Th>必需环境变量</Th>
+                    <Th className="w-28">项目绑定</Th>
                     <Th className="w-24">状态</Th>
                     <Th className="w-14" aria-label="操作" />
                   </tr>
@@ -247,6 +248,22 @@ function McpDefinitionRow({
             ))}
           </div>
         )}
+      </Td>
+      <Td>
+        {(() => {
+          const bindings = row.project_bindings ?? [];
+          if (bindings.length === 0) {
+            return <span className="text-xs text-muted-foreground">—</span>;
+          }
+          const names = bindings
+            .map((b) => (b.project_name || "").trim() || `未命名项目 (${b.project_id.slice(0, 8)})`)
+            .join("、");
+          return (
+            <span className="text-xs font-medium text-ink" title={names}>
+              {bindings.length} 个项目
+            </span>
+          );
+        })()}
       </Td>
       <Td>
         <StatusPill tone={tone}>{statusLabel(row.status)}</StatusPill>

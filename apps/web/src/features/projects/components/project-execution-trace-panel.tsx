@@ -17,6 +17,7 @@ import type {
   ProjectExecutionTraceAttempt
 } from "@/lib/api/projects";
 import { statusLabel } from "@/lib/status-labels";
+import { AttemptCapabilityProjection } from "./attempt-capability-projection";
 
 type ProjectExecutionTracePanelProps = {
   errorMessage?: string;
@@ -234,6 +235,8 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
         <MetaBlock label="Session" value={attempt.provider_session_id ?? "未记录"} />
         <MetaBlock label="Runtime" value={attempt.runtime_node_id ?? "未记录"} />
       </div>
+
+      <AttemptCapabilityProjection projection={attempt.capability_projection} />
 
       {summary ? (
         <div className="grid gap-2 rounded-inner bg-card p-3">

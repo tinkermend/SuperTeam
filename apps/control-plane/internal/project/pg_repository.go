@@ -2346,6 +2346,7 @@ func (r *PgRepository) DecomposeAcceptedPlanRevision(ctx context.Context, req De
 // prepareExpansionMergeTasks loads prior demand tasks and returns:
 //   - seeded: planned_task_key → task ID for completed/in-flight work to reuse
 //   - filtered: graph tasks that still need creating (excludes reused keys)
+//
 // Non-terminal prior tasks whose keys are being recreated or dropped are cancelled.
 func (r *PgRepository) prepareExpansionMergeTasks(
 	ctx context.Context,
@@ -4199,6 +4200,68 @@ func (r *PgRepository) ListProjectTaskAttemptsForExecutionTrace(ctx context.Cont
 	return attempts, nil
 }
 
+func (r *PgRepository) ListCapabilityProjectionSourcesForAttempts(ctx context.Context, tenantID uuid.UUID, attemptIDs []uuid.UUID) ([]CapabilityProjectionSourceRow, error) {
+	if len(attemptIDs) == 0 {
+		return []CapabilityProjectionSourceRow{}, nil
+	}
+	rows, err := r.q.ListCapabilityProjectionSourcesForAttempts(ctx, queries.ListCapabilityProjectionSourcesForAttemptsParams{
+		TenantID:   tenantID,
+		AttemptIds: attemptIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CapabilityProjectionSourceRow, 0, len(rows))
+	for _, row := range rows {
+		commandID := ""
+		if row.CommandID.Valid {
+			commandID = row.CommandID.String
+		}
+		out = append(out, CapabilityProjectionSourceRow{
+			AttemptID: row.AttemptID,
+			CommandID: commandID,
+			Payload:   row.Payload,
+		})
+	}
+	return out, nil
+}
+
+func (r *PgRepository) ListSkillNamesByIDs(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := map[uuid.UUID]string{}
+	if len(skillIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.q.ListSkillNamesByIDs(ctx, queries.ListSkillNamesByIDsParams{
+		TenantID: tenantID,
+		SkillIds: skillIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.ID] = row.Name
+	}
+	return out, nil
+}
+
+func (r *PgRepository) ListAttestationMetadataByAttemptIDs(ctx context.Context, tenantID uuid.UUID, attemptIDs []uuid.UUID) (map[uuid.UUID][][]byte, error) {
+	out := map[uuid.UUID][][]byte{}
+	if len(attemptIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.q.ListProjectTaskAttestationMetadataByAttemptIDs(ctx, queries.ListProjectTaskAttestationMetadataByAttemptIDsParams{
+		TenantID:   tenantID,
+		AttemptIds: attemptIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.AttemptID] = append(out[row.AttemptID], row.Metadata)
+	}
+	return out, nil
+}
+
 func (r *PgRepository) listProjectExecutionSummariesByTaskIDs(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ExecutionSummary, error) {
 	if len(taskIDs) == 0 {
 		return []ExecutionSummary{}, nil
@@ -5214,7 +5277,6 @@ func (r *PgRepository) BindProjectTaskWaitingRequest(ctx context.Context, tenant
 	}
 	return taskFromRecord(row)
 }
-
 
 // ListTenantsWithRecoverableProjectTaskAttempts returns the distinct tenants that
 // currently have a queued-but-unstarted or lease-expired running attempt, so the
@@ -7035,15 +7097,15 @@ func projectDeleteAuditDetails(params ProjectDeleteAuditEventParams) map[string]
 		"project_name": params.Project.Name,
 		"workflow_id":  workflowID,
 		"cascade": map[string]any{
-			"members":            params.CascadeResult.MemberCount,
-			"tasks":              params.CascadeResult.TaskCount,
-			"decisions":          params.CascadeResult.DecisionCount,
-			"approvals":          params.CascadeResult.ApprovalCount,
-			"inbox":              params.CascadeResult.InboxCount,
-			"acknowledged_runs":  params.CascadeResult.AcknowledgedRunCount,
-			"runtime_nodes":      params.CascadeResult.RuntimeNodeCount,
-			"affinities":         params.CascadeResult.AffinityCount,
-			"automation_rules":   params.CascadeResult.AutomationRuleCount,
+			"members":           params.CascadeResult.MemberCount,
+			"tasks":             params.CascadeResult.TaskCount,
+			"decisions":         params.CascadeResult.DecisionCount,
+			"approvals":         params.CascadeResult.ApprovalCount,
+			"inbox":             params.CascadeResult.InboxCount,
+			"acknowledged_runs": params.CascadeResult.AcknowledgedRunCount,
+			"runtime_nodes":     params.CascadeResult.RuntimeNodeCount,
+			"affinities":        params.CascadeResult.AffinityCount,
+			"automation_rules":  params.CascadeResult.AutomationRuleCount,
 		},
 	}
 }
@@ -8852,7 +8914,6 @@ func isPGForeignKeyConstraint(err error, constraintName string) bool {
 		pgErr.Code == "23503" &&
 		pgErr.ConstraintName == constraintName
 }
-
 
 func (r *PgRepository) LookupMemberDisplayNames(ctx context.Context, tenantID uuid.UUID, userIDs, employeeIDs []uuid.UUID) (map[uuid.UUID]string, map[uuid.UUID]string, error) {
 	users := make(map[uuid.UUID]string, len(userIDs))

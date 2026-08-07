@@ -46,6 +46,32 @@ const trace: ProjectExecutionTrace = {
       runtime_node_id: "runtime-node-1",
       started_at: "2026-06-20T08:00:00Z",
       status: "failed",
+      capability_projection: {
+        available: true,
+        skills: [
+          {
+            skill_id: "skill-1",
+            skill_key: "linux",
+            skill_name: "Linux 排障",
+            source_scope: "project",
+          },
+        ],
+        mcp_servers: [
+          {
+            server_id: "mcp-1",
+            server_key: "github-mcp",
+            server_name: "GitHub",
+            source_scope: "dependency_closure",
+          },
+        ],
+        skill_conflicts: [],
+        summary: {
+          skill_count: 1,
+          mcp_count: 1,
+          conflict_count: 0,
+          by_source: { project: 1, dependency_closure: 1 },
+        },
+      },
       summary: {
         artifact_refs: ["artifact-1"],
         conclusion: "Provider 进程异常退出，需要人工复核。",
@@ -111,7 +137,18 @@ describe("ProjectExecutionTracePanel", () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it("renders execution trace summary, attempt, and ledger event details", async () => {
+
+  it("renders capability projection block on attempt row", async () => {
+    const screen = await render(<ProjectExecutionTracePanel trace={trace} />);
+    await expect
+      .element(screen.getByTestId("attempt-capability-projection"))
+      .toBeInTheDocument();
+    await expect.element(screen.getByText("技能 1 · MCP 1 · 冲突 0")).toBeInTheDocument();
+    await expect.element(screen.getByText("Linux 排障")).toBeInTheDocument();
+    await expect.element(screen.getByText("依赖补全")).toBeInTheDocument();
+  });
+
+it("renders execution trace summary, attempt, and ledger event details", async () => {
     const screen = await render(<ProjectExecutionTracePanel trace={trace} />);
 
     await expect

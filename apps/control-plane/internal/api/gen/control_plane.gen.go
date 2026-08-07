@@ -3279,6 +3279,25 @@ type BindTeamDigitalEmployeeResponse struct {
 	TeamId            openapi_types.UUID `json:"team_id"`
 }
 
+// CapabilityProjectionSnapshot Console-safe capability projection for one project-task attempt (three-layer model P3). Extracted from start_session command receipt; never includes environment values or secrets.
+type CapabilityProjectionSnapshot struct {
+	// Available false when run/command/payload cannot be resolved
+	Available      bool                        `json:"available"`
+	McpServers     []ProjectedMcpItem          `json:"mcp_servers"`
+	SkillConflicts []ProjectedSkillConflict    `json:"skill_conflicts"`
+	Skills         []ProjectedSkillItem        `json:"skills"`
+	Summary        CapabilityProjectionSummary `json:"summary"`
+}
+
+// CapabilityProjectionSummary defines model for CapabilityProjectionSummary.
+type CapabilityProjectionSummary struct {
+	// BySource Counts keyed by source_scope (team/employee/project/dependency_closure)
+	BySource      map[string]int `json:"by_source"`
+	ConflictCount int            `json:"conflict_count"`
+	McpCount      int            `json:"mcp_count"`
+	SkillCount    int            `json:"skill_count"`
+}
+
 // CastingImpactConfirmRequired defines model for CastingImpactConfirmRequired.
 type CastingImpactConfirmRequired struct {
 	AffectedCastings []DigitalEmployeeRoleImpactCasting `json:"affected_castings"`
@@ -4175,6 +4194,9 @@ type DigitalEmployeeRoleImpactCasting struct {
 
 // DigitalEmployeeRun defines model for DigitalEmployeeRun.
 type DigitalEmployeeRun struct {
+	// CapabilityProjection Console-safe capability projection for one project-task attempt (three-layer model P3). Extracted from start_session command receipt; never includes environment values or secrets.
+	CapabilityProjection *CapabilityProjectionSnapshot `json:"capability_projection,omitempty"`
+
 	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
 	ChatThreadId        *openapi_types.UUID    `json:"chat_thread_id,omitempty"`
 	CommandId           string                 `json:"command_id"`
@@ -4284,6 +4306,9 @@ type DigitalEmployeeRunList struct {
 
 // DigitalEmployeeRunListItem defines model for DigitalEmployeeRunListItem.
 type DigitalEmployeeRunListItem struct {
+	// CapabilityProjection Console-safe capability projection for one project-task attempt (three-layer model P3). Extracted from start_session command receipt; never includes environment values or secrets.
+	CapabilityProjection *CapabilityProjectionSnapshot `json:"capability_projection,omitempty"`
+
 	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
 	ChatThreadId        *openapi_types.UUID    `json:"chat_thread_id,omitempty"`
 	CommandId           string                 `json:"command_id"`
@@ -5842,16 +5867,19 @@ type ProjectExecutionTrace struct {
 
 // ProjectExecutionTraceAttempt defines model for ProjectExecutionTraceAttempt.
 type ProjectExecutionTraceAttempt struct {
-	AttemptId         openapi_types.UUID     `json:"attempt_id"`
-	AttemptNo         int32                  `json:"attempt_no"`
-	Events            []ExecutionLedgerEvent `json:"events"`
-	FailureFamily     *string                `json:"failure_family,omitempty"`
-	FinishedAt        *time.Time             `json:"finished_at,omitempty"`
-	ProjectTaskId     openapi_types.UUID     `json:"project_task_id"`
-	ProviderSessionId *string                `json:"provider_session_id,omitempty"`
-	ProviderType      *string                `json:"provider_type,omitempty"`
-	Retryable         *bool                  `json:"retryable,omitempty"`
-	RuntimeNodeId     *openapi_types.UUID    `json:"runtime_node_id,omitempty"`
+	AttemptId openapi_types.UUID `json:"attempt_id"`
+	AttemptNo int32              `json:"attempt_no"`
+
+	// CapabilityProjection Console-safe capability projection for one project-task attempt (three-layer model P3). Extracted from start_session command receipt; never includes environment values or secrets.
+	CapabilityProjection *CapabilityProjectionSnapshot `json:"capability_projection,omitempty"`
+	Events               []ExecutionLedgerEvent        `json:"events"`
+	FailureFamily        *string                       `json:"failure_family,omitempty"`
+	FinishedAt           *time.Time                    `json:"finished_at,omitempty"`
+	ProjectTaskId        openapi_types.UUID            `json:"project_task_id"`
+	ProviderSessionId    *string                       `json:"provider_session_id,omitempty"`
+	ProviderType         *string                       `json:"provider_type,omitempty"`
+	Retryable            *bool                         `json:"retryable,omitempty"`
+	RuntimeNodeId        *openapi_types.UUID           `json:"runtime_node_id,omitempty"`
 
 	// SessionResumeLabel 执行轨迹展示用中文短标签（服务端已渲染）
 	SessionResumeLabel *string `json:"session_resume_label,omitempty"`
@@ -6424,6 +6452,43 @@ type ProjectTransferRequest struct {
 type ProjectWorkspaceManualActionRequest struct {
 	// Reason Optional operator note recorded in the project audit event.
 	Reason *string `json:"reason,omitempty"`
+}
+
+// ProjectedMcpItem defines model for ProjectedMcpItem.
+type ProjectedMcpItem struct {
+	ServerId   openapi_types.UUID `json:"server_id"`
+	ServerKey  string             `json:"server_key"`
+	ServerName *string            `json:"server_name,omitempty"`
+
+	// SourceScope team | employee | project | dependency_closure
+	SourceScope string `json:"source_scope"`
+}
+
+// ProjectedSkillConflict defines model for ProjectedSkillConflict.
+type ProjectedSkillConflict struct {
+	DroppedSkillId   *openapi_types.UUID `json:"dropped_skill_id,omitempty"`
+	DroppedSkillName *string             `json:"dropped_skill_name,omitempty"`
+	DroppedSource    *string             `json:"dropped_source,omitempty"`
+	Slug             string              `json:"slug"`
+
+	// Source project_binding | workspace_native | …
+	Source           string              `json:"source"`
+	WinningSkillId   *openapi_types.UUID `json:"winning_skill_id,omitempty"`
+	WinningSkillName *string             `json:"winning_skill_name,omitempty"`
+	WinningSource    *string             `json:"winning_source,omitempty"`
+}
+
+// ProjectedSkillItem defines model for ProjectedSkillItem.
+type ProjectedSkillItem struct {
+	SkillId  openapi_types.UUID `json:"skill_id"`
+	SkillKey string             `json:"skill_key"`
+
+	// SkillName Display name when resolvable; UI falls back to skill_key
+	SkillName *string `json:"skill_name,omitempty"`
+
+	// SourceScope team | employee | project
+	SourceScope string  `json:"source_scope"`
+	Version     *string `json:"version,omitempty"`
 }
 
 // PromptTemplate defines model for PromptTemplate.

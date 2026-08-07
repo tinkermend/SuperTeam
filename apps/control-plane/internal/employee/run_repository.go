@@ -42,6 +42,9 @@ type DigitalEmployeeRunRepository interface {
 	GetRunTaskMetadata(ctx context.Context, tenantID, taskID uuid.UUID) (map[string]any, error)
 	CreateCommandReceipt(ctx context.Context, req CreateRuntimeCommandReceiptRequest) error
 	GetCommandReceipt(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
+	// Capability projection visibility (P3): skill display names + attestation conflicts for a run.
+	ListSkillNamesByIDs(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID]string, error)
+	ListAttestationMetadataByRunID(ctx context.Context, tenantID, runID uuid.UUID) ([][]byte, error)
 	GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error)
 	UpdateCommandReceipt(ctx context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error)
 	ListCommandReceiptsByResource(ctx context.Context, tenantID uuid.UUID, resourceType string, resourceID uuid.UUID, commandType string, limit int32) ([]RuntimeCommandReceipt, error)

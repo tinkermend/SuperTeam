@@ -273,6 +273,8 @@ export type DigitalEmployeeRun = {
   project_name?: string;
   /** Soft-deleted linked project: keep the name, do not navigate to project detail. */
   project_deleted?: boolean;
+  /** Console-safe skill/MCP projection for this run (P3). */
+  capability_projection?: import("@/lib/api/projects").CapabilityProjectionSnapshot;
 };
 
 export type DigitalEmployeeRunEvent = {

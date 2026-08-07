@@ -48,17 +48,23 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" }, status });
 }
 
-function createFetcher() {
+function createFetcher(projection?: DigitalEmployeeRunListItem["capability_projection"]) {
   let current = runningRun;
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
+    if (url.pathname === `/api/v1/digital-employees/${employeeId}/runs/${current.id}` && method === "GET") {
+      return jsonResponse({ ...current, capability_projection: projection });
+    }
     if (url.pathname === `/api/v1/digital-employees/${employeeId}/runs/${current.id}/events` && method === "GET") {
       return jsonResponse([{ event_type: "text_delta", sequence_number: 1, payload: { text: "正在执行" } }]);
     }
     if (url.pathname === `/api/v1/digital-employees/${employeeId}/runs/${current.id}/stop` && method === "POST") {
       current = { ...current, status: "cancelling" };
       return jsonResponse(current);
+    }
+    if (method === "GET" && /\/runs\/[^/]+$/.test(url.pathname)) {
+      return jsonResponse(runningRun);
     }
     return jsonResponse({ error: `unhandled ${method} ${url.pathname}` }, 404);
   }) as unknown as typeof fetch;
@@ -424,3 +430,48 @@ describe("RunDetailDrawer", () => {
     await expect.element(screen.getByText(/此运行属于项目任务/)).toBeVisible();
   });
 });
+
+  it("renders capability projection from run detail", async () => {
+    const projection = {
+      available: true,
+      skills: [
+        {
+          skill_id: "skill-1",
+          skill_key: "linux",
+          skill_name: "Linux 排障",
+          source_scope: "project",
+        },
+      ],
+      mcp_servers: [
+        {
+          server_id: "mcp-1",
+          server_key: "gh",
+          server_name: "GitHub",
+          source_scope: "dependency_closure",
+        },
+      ],
+      skill_conflicts: [],
+      summary: {
+        skill_count: 1,
+        mcp_count: 1,
+        conflict_count: 0,
+        by_source: { project: 1, dependency_closure: 1 },
+      },
+    };
+    const screen = await render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RunDetailDrawer
+          apiOptions={{ baseUrl: "http://control-plane.local", fetcher: createFetcher(projection) }}
+          employeeId={employeeId}
+          onOpenChange={vi.fn()}
+          onStopped={vi.fn()}
+          open
+          run={runningRun}
+        />
+      </QueryClientProvider>,
+    );
+    await expect.element(screen.getByTestId("attempt-capability-projection")).toBeInTheDocument();
+    await expect.element(screen.getByText("技能 1 · MCP 1 · 冲突 0")).toBeInTheDocument();
+    await expect.element(screen.getByText("Linux 排障")).toBeInTheDocument();
+    await expect.element(screen.getByText("依赖补全")).toBeInTheDocument();
+  });

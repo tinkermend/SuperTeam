@@ -44,6 +44,7 @@ const githubDefinition = {
   tenant_id: "tenant-1",
   name: "GitHub MCP",
   server_key: "github",
+  project_bindings: [{ project_id: "p1", project_name: "样例项目" }],
   description: "",
   transport: "streamable_http",
   url: "https://api.githubcopilot.com/mcp/",
@@ -76,6 +77,8 @@ describe("MCP management page", () => {
       .element(screen.getByText("https://api.githubcopilot.com/mcp/"))
       .toBeVisible();
     await expect.element(screen.getByText("GITHUB_TOKEN")).toBeVisible();
+    await expect.element(screen.getByText("项目绑定")).toBeVisible();
+    await expect.element(screen.getByText("1 个项目")).toBeVisible();
   });
 
   it("submits a new MCP definition through the register dialog", async () => {

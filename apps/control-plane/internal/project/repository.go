@@ -132,6 +132,11 @@ type Repository interface {
 	CreateExecutionLedgerEvent(ctx context.Context, req CreateExecutionLedgerEventRequest) (ExecutionLedgerEvent, error)
 	ListProjectExecutionLedgerEvents(ctx context.Context, req GetExecutionTraceRequest) ([]ExecutionLedgerEvent, error)
 	ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectTaskAttempt, error)
+	// Capability projection visibility (P3): batch load start_session payloads,
+	// skill display names, and attestation metadata for conflict merge.
+	ListCapabilityProjectionSourcesForAttempts(ctx context.Context, tenantID uuid.UUID, attemptIDs []uuid.UUID) ([]CapabilityProjectionSourceRow, error)
+	ListSkillNamesByIDs(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID]string, error)
+	ListAttestationMetadataByAttemptIDs(ctx context.Context, tenantID uuid.UUID, attemptIDs []uuid.UUID) (map[uuid.UUID][][]byte, error)
 	CreateTransferRequest(ctx context.Context, req CreateTransferRequestRequest) (TransferRequest, error)
 	ListTransferRequests(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]TransferRequest, error)
 	CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error)

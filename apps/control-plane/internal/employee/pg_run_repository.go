@@ -855,6 +855,42 @@ func (r *PgRunRepository) GetCommandReceipt(ctx context.Context, tenantID uuid.U
 	return runtimeCommandReceiptFromQuery(receipt), nil
 }
 
+func (r *PgRunRepository) ListSkillNamesByIDs(ctx context.Context, tenantID uuid.UUID, skillIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := map[uuid.UUID]string{}
+	if len(skillIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.q.ListSkillNamesByIDs(ctx, queries.ListSkillNamesByIDsParams{
+		TenantID: tenantID,
+		SkillIds: skillIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.ID] = row.Name
+	}
+	return out, nil
+}
+
+func (r *PgRunRepository) ListAttestationMetadataByRunID(ctx context.Context, tenantID, runID uuid.UUID) ([][]byte, error) {
+	if runID == uuid.Nil {
+		return nil, nil
+	}
+	rows, err := r.q.ListProjectTaskAttestationMetadataByRunID(ctx, queries.ListProjectTaskAttestationMetadataByRunIDParams{
+		TenantID: tenantID,
+		RunID:    runID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([][]byte, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.Metadata)
+	}
+	return out, nil
+}
+
 func (r *PgRunRepository) GetCommandReceiptForUpdate(ctx context.Context, tenantID uuid.UUID, commandID string) (*RuntimeCommandReceipt, error) {
 	receipt, err := r.q.GetRuntimeCommandReceiptByCommandIDForUpdate(ctx, queries.GetRuntimeCommandReceiptByCommandIDForUpdateParams{
 		TenantID:  tenantID,

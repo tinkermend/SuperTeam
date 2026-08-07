@@ -292,6 +292,55 @@ func (q *Queries) CreateProviderSessionEventLedgerEvent(ctx context.Context, arg
 	return i, err
 }
 
+const ListCapabilityProjectionSourcesForAttempts = `-- name: ListCapabilityProjectionSourcesForAttempts :many
+SELECT
+    pta.id AS attempt_id,
+    tr.command_id,
+    rcr.payload
+FROM project_task_attempts pta
+LEFT JOIN task_runs tr
+  ON tr.tenant_id = pta.tenant_id
+ AND tr.id = pta.digital_employee_run_id
+LEFT JOIN runtime_command_receipts rcr
+  ON rcr.tenant_id = pta.tenant_id
+ AND rcr.command_id = tr.command_id
+WHERE pta.tenant_id = $1::uuid
+  AND pta.id = ANY($2::uuid[])
+`
+
+type ListCapabilityProjectionSourcesForAttemptsParams struct {
+	TenantID   uuid.UUID   `json:"tenant_id"`
+	AttemptIds []uuid.UUID `json:"attempt_ids"`
+}
+
+type ListCapabilityProjectionSourcesForAttemptsRow struct {
+	AttemptID uuid.UUID   `json:"attempt_id"`
+	CommandID pgtype.Text `json:"command_id"`
+	Payload   []byte      `json:"payload"`
+}
+
+// Attempt → task_runs.command_id → runtime_command_receipts.payload (start_session).
+// Missing run/receipt yields NULL payload; caller marks available=false.
+func (q *Queries) ListCapabilityProjectionSourcesForAttempts(ctx context.Context, arg ListCapabilityProjectionSourcesForAttemptsParams) ([]ListCapabilityProjectionSourcesForAttemptsRow, error) {
+	rows, err := q.db.Query(ctx, ListCapabilityProjectionSourcesForAttempts, arg.TenantID, arg.AttemptIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCapabilityProjectionSourcesForAttemptsRow{}
+	for rows.Next() {
+		var i ListCapabilityProjectionSourcesForAttemptsRow
+		if err := rows.Scan(&i.AttemptID, &i.CommandID, &i.Payload); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectExecutionLedgerEvents = `-- name: ListProjectExecutionLedgerEvents :many
 SELECT id, tenant_id, team_id, project_id, project_task_id, project_task_attempt_id, event_type, source_type, source_id, actor_type, actor_id, runtime_node_id, provider_type, provider_session_id, input_summary, output_summary, error_family, error_code, error_message, retryable, artifact_refs, evidence_refs, metadata, occurred_at, idempotency_key, created_at, updated_at
 FROM execution_ledger_events
@@ -438,6 +487,130 @@ func (q *Queries) ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, 
 			&i.LogSha256,
 			&i.LogCompressed,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectTaskAttestationMetadataByAttemptIDs = `-- name: ListProjectTaskAttestationMetadataByAttemptIDs :many
+SELECT
+    id,
+    attempt_id,
+    metadata
+FROM project_task_attestations
+WHERE tenant_id = $1::uuid
+  AND attempt_id = ANY($2::uuid[])
+ORDER BY created_at ASC
+`
+
+type ListProjectTaskAttestationMetadataByAttemptIDsParams struct {
+	TenantID   uuid.UUID   `json:"tenant_id"`
+	AttemptIds []uuid.UUID `json:"attempt_ids"`
+}
+
+type ListProjectTaskAttestationMetadataByAttemptIDsRow struct {
+	ID        uuid.UUID `json:"id"`
+	AttemptID uuid.UUID `json:"attempt_id"`
+	Metadata  []byte    `json:"metadata"`
+}
+
+func (q *Queries) ListProjectTaskAttestationMetadataByAttemptIDs(ctx context.Context, arg ListProjectTaskAttestationMetadataByAttemptIDsParams) ([]ListProjectTaskAttestationMetadataByAttemptIDsRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskAttestationMetadataByAttemptIDs, arg.TenantID, arg.AttemptIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectTaskAttestationMetadataByAttemptIDsRow{}
+	for rows.Next() {
+		var i ListProjectTaskAttestationMetadataByAttemptIDsRow
+		if err := rows.Scan(&i.ID, &i.AttemptID, &i.Metadata); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectTaskAttestationMetadataByRunID = `-- name: ListProjectTaskAttestationMetadataByRunID :many
+SELECT
+    pta.attempt_id,
+    pta.metadata
+FROM project_task_attestations pta
+INNER JOIN project_task_attempts att
+  ON att.tenant_id = pta.tenant_id
+ AND att.project_task_id = pta.project_task_id
+ AND att.id = pta.attempt_id
+WHERE pta.tenant_id = $1::uuid
+  AND att.digital_employee_run_id = $2::uuid
+ORDER BY pta.created_at ASC
+`
+
+type ListProjectTaskAttestationMetadataByRunIDParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	RunID    uuid.UUID `json:"run_id"`
+}
+
+type ListProjectTaskAttestationMetadataByRunIDRow struct {
+	AttemptID uuid.UUID `json:"attempt_id"`
+	Metadata  []byte    `json:"metadata"`
+}
+
+func (q *Queries) ListProjectTaskAttestationMetadataByRunID(ctx context.Context, arg ListProjectTaskAttestationMetadataByRunIDParams) ([]ListProjectTaskAttestationMetadataByRunIDRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskAttestationMetadataByRunID, arg.TenantID, arg.RunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectTaskAttestationMetadataByRunIDRow{}
+	for rows.Next() {
+		var i ListProjectTaskAttestationMetadataByRunIDRow
+		if err := rows.Scan(&i.AttemptID, &i.Metadata); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListSkillNamesByIDs = `-- name: ListSkillNamesByIDs :many
+SELECT id, name, slug
+FROM skills
+WHERE tenant_id = $1::uuid
+  AND id = ANY($2::uuid[])
+`
+
+type ListSkillNamesByIDsParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	SkillIds []uuid.UUID `json:"skill_ids"`
+}
+
+type ListSkillNamesByIDsRow struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+	Slug string    `json:"slug"`
+}
+
+func (q *Queries) ListSkillNamesByIDs(ctx context.Context, arg ListSkillNamesByIDsParams) ([]ListSkillNamesByIDsRow, error) {
+	rows, err := q.db.Query(ctx, ListSkillNamesByIDs, arg.TenantID, arg.SkillIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSkillNamesByIDsRow{}
+	for rows.Next() {
+		var i ListSkillNamesByIDsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

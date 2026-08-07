@@ -2849,21 +2849,63 @@ type projectExecutionTraceSummaryResponse struct {
 }
 
 type projectExecutionTraceAttemptResponse struct {
-	ProjectTaskID       string                                       `json:"project_task_id"`
-	AttemptID           string                                       `json:"attempt_id"`
-	AttemptNo           int32                                        `json:"attempt_no"`
-	Status              string                                       `json:"status"`
-	RuntimeNodeID       *string                                      `json:"runtime_node_id,omitempty"`
-	ProviderType        *string                                      `json:"provider_type,omitempty"`
-	ProviderSessionID   *string                                      `json:"provider_session_id,omitempty"`
-	SessionResumeStatus *string                                      `json:"session_resume_status,omitempty"`
-	SessionResumeLabel  *string                                      `json:"session_resume_label,omitempty"`
-	StartedAt           *string                                      `json:"started_at,omitempty"`
-	FinishedAt          *string                                      `json:"finished_at,omitempty"`
-	FailureFamily       *string                                      `json:"failure_family,omitempty"`
-	Retryable           *bool                                        `json:"retryable,omitempty"`
-	Events              []executionLedgerEventResponse               `json:"events"`
-	Summary             *projectExecutionTraceAttemptSummaryResponse `json:"summary,omitempty"`
+	ProjectTaskID        string                                       `json:"project_task_id"`
+	AttemptID            string                                       `json:"attempt_id"`
+	AttemptNo            int32                                        `json:"attempt_no"`
+	Status               string                                       `json:"status"`
+	RuntimeNodeID        *string                                      `json:"runtime_node_id,omitempty"`
+	ProviderType         *string                                      `json:"provider_type,omitempty"`
+	ProviderSessionID    *string                                      `json:"provider_session_id,omitempty"`
+	SessionResumeStatus  *string                                      `json:"session_resume_status,omitempty"`
+	SessionResumeLabel   *string                                      `json:"session_resume_label,omitempty"`
+	StartedAt            *string                                      `json:"started_at,omitempty"`
+	FinishedAt           *string                                      `json:"finished_at,omitempty"`
+	FailureFamily        *string                                      `json:"failure_family,omitempty"`
+	Retryable            *bool                                        `json:"retryable,omitempty"`
+	Events               []executionLedgerEventResponse               `json:"events"`
+	Summary              *projectExecutionTraceAttemptSummaryResponse `json:"summary,omitempty"`
+	CapabilityProjection *capabilityProjectionSnapshotResponse        `json:"capability_projection,omitempty"`
+}
+
+type capabilityProjectionSnapshotResponse struct {
+	Available      bool                                `json:"available"`
+	Skills         []projectedSkillItemResponse        `json:"skills"`
+	MCPServers     []projectedMcpItemResponse          `json:"mcp_servers"`
+	SkillConflicts []projectedSkillConflictResponse    `json:"skill_conflicts"`
+	Summary        capabilityProjectionSummaryResponse `json:"summary"`
+}
+
+type capabilityProjectionSummaryResponse struct {
+	SkillCount    int            `json:"skill_count"`
+	MCPCount      int            `json:"mcp_count"`
+	ConflictCount int            `json:"conflict_count"`
+	BySource      map[string]int `json:"by_source"`
+}
+
+type projectedSkillItemResponse struct {
+	SkillID     string `json:"skill_id"`
+	SkillKey    string `json:"skill_key"`
+	SkillName   string `json:"skill_name,omitempty"`
+	Version     string `json:"version,omitempty"`
+	SourceScope string `json:"source_scope"`
+}
+
+type projectedMcpItemResponse struct {
+	ServerID    string `json:"server_id"`
+	ServerKey   string `json:"server_key"`
+	ServerName  string `json:"server_name,omitempty"`
+	SourceScope string `json:"source_scope"`
+}
+
+type projectedSkillConflictResponse struct {
+	Slug             string `json:"slug"`
+	Source           string `json:"source"`
+	WinningSkillID   string `json:"winning_skill_id,omitempty"`
+	DroppedSkillID   string `json:"dropped_skill_id,omitempty"`
+	WinningSource    string `json:"winning_source,omitempty"`
+	DroppedSource    string `json:"dropped_source,omitempty"`
+	WinningSkillName string `json:"winning_skill_name,omitempty"`
+	DroppedSkillName string `json:"dropped_skill_name,omitempty"`
 }
 
 type executionLedgerEventResponse struct {
@@ -3264,17 +3306,17 @@ type projectAcceptanceResponse struct {
 }
 
 type projectArchivePreviewResponse struct {
-	ProjectID           string                   `json:"project_id"`
-	CanArchive          bool                     `json:"can_archive"`
-	Blockers            []ProjectArchiveBlocker  `json:"blockers"`
-	Warnings            []ProjectArchiveWarning  `json:"warnings"`
-	Message             string                   `json:"message,omitempty"`
-	EvidenceCount       int64                    `json:"evidence_count"`
-	ArtifactCount       int64                    `json:"artifact_count"`
-	ReportCount         int64                    `json:"report_count"`
-	RetentionPending    bool                     `json:"retention_pending"`
-	BlockedReasons      []any                    `json:"blocked_reasons"`
-	EstimatedObjectRefs []any                    `json:"estimated_object_refs"`
+	ProjectID           string                  `json:"project_id"`
+	CanArchive          bool                    `json:"can_archive"`
+	Blockers            []ProjectArchiveBlocker `json:"blockers"`
+	Warnings            []ProjectArchiveWarning `json:"warnings"`
+	Message             string                  `json:"message,omitempty"`
+	EvidenceCount       int64                   `json:"evidence_count"`
+	ArtifactCount       int64                   `json:"artifact_count"`
+	ReportCount         int64                   `json:"report_count"`
+	RetentionPending    bool                    `json:"retention_pending"`
+	BlockedReasons      []any                   `json:"blocked_reasons"`
+	EstimatedObjectRefs []any                   `json:"estimated_object_refs"`
 }
 
 type projectArchiveBlockedResponse struct {
@@ -4020,21 +4062,76 @@ func executionTraceAttemptResponses(attempts []ProjectExecutionTraceAttempt) []p
 
 func executionTraceAttemptResponseFromDomain(attempt ProjectExecutionTraceAttempt) projectExecutionTraceAttemptResponse {
 	return projectExecutionTraceAttemptResponse{
-		ProjectTaskID:       attempt.ProjectTaskID.String(),
-		AttemptID:           attempt.AttemptID.String(),
-		AttemptNo:           attempt.AttemptNo,
-		Status:              attempt.Status,
-		RuntimeNodeID:       stringPtr(attempt.RuntimeNodeID),
-		ProviderType:        attempt.ProviderType,
-		ProviderSessionID:   attempt.ProviderSessionID,
-		SessionResumeStatus: attempt.SessionResumeStatus,
-		SessionResumeLabel:  attempt.SessionResumeLabel,
-		StartedAt:           timePtr(attempt.StartedAt),
-		FinishedAt:          timePtr(attempt.FinishedAt),
-		FailureFamily:       attempt.FailureFamily,
-		Retryable:           attempt.Retryable,
-		Events:              executionLedgerEventResponses(attempt.Events),
-		Summary:             executionTraceAttemptSummaryResponseFromDomain(attempt.Summary),
+		ProjectTaskID:        attempt.ProjectTaskID.String(),
+		AttemptID:            attempt.AttemptID.String(),
+		AttemptNo:            attempt.AttemptNo,
+		Status:               attempt.Status,
+		RuntimeNodeID:        stringPtr(attempt.RuntimeNodeID),
+		ProviderType:         attempt.ProviderType,
+		ProviderSessionID:    attempt.ProviderSessionID,
+		SessionResumeStatus:  attempt.SessionResumeStatus,
+		SessionResumeLabel:   attempt.SessionResumeLabel,
+		StartedAt:            timePtr(attempt.StartedAt),
+		FinishedAt:           timePtr(attempt.FinishedAt),
+		FailureFamily:        attempt.FailureFamily,
+		Retryable:            attempt.Retryable,
+		Events:               executionLedgerEventResponses(attempt.Events),
+		Summary:              executionTraceAttemptSummaryResponseFromDomain(attempt.Summary),
+		CapabilityProjection: capabilityProjectionSnapshotResponseFromDomain(attempt.CapabilityProjection),
+	}
+}
+
+func capabilityProjectionSnapshotResponseFromDomain(snap *CapabilityProjectionSnapshot) *capabilityProjectionSnapshotResponse {
+	if snap == nil {
+		return nil
+	}
+	skills := make([]projectedSkillItemResponse, 0, len(snap.Skills))
+	for _, item := range snap.Skills {
+		skills = append(skills, projectedSkillItemResponse{
+			SkillID:     item.SkillID,
+			SkillKey:    item.SkillKey,
+			SkillName:   item.SkillName,
+			Version:     item.Version,
+			SourceScope: item.SourceScope,
+		})
+	}
+	mcps := make([]projectedMcpItemResponse, 0, len(snap.MCPServers))
+	for _, item := range snap.MCPServers {
+		mcps = append(mcps, projectedMcpItemResponse{
+			ServerID:    item.ServerID,
+			ServerKey:   item.ServerKey,
+			ServerName:  item.ServerName,
+			SourceScope: item.SourceScope,
+		})
+	}
+	conflicts := make([]projectedSkillConflictResponse, 0, len(snap.SkillConflicts))
+	for _, item := range snap.SkillConflicts {
+		conflicts = append(conflicts, projectedSkillConflictResponse{
+			Slug:             item.Slug,
+			Source:           item.Source,
+			WinningSkillID:   item.WinningSkillID,
+			DroppedSkillID:   item.DroppedSkillID,
+			WinningSource:    item.WinningSource,
+			DroppedSource:    item.DroppedSource,
+			WinningSkillName: item.WinningSkillName,
+			DroppedSkillName: item.DroppedSkillName,
+		})
+	}
+	bySource := snap.Summary.BySource
+	if bySource == nil {
+		bySource = map[string]int{}
+	}
+	return &capabilityProjectionSnapshotResponse{
+		Available:      snap.Available,
+		Skills:         skills,
+		MCPServers:     mcps,
+		SkillConflicts: conflicts,
+		Summary: capabilityProjectionSummaryResponse{
+			SkillCount:    snap.Summary.SkillCount,
+			MCPCount:      snap.Summary.MCPCount,
+			ConflictCount: snap.Summary.ConflictCount,
+			BySource:      bySource,
+		},
 	}
 }
 
@@ -4259,7 +4356,7 @@ func demandDossierResponseFromDomain(dossier DemandDossier) demandDossierRespons
 			Status:              string(dossier.Project.Status),
 			ScenarioTemplateKey: dossier.Project.ScenarioTemplateKey,
 		},
-		Lineage:           demandDossierLineageResponseFromDomain(dossier.Lineage),
+		Lineage: demandDossierLineageResponseFromDomain(dossier.Lineage),
 		EffectivePlaybook: demandDossierPlaybookResponse{
 			TemplateKey:     dossier.EffectivePlaybook.TemplateKey,
 			Source:          dossier.EffectivePlaybook.Source,

@@ -3218,6 +3218,9 @@ func (s *Service) GetExecutionTrace(ctx context.Context, req GetExecutionTraceRe
 		return nil, err
 	}
 	trace := buildProjectExecutionTrace(req.ProjectID, attempts, events, summaryMappingEvents, summaries)
+	if err := s.attachCapabilityProjections(ctx, req.TenantID, &trace); err != nil {
+		return nil, err
+	}
 	return &trace, nil
 }
 
@@ -3238,6 +3241,58 @@ func filterExecutionTraceAttempts(attempts []ProjectTaskAttempt, req GetExecutio
 	return filtered
 }
 
+func (s *Service) attachCapabilityProjections(ctx context.Context, tenantID uuid.UUID, trace *ProjectExecutionTrace) error {
+	if trace == nil || len(trace.Attempts) == 0 {
+		return nil
+	}
+	attemptIDs := make([]uuid.UUID, 0, len(trace.Attempts))
+	for _, attempt := range trace.Attempts {
+		attemptIDs = append(attemptIDs, attempt.AttemptID)
+	}
+	sources, err := s.repository.ListCapabilityProjectionSourcesForAttempts(ctx, tenantID, attemptIDs)
+	if err != nil {
+		return fmt.Errorf("list capability projection sources: %w", err)
+	}
+	sourceByAttempt := make(map[uuid.UUID]CapabilityProjectionSourceRow, len(sources))
+	for _, row := range sources {
+		sourceByAttempt[row.AttemptID] = row
+	}
+	attestationMeta, err := s.repository.ListAttestationMetadataByAttemptIDs(ctx, tenantID, attemptIDs)
+	if err != nil {
+		return fmt.Errorf("list attestation metadata for capability projection: %w", err)
+	}
+
+	snaps := make([]CapabilityProjectionSnapshot, len(trace.Attempts))
+	var allSkillIDs []uuid.UUID
+	seenSkill := map[uuid.UUID]struct{}{}
+	for i, attempt := range trace.Attempts {
+		src, ok := sourceByAttempt[attempt.AttemptID]
+		var payload []byte
+		if ok {
+			payload = src.Payload
+		}
+		snap := ExtractCapabilityProjection(payload, attestationMeta[attempt.AttemptID])
+		snaps[i] = snap
+		for _, id := range CollectSkillIDsFromProjection(snap) {
+			if _, exists := seenSkill[id]; exists {
+				continue
+			}
+			seenSkill[id] = struct{}{}
+			allSkillIDs = append(allSkillIDs, id)
+		}
+	}
+	names, err := s.repository.ListSkillNamesByIDs(ctx, tenantID, allSkillIDs)
+	if err != nil {
+		return fmt.Errorf("list skill names for capability projection: %w", err)
+	}
+	for i := range trace.Attempts {
+		EnrichCapabilityProjectionNames(&snaps[i], names)
+		snap := snaps[i]
+		trace.Attempts[i].CapabilityProjection = &snap
+	}
+	return nil
+}
+
 func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttempt, visibleEvents []ExecutionLedgerEvent, summaryMappingEvents []ExecutionLedgerEvent, summaries []ExecutionSummary) ProjectExecutionTrace {
 	trace := ProjectExecutionTrace{
 		ProjectID: projectID,
@@ -3249,20 +3304,20 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 		attemptIndexes[attempt.ID] = len(trace.Attempts)
 		resumeStatus, resumeLabel := sessionResumeFieldsFromExecutionContext(attempt.ExecutionContextPacket)
 		trace.Attempts = append(trace.Attempts, ProjectExecutionTraceAttempt{
-			ProjectTaskID:        attempt.ProjectTaskID,
-			AttemptID:            attempt.ID,
-			AttemptNo:            attempt.AttemptNo,
-			Status:               attempt.Status,
-			RuntimeNodeID:        attempt.RuntimeNodeID,
-			ProviderType:         attempt.ProviderType,
-			ProviderSessionID:    attempt.ProviderSessionID,
-			SessionResumeStatus:  resumeStatus,
-			SessionResumeLabel:   resumeLabel,
-			StartedAt:            attempt.StartedAt,
-			FinishedAt:           attempt.FinishedAt,
-			FailureFamily:        attempt.FailureFamily,
-			Retryable:            attempt.Retryable,
-			Events:               []ExecutionLedgerEvent{},
+			ProjectTaskID:       attempt.ProjectTaskID,
+			AttemptID:           attempt.ID,
+			AttemptNo:           attempt.AttemptNo,
+			Status:              attempt.Status,
+			RuntimeNodeID:       attempt.RuntimeNodeID,
+			ProviderType:        attempt.ProviderType,
+			ProviderSessionID:   attempt.ProviderSessionID,
+			SessionResumeStatus: resumeStatus,
+			SessionResumeLabel:  resumeLabel,
+			StartedAt:           attempt.StartedAt,
+			FinishedAt:          attempt.FinishedAt,
+			FailureFamily:       attempt.FailureFamily,
+			Retryable:           attempt.Retryable,
+			Events:              []ExecutionLedgerEvent{},
 		})
 		trace.Summary.AttemptCount++
 		if isFailedExecutionTraceAttempt(attempt.Status) {
@@ -3343,7 +3398,6 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 	}
 	return trace
 }
-
 
 func sessionResumeFieldsFromExecutionContext(packet map[string]any) (status *string, label *string) {
 	if packet == nil {

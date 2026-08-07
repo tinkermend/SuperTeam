@@ -459,6 +459,9 @@ type Querier interface {
 	ListAutomationFires(ctx context.Context, arg ListAutomationFiresParams) ([]AutomationFire, error)
 	ListAutomationRules(ctx context.Context, arg ListAutomationRulesParams) ([]AutomationRule, error)
 	ListAutomationRulesByProject(ctx context.Context, arg ListAutomationRulesByProjectParams) ([]AutomationRule, error)
+	// Attempt → task_runs.command_id → runtime_command_receipts.payload (start_session).
+	// Missing run/receipt yields NULL payload; caller marks available=false.
+	ListCapabilityProjectionSourcesForAttempts(ctx context.Context, arg ListCapabilityProjectionSourcesForAttemptsParams) ([]ListCapabilityProjectionSourcesForAttemptsRow, error)
 	ListCapabilityVocabulary(ctx context.Context, tenantID uuid.UUID) ([]CapabilityVocabulary, error)
 	// Impact preview: castings held by employee for the given role_keys.
 	// Empty role_keys array means all roles for that employee.
@@ -609,6 +612,8 @@ type Querier interface {
 	ListProjectRunSummaries(ctx context.Context, arg ListProjectRunSummariesParams) ([]ListProjectRunSummariesRow, error)
 	ListProjectRuntimeNodes(ctx context.Context, arg ListProjectRuntimeNodesParams) ([]ProjectRuntimeNode, error)
 	ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, arg ListProjectTaskAttemptsForExecutionTraceParams) ([]ProjectTaskAttempt, error)
+	ListProjectTaskAttestationMetadataByAttemptIDs(ctx context.Context, arg ListProjectTaskAttestationMetadataByAttemptIDsParams) ([]ListProjectTaskAttestationMetadataByAttemptIDsRow, error)
+	ListProjectTaskAttestationMetadataByRunID(ctx context.Context, arg ListProjectTaskAttestationMetadataByRunIDParams) ([]ListProjectTaskAttestationMetadataByRunIDRow, error)
 	ListProjectTaskAttestations(ctx context.Context, arg ListProjectTaskAttestationsParams) ([]ProjectTaskAttestation, error)
 	ListProjectTaskDependencies(ctx context.Context, arg ListProjectTaskDependenciesParams) ([]ProjectTaskDependency, error)
 	ListProjectTaskDispatchGateResults(ctx context.Context, arg ListProjectTaskDispatchGateResultsParams) ([]ProjectTaskDispatchGateResult, error)
@@ -664,6 +669,7 @@ type Querier interface {
 	ListSkillMCPDependenciesForSkills(ctx context.Context, arg ListSkillMCPDependenciesForSkillsParams) ([]ListSkillMCPDependenciesForSkillsRow, error)
 	// LEFT JOIN (including soft-deleted servers) so bind-time validation can name missing deps.
 	ListSkillMCPDependenciesIncludingMissing(ctx context.Context, arg ListSkillMCPDependenciesIncludingMissingParams) ([]ListSkillMCPDependenciesIncludingMissingRow, error)
+	ListSkillNamesByIDs(ctx context.Context, arg ListSkillNamesByIDsParams) ([]ListSkillNamesByIDsRow, error)
 	// 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
 	ListStalePendingDeleteTeams(ctx context.Context, staleBefore pgtype.Timestamptz) ([]TenantTeam, error)
 	// 看门狗清扫(残债交接 §1 第 2 层):跨租户列出停留在预确认态超过时限的
