@@ -1,7 +1,7 @@
 # 能力供给三层模型：团队 / 员工 / 项目
 
 - 日期：2026-08-06
-- 状态：**已立项、已拍板，可直接开工**（交接给实施会话）
+- 状态：**已实施并验收**（P0–P2 入库 `4f4a3033`；S10 承重判据 2026-08-07 真实链路通过，见 §11 验收记录）
 - 交付性质：能力（技能 / MCP）的**供给轴**从两层扩为三层，并给出合并、过滤、冲突、物化与投影的完整语义
 - 目标读者：实施会话（本文自包含；实施前必读 `2026-07-17-directory-capability-projection-revision-design.md` §1–§3）
 - **本文推翻 2026-07-17 的「无项目过滤轴」与 2026-07-22 的「项目级 MCP 绑定退役」**，理由与替代方案见 §9
@@ -331,9 +331,20 @@ P0 必须先于 P1（没有绑定数据就没法验合并）。P2 可与 P1 并�
 | S8 | 技能进投影、依赖 MCP 未绑该项目但**员工 env 已配齐** | 闭包补全一并投影（`source=dependency_closure`），派发放行 |
 | S8b | 同上但**员工 env 未配齐** | **闭包不补**，`validateSkillMCPDependencies` 拦住派发并点名 server_key——闸不得被闭包架空 |
 | S9 | 解绑该项目技能后再派一次任务 | 工作区不再出现；缓存残留不影响 |
-| S10 | repo 型项目跑完任务后在工作区执行 `git status` | 干净；`.claude/skills/{key}` 与 `.superteam/mcp/` 不出现在 untracked 列表 |
+| S10 | repo 型项目**任务运行中**在工作区执行 `git status --porcelain` | 干净；`.claude/skills/{key}` 与 `.superteam/` 不出现在 untracked 列表。**必须在运行中采样**——会话结束时 unload 会撤掉技能软链，事后采样只能验到 `.superteam/` 一半，会得出偏弱的结论 |
 | S11 | 项目 MCP 绑定 PUT 缺 `items` 键 | 400（补 072 遗留小债），不得宽容为清空 |
 | S12 | `verify:contracts` / `verify:control-plane` / `verify:web` / `verify:runtime-agent` / `migrate-validate` | 全过 |
+
+> **S10 验收记录（2026-08-07，已通过）**：真实链路——提需求 → 规划 → 人类批准计划 → 派发 →
+> runtime 建稳定项目目录并检出仓库 → 投影技能。运行中采样：工作区内
+> `diagnose-smoke`、`linux` 两条软链在场，`git status --porcelain` 为空。
+> 反向验证（摘掉 `.git/info/exclude` 的屏蔽段 → `?? .claude/` + `?? .superteam/`；还原后恢复干净）
+> 在软链仍在的产物上完成。
+>
+> **排查中澄清的一处布局误读（勿再重踩）**：工作区是**稳定项目目录** `{base}/{project_name}`，
+> 不是 `{base}/workspaces/{proj}/{task}/{attempt}`——后者是 `resolve_project_workspace`
+> 里显式标注的 legacy 分支（spec 2026-07-23 §8 / P2），且稳定目录项目**不会**创建
+> `repos/` 缓存。按旧布局去找会扑空，并误判成"runtime 没建工作区"。
 
 **完成定义**：S1–S12 全过。**S5 与 S10 是承重判据**——前者证明场地隔离真的生效（这是人类提出本设计的核心诉求），后者证明投影不污染用户仓库。
 
