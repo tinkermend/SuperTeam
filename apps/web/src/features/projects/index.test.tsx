@@ -1257,6 +1257,9 @@ function createProjectFetcher(
     if (url.pathname === "/api/v1/projects/project-1/archive-preview" && method === "GET") {
       return jsonResponse({
         artifact_count: 1,
+        can_archive: true,
+        blockers: [],
+        warnings: [],
         blocked_reasons: [],
         estimated_object_refs: [
           "s3://superteam/project-1/logs.tgz",
@@ -1297,6 +1300,9 @@ function createProjectFetcher(
       const id = url.pathname.split("/")[4];
       return jsonResponse({
         artifact_count: 0,
+        can_archive: true,
+        blockers: [],
+        warnings: [],
         blocked_reasons: [],
         estimated_object_refs: [],
         evidence_count: 0,

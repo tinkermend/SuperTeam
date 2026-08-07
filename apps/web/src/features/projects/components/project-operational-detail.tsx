@@ -2071,6 +2071,10 @@ export function projectEventDisplay(event: ProjectEvent) {
       summary: "项目验收结论已提交。",
       title: "验收结论已提交"
 },
+    "project.archive.auto_close_deferred": {
+      summary: "通过并结项时归档条件未满足，项目保持运行。",
+      title: "通过并结项已延后"
+},
     "project.archive.retention_pending": {
       summary: "项目归档前仍有保留事项待处理。",
       title: "归档保留事项待处理"

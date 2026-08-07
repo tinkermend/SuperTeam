@@ -625,6 +625,17 @@ func (r *PgRepository) AreAllProjectDemandsTerminal(ctx context.Context, tenantI
 	return counts.TotalCount > 0 && counts.NonTerminalCount == 0, nil
 }
 
+func (r *PgRepository) CountNonTerminalProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error) {
+	counts, err := r.q.CountProjectDemandsByTerminality(ctx, queries.CountProjectDemandsByTerminalityParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int64(counts.NonTerminalCount), nil
+}
+
 // ListDigitalEmployeeTeamAssignments implements MemberTeamAssignmentResolver:
 // missing ids are absent from the map; a nil value means the employee exists
 // but is teamless (lobby state).
@@ -8840,4 +8851,38 @@ func isPGForeignKeyConstraint(err error, constraintName string) bool {
 	return errors.As(err, &pgErr) &&
 		pgErr.Code == "23503" &&
 		pgErr.ConstraintName == constraintName
+}
+
+
+func (r *PgRepository) LookupMemberDisplayNames(ctx context.Context, tenantID uuid.UUID, userIDs, employeeIDs []uuid.UUID) (map[uuid.UUID]string, map[uuid.UUID]string, error) {
+	users := make(map[uuid.UUID]string, len(userIDs))
+	employees := make(map[uuid.UUID]string, len(employeeIDs))
+	if len(userIDs) > 0 {
+		rows, err := r.q.ListUserDisplayNamesByIDs(ctx, userIDs)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, row := range rows {
+			name := strings.TrimSpace(row.DisplayName)
+			if name != "" {
+				users[row.ID] = name
+			}
+		}
+	}
+	if len(employeeIDs) > 0 {
+		rows, err := r.q.ListDigitalEmployeeNamesByIDs(ctx, queries.ListDigitalEmployeeNamesByIDsParams{
+			TenantID: tenantID,
+			Ids:      employeeIDs,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, row := range rows {
+			name := strings.TrimSpace(row.Name)
+			if name != "" {
+				employees[row.ID] = name
+			}
+		}
+	}
+	return users, employees, nil
 }

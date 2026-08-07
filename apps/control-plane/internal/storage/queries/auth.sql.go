@@ -478,6 +478,37 @@ func (q *Queries) ListRuntimeTokens(ctx context.Context, arg ListRuntimeTokensPa
 	return items, nil
 }
 
+const ListUserDisplayNamesByIDs = `-- name: ListUserDisplayNamesByIDs :many
+SELECT id, COALESCE(NULLIF(BTRIM(display_name), ''), username, '')::text AS display_name
+FROM auth_users
+WHERE id = ANY($1::uuid[])
+`
+
+type ListUserDisplayNamesByIDsRow struct {
+	ID          uuid.UUID `json:"id"`
+	DisplayName string    `json:"display_name"`
+}
+
+func (q *Queries) ListUserDisplayNamesByIDs(ctx context.Context, ids []uuid.UUID) ([]ListUserDisplayNamesByIDsRow, error) {
+	rows, err := q.db.Query(ctx, ListUserDisplayNamesByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserDisplayNamesByIDsRow{}
+	for rows.Next() {
+		var i ListUserDisplayNamesByIDsRow
+		if err := rows.Scan(&i.ID, &i.DisplayName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListUsers = `-- name: ListUsers :many
 SELECT id, username, display_name, email, password_hash, status, disabled_at, deleted_at, created_at, updated_at, avatar_provider, avatar_style, avatar_seed, avatar_options, avatar_asset_id, avatar_svg, mobile FROM auth_users
 WHERE deleted_at IS NULL

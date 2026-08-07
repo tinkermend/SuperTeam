@@ -301,7 +301,66 @@ function createConfigFetcher(
       ]);
     }
     if (url.pathname === "/api/auth/users" && method === "GET") {
-      return jsonResponse({ items: [] });
+      return jsonResponse({
+        items: [
+          {
+            id: "human-owner-1",
+            username: "owner-a",
+            display_name: "负责人甲",
+            status: "active",
+          },
+          {
+            id: "human-candidate-1",
+            username: "candidate",
+            display_name: "可添加同事",
+            status: "active",
+          },
+          {
+            id: "human-2",
+            username: "reviewer-b",
+            display_name: "审查乙",
+            status: "active",
+          },
+        ],
+      });
+    }
+    if (url.pathname === "/api/authz/members" && method === "GET") {
+      return jsonResponse({
+        items: [
+          {
+            user_id: "human-owner-1",
+            username: "owner-a",
+            display_name: "负责人甲",
+            account_status: "active",
+            memberships: [],
+            console_access: true,
+          },
+          {
+            user_id: "human-candidate-1",
+            username: "candidate",
+            display_name: "可添加同事",
+            account_status: "active",
+            memberships: [],
+            console_access: true,
+          },
+          {
+            user_id: "human-no-console",
+            username: "noconsol",
+            display_name: "无控制台",
+            account_status: "active",
+            memberships: [],
+            console_access: false,
+          },
+          {
+            user_id: "human-2",
+            username: "reviewer-b",
+            display_name: "审查乙",
+            account_status: "active",
+            memberships: [],
+            console_access: true,
+          },
+        ],
+      });
     }
     if (
       url.pathname === "/api/v1/projects/project-1/config-revisions" &&
@@ -630,6 +689,9 @@ describe("ProjectConfigView", () => {
     await expect.element(screen.getByText("负责人甲").first()).toBeInTheDocument();
     await expect.element(screen.getByText("验收执行员工")).toBeInTheDocument();
     await expect
+      .element(screen.getByRole("button", { name: "添加人类成员" }))
+      .toBeInTheDocument();
+    await expect
       .element(screen.getByRole("button", { name: "添加数字员工" }))
       .toBeInTheDocument();
     await expect
@@ -738,10 +800,172 @@ describe("ProjectConfigView", () => {
 
     await userEvent.click(screen.getByRole("tab", { name: "成员" }));
     await expect
+      .element(screen.getByRole("button", { name: "添加人类成员" }))
+      .toBeDisabled();
+    await expect
       .element(screen.getByRole("button", { name: "添加数字员工" }))
       .toBeDisabled();
     await expect
       .element(screen.getByRole("button", { name: "移除 验收执行员工" }))
       .toBeDisabled();
+  });
+
+  it("adds a human member from the picker dialog as observer by default", async () => {
+    const fetcher = createConfigFetcher();
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await userEvent.click(screen.getByRole("button", { name: "添加人类成员" }));
+
+    await expect
+      .element(screen.getByRole("heading", { name: "添加人类成员" }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: /可添加同事/ }))
+      .toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("button", { name: /无控制台/ }))
+      .not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /可添加同事/ }));
+    await userEvent.click(screen.getByRole("button", { name: "加入项目" }));
+
+    await vi.waitFor(() => {
+      const putCall = fetchCalls(fetcher).find(([url, init]) => {
+        return (
+          String(url).endsWith("/api/v1/projects/project-1/members") &&
+          init?.method === "PUT"
+        );
+      });
+      expect(putCall).toBeTruthy();
+      expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
+        members: expect.arrayContaining([
+          expect.objectContaining({
+            principal_id: "human-owner-1",
+            principal_type: "human_user",
+            project_role: "owner",
+          }),
+          expect.objectContaining({
+            display_name_snapshot: "可添加同事",
+            principal_id: "human-candidate-1",
+            principal_type: "human_user",
+            project_role: "observer",
+          }),
+          expect.objectContaining({
+            principal_id: "de-1",
+            principal_type: "digital_employee",
+          }),
+        ]),
+      });
+    });
+  });
+
+  it("promotes a non-owner human to owner and keeps the original owner", async () => {
+    const config = makeConfig();
+    const secondHuman = {
+      display_name_snapshot: "审查乙",
+      id: "member-human-2",
+      principal_id: "human-2",
+      principal_type: "human_user" as const,
+      project_id: "project-1",
+      project_role: "reviewer" as const,
+      settings: {},
+      status: "active",
+      tenant_id: "tenant-1",
+    };
+    config.human_roles = [...config.human_roles, secondHuman];
+    config.members = [...config.members, secondHuman];
+    const fetcher = createConfigFetcher("running", [config]);
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    const roleTrigger = screen.getByRole("combobox", {
+      name: "变更 审查乙 的项目角色",
+    });
+    await userEvent.click(roleTrigger);
+    await userEvent.click(screen.getByRole("option", { name: "负责人" }));
+
+    await vi.waitFor(() => {
+      const putCall = fetchCalls(fetcher).find(([url, init]) => {
+        return (
+          String(url).endsWith("/api/v1/projects/project-1/members") &&
+          init?.method === "PUT"
+        );
+      });
+      expect(putCall).toBeTruthy();
+      const body = JSON.parse(String(putCall?.[1]?.body));
+      expect(body.members).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            principal_id: "human-owner-1",
+            project_role: "owner",
+          }),
+          expect.objectContaining({
+            principal_id: "human-2",
+            project_role: "owner",
+          }),
+        ]),
+      );
+    });
+  });
+
+  it("does not remove the last human owner", async () => {
+    const fetcher = createConfigFetcher();
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await expect
+      .element(screen.getByRole("button", { name: "移除 负责人甲" }))
+      .not.toBeInTheDocument();
+    await expect.element(screen.getByText("至少保留一位负责人")).toBeInTheDocument();
+    expect(
+      fetchCalls(fetcher).filter(([url, init]) => {
+        return (
+          String(url).endsWith("/api/v1/projects/project-1/members") &&
+          init?.method === "PUT"
+        );
+      }),
+    ).toHaveLength(0);
+  });
+
+  it("removes a non-owner human member", async () => {
+    const config = makeConfig();
+    const secondHuman = {
+      display_name_snapshot: "审查乙",
+      id: "member-human-2",
+      principal_id: "human-2",
+      principal_type: "human_user" as const,
+      project_id: "project-1",
+      project_role: "reviewer" as const,
+      settings: {},
+      status: "active",
+      tenant_id: "tenant-1",
+    };
+    config.human_roles = [...config.human_roles, secondHuman];
+    config.members = [...config.members, secondHuman];
+    const fetcher = createConfigFetcher("running", [config]);
+    const screen = await renderConfig(fetcher);
+
+    await userEvent.click(screen.getByRole("tab", { name: "成员" }));
+    await userEvent.click(screen.getByRole("button", { name: "移除 审查乙" }));
+    await expect
+      .element(screen.getByRole("heading", { name: "移除人类成员" }))
+      .toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "确认移除" }));
+
+    await vi.waitFor(() => {
+      const putCall = fetchCalls(fetcher).find(([url, init]) => {
+        return (
+          String(url).endsWith("/api/v1/projects/project-1/members") &&
+          init?.method === "PUT"
+        );
+      });
+      expect(putCall).toBeTruthy();
+      const body = JSON.parse(String(putCall?.[1]?.body));
+      expect(body.members.map((member: { principal_id: string }) => member.principal_id)).toEqual([
+        "human-owner-1",
+        "de-1",
+      ]);
+    });
   });
 });

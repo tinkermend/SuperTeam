@@ -488,6 +488,7 @@ type Querier interface {
 	//   active_project —— 仍被非归档项目引用（无团队归属的员工不能参与项目，静默移出会让项目挂起）
 	// 调用方按 blocker_type 分组组装 409 明细。
 	ListDigitalEmployeeDetachBlockers(ctx context.Context, arg ListDigitalEmployeeDetachBlockersParams) ([]ListDigitalEmployeeDetachBlockersRow, error)
+	ListDigitalEmployeeNamesByIDs(ctx context.Context, arg ListDigitalEmployeeNamesByIDsParams) ([]ListDigitalEmployeeNamesByIDsRow, error)
 	ListDigitalEmployeeOverviewFilterOptions(ctx context.Context, tenantID uuid.UUID) ([]ListDigitalEmployeeOverviewFilterOptionsRow, error)
 	// 租户内当前具备在线可用 Runtime 能力的 provider 集合(判据说明见 GetDigitalEmployeeOverviewSummary)。
 	// mcp_servers_count 与 skills_count 同口径:员工直挂绑定表计数(能力绑定统一后
@@ -705,6 +706,7 @@ type Querier interface {
 	ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now pgtype.Timestamptz) ([]uuid.UUID, error)
 	ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error)
 	ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUnresolvedBlockersForTasksParams) ([]ListUnresolvedBlockersForTasksRow, error)
+	ListUserDisplayNamesByIDs(ctx context.Context, ids []uuid.UUID) ([]ListUserDisplayNamesByIDsRow, error)
 	ListUserProjectTeamScopeSummaries(ctx context.Context, arg ListUserProjectTeamScopeSummariesParams) ([]ListUserProjectTeamScopeSummariesRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error)
 	ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error)

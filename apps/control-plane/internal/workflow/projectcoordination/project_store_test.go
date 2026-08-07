@@ -6155,6 +6155,13 @@ func (r *projectStoreMemoryRepository) AreAllProjectDemandsTerminal(ctx context.
 	return r.acceptanceReady, nil
 }
 
+func (r *projectStoreMemoryRepository) CountNonTerminalProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error) {
+	if r.acceptanceReady {
+		return 0, nil
+	}
+	return 1, nil
+}
+
 func (r *projectStoreMemoryRepository) ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (project.Project, error) {
 	if r.projectRecord.TenantID != tenantID || r.projectRecord.ID != projectID {
 		return project.Project{}, project.ErrProjectNotFound

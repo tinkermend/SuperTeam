@@ -2094,3 +2094,9 @@ WHERE te.tenant_id = sqlc.arg('tenant_id')::uuid
   )
 ORDER BY te.created_at DESC, te.id DESC
 LIMIT sqlc.arg('limit')::integer;
+
+-- name: ListDigitalEmployeeNamesByIDs :many
+SELECT id, name
+FROM digital_employees
+WHERE tenant_id = sqlc.arg('tenant_id')
+  AND id = ANY(sqlc.arg('ids')::uuid[]);

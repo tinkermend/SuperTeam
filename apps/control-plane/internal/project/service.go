@@ -1402,26 +1402,6 @@ func (s *Service) UnarchiveProject(ctx context.Context, tenantID, projectID, act
 	return &project, nil
 }
 
-// assertProjectReadyToArchive 归档硬门禁：不得对已归档项目重复归档；不得在仍有
-// 未完结任务时归档（与 GetProjectTaskStatusCounts.active_tasks 同源）。
-func (s *Service) assertProjectReadyToArchive(ctx context.Context, tenantID, projectID uuid.UUID) error {
-	project, err := s.repository.GetProject(ctx, tenantID, projectID)
-	if err != nil {
-		return err
-	}
-	if projectArchived(project) {
-		return ErrProjectArchived
-	}
-	summary, err := s.repository.GetProjectTaskStatusCounts(ctx, tenantID, projectID)
-	if err != nil {
-		return err
-	}
-	if summary.ActiveTasks > 0 {
-		return ErrProjectArchiveBlocked
-	}
-	return nil
-}
-
 func (s *Service) GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectDeletePreview, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
@@ -1642,14 +1622,18 @@ func (s *Service) ReplaceProjectMembers(ctx context.Context, tenantID, projectID
 			}
 		}
 	}
-	return replaced, nil
+	return s.enrichMemberDisplayNames(ctx, tenantID, replaced), nil
 }
 
 func (s *Service) ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error) {
 	if tenantID == uuid.Nil || projectID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
-	return s.repository.ListProjectMembers(ctx, tenantID, projectID)
+	members, err := s.repository.ListProjectMembers(ctx, tenantID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.enrichMemberDisplayNames(ctx, tenantID, members), nil
 }
 
 func (s *Service) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error) {
@@ -2097,19 +2081,9 @@ func (s *Service) BuildArchivePreview(ctx context.Context, tenantID, projectID u
 	if err != nil {
 		return nil, err
 	}
-	blockedReasons := make([]any, 0)
-	if len(reportRefs) == 0 {
-		blockedReasons = append(blockedReasons, "missing_final_report")
-	}
-	if len(evidenceRefs) == 0 {
-		blockedReasons = append(blockedReasons, "missing_evidence")
-	}
-	taskSummary, taskSummaryErr := s.repository.GetProjectTaskStatusCounts(ctx, tenantID, projectID)
-	if taskSummaryErr != nil {
-		return nil, taskSummaryErr
-	}
-	if taskSummary.ActiveTasks > 0 {
-		blockedReasons = append(blockedReasons, "active_tasks")
+	ready, err := s.evaluateArchiveReadiness(ctx, tenantID, projectID, project, len(evidenceRefs), len(reportRefs))
+	if err != nil {
+		return nil, err
 	}
 	retentionPending := false
 	estimatedObjectRefs := make([]any, 0, len(artifactRefs)+len(reportRefs))
@@ -2126,9 +2100,6 @@ func (s *Service) BuildArchivePreview(ctx context.Context, tenantID, projectID u
 			estimatedObjectRefs = append(estimatedObjectRefs, report.ObjectRef)
 		}
 	}
-	if projectArchived(project) {
-		blockedReasons = append(blockedReasons, "project_already_archived")
-	}
 	if budgetSummary.LedgerCount > 0 {
 		estimatedObjectRefs = append(estimatedObjectRefs, map[string]any{
 			"budget_ledger_count": budgetSummary.LedgerCount,
@@ -2137,11 +2108,15 @@ func (s *Service) BuildArchivePreview(ctx context.Context, tenantID, projectID u
 	}
 	return &ProjectArchivePreview{
 		ProjectID:           projectID,
+		CanArchive:          ready.CanArchive(),
+		Blockers:            append([]ProjectArchiveBlocker(nil), ready.Blockers...),
+		Warnings:            append([]ProjectArchiveWarning(nil), ready.Warnings...),
+		Message:             ready.Message(),
 		EvidenceCount:       int64(len(evidenceRefs)),
 		ArtifactCount:       int64(len(artifactRefs)),
 		ReportCount:         int64(len(reportRefs)),
 		RetentionPending:    retentionPending,
-		BlockedReasons:      blockedReasons,
+		BlockedReasons:      ready.CompatBlockedReasons(),
 		EstimatedObjectRefs: estimatedObjectRefs,
 	}, nil
 }
@@ -7500,8 +7475,17 @@ func (s *Service) tryCloseProjectFromDemandSignOff(ctx context.Context, tenantID
 	if projectArchived(projectRecord) {
 		return true, nil // already archived — idempotent success
 	}
-	// 与手点归档同一道任务门禁：需求全终态仍可能有未完结任务。
+	// 与手点归档同一道门禁；失败不得冒泡（签署已落库，见 2026-08-07 运营补完 spec §3.3.3.2）。
 	if err := s.assertProjectReadyToArchive(ctx, tenantID, projectID); err != nil {
+		var blocked *ProjectArchiveBlockedError
+		if errors.As(err, &blocked) {
+			s.recordAutoCloseDeferred(ctx, tenantID, projectID, actorUserID, blocked.Blockers)
+			return false, nil
+		}
+		if errors.Is(err, ErrProjectArchiveBlocked) || errors.Is(err, ErrProjectArchived) {
+			s.recordAutoCloseDeferred(ctx, tenantID, projectID, actorUserID, nil)
+			return false, nil
+		}
 		return false, err
 	}
 	if _, err := s.repository.ArchiveProject(ctx, tenantID, projectID); err != nil {
@@ -8117,6 +8101,7 @@ func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID
 			Status:     project.CoordinationStatus,
 		},
 	}
+	members = s.enrichMemberDisplayNames(ctx, tenantID, members)
 	for _, member := range members {
 		switch member.PrincipalType {
 		case PrincipalTypeHumanUser:

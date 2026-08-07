@@ -34,7 +34,7 @@ import {
   listUserProjectTeamScopes,
   type UserProjectTeamScope
 } from "@/lib/api";
-import { deleteBlockerTypeLabel, statusLabel } from "@/lib/status-labels";
+import { deleteBlockerTypeLabel, statusLabel, archiveReadinessCodeLabel } from "@/lib/status-labels";
 import {
   addProjectRuntimeNode,
   markProjectWorkspaceReady,
@@ -291,6 +291,7 @@ export function ProjectsView({
   const [selectedQueueProjectId, setSelectedQueueProjectId] = useState("");
   const [demandOpen, setDemandOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [unarchiveDialogOpen, setUnarchiveDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteBlocked, setDeleteBlocked] =
@@ -707,6 +708,9 @@ export function ProjectsView({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-archive-preview", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["inbox"] }),
       ]);
     }
   });
@@ -714,11 +718,14 @@ export function ProjectsView({
   const unarchiveMutation = useMutation({
     mutationFn: (projectId: string) => unarchiveProject(apiOptions, projectId),
     onSuccess: async (project) => {
+      setUnarchiveDialogOpen(false);
       queryClient.setQueryData(["project", project.id], project);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({ queryKey: ["project-overview", project.id] }),
         queryClient.invalidateQueries({ queryKey: ["project-config", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-archive-preview", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["project-events", project.id] }),
       ]);
     }
   });
@@ -1181,11 +1188,11 @@ export function ProjectsView({
                     onArchiveProject={() => {
                       archiveMutation.reset();
                       setArchiveDialogOpen(true);
+                      void archivePreviewQuery.refetch();
                     }}
                     onUnarchiveProject={() => {
-                      if (effectiveProjectId) {
-                        unarchiveMutation.mutate(effectiveProjectId);
-                      }
+                      unarchiveMutation.reset();
+                      setUnarchiveDialogOpen(true);
                     }}
                     onDeleteProject={() => setDeleteDialogOpen(true)}
                     onRecloneWorkspace={() => {
@@ -1293,18 +1300,55 @@ export function ProjectsView({
             <div className="space-y-2">
               <p>
                 确认归档项目「{displayedProject.name}
-                」？仅当没有未完结任务时可归档；归档后停止推进、配置与需求提交将被禁用，可从菜单「恢复项目」重新打开。
+                」？需无未完结任务、未结需求与待决决策；归档后停止推进、配置与需求提交将被禁用，可从菜单「恢复项目」重新打开（不复活归档时取消的待办）。
               </p>
+              {archivePreviewQuery.isError ? (
+                <p className="text-sm text-danger">
+                  无法加载归档预检：{queryErrorMessage(archivePreviewQuery.error)}
+                </p>
+              ) : null}
+              {archivePreviewQuery.isFetching && !archivePreviewQuery.data ? (
+                <p className="text-sm text-ink-2">正在检查归档条件…</p>
+              ) : null}
+              {archivePreviewQuery.data?.message ? (
+                <p className="text-sm text-ink-2">{archivePreviewQuery.data.message}</p>
+              ) : null}
+              {(archivePreviewQuery.data?.blockers?.length ?? 0) > 0 ? (
+                <ul className="list-disc space-y-1 pl-5 text-sm text-danger">
+                  {archivePreviewQuery.data?.blockers.map((blocker) => (
+                    <li key={`archive-blocker-${blocker.code}-${blocker.count}`}>
+                      {blocker.message || archiveReadinessCodeLabel(blocker.code)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {(archivePreviewQuery.data?.warnings?.length ?? 0) > 0 ? (
+                <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
+                  {archivePreviewQuery.data?.warnings.map((warning) => (
+                    <li key={`archive-warning-${warning.code}-${warning.count}`}>
+                      {warning.message || archiveReadinessCodeLabel(warning.code)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               {archiveMutation.isError ? (
                 <p className="text-sm text-danger">
-                  {queryErrorMessage(archiveMutation.error)}
+                  {archiveErrorMessage(archiveMutation.error)}
                 </p>
               ) : null}
             </div>
           }
           destructive
+          disabled={
+            archiveMutation.isPending ||
+            archivePreviewQuery.isError ||
+            // 首屏尚无 preview 时禁止；已有 can_archive=true 时允许点（后台 refetch 不挡）
+            !archivePreviewQuery.data ||
+            archivePreviewQuery.data.can_archive !== true ||
+            (archivePreviewQuery.isLoading && !archivePreviewQuery.data)
+          }
           handleConfirm={() => {
-            if (effectiveProjectId) {
+            if (effectiveProjectId && archivePreviewQuery.data?.can_archive === true) {
               archiveMutation.mutate(effectiveProjectId);
             }
           }}
@@ -1312,6 +1356,35 @@ export function ProjectsView({
           onOpenChange={setArchiveDialogOpen}
           open={archiveDialogOpen}
           title="归档项目"
+        />
+      ) : null}
+      {displayedProject ? (
+        <ConfirmDialog
+          cancelBtnText="取消"
+          confirmText="确认恢复"
+          desc={
+            <div className="space-y-2">
+              <p>
+                确认将项目「{displayedProject.name}
+                」从归档恢复为运行中？仅恢复项目状态，不重开历史需求/任务，也不复活归档时取消的收件箱待办。
+              </p>
+              {unarchiveMutation.isError ? (
+                <p className="text-sm text-danger">
+                  {queryErrorMessage(unarchiveMutation.error)}
+                </p>
+              ) : null}
+            </div>
+          }
+          disabled={unarchiveMutation.isPending}
+          handleConfirm={() => {
+            if (effectiveProjectId) {
+              unarchiveMutation.mutate(effectiveProjectId);
+            }
+          }}
+          isLoading={unarchiveMutation.isPending}
+          onOpenChange={setUnarchiveDialogOpen}
+          open={unarchiveDialogOpen}
+          title="恢复项目"
         />
       ) : null}
       {displayedProject ? (
@@ -1386,6 +1459,27 @@ export function ProjectsView({
       </Main>
     </>
   );
+}
+
+function archiveErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    const payload = error.payload as
+      | { message?: string; blockers?: Array<{ message?: string; code?: string }> }
+      | undefined;
+    if (error.code === "project_archive_blocked" || payload?.blockers?.length) {
+      const parts = (payload?.blockers ?? [])
+        .map((item) => item.message || item.code)
+        .filter(Boolean);
+      if (parts.length > 0) {
+        return parts.join("；");
+      }
+      if (error.detail?.trim()) {
+        return error.detail;
+      }
+      return "项目未达归档条件，无法归档";
+    }
+  }
+  return queryErrorMessage(error);
 }
 
 function queryErrorMessage(error: unknown) {

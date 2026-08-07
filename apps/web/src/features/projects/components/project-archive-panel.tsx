@@ -20,7 +20,7 @@ import type {
   ProjectArchivePreview,
   ProjectArchiveSnapshot
 } from "@/lib/api/projects";
-import { statusLabel } from "@/lib/status-labels";
+import { archiveReadinessCodeLabel, statusLabel } from "@/lib/status-labels";
 
 type ProjectArchivePanelProps = {
   archivePreview?: ProjectArchivePreview;
@@ -58,20 +58,24 @@ export function ProjectArchivePanel({
   const retainedArtifactCount = new Set(
     archiveSnapshots.flatMap((snapshot) => snapshot.retained_artifact_ids),
   ).size;
+  const blockers = archivePreview?.blockers ?? [];
+  const warnings = archivePreview?.warnings ?? [];
   const blockedReasons = archivePreview?.blocked_reasons ?? [];
   const estimatedObjectRefs = archivePreview?.estimated_object_refs ?? [];
   const effectiveEvidenceCount = archivePreview?.evidence_count ?? evidenceCount;
   const effectiveArtifactCount = archivePreview?.artifact_count ?? artifactCount;
   const effectiveReportCount = archivePreview?.report_count ?? reportCount;
-  const effectiveRiskCount = blockedReasons.length || unresolvedRiskCount;
+  const effectiveRiskCount =
+    blockers.length + warnings.length || unresolvedRiskCount;
   const previewStatus: {
     label: string;
     tone: Tone;
   } = archivePreview
-    ? {
-        label: archivePreview.retention_pending ? "保留待处理" : "可归档",
-        tone: archivePreview.retention_pending ? "warn" : "ok"
-}
+    ? !archivePreview.can_archive
+      ? { label: "不可归档", tone: "danger" as Tone }
+      : archivePreview.retention_pending || warnings.length > 0
+        ? { label: archivePreview.retention_pending ? "可归档·保留待处理" : "可归档·有提示", tone: "warn" }
+        : { label: "可归档", tone: "ok" }
     : { label: "待预览", tone: "mute" };
 
   function submitArchiveSnapshot() {
@@ -165,24 +169,43 @@ export function ProjectArchivePanel({
                   {archivePreview?.project_id ?? "-"}
                 </span>
               </p>
+              {archivePreview?.message ? (
+                <p className="text-sm text-ink">{archivePreview.message}</p>
+              ) : null}
               <p>
-                estimated_object_refs:{" "}
-                <span className="font-mono text-ink">
-                  {estimatedObjectRefs.length}
-                </span>
-                ，blocked_reasons:{" "}
-                <span className="font-mono text-ink">
-                  {blockedReasons.length}
-                </span>
+                ObjectRef 估算{" "}
+                <span className="font-mono text-ink">{estimatedObjectRefs.length}</span>
+                {blockedReasons.length > 0 ? (
+                  <>
+                    {" "}
+                    · 兼容 codes{" "}
+                    <span className="font-mono text-ink">{blockedReasons.length}</span>
+                  </>
+                ) : null}
               </p>
             </div>
-            {blockedReasons.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {blockedReasons.slice(0, 4).map((reason, index) => (
-                  <StatusPill key={`${index}-${stringifyValue(reason)}`} tone="warn">
-                    {stringifyValue(reason)}
-                  </StatusPill>
-                ))}
+            {blockers.length > 0 ? (
+              <div className="grid gap-2">
+                <p className="text-xs font-semibold text-ink">阻断原因</p>
+                <div className="flex flex-wrap gap-2">
+                  {blockers.map((blocker) => (
+                    <StatusPill key={`b-${blocker.code}-${blocker.count}`} tone="danger">
+                      {blocker.message || archiveReadinessCodeLabel(blocker.code)}
+                    </StatusPill>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {warnings.length > 0 ? (
+              <div className="grid gap-2">
+                <p className="text-xs font-semibold text-ink">提示</p>
+                <div className="flex flex-wrap gap-2">
+                  {warnings.map((warning) => (
+                    <StatusPill key={`w-${warning.code}-${warning.count}`} tone="warn">
+                      {warning.message || archiveReadinessCodeLabel(warning.code)}
+                    </StatusPill>
+                  ))}
+                </div>
               </div>
             ) : null}
           </section>

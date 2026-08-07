@@ -10770,6 +10770,200 @@ func TestArchiveProjectAllowsTerminalTasksOnly(t *testing.T) {
 	}
 }
 
+func TestArchiveProjectBlocksOpenDemands(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "有未结需求",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: actorID,
+	}
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Status:    ProjectDemandStatusExecuting,
+	})
+	_, err = service.ArchiveProject(context.Background(), tenantID, projectID, actorID)
+	var blocked *ProjectArchiveBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("expected archive blocked error, got %v", err)
+	}
+	if len(blocked.Blockers) != 1 || blocked.Blockers[0].Code != "open_demands" {
+		t.Fatalf("unexpected blockers: %#v", blocked.Blockers)
+	}
+}
+
+func TestArchiveProjectBlocksPendingDecisions(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "有待决",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: actorID,
+	}
+	repo.deletePreviewCounts = ProjectDeleteWarnings{PendingDecisionCount: 2}
+	_, err = service.ArchiveProject(context.Background(), tenantID, projectID, actorID)
+	var blocked *ProjectArchiveBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("expected archive blocked error, got %v", err)
+	}
+	found := false
+	for _, b := range blocked.Blockers {
+		if b.Code == "pending_decisions" && b.Count == 2 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected pending_decisions blocker, got %#v", blocked.Blockers)
+	}
+}
+
+func TestBuildArchivePreviewCanArchiveWithMissingEvidenceWarning(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "空材料",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: actorID,
+	}
+	preview, err := service.BuildArchivePreview(context.Background(), tenantID, projectID)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if !preview.CanArchive {
+		t.Fatalf("expected can_archive true, blockers=%#v", preview.Blockers)
+	}
+	found := false
+	for _, w := range preview.Warnings {
+		if w.Code == "missing_evidence" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected missing_evidence warning, got %#v", preview.Warnings)
+	}
+	for _, code := range preview.BlockedReasons {
+		if code == "missing_final_report" {
+			t.Fatalf("missing_final_report should merge into missing_evidence, got %#v", preview.BlockedReasons)
+		}
+	}
+}
+
+func TestTryCloseProjectFromDemandSignOffDefersOnPendingDecision(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "结项延后",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: actorID,
+	}
+	repo.demands = append(repo.demands, ProjectDemand{
+		ID:        uuid.New(),
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Status:    ProjectDemandStatusCompleted,
+	})
+	repo.deletePreviewCounts = ProjectDeleteWarnings{PendingDecisionCount: 1}
+	closed, err := service.tryCloseProjectFromDemandSignOff(context.Background(), tenantID, projectID, actorID, "验收通过")
+	if err != nil {
+		t.Fatalf("expected no error bubble, got %v", err)
+	}
+	if closed {
+		t.Fatal("expected closed=false when pending decisions block archive")
+	}
+	if repo.projects[projectID].Status == ProjectStatusArchived {
+		t.Fatal("project must stay running")
+	}
+	found := false
+	for _, ev := range repo.events {
+		if ev.EventType == ProjectEventArchiveAutoCloseDeferred {
+			found = true
+			break
+		}
+	}
+	if !found {
+		// memory repo may track eventTypes instead of full events
+		for _, et := range repo.eventTypes {
+			if et == ProjectEventArchiveAutoCloseDeferred {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected auto_close_deferred event, events=%#v types=%#v", repo.events, repo.eventTypes)
+	}
+}
+
+func TestArchiveProjectAllowsEmptyProjectWithNoDemands(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID:               projectID,
+		TenantID:         tenantID,
+		Name:             "空项目可归档",
+		Status:           ProjectStatusRunning,
+		HumanOwnerUserID: actorID,
+	}
+	// seed minimal evidence+report so missing_evidence is only a warning
+	repo.evidenceRefs = append(repo.evidenceRefs, ProjectEvidenceRef{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID})
+	repo.reportRefs = append(repo.reportRefs, ProjectReportRef{ID: uuid.New(), TenantID: tenantID, ProjectID: projectID})
+	preview, err := service.BuildArchivePreview(context.Background(), tenantID, projectID)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if !preview.CanArchive {
+		t.Fatalf("empty project should be archivable, blockers=%#v", preview.Blockers)
+	}
+	project, err := service.ArchiveProject(context.Background(), tenantID, projectID, actorID)
+	if err != nil {
+		t.Fatalf("archive empty project: %v", err)
+	}
+	if project.Status != ProjectStatusArchived {
+		t.Fatalf("expected archived, got %s", project.Status)
+	}
+}
+
+
 func TestUnarchiveProjectRestoresRunning(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -12477,21 +12671,35 @@ func (r *memoryRepository) TransitionProjectStatus(ctx context.Context, tenantID
 }
 
 func (r *memoryRepository) AreAllProjectDemandsTerminal(ctx context.Context, tenantID, projectID uuid.UUID) (bool, error) {
-	terminal := map[ProjectDemandStatus]bool{
-		ProjectDemandStatusCompleted: true,
-		ProjectDemandStatusFailed:    true,
-		ProjectDemandStatusCancelled: true,
+	nonTerminal, err := r.CountNonTerminalProjectDemands(ctx, tenantID, projectID)
+	if err != nil {
+		return false, err
+	}
+	if nonTerminal > 0 {
+		return false, nil
 	}
 	count := 0
 	for _, demand := range r.demands {
 		if demand.TenantID == tenantID && demand.ProjectID == projectID {
 			count++
-			if !terminal[demand.Status] {
-				return false, nil
-			}
 		}
 	}
 	return count > 0, nil
+}
+
+func (r *memoryRepository) CountNonTerminalProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error) {
+	terminal := map[ProjectDemandStatus]bool{
+		ProjectDemandStatusCompleted: true,
+		ProjectDemandStatusFailed:    true,
+		ProjectDemandStatusCancelled: true,
+	}
+	var nonTerminal int64
+	for _, demand := range r.demands {
+		if demand.TenantID == tenantID && demand.ProjectID == projectID && !terminal[demand.Status] {
+			nonTerminal++
+		}
+	}
+	return nonTerminal, nil
 }
 
 func (r *memoryRepository) SetProjectHumanOwners(ctx context.Context, tenantID, projectID uuid.UUID, ownerIDs []uuid.UUID) error {

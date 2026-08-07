@@ -1115,9 +1115,11 @@ paths:
       operationId: archiveProject
       summary: Archive a project
       description: |
-        Soft-terminal lifecycle: blocks when any non-terminal project_task remains
-        (completed/done/success/failed/cancelled are terminal; dismissed excluded).
-        On success cancels open inbox items; does not terminate the coordinator.
+        Soft-terminal lifecycle hard gates (same as archive-preview can_archive):
+        already archived, active non-terminal tasks, open non-terminal demands,
+        or pending/requested decisions. Soft warnings (missing evidence/report,
+        open inbox will cancel) do not block. On success cancels open inbox items;
+        does not terminate the coordinator. Empty projects (zero demands) may archive.
       parameters:
         - $ref: "#/components/parameters/ProjectId"
       responses:
@@ -1132,7 +1134,11 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "409":
-          $ref: "#/components/responses/Error"
+          description: Project archive blocked by readiness gates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectArchiveBlockedError"
   /api/v1/projects/{projectId}/unarchive:
     post:
       operationId: unarchiveProject
@@ -7649,6 +7655,7 @@ components:
         - project.acceptance.submitted
         - project.archive_snapshot.created
         - project.archive.retention_pending
+        - project.archive.auto_close_deferred
     ProjectDemandSourceType:
       type: string
       enum:
@@ -8418,6 +8425,9 @@ components:
           $ref: "#/components/schemas/ProjectRole"
         display_name_snapshot:
           type: string
+          description: >
+            读路径为当前展示名（服务端批量 join users/employees 覆盖；主体缺失时回落写入快照；仍空则省略）。
+            写路径仍可传快照，不保证与读路径同义。
         status:
           type: string
         settings:
@@ -9845,10 +9855,66 @@ components:
         created_at:
           type: string
           format: date-time
+    ProjectArchiveBlocker:
+      type: object
+      required:
+        - code
+        - message
+        - count
+      properties:
+        code:
+          type: string
+          enum:
+            - already_archived
+            - active_tasks
+            - open_demands
+            - pending_decisions
+        message:
+          type: string
+          description: 面向用户的中文说明
+        count:
+          type: integer
+    ProjectArchiveWarning:
+      type: object
+      required:
+        - code
+        - message
+        - count
+      properties:
+        code:
+          type: string
+          enum:
+            - missing_evidence
+            - open_inbox_will_cancel
+        message:
+          type: string
+          description: 面向用户的中文说明
+        count:
+          type: integer
+    ProjectArchiveBlockedError:
+      type: object
+      required:
+        - code
+        - message
+        - blockers
+      properties:
+        code:
+          type: string
+          enum:
+            - project_archive_blocked
+        message:
+          type: string
+        blockers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectArchiveBlocker"
     ProjectArchivePreview:
       type: object
       required:
         - project_id
+        - can_archive
+        - blockers
+        - warnings
         - evidence_count
         - artifact_count
         - report_count
@@ -9859,6 +9925,20 @@ components:
         project_id:
           type: string
           format: uuid
+        can_archive:
+          type: boolean
+          description: 硬门禁全部通过时为 true；与 POST /archive 同源判定
+        blockers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectArchiveBlocker"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectArchiveWarning"
+        message:
+          type: string
+          description: 面向用户的一句总结
         evidence_count:
           type: integer
           format: int64
@@ -9872,6 +9952,7 @@ components:
           type: boolean
         blocked_reasons:
           type: array
+          description: 兼容字段；blockers/warnings 的 code 投影，新客户端请用 blockers/warnings
           items: {}
         estimated_object_refs:
           type: array

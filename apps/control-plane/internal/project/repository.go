@@ -28,6 +28,8 @@ type Repository interface {
 	UnarchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
 	TransitionProjectStatus(ctx context.Context, tenantID, projectID uuid.UUID, fromStatuses []string, toStatus string) (Project, error)
 	AreAllProjectDemandsTerminal(ctx context.Context, tenantID, projectID uuid.UUID) (bool, error)
+	// CountNonTerminalProjectDemands 返回非终态 demand 数（completed/failed/cancelled 以外）；无 demand 为 0。
+	CountNonTerminalProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error)
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
 	SetProjectHumanOwners(ctx context.Context, tenantID, projectID uuid.UUID, ownerIDs []uuid.UUID) error
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)

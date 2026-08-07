@@ -1088,6 +1088,9 @@ describe("project API", () => {
   it("gets archive preview and budget summary with Task 6 response fields", async () => {
     const archivePreview = {
       artifact_count: 1,
+      can_archive: true,
+      blockers: [],
+      warnings: [],
       blocked_reasons: [],
       estimated_object_refs: ["s3://bucket/final.md"],
       evidence_count: 2,

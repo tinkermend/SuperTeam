@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,7 +22,7 @@ var (
 	ErrProjectWorkspaceUnavailable = errors.New("project workspace unavailable on runtime nodes")
 	ErrInvalidProjectMember        = errors.New("invalid project member")
 	// ErrProjectRequiresHumanOwner:项目必须至少保留一个 owner 角色的人类负责人成员。
-	ErrProjectRequiresHumanOwner = errors.New("project requires at least one human owner")
+	ErrProjectRequiresHumanOwner = errors.New("项目至少保留一位人类负责人")
 	// ErrProjectRequiresDigitalEmployee:提交需求前项目必须已有至少一名 active 数字员工成员。
 	// 空池时不得进入规划(否则规划器会胡填员工 ID / 产出无法校验的路由,再开 planning_failed 卡)。
 	// 文案直接中文:handler 400 原样下发。
@@ -39,10 +40,9 @@ var (
 	ErrProjectTaskGraphPending      = errors.New("project task graph pending implementation")
 	ErrInvalidProjectEvidence       = errors.New("invalid project evidence")
 	ErrInvalidProjectAcceptance     = errors.New("invalid project acceptance")
-	// ErrProjectArchiveBlocked:归档硬门禁——仍有未完结 project_task 时拒绝归档
-	// （终态=completed/done/success/failed/cancelled；dismissed 不计）。
-	// 文案直接中文:handler 409 原样下发。
-	ErrProjectArchiveBlocked = errors.New("项目仍有未完结任务，无法归档")
+	// ErrProjectArchiveBlocked:归档硬门禁——未结任务/需求/待决决策等（详见 ProjectArchiveBlockedError.Blockers）。
+	// 文案直接中文:handler 409；结构化 blockers 见 ProjectArchiveBlockedError。
+	ErrProjectArchiveBlocked = errors.New("项目未达归档条件，无法归档")
 	// ErrProjectNotArchived:对非归档项目执行恢复时返回。
 	ErrProjectNotArchived = errors.New("项目未归档，无需恢复")
 	ErrUnauthorizedProjectTeamScope = errors.New("unauthorized project team scope")
@@ -70,6 +70,7 @@ var (
 )
 
 const ProjectDeleteBlockedCode = "project_delete_blocked"
+const ProjectArchiveBlockedCode = "project_archive_blocked"
 
 // Demand coordination modes. "plan" is the default single-pass planning
 // flow; "loop" opts a demand into the tri-mode handoff loop.
@@ -203,6 +204,8 @@ const (
 	ProjectEventCapabilityBindingChanged ProjectEventType = "project.capability_binding.changed"
 	ProjectEventArchived        ProjectEventType = "project.archived"
 	ProjectEventUnarchived      ProjectEventType = "project.unarchived"
+	// ProjectEventArchiveAutoCloseDeferred:通过并结项时需求已终态但归档门禁未过，签署不回滚。
+	ProjectEventArchiveAutoCloseDeferred ProjectEventType = "project.archive.auto_close_deferred"
 	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
 
 	ProjectEventRuntimePlacementUpdated          ProjectEventType = "project.runtime_placement.updated"
@@ -1443,12 +1446,48 @@ type ProjectAcceptanceRecord struct {
 	CreatedAt        time.Time
 }
 
+// ProjectArchiveBlocker is a hard gate preventing archive.
+type ProjectArchiveBlocker struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Count   int    `json:"count"`
+}
+
+// ProjectArchiveWarning is a non-blocking readiness notice.
+type ProjectArchiveWarning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Count   int    `json:"count"`
+}
+
+// ProjectArchiveBlockedError carries structured blockers for POST /archive 409.
+type ProjectArchiveBlockedError struct {
+	Blockers []ProjectArchiveBlocker
+	Message  string
+}
+
+func (e *ProjectArchiveBlockedError) Error() string {
+	if e != nil && strings.TrimSpace(e.Message) != "" {
+		return e.Message
+	}
+	return ErrProjectArchiveBlocked.Error()
+}
+
+func (e *ProjectArchiveBlockedError) Unwrap() error {
+	return ErrProjectArchiveBlocked
+}
+
 type ProjectArchivePreview struct {
 	ProjectID           uuid.UUID
+	CanArchive          bool
+	Blockers            []ProjectArchiveBlocker
+	Warnings            []ProjectArchiveWarning
+	Message             string
 	EvidenceCount       int64
 	ArtifactCount       int64
 	ReportCount         int64
 	RetentionPending    bool
+	// BlockedReasons is deprecated compatibility projection of blocker/warning codes.
 	BlockedReasons      []any
 	EstimatedObjectRefs []any
 }

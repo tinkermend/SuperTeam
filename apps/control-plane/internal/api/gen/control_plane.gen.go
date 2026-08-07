@@ -1365,6 +1365,63 @@ func (e ProjectAcceptanceRecordStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectArchiveBlockedErrorCode.
+const (
+	ProjectArchiveBlocked ProjectArchiveBlockedErrorCode = "project_archive_blocked"
+)
+
+// Valid indicates whether the value is a known member of the ProjectArchiveBlockedErrorCode enum.
+func (e ProjectArchiveBlockedErrorCode) Valid() bool {
+	switch e {
+	case ProjectArchiveBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectArchiveBlockerCode.
+const (
+	ActiveTasks      ProjectArchiveBlockerCode = "active_tasks"
+	AlreadyArchived  ProjectArchiveBlockerCode = "already_archived"
+	OpenDemands      ProjectArchiveBlockerCode = "open_demands"
+	PendingDecisions ProjectArchiveBlockerCode = "pending_decisions"
+)
+
+// Valid indicates whether the value is a known member of the ProjectArchiveBlockerCode enum.
+func (e ProjectArchiveBlockerCode) Valid() bool {
+	switch e {
+	case ActiveTasks:
+		return true
+	case AlreadyArchived:
+		return true
+	case OpenDemands:
+		return true
+	case PendingDecisions:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectArchiveWarningCode.
+const (
+	MissingEvidence     ProjectArchiveWarningCode = "missing_evidence"
+	OpenInboxWillCancel ProjectArchiveWarningCode = "open_inbox_will_cancel"
+)
+
+// Valid indicates whether the value is a known member of the ProjectArchiveWarningCode enum.
+func (e ProjectArchiveWarningCode) Valid() bool {
+	switch e {
+	case MissingEvidence:
+		return true
+	case OpenInboxWillCancel:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectDeleteBlockedErrorCode.
 const (
 	ProjectDeleteBlocked ProjectDeleteBlockedErrorCode = "project_delete_blocked"
@@ -1742,6 +1799,7 @@ const (
 	ProjectEventTypeDecisionSubmitted                     ProjectEventType = "decision.submitted"
 	ProjectEventTypeDemandSubmitted                       ProjectEventType = "demand.submitted"
 	ProjectEventTypeProjectAcceptanceSubmitted            ProjectEventType = "project.acceptance.submitted"
+	ProjectEventTypeProjectArchiveAutoCloseDeferred       ProjectEventType = "project.archive.auto_close_deferred"
 	ProjectEventTypeProjectArchiveRetentionPending        ProjectEventType = "project.archive.retention_pending"
 	ProjectEventTypeProjectArchiveSnapshotCreated         ProjectEventType = "project.archive_snapshot.created"
 	ProjectEventTypeProjectArchived                       ProjectEventType = "project.archived"
@@ -1783,6 +1841,8 @@ func (e ProjectEventType) Valid() bool {
 	case ProjectEventTypeDemandSubmitted:
 		return true
 	case ProjectEventTypeProjectAcceptanceSubmitted:
+		return true
+	case ProjectEventTypeProjectArchiveAutoCloseDeferred:
 		return true
 	case ProjectEventTypeProjectArchiveRetentionPending:
 		return true
@@ -5216,15 +5276,47 @@ type ProjectAcceptanceRecord struct {
 // ProjectAcceptanceRecordStatus defines model for ProjectAcceptanceRecord.Status.
 type ProjectAcceptanceRecordStatus string
 
+// ProjectArchiveBlockedError defines model for ProjectArchiveBlockedError.
+type ProjectArchiveBlockedError struct {
+	Blockers []ProjectArchiveBlocker        `json:"blockers"`
+	Code     ProjectArchiveBlockedErrorCode `json:"code"`
+	Message  string                         `json:"message"`
+}
+
+// ProjectArchiveBlockedErrorCode defines model for ProjectArchiveBlockedError.Code.
+type ProjectArchiveBlockedErrorCode string
+
+// ProjectArchiveBlocker defines model for ProjectArchiveBlocker.
+type ProjectArchiveBlocker struct {
+	Code  ProjectArchiveBlockerCode `json:"code"`
+	Count int                       `json:"count"`
+
+	// Message 面向用户的中文说明
+	Message string `json:"message"`
+}
+
+// ProjectArchiveBlockerCode defines model for ProjectArchiveBlocker.Code.
+type ProjectArchiveBlockerCode string
+
 // ProjectArchivePreview defines model for ProjectArchivePreview.
 type ProjectArchivePreview struct {
-	ArtifactCount       int64              `json:"artifact_count"`
-	BlockedReasons      []interface{}      `json:"blocked_reasons"`
-	EstimatedObjectRefs []interface{}      `json:"estimated_object_refs"`
-	EvidenceCount       int64              `json:"evidence_count"`
-	ProjectId           openapi_types.UUID `json:"project_id"`
-	ReportCount         int64              `json:"report_count"`
-	RetentionPending    bool               `json:"retention_pending"`
+	ArtifactCount int64 `json:"artifact_count"`
+
+	// BlockedReasons 兼容字段；blockers/warnings 的 code 投影，新客户端请用 blockers/warnings
+	BlockedReasons []interface{}           `json:"blocked_reasons"`
+	Blockers       []ProjectArchiveBlocker `json:"blockers"`
+
+	// CanArchive 硬门禁全部通过时为 true；与 POST /archive 同源判定
+	CanArchive          bool          `json:"can_archive"`
+	EstimatedObjectRefs []interface{} `json:"estimated_object_refs"`
+	EvidenceCount       int64         `json:"evidence_count"`
+
+	// Message 面向用户的一句总结
+	Message          *string                 `json:"message,omitempty"`
+	ProjectId        openapi_types.UUID      `json:"project_id"`
+	ReportCount      int64                   `json:"report_count"`
+	RetentionPending bool                    `json:"retention_pending"`
+	Warnings         []ProjectArchiveWarning `json:"warnings"`
 }
 
 // ProjectArchiveSnapshot defines model for ProjectArchiveSnapshot.
@@ -5243,6 +5335,18 @@ type ProjectArchiveSnapshot struct {
 	Summary              *string                `json:"summary,omitempty"`
 	TenantId             openapi_types.UUID     `json:"tenant_id"`
 }
+
+// ProjectArchiveWarning defines model for ProjectArchiveWarning.
+type ProjectArchiveWarning struct {
+	Code  ProjectArchiveWarningCode `json:"code"`
+	Count int                       `json:"count"`
+
+	// Message 面向用户的中文说明
+	Message string `json:"message"`
+}
+
+// ProjectArchiveWarningCode defines model for ProjectArchiveWarning.Code.
+type ProjectArchiveWarningCode string
 
 // ProjectArtifactRef defines model for ProjectArtifactRef.
 type ProjectArtifactRef struct {
@@ -5776,7 +5880,9 @@ type ProjectExecutionTraceSummary struct {
 // ProjectMember defines model for ProjectMember.
 type ProjectMember struct {
 	// CreatedAt 成员加入项目时间
-	CreatedAt           time.Time              `json:"created_at"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// DisplayNameSnapshot 读路径为当前展示名（服务端批量 join users/employees 覆盖；主体缺失时回落写入快照；仍空则省略）。 写路径仍可传快照，不保证与读路径同义。
 	DisplayNameSnapshot *string                `json:"display_name_snapshot,omitempty"`
 	Id                  openapi_types.UUID     `json:"id"`
 	PrincipalId         openapi_types.UUID     `json:"principal_id"`

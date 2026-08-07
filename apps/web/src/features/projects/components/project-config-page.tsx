@@ -23,10 +23,27 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from "@/components/ui/collapsible";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import {
   IconTile,
   ObjectRef,
@@ -54,7 +71,7 @@ import {
 import { cn } from "@/lib/utils";
 import { EmployeeAvatar } from "@/features/employees/avatar";
 import { employeeAvatarAsset } from "@/features/employees/avatar-library";
-import { listUsers } from "@/lib/api/auth";
+import { listAuthzMembers, type AuthzMemberRecord } from "@/lib/api/authz";
 import type { ApiClientOptions } from "@/lib/api/client";
 import { listDigitalEmployees, type DigitalEmployee } from "@/lib/api/employees";
 import {
@@ -84,6 +101,19 @@ import { ProjectErrorState, ProjectLoadingState } from "./project-empty-states";
 import { ProjectConfigRevisionHistory } from "./project-config-revision-history";
 
 type ProjectConfigTabValue = "overview" | "members" | "casting" | "capabilities" | "coordination";
+
+/** 人类成员在引导 UI 中可选的项目角色（executor 仅数字员工，后端亦拒绝 human+executor）。 */
+const HUMAN_PROJECT_ROLES = ["owner", "reviewer", "observer"] as const;
+type HumanProjectRole = (typeof HUMAN_PROJECT_ROLES)[number];
+
+function isHumanProjectRole(role: string): role is HumanProjectRole {
+  return (HUMAN_PROJECT_ROLES as readonly string[]).includes(role);
+}
+
+function authzMemberDisplayName(member: AuthzMemberRecord): string {
+  return member.display_name?.trim() || member.username?.trim() || member.user_id;
+}
+
 
 type ProjectConfigViewProps = {
   apiBaseUrl: string;
@@ -149,28 +179,27 @@ export function ProjectConfigView({
     }
     return map;
   }, [employeesQuery.data]);
-  const usersQuery = useQuery({
-    queryKey: ["auth-users", "member-name-lookup"],
-    queryFn: () => listUsers({ ...apiOptions, limit: 200 }),
+  const authzMembersQuery = useQuery({
+    queryKey: ["authz-members", "project-human-candidates", apiOptions.baseUrl],
+    queryFn: () => listAuthzMembers({ ...apiOptions, limit: 200, offset: 0 }),
     placeholderData: keepPreviousData
-});
-  const userNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const user of usersQuery.data?.items ?? []) {
-      const name = user.display_name?.trim() || user.username?.trim();
-      if (name) {
-        map.set(user.id, name);
-      }
-    }
-    return map;
-  }, [usersQuery.data]);
+  });
+  const humanCandidates = useMemo(() => {
+    return (authzMembersQuery.data?.items ?? []).filter(
+      (member) => member.console_access && member.account_status === "active",
+    );
+  }, [authzMembersQuery.data]);
 
   const [draft, setDraft] = useState<ConfigDraft>(() => emptyConfigDraft());
   const [memberDraft, setMemberDraft] = useState<MemberDraft>({ members: "[]" });
   const [error, setError] = useState("");
   const [memberError, setMemberError] = useState("");
+  const [activeTab, setActiveTab] = useState<ProjectConfigTabValue>(initialTab);
   const [hydratedProjectId, setHydratedProjectId] = useState("");
   const [isConfigDirty, setConfigDirty] = useState(false);
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab, projectId]);
   const [isMembersDirty, setMembersDirty] = useState(false);
   const [revisionSelection, setRevisionSelection] = useState<RevisionSelection>(() => ({
     projectId
@@ -266,17 +295,22 @@ export function ProjectConfigView({
         member.display_name_snapshot?.trim() ||
         (member.principal_type === "digital_employee"
           ? employeeById.get(member.principal_id)?.name
-          : userNameById.get(member.principal_id));
+          : undefined);
       if (name) {
         byId.set(member.principal_id, name);
+      }
+    }
+    for (const human of humanCandidates) {
+      if (!byId.has(human.user_id)) {
+        byId.set(human.user_id, authzMemberDisplayName(human));
       }
     }
     return (id: string | undefined | null): string | undefined => {
       if (!id) return undefined;
       const key = id.trim();
-      return byId.get(key) ?? userNameById.get(key);
+      return byId.get(key);
     };
-  }, [config?.members, employeeById, userNameById]);
+  }, [config?.members, employeeById, humanCandidates]);
   const ownerIDs = useMemo<string[]>(() => {
     if (!config) return [];
     const ids = config.project.human_owner_user_ids;
@@ -416,6 +450,82 @@ export function ProjectConfigView({
     notifySuccess(`已从项目移除「${removedName}」`);
   }
 
+  function assertHasOwner(members: ProjectMemberInput[], actionLabel: string): boolean {
+    const ownerCount = members.filter(
+      (member) =>
+        member.principal_type === "human_user" && member.project_role === "owner",
+    ).length;
+    if (ownerCount > 0) return true;
+    const message = `至少保留一位负责人，无法${actionLabel}`;
+    setMemberError(message);
+    notifyError(message);
+    return false;
+  }
+
+  async function addHumanMembers(users: AuthzMemberRecord[], role: HumanProjectRole) {
+    if (isArchived || !config || users.length === 0) return;
+    const existingIds = new Set(config.members.map((member) => member.principal_id));
+    const additions: ProjectMemberInput[] = [];
+    for (const user of users) {
+      if (existingIds.has(user.user_id)) continue;
+      additions.push({
+        principal_type: "human_user",
+        principal_id: user.user_id,
+        project_role: role,
+        display_name_snapshot: authzMemberDisplayName(user),
+        settings: {},
+      });
+    }
+    if (additions.length === 0) {
+      notifyError("所选用户已在项目成员中");
+      return;
+    }
+    const next = [...currentMemberInputs(), ...additions];
+    if (!assertHasOwner(next, "添加成员")) return;
+    setMemberError("");
+    await replaceMembersMutation.mutateAsync(next);
+    notifySuccess(
+      additions.length === 1
+        ? `已添加人类成员「${additions[0].display_name_snapshot ?? additions[0].principal_id}」`
+        : `已添加 ${additions.length} 名人类成员`,
+    );
+  }
+
+  async function changeHumanRole(principalId: string, role: HumanProjectRole) {
+    if (isArchived || !config) return;
+    const next = currentMemberInputs().map((member) =>
+      member.principal_type === "human_user" && member.principal_id === principalId
+        ? { ...member, project_role: role }
+        : member,
+    );
+    if (!assertHasOwner(next, "变更角色")) return;
+    const name =
+      config.members.find((member) => member.principal_id === principalId)
+        ?.display_name_snapshot ||
+      resolvePrincipalName(principalId) ||
+      principalId;
+    setMemberError("");
+    await replaceMembersMutation.mutateAsync(next);
+    notifySuccess(`已更新「${name}」为${projectRoleLabel(role)}`);
+  }
+
+  async function removeHumanMember(principalId: string) {
+    if (isArchived || !config) return;
+    const next = currentMemberInputs().filter(
+      (member) => member.principal_id !== principalId,
+    );
+    if (next.length === currentMemberInputs().length) return;
+    if (!assertHasOwner(next, "移除该成员")) return;
+    const removedName =
+      config.members.find((member) => member.principal_id === principalId)
+        ?.display_name_snapshot ||
+      resolvePrincipalName(principalId) ||
+      principalId;
+    setMemberError("");
+    await replaceMembersMutation.mutateAsync(next);
+    notifySuccess(`已从项目移除「${removedName}」`);
+  }
+
   function updateDraft(update: (current: ConfigDraft) => ConfigDraft) {
     setConfigDirty(true);
     setDraft(update);
@@ -515,7 +625,11 @@ export function ProjectConfigView({
             }
           />
 
-          <SoftTabs defaultValue={initialTab} className="gap-4">
+          <SoftTabs
+            className="gap-4"
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as ProjectConfigTabValue)}
+          >
             <SoftTabsList
               className="inline-flex h-auto w-fit flex-wrap gap-1 rounded-[14px] bg-card p-1.5 text-ink-2 shadow-card"
               data-slot="page-tab-list"
@@ -558,7 +672,15 @@ export function ProjectConfigView({
                       )}
                     </div>
                     <span className="mt-1 block text-[12px] text-ink-3">
-                      多个平级负责人,任一可审批/验收;在「成员」标签页增删负责人(至少保留一位)。
+                      多个平级负责人，任一可审批/验收；请到
+                      <button
+                        className="mx-0.5 text-brand underline-offset-2 hover:underline"
+                        type="button"
+                        onClick={() => setActiveTab("members")}
+                      >
+                        「成员」
+                      </button>
+                      标签管理，至少保留一位。
                     </span>
                   </Field>
                   <Field label="目标">
@@ -593,6 +715,7 @@ export function ProjectConfigView({
               <div className="grid gap-4">
                 <MembersHumanizedPanel
                   availableEmployees={employeesQuery.data ?? []}
+                  availableHumans={humanCandidates}
                   digitalMembers={config.digital_employee_pool}
                   disabled={membersManageDisabled}
                   employeeById={employeeById}
@@ -602,7 +725,10 @@ export function ProjectConfigView({
                   ownerUserIDs={ownerIDs}
                   resolveName={resolvePrincipalName}
                   onAddDigitalEmployees={addDigitalEmployees}
+                  onAddHumanMembers={addHumanMembers}
+                  onChangeHumanRole={changeHumanRole}
                   onRemoveDigitalEmployee={removeDigitalEmployee}
+                  onRemoveHumanMember={removeHumanMember}
                 />
                 <Collapsible className="grid gap-3">
                   <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 rounded-[14px] border border-line bg-card px-5 py-3 text-left shadow-card">
@@ -982,6 +1108,7 @@ function toMemberInput(member: ProjectMember): ProjectMemberInput {
 
 function MembersHumanizedPanel({
   availableEmployees,
+  availableHumans,
   digitalMembers,
   disabled,
   employeeById,
@@ -991,9 +1118,13 @@ function MembersHumanizedPanel({
   ownerUserIDs,
   resolveName,
   onAddDigitalEmployees,
-  onRemoveDigitalEmployee
+  onAddHumanMembers,
+  onChangeHumanRole,
+  onRemoveDigitalEmployee,
+  onRemoveHumanMember
 }: {
   availableEmployees: DigitalEmployee[];
+  availableHumans: AuthzMemberRecord[];
   digitalMembers: ProjectMember[];
   disabled?: boolean;
   employeeById: Map<string, DigitalEmployee>;
@@ -1003,30 +1134,71 @@ function MembersHumanizedPanel({
   ownerUserIDs: string[];
   resolveName: (id: string | undefined | null) => string | undefined;
   onAddDigitalEmployees: (employees: DigitalEmployee[]) => Promise<void>;
+  onAddHumanMembers: (users: AuthzMemberRecord[], role: HumanProjectRole) => Promise<void>;
+  onChangeHumanRole: (principalId: string, role: HumanProjectRole) => Promise<void>;
   onRemoveDigitalEmployee: (principalId: string) => Promise<void>;
+  onRemoveHumanMember: (principalId: string) => Promise<void>;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const memberIds = useMemo(
+  const [digitalPickerOpen, setDigitalPickerOpen] = useState(false);
+  const [humanPickerOpen, setHumanPickerOpen] = useState(false);
+  const [pendingRemoveHuman, setPendingRemoveHuman] = useState<ProjectMember | null>(null);
+  const digitalMemberIds = useMemo(
     () => new Set(digitalMembers.map((member) => member.principal_id)),
     [digitalMembers],
   );
+  const humanMemberIds = useMemo(
+    () => new Set(humanMembers.map((member) => member.principal_id)),
+    [humanMembers],
+  );
+  const ownerCount = ownerUserIDs.length;
 
   return (
     <div className="grid gap-4">
       <MemberGroup
+        action={
+          <Button
+            disabled={disabled}
+            size="sm"
+            type="button"
+            onClick={() => setHumanPickerOpen(true)}
+          >
+            <Plus data-icon="inline-start" />
+            添加人类成员
+          </Button>
+        }
         count={humanMembers.length}
-        emptyLabel="暂无人类成员"
+        emptyLabel="暂无人类成员，点击右上角从租户成员加入"
         icon={<UserRound />}
         title="人类成员"
       >
-        {humanMembers.map((member) => (
-          <ConfigMemberRow
-            key={member.id}
-            isOwner={ownerUserIDs.includes(member.principal_id)}
-            member={member}
-            resolvedName={resolveName(member.principal_id)}
-          />
-        ))}
+        {humanMembers.map((member) => {
+          const isOwner = ownerUserIDs.includes(member.principal_id);
+          const isLastOwner = isOwner && ownerCount <= 1;
+          return (
+            <ConfigMemberRow
+              key={member.id}
+              disabled={disabled || isSaving}
+              isLastOwner={isLastOwner}
+              isOwner={isOwner}
+              member={member}
+              resolvedName={resolveName(member.principal_id)}
+              onChangeHumanRole={
+                disabled
+                  ? undefined
+                  : (role) => {
+                      void onChangeHumanRole(member.principal_id, role);
+                    }
+              }
+              onRemove={
+                disabled || isLastOwner
+                  ? undefined
+                  : () => {
+                      setPendingRemoveHuman(member);
+                    }
+              }
+            />
+          );
+        })}
       </MemberGroup>
       <MemberGroup
         action={
@@ -1034,7 +1206,7 @@ function MembersHumanizedPanel({
             disabled={disabled}
             size="sm"
             type="button"
-            onClick={() => setPickerOpen(true)}
+            onClick={() => setDigitalPickerOpen(true)}
           >
             <Plus data-icon="inline-start" />
             添加数字员工
@@ -1059,18 +1231,65 @@ function MembersHumanizedPanel({
         ))}
       </MemberGroup>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      <AddHumanMembersDialog
+        availableHumans={availableHumans}
+        error={error}
+        existingMemberIds={humanMemberIds}
+        isSaving={isSaving}
+        open={humanPickerOpen}
+        onOpenChange={setHumanPickerOpen}
+        onConfirm={async (users, role) => {
+          await onAddHumanMembers(users, role);
+          setHumanPickerOpen(false);
+        }}
+      />
       <AddDigitalEmployeesDialog
         availableEmployees={availableEmployees}
         error={error}
-        existingMemberIds={memberIds}
+        existingMemberIds={digitalMemberIds}
         isSaving={isSaving}
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
+        open={digitalPickerOpen}
+        onOpenChange={setDigitalPickerOpen}
         onConfirm={async (employees) => {
           await onAddDigitalEmployees(employees);
-          setPickerOpen(false);
+          setDigitalPickerOpen(false);
         }}
       />
+      <AlertDialog
+        open={Boolean(pendingRemoveHuman)}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoveHuman(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除人类成员</AlertDialogTitle>
+            <AlertDialogDescription>
+              确认将「
+              {pendingRemoveHuman?.display_name_snapshot?.trim() ||
+                pendingRemoveHuman?.principal_id ||
+                "该成员"}
+              」移出本项目？移除后其将不再出现在项目成员池；若仍是负责人集合中的一员，须保证项目至少保留一位负责人。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving || !pendingRemoveHuman}
+              onClick={(event) => {
+                event.preventDefault();
+                const target = pendingRemoveHuman;
+                if (!target) return;
+                void onRemoveHumanMember(target.principal_id).finally(() => {
+                  setPendingRemoveHuman(null);
+                });
+              }}
+            >
+              确认移除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1114,22 +1333,31 @@ function MemberGroup({
 function ConfigMemberRow({
   disabled,
   employee,
+  isLastOwner,
   isOwner,
   member,
   resolvedName,
+  onChangeHumanRole,
   onRemove
 }: {
   disabled?: boolean;
   employee?: DigitalEmployee;
+  isLastOwner?: boolean;
   isOwner?: boolean;
   member: ProjectMember;
   resolvedName?: string;
+  onChangeHumanRole?: (role: HumanProjectRole) => void;
   onRemove?: () => void;
 }) {
   const isDigital = member.principal_type === "digital_employee";
   const name =
     member.display_name_snapshot?.trim() || employee?.name || resolvedName || undefined;
   const description = employee?.description?.trim();
+  const humanRole = isHumanProjectRole(member.project_role)
+    ? member.project_role
+    : member.project_role === "owner"
+      ? "owner"
+      : "observer";
   return (
     <div className="flex items-start gap-3 p-4">
       {isDigital ? (
@@ -1152,7 +1380,38 @@ function ConfigMemberRow({
             <ObjectRef id={member.principal_id} name={name} />
           </span>
           {isOwner ? <StatusPill tone="info">负责人</StatusPill> : null}
-          <StatusPill tone="mute">{projectRoleLabel(member.project_role)}</StatusPill>
+          {isDigital || !onChangeHumanRole ? (
+            <StatusPill tone="mute">{projectRoleLabel(member.project_role)}</StatusPill>
+          ) : (
+            <Select
+              disabled={disabled}
+              value={humanRole}
+              onValueChange={(value) => {
+                if (!isHumanProjectRole(value)) return;
+                if (isLastOwner && value !== "owner") return;
+                onChangeHumanRole(value);
+              }}
+            >
+              <SelectTrigger
+                aria-label={`变更 ${name || member.principal_id} 的项目角色`}
+                className="h-8 w-[7.5rem]"
+                size="sm"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {HUMAN_PROJECT_ROLES.map((role) => (
+                  <SelectItem
+                    disabled={Boolean(isLastOwner && role !== "owner")}
+                    key={role}
+                    value={role}
+                  >
+                    {projectRoleLabel(role)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         {description ? (
           <p className="mt-1 line-clamp-2 text-sm text-ink-2">{description}</p>
@@ -1175,6 +1434,11 @@ function ConfigMemberRow({
                 <ExternalLink className="size-3" />
               </Link>
             </>
+          ) : isLastOwner ? (
+            <>
+              <span aria-hidden>·</span>
+              <span>至少保留一位负责人</span>
+            </>
           ) : null}
         </div>
       </div>
@@ -1191,6 +1455,199 @@ function ConfigMemberRow({
         </Button>
       ) : null}
     </div>
+  );
+}
+
+function AddHumanMembersDialog({
+  availableHumans,
+  error,
+  existingMemberIds,
+  isSaving,
+  open,
+  onConfirm,
+  onOpenChange
+}: {
+  availableHumans: AuthzMemberRecord[];
+  error?: string;
+  existingMemberIds: Set<string>;
+  isSaving?: boolean;
+  open: boolean;
+  onConfirm: (users: AuthzMemberRecord[], role: HumanProjectRole) => Promise<void> | void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [role, setRole] = useState<HumanProjectRole>("observer");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      setSelectedIds(new Set());
+      setRole("observer");
+      setSubmitting(false);
+    }
+  }, [open]);
+
+  const candidates = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return availableHumans
+      .filter((member) => {
+        if (existingMemberIds.has(member.user_id)) return false;
+        if (!normalized) return true;
+        return `${member.display_name ?? ""} ${member.username} ${member.email ?? ""}`
+          .toLowerCase()
+          .includes(normalized);
+      })
+      .sort((left, right) =>
+        authzMemberDisplayName(left).localeCompare(authzMemberDisplayName(right), "zh-CN"),
+      );
+  }, [availableHumans, existingMemberIds, query]);
+
+  const selectedUsers = useMemo(
+    () => candidates.filter((member) => selectedIds.has(member.user_id)),
+    [candidates, selectedIds],
+  );
+
+  function toggle(userId: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  return (
+    <SoftDialog open={open} onOpenChange={onOpenChange}>
+      <SoftDialogContent size="lg">
+        <SoftDialogHeader>
+          <SoftDialogTitle>添加人类成员</SoftDialogTitle>
+          <SoftDialogDescription>
+            仅列出已有控制台访问的租户成员；加入后可再调整负责人/审查人/观察者角色。
+          </SoftDialogDescription>
+        </SoftDialogHeader>
+        <SoftDialogBody className="grid gap-4">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_10rem] sm:items-end">
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-3" />
+              <Input
+                className="pl-9"
+                placeholder="搜索姓名、用户名或邮箱"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="add-human-role">加入角色</Label>
+              <Select
+                value={role}
+                onValueChange={(value) => {
+                  if (isHumanProjectRole(value)) setRole(value);
+                }}
+              >
+                <SelectTrigger id="add-human-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HUMAN_PROJECT_ROLES.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {projectRoleLabel(item)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {candidates.length === 0 ? (
+            <div className="grid gap-3 rounded-[12px] border border-line bg-card-soft p-4">
+              <p className="text-sm text-ink-2">
+                {availableHumans.length === 0
+                  ? "租户下暂无具备控制台访问的成员。"
+                  : existingMemberIds.size > 0 &&
+                      availableHumans.every((member) => existingMemberIds.has(member.user_id))
+                    ? "没有更多可添加的人类成员（均已在项目中）。"
+                    : "没有匹配的用户，请缩小关键词或到用户管理确认控制台访问。"}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-[12px] border border-line">
+              <div className="grid grid-cols-[2.5rem_minmax(10rem,1fr)_1fr] border-b border-line bg-card-soft px-3 py-2 text-xs font-semibold text-ink-2">
+                <span />
+                <span>成员</span>
+                <span>账号</span>
+              </div>
+              <div className="max-h-[min(40vh,20rem)] divide-y divide-line overflow-y-auto">
+                {candidates.map((member) => {
+                  const selected = selectedIds.has(member.user_id);
+                  const displayName = authzMemberDisplayName(member);
+                  return (
+                    <div
+                      aria-pressed={selected}
+                      className="grid w-full cursor-pointer grid-cols-[2.5rem_minmax(10rem,1fr)_1fr] items-center px-3 py-3 text-left hover:bg-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/20"
+                      key={member.user_id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => toggle(member.user_id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          toggle(member.user_id);
+                        }
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "grid size-5 place-items-center rounded-md border",
+                          selected
+                            ? "border-brand bg-brand-soft text-ok"
+                            : "border-line-strong bg-card text-ink-3",
+                        )}
+                      >
+                        {selected ? <Check className="size-3.5" /> : null}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-ink">{displayName}</p>
+                        <p className="truncate text-xs text-ink-3">{member.email || "—"}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm text-ink">{member.username}</p>
+                        <p className="truncate text-xs text-ink-3">控制台访问已开通</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        </SoftDialogBody>
+        <SoftDialogFooter left={selectedIds.size > 0 ? `已选 ${selectedIds.size} 人` : "可多选"}>
+          <Button
+            disabled={submitting || isSaving}
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+          >
+            取消
+          </Button>
+          <Button
+            disabled={submitting || isSaving || selectedUsers.length === 0}
+            type="button"
+            onClick={() => {
+              setSubmitting(true);
+              void Promise.resolve(onConfirm(selectedUsers, role)).finally(() => {
+                setSubmitting(false);
+              });
+            }}
+          >
+            {submitting || isSaving ? "加入中…" : "加入项目"}
+          </Button>
+        </SoftDialogFooter>
+      </SoftDialogContent>
+    </SoftDialog>
   );
 }
 

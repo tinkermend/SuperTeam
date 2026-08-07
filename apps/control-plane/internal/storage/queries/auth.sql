@@ -210,3 +210,8 @@ UPDATE auth_users
 SET avatar_svg = sqlc.arg('avatar_svg')::text,
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid;
+
+-- name: ListUserDisplayNamesByIDs :many
+SELECT id, COALESCE(NULLIF(BTRIM(display_name), ''), username, '')::text AS display_name
+FROM auth_users
+WHERE id = ANY(sqlc.arg('ids')::uuid[]);

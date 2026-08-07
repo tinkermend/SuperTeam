@@ -68,6 +68,7 @@ var projectEventNarratives = map[ProjectEventType]ProjectEventNarrative{
 	ProjectEventCapabilityBindingChanged: {Kind: TimelineKindOther, Title: "项目能力绑定变更", Severity: NarrativeSeverityInfo},
 	ProjectEventArchived:        {Kind: TimelineKindOther, Title: "项目归档", Severity: NarrativeSeverityInfo},
 	ProjectEventUnarchived:      {Kind: TimelineKindOther, Title: "项目取消归档", Severity: NarrativeSeverityInfo},
+	ProjectEventArchiveAutoCloseDeferred: {Kind: TimelineKindOther, Title: "自动结项延后", Severity: NarrativeSeverityInfo, Noise: true},
 	ProjectEventDemandSubmitted: {Kind: TimelineKindDemandSubmitted, Title: "需求已提交", Severity: NarrativeSeverityInfo},
 
 	ProjectEventRuntimePlacementUpdated:   {Kind: TimelineKindOther, Title: "运行落点更新", Severity: NarrativeSeverityInfo, Noise: true},

@@ -538,3 +538,24 @@ export function dossierDensityLabel(density: string | undefined): string {
   }
   return DOSSIER_DENSITY_LABELS[density] ?? "驱动";
 }
+
+
+/** 归档预览 blockers/warnings code 中文兜底；优先用服务端 message。 */
+export function archiveReadinessCodeLabel(code: string | undefined): string {
+  switch ((code || "").trim()) {
+    case "already_archived":
+      return "项目已归档";
+    case "active_tasks":
+      return "仍有未完结任务";
+    case "open_demands":
+      return "仍有未结需求";
+    case "pending_decisions":
+      return "仍有待决决策";
+    case "missing_evidence":
+      return "材料不全";
+    case "open_inbox_will_cancel":
+      return "归档将取消待办收件箱";
+    default:
+      return code?.trim() || "未知条件";
+  }
+}

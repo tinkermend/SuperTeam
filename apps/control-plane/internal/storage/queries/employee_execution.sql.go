@@ -1490,6 +1490,43 @@ func (q *Queries) ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg 
 	return items, nil
 }
 
+const ListDigitalEmployeeNamesByIDs = `-- name: ListDigitalEmployeeNamesByIDs :many
+SELECT id, name
+FROM digital_employees
+WHERE tenant_id = $1
+  AND id = ANY($2::uuid[])
+`
+
+type ListDigitalEmployeeNamesByIDsParams struct {
+	TenantID uuid.UUID   `json:"tenant_id"`
+	Ids      []uuid.UUID `json:"ids"`
+}
+
+type ListDigitalEmployeeNamesByIDsRow struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
+func (q *Queries) ListDigitalEmployeeNamesByIDs(ctx context.Context, arg ListDigitalEmployeeNamesByIDsParams) ([]ListDigitalEmployeeNamesByIDsRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeNamesByIDs, arg.TenantID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeNamesByIDsRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeNamesByIDsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListDigitalEmployeeOverviewFilterOptions = `-- name: ListDigitalEmployeeOverviewFilterOptions :many
 WITH overview_args AS (
     SELECT $1::uuid AS tenant_id

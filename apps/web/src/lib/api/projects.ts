@@ -60,7 +60,8 @@ export type ProjectEventType =
   | "project.budget.recorded"
   | "project.acceptance.submitted"
   | "project.archive_snapshot.created"
-  | "project.archive.retention_pending";
+  | "project.archive.retention_pending"
+  | "project.archive.auto_close_deferred";
 export type ProjectDemandSourceType =
   | "manual"
   | "github"
@@ -1040,12 +1041,45 @@ export type ProjectAcceptanceRecord = {
   created_at?: string;
 };
 
+export type ProjectArchiveBlockerCode =
+  | "already_archived"
+  | "active_tasks"
+  | "open_demands"
+  | "pending_decisions";
+
+export type ProjectArchiveWarningCode =
+  | "missing_evidence"
+  | "open_inbox_will_cancel";
+
+export type ProjectArchiveBlocker = {
+  code: ProjectArchiveBlockerCode | string;
+  message: string;
+  count: number;
+};
+
+export type ProjectArchiveWarning = {
+  code: ProjectArchiveWarningCode | string;
+  message: string;
+  count: number;
+};
+
+export type ProjectArchiveBlockedErrorResponse = {
+  code: "project_archive_blocked";
+  message: string;
+  blockers: ProjectArchiveBlocker[];
+};
+
 export type ProjectArchivePreview = {
   project_id: string;
+  can_archive: boolean;
+  blockers: ProjectArchiveBlocker[];
+  warnings: ProjectArchiveWarning[];
+  message?: string;
   evidence_count: number;
   artifact_count: number;
   report_count: number;
   retention_pending: boolean;
+  /** @deprecated use blockers/warnings */
   blocked_reasons: unknown[];
   estimated_object_refs: unknown[];
 };

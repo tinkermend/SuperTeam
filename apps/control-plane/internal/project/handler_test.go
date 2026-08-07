@@ -2883,7 +2883,7 @@ func (s *handlerTestService) GetAcceptance(ctx context.Context, tenantID, projec
 }
 
 func (s *handlerTestService) GetArchivePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectArchivePreview, error) {
-	return &ProjectArchivePreview{ProjectID: projectID, EvidenceCount: 1, ArtifactCount: 1, ReportCount: 1, BlockedReasons: []any{}, EstimatedObjectRefs: []any{"s3://bucket/report.md"}}, nil
+	return &ProjectArchivePreview{ProjectID: projectID, CanArchive: true, Blockers: []ProjectArchiveBlocker{}, Warnings: []ProjectArchiveWarning{}, EvidenceCount: 1, ArtifactCount: 1, ReportCount: 1, BlockedReasons: []any{}, EstimatedObjectRefs: []any{"s3://bucket/report.md"}}, nil
 }
 
 func (s *handlerTestService) CreateArchiveSnapshot(ctx context.Context, req CreateArchiveSnapshotServiceRequest) (*ProjectArchiveSnapshot, error) {
