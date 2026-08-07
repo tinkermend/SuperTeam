@@ -36,8 +36,13 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       return <div>redirecting</div>
     },
     Outlet: () => <div>outlet</div>,
-    useLocation: () => mocks.location
-}
+    useLocation: () => mocks.location,
+    // usePageTitle 读 pathname；布局壳无真实 Router 时需桩，否则 isServer 空指针。
+    useRouterState: (opts?: { select?: (state: { location: typeof mocks.location }) => unknown }) => {
+      const state = { location: mocks.location }
+      return opts?.select ? opts.select(state) : state
+    },
+  }
 })
 
 vi.mock('@/context/layout-provider', () => ({

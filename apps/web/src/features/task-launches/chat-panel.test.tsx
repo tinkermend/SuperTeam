@@ -28,16 +28,19 @@ function ControlledChatPanel({
   projects: Project[];
 }) {
   const [projectId, setProjectId] = useState(initialProjectId);
+  const resolvedProject =
+    projects.find((project) => project.id === projectId) ?? null;
   return (
     <ChatPanel
       apiOptions={apiOptions}
       onConvertToTask={onConvertToTask}
-      onProjectChange={(nextProjectId) => {
-        setProjectId(nextProjectId);
-        onProjectChange?.(nextProjectId);
+      onProjectChange={(project) => {
+        setProjectId(project.id);
+        onProjectChange?.(project.id);
       }}
       projectId={projectId}
       projects={projects}
+      resolvedProject={resolvedProject}
     />
   );
 }

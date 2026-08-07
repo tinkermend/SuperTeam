@@ -171,7 +171,7 @@
 /* 玻璃外壳由共享基元 <GlassCard>（.glass）承载，见 DESIGN.md「沉浸极光玻璃」。
    本文件只保留任务发起页专属布局（.tl-cmd/.tl-params/.tl-actions 等）。 */
 
-/* 中枢指令区 */
+/* 需求描述区 */
 .tl-cmd {
   position: relative;
   margin: 26px;
@@ -475,26 +475,12 @@
 .tl-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 14px;
   padding: 20px 26px;
   border-top: 1px solid var(--aurora-actions-line);
   background: var(--aurora-actions-bg);
 }
-.tl-btn-draft {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--aurora-panel);
-  border: 1px solid var(--aurora-field-border);
-  color: var(--aurora-ink-2);
-  font-size: 14px;
-  font-weight: 600;
-  padding: 13px 22px;
-  border-radius: 13px;
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
-}
-.tl-btn-draft:hover { color: var(--aurora-ink); }
 .tl-btn-send {
   margin-left: auto;
   display: inline-flex;
@@ -510,20 +496,88 @@
   cursor: pointer;
   box-shadow: 0 14px 34px -10px rgba(47, 95, 255, 0.65);
   transition: transform 0.2s, box-shadow 0.2s;
+  text-decoration: none;
 }
 .tl-btn-send:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 20px 44px -10px rgba(47, 95, 255, 0.8);
 }
 .tl-btn-send:disabled { opacity: 0.6; cursor: not-allowed; }
+.tl-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--aurora-panel);
+  border: 1px solid var(--aurora-field-border);
+  color: var(--aurora-ink-2);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 13px 22px;
+  border-radius: 13px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.2s, border-color 0.2s;
+}
+.tl-btn-secondary:hover { color: var(--aurora-ink); }
+
+/* 提交成功闭环 */
+.tl-result {
+  padding: 8px 0 0;
+}
+.tl-result-meta {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 22px 26px 8px;
+}
+.tl-result-meta > div {
+  display: grid;
+  gap: 4px;
+}
+.tl-result-meta dt {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aurora-ink-3);
+}
+.tl-result-meta dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--aurora-ink);
+}
+
+/* 零项目空态 */
+.tl-proj-none {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  min-height: 40px;
+  padding: 6px 2px;
+}
+.tl-proj-none-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--aurora-ink-2);
+}
+.tl-proj-none-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  text-decoration: none;
+}
+.tl-proj-none-link:hover {
+  text-decoration: underline;
+}
 
 @media (max-width: 760px) {
   .tl-params { grid-template-columns: 1fr; }
   .tl-chat-header { grid-template-columns: 1fr; }
   .tl-chat-new { justify-self: start; }
   .tl-actions { flex-wrap: wrap; }
-  .tl-btn-send, .tl-btn-draft { width: 100%; justify-content: center; }
-  .tl-btn-send { margin-left: 0; }
+  .tl-btn-send, .tl-btn-secondary { width: 100%; justify-content: center; margin-left: 0; }
 }
 
 /* 对话面板（Task 13）：布局专用，玻璃/实底表面统一走 GlassCard（外壳）+

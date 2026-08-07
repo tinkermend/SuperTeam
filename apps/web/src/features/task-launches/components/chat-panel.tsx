@@ -27,7 +27,12 @@ import {
   type DigitalEmployeeRunStatus
 } from "@/lib/api/employees";
 import { listProjectMembers, type Project } from "@/lib/api/projects";
-import { LaunchChip, ProjectPicker } from "./task-launch-form";
+import {
+  LaunchChip,
+  NoProjectsEmptyState,
+  ProjectPicker,
+  type ProjectChangeHandler,
+} from "./task-launch-form";
 
 const ACTIVE_RUN_STATUSES = new Set<DigitalEmployeeRunStatus>([
   "queued",
@@ -68,9 +73,11 @@ export type ConvertToTaskPayload = {
 export type ChatPanelProps = {
   apiOptions: ApiClientOptions;
   onConvertToTask: (payload: ConvertToTaskPayload) => void;
-  onProjectChange: (projectId: string) => void;
+  onProjectChange: ProjectChangeHandler;
   projectId: string;
   projects: Project[];
+  /** 父层缓存的已选项目（搜索越界）。 */
+  resolvedProject?: Project | null;
 };
 
 function isActiveEntryStatus(status: DigitalEmployeeRunStatus | "sending"): boolean {
@@ -118,7 +125,8 @@ export function ChatPanel({
   onConvertToTask,
   onProjectChange,
   projectId,
-  projects
+  projects,
+  resolvedProject = null,
 }: ChatPanelProps) {
   const [employeeId, setEmployeeId] = useState("");
   const [question, setQuestion] = useState("");
@@ -328,8 +336,8 @@ export function ChatPanel({
     setRestoreFailed(false);
   }
 
-  function handleProjectChange(nextProjectId: string) {
-    onProjectChange(nextProjectId);
+  function handleProjectChange(project: Project) {
+    onProjectChange(project);
     setThread([]);
     setSendError("");
     setRestoreFailed(false);
@@ -401,7 +409,17 @@ export function ChatPanel({
     <div className="tl-chat">
       <div className="tl-chat-header">
         <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
-          <ProjectPicker onChange={handleProjectChange} projects={projects} value={projectId} />
+          {projects.length === 0 ? (
+            <NoProjectsEmptyState />
+          ) : (
+            <ProjectPicker
+              apiOptions={apiOptions}
+              onChange={handleProjectChange}
+              projects={projects}
+              resolvedProject={resolvedProject}
+              value={projectId}
+            />
+          )}
         </LaunchChip>
         <LaunchChip icon={<UserRound aria-hidden />} label="对话员工" required>
           <Select disabled={!projectId} value={employeeId} onValueChange={handleEmployeeChange}>

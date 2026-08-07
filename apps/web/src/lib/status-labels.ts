@@ -674,3 +674,19 @@ export function humanWaitLabel(surface: HumanWaitSurface): string {
       return "待人工确认";
   }
 }
+
+// LaunchMode 是任务中枢 UI 三值 plan|loop|chat；契约 coordination_mode 只有 plan|loop，
+// chat 不映射到它。函数名用 launchMode 避免与 coordination 事件/字段词条混淆。
+const LAUNCH_MODE_LABELS: Record<string, string> = {
+  plan: "计划任务（Plan）",
+  loop: "循环任务（Loop）",
+  chat: "对话（Chat）",
+};
+
+export function launchModeLabel(mode: string | undefined): string {
+  if (!mode) {
+    return "未知";
+  }
+  const normalized = mode.trim().toLowerCase();
+  return LAUNCH_MODE_LABELS[normalized] ?? mode;
+}

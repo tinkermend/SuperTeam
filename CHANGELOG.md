@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-08 00:53 任务中枢 UX 补洞（接 §3–§6）：① 父层 `projectById` 缓存搜索选出的项目，browse 首页外选中不再被 effect 打回，成功页项目名不落裸 UUID（`missingObjectLabel` 兜底）；② 表单/项目搜索 `apiOptions` 由父透传（含 fetcher）；③ 模板确认前关库 Dialog；④ chat 零项目空态与 compose 对齐。新增单测：搜索越界选中保持。
+
+- 2026-08-08 00:38 任务中枢 UX 整治（spec `docs/superpowers/specs/2026-08-07-task-hub-ux-remediation-design.md` §3–§6 前端）：双 H1 收敛为壳 H1+内容 h2；模式名走 `launchModeLabel`（计划任务（Plan）/循环任务（Loop）/对话（Chat））；「中枢指令区/命令中心」→「需求描述」、删除死按钮「保存草稿」与假约束 `/ 5000`；模板插入改三选一 Dialog（覆盖/追加/取消）；模式卡与项目选择 roving tabindex；页签补 aria-controls/tabpanel；项目选择防抖服务端 `q` 搜索；零项目空态+禁用提交；双页签统一 `TaskLaunchShell`（副标题/极光一致，宽 canvas|wide）；提交成功就地结果块+toast，「查看需求卷宗」深链保留，「再提一个」连续提交。门禁：task-launches/dashboard 定向 13 例 + task-launches 全量 33 例；真实浏览器 G1/G2/G4/G5/G6 通过。 G3（>50 项目搜索）当前库仅 5 项目，标记阻塞。
+
 - 2026-08-07 23:41 技能市场文案收敛：主动作「加载」统一为「绑定」（含弹窗/右侧范围面板）；卡面与抽屉来源枚举中文化（upload→上传，共用 skillSourceLabel）；卡内 CTA 主次调整为「详情」次要 +「绑定」主按钮。真实浏览器验证 /skills 绑定弹窗与已绑定回执。
 
 - 2026-08-07（跨页体验续补）：Runtime 节点首屏/接入/事件改为 Skeleton；orphan waiting_human 补建决策摘要去枚举与英文技术词，等待原因中文化。

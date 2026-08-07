@@ -30,6 +30,18 @@ vi.mock("@/lib/config/control-plane-url", () => ({
   resolveControlPlaneUrl: () => "http://control-plane.local"
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    to
+  }: {
+    children: ReactNode;
+    to: string;
+  }) => <a href={to}>{children}</a>,
+  useNavigate: () => vi.fn(),
+  useSearch: () => ({}),
+}));
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" }, status });
 }
@@ -39,6 +51,26 @@ beforeEach(() => {
     const url = new URL(String(input));
     if (url.pathname === "/health") {
       return jsonResponse({ status: "ok" });
+    }
+    if (url.pathname === "/api/v1/projects") {
+      return jsonResponse([
+        {
+          coordination_policy: {},
+          coordination_status: "registered",
+          coordination_workflow_id: "project-coordinator:project-1",
+          directory_name: "project-1-dir",
+          goal: "首页任务中枢冒烟",
+          human_owner_user_id: "owner-1",
+          id: "project-1",
+          name: "首页验收项目",
+          status: "running",
+          tenant_id: "tenant-1",
+          workspace_ready_status: "ready",
+        },
+      ]);
+    }
+    if (url.pathname === "/api/v1/projects/project-1/budget-summary") {
+      return jsonResponse({ exhausted: false, consumed_tokens: 0 });
     }
     if (url.pathname === "/api/auth/login-logs") {
       return jsonResponse({
@@ -93,6 +125,6 @@ describe("Homepage task hub", () => {
     const screen = await renderHomepageTaskHub();
 
     await expect.element(screen.getByRole("heading", { name: "任务中枢" })).toBeVisible();
-    await expect.element(screen.getByText("提交需求到项目，由项目协调线程编排后续任务")).toBeVisible();
+    await expect.element(screen.getByText("提交需求并跟踪流程实例的运行与阻塞")).toBeVisible();
   });
 });

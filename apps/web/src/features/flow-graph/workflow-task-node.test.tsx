@@ -172,7 +172,7 @@ describe("WorkflowTaskNode", () => {
       </ReactFlowProvider>,
     );
 
-    await expect.element(screen.getByText("等待人工")).toBeInTheDocument();
+    await expect.element(screen.getByText("待人工确认")).toBeInTheDocument();
     await expect.element(screen.getByText("运行 排队中")).toBeInTheDocument();
     expect(screen.container.textContent).not.toContain("waiting_human");
     expect(screen.container.textContent).not.toContain("Run queued");

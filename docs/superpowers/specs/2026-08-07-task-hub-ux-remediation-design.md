@@ -156,11 +156,19 @@
 
 **现状**：`<span className="tl-counter">{content.length} / 5000</span>`（[:220](../../../apps/web/src/features/task-launches/components/task-launch-form.tsx#L220)），但 textarea 无 `maxLength`，`handleSubmit`（[:116-141](../../../apps/web/src/features/task-launches/components/task-launch-form.tsx#L116)）也不校验长度。
 
-**改法（两选一，取决于 §9 待确认项 U1 的核查结果）**：
-- **若后端确有上限**：textarea 加 `maxLength`，值与后端一致；计数在 ≥90% 时变警示色。
-- **若后端无上限**（当前 grep 未在契约与 `internal/project/` 中找到校验）：**删除 `/ 5000`**，只保留字数计数 `{content.length} 字`。**不得**保留一个前端自造、无处强制的数字。
+**U1 已核实（2026-08-07，结论确定，实施会话无需再查）**：`content` **没有任何长度上限**——
 
-**判据**：展示的上限数字必须与实际强制点一致；不存在「显示上限但可超出」的状态。
+| 层 | 事实 |
+|---|---|
+| 契约 | `SubmitProjectDemandRequest.content` 仅 `type: string`，无 `maxLength` |
+| 数据库 | `project_demands.content` 列类型 `text`，`character_maximum_length` 为空 |
+| 服务端 | `SubmitDemand` 只对 `Title` 做 TrimSpace + 非空校验，对 `Content` 无任何长度检查 |
+
+**改法（确定）**：**删除 `/ 5000`**，只保留字数计数（如 `{content.length} 字`）。**不得**保留一个前端自造、无处强制的数字，也不要顺手加 `maxLength` 去"坐实"它——那是给用户凭空加了一个后端并不存在的约束。
+
+**顺带核实（无需改动）**：`project_demands.title` 是 `varchar(255)`，是真实上限；但 `deriveTitle`（[task-launch-form.tsx:73-75](../../../apps/web/src/features/task-launches/components/task-launch-form.tsx#L73)）已 `.slice(0, 80)` 截断，80 < 255，不会触发。此处**无缺陷**，记录以免实施会话重复排查。
+
+**判据**：页面不再出现 `/ 5000`；不存在"显示上限但可超出"的状态。
 
 ### 4.3 无障碍
 
@@ -198,7 +206,11 @@
 1. 项目查询改为服务端过滤：传 `status`（取活跃口径）而非客户端 filter archived。
 2. `ProjectPicker` 的搜索词提升为查询输入：输入防抖（建议 250–300ms）后带 `q` 重新请求，`placeholderData: keepPreviousData` 避免列表闪烁。
 3. 空结果文案区分两态：**关键词非空**→「无匹配项目」；**关键词为空且结果为 0**→ 走 §5.2 空态。
-4. **注意复用面**：`ProjectPicker` 同时被 `chat-panel.tsx` 引用（`import { LaunchChip, ProjectPicker } from "./task-launch-form"`）。改造需保持对外 props 兼容，或同步调整 chat 侧调用点——实施前先确认两处行为一致。
+4. **复用面（U3 已核实，2026-08-07）**：`ProjectPicker` 被 `chat-panel.tsx:404` 与 compose 表单**共用**，且 `projects` 是**父组件 `index.tsx` 传下来的 prop**——两处共享 `index.tsx:165` 那一个 `listProjects` 查询。所以 50 条上限对 compose 与 chat **同时生效**，修一处即修两处，但数据流要动父子两层。
+
+   **父组件对 `activeProjects` 另有三处依赖，不能简单挪走查询**：默认选中首个项目（[index.tsx:200](../../../apps/web/src/features/task-launches/index.tsx#L200)）、校验已选项目仍存在（[:192-195](../../../apps/web/src/features/task-launches/index.tsx#L192)）、空列表判断（[:186](../../../apps/web/src/features/task-launches/index.tsx#L186)）。
+
+   **建议实现（保留父查询 + picker 内独立搜索查询）**：父查询原样保留供上述三处默认逻辑用（可只带 `status` 过滤）；在 `ProjectPicker` 内部新增一个以防抖搜索词为 key 的独立查询，搜索词为空时展示父传入的列表，非空时展示服务端结果。这样对外 props 保持兼容，chat 侧零改动即同时受益。
 
 **判据**：造 >50 个项目，搜索第 51+ 个项目的名称，能搜到并可选中（此项必须真实链路验证，见 §8）。
 
@@ -314,10 +326,12 @@
 
 | # | 事项 | 影响 | 建议处置 |
 |---|---|---|---|
-| **U1** | 后端对需求 `content` 是否真有长度上限？本次 grep 在 `contracts/control-plane/openapi.yaml` 的 `SubmitProjectDemand` schema 与 `apps/control-plane/internal/project/` 中**均未找到** `maxLength` / 长度校验，但**未穷举** handler 与中间件 | 决定 §4.2 走"对齐后端"还是"删掉假数字" | 实施首步先核实；查不到即按**删除 `/ 5000`** 执行 |
-| **U2** | `tl-aurora` 极光背景是否扩展到「流程实例」态 | §6.1 的视觉一致性方案 | 实施时出两版截图给人类选；默认取**弱化后两态一致** |
-| **U3** | `ProjectPicker` 改服务端搜索后，`chat-panel.tsx` 的调用点是否需要同等改造 | 复用面一致性 | 实施前对比两处需求；若 chat 侧也受 50 条限制，同批修 |
-| **U4** | 「提交任务」删除草稿按钮后独占操作区的视觉处置（右对齐 / 全宽 / 居中） | 纯视觉 | 按 DESIGN.md 与相邻页面惯例定，无需回来问 |
+| ~~U1~~ | ~~后端对需求 `content` 是否有长度上限~~ | — | **已核实结案（2026-08-07）**：无上限（契约无 maxLength / DB 是 `text` / Go 无校验）。按 §4.2 **删除 `/ 5000`**，不必再查 |
+| ~~U3~~ | ~~`ProjectPicker` 改服务端搜索是否波及 `chat-panel.tsx`~~ | — | **已核实结案（2026-08-07）**：共用同一父查询，改一处即改两处；父组件另有三处依赖，实现方案已写入 §5.1，按其执行 |
+| **U2** | `tl-aurora` 极光背景是否扩展到「流程实例」态 | §6.1 的视觉一致性方案 | **不阻塞**：默认按"弱化后两态一致"实现；完成后附两态截图给人类，不满意再调 |
+| **U4** | 「提交任务」删除草稿按钮后独占操作区的视觉处置（右对齐 / 全宽 / 居中） | 纯视觉 | **不阻塞**：按 DESIGN.md 与相邻页面惯例自行判断，无需回来问 |
+
+**结论：本方案当前无阻塞项**，U2/U4 均给了可直接执行的默认值，实施会话可从批 A 开始连续推进到批 D。
 
 ---
 
@@ -460,3 +474,61 @@
 - **chat** — 单次对话，不进项目流转（§12.3 修复后真正不进）。
 
 自治与否只剩一个开关：提交时选 plan 还是 loop，由人握。
+
+---
+
+## 13. 交接说明（给实施会话）
+
+### 13.1 本方案的完成状态
+
+| 部分 | 状态 |
+|---|---|
+| §3–§6（Web 前端整改） | **待实施**，本文即工单 |
+| §12.2 / §12.3（F2/F3 后端缺陷） | **已完成并提交** `f5540229`，真实 E2E 通过 |
+| §12.5（F1 plan 确认闸） | **已完成并提交** `1e0494b3`（breaking），真实 E2E 通过 |
+
+两个后端提交**均未 push**。实施会话**不要重做** §12 的任何内容，只做 §3–§6。
+
+### 13.2 共享工作树纪律（**必读，本会话真实踩过**）
+
+**当前有多个会话在同一 checkout 并行工作**（本会话完成时观察到：一个在做技能页 `features/skills/*`，一个在做收件箱 `features/inbox/*` + `internal/inbox/*` + `queries/inbox.sql`）。task-launches 目录当时无人占用，但**开工前必须重新确认**：
+
+```
+git status --porcelain | rg "task-launches"
+```
+
+铁律（CLAUDE.md 已载，此处补本次实证）：
+
+1. **只用显式路径 `git add <path>`**，禁止 `git add -A` / `git add .`。
+2. **提交前 `git symbolic-ref HEAD` 复核分支**——并发下先前的状态快照会过期。
+3. **提交后确认他人未提交改动仍在**。
+4. **本次实证的坑：全仓重生成命令会吸收他人在途改动**。本会话跑 `make -C apps/control-plane generate-sqlc` 时，把另一会话尚未提交的 `inbox.sql` 新查询一并生成进了 `querier.go`，差一步就随我的提交带走。**凡涉及生成物（sqlc / oapi-codegen 产物），`git add` 后必须逐 hunk 核对暂存内容**，不得整文件提交。前端一般不触发此类重生成，但若改动波及契约则同理。
+5. 需要按 hunk 拆分暂存时（同一文件里混了两件事、或生成物混入他人改动），手法是：`git diff --no-ext-diff --no-color -U3 -- <file>` 取标准 diff → 按 `@@` 切块 → 只保留自己的块拼回补丁（保留原 diff 头）→ `git apply --cached --recount <patch>` → **`git diff --cached` 复核后再提交**。本会话用一段十几行的 Python 临时脚本做过滤，未入库（一次性工具，不值得进 `scripts/`）。
+
+### 13.3 环境事实（本会话实测，省去重复摸索）
+
+| 项 | 值 |
+|---|---|
+| Web | `http://127.0.0.1:3100`（**不是 3000**，用户另一项目占用了 3000） |
+| Control Plane | `http://127.0.0.1:8080`，健康检查 `/health` |
+| 启停 | `bash scripts/dev-services.sh start\|status\|restart <service>\|stop`；改后端要 `restart control-plane`，改前端 Vite 热更但保险起见 `restart web` |
+| 登录 | `POST /api/auth/login`，`{"username":"admin","password":"admin"}`，**验证码在 dev 已禁用**（`config.yaml: captchaEnabled: false`），cookie 会话 |
+| curl 直连 | 需带 `-H 'Origin: http://localhost:3100'`，否则 CORS 拒绝 |
+| 数据库 | 远程开发库，连接串由 `scripts/dev-services.sh` 的 `resolve_control_plane_db_url` 从 `apps/control-plane/config/config.yaml` 的 `postgres.url` 解析 |
+| **git diff 陷阱** | 仓库配了外部 diff 工具（侧栏对照显示），**标准 `@@` hunk 头不出现**。要拿标准 unified diff 必须加 `--no-ext-diff`，否则按 hunk 处理的脚本会静默失效 |
+
+### 13.4 验证前的数据准备（**G3 必须提前算成本**）
+
+`§8.3 G3`（项目 >50 时搜索第 51+ 个）是本方案**唯一需要造数的验证项**。实测当前库内**仅 5 个项目**（3 acceptance + 2 running），必须先批量创建 ~50 个才能验到截断行为：
+
+- 造数走 `POST /api/v1/projects`（真实 API，勿直插库）
+- 每个项目需绑定至少一个人类负责人（`human_owner_user_ids`，见 CLAUDE.md 协作模型），创建前先确认请求体必填字段
+- **造数会污染运行总览等跨项目视图**，验证完成后建议清理或统一命名前缀便于识别
+
+若造数受阻，按 CLAUDE.md **标记 G3 为阻塞并说明**，不得以单测通过替代——但其余 G1/G2/G4–G8 必须照常完成。
+
+### 13.5 收尾
+
+- 分层门禁：`corepack pnpm verify:web`；若触碰设计系统/原型另跑 `verify:design-system` / `verify:design-prototypes`
+- 真实 E2E：§8.3 全表
+- **收尾门禁不可跳过**：`Read` 并执行 `.codex/skills/superteam-completion-check/SKILL.md`（Claude Code 会话直接读文件照步骤走）
