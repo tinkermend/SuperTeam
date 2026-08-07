@@ -44,6 +44,7 @@ import {
 } from "@/components/layout/shell-page-header";
 import { listMcpServerDefinitions } from "@/lib/api/capabilities";
 import { missingObjectLabel } from "@/lib/status-labels";
+import { skillSourceLabel } from "./skill-labels";
 import {
   getSkill,
   listSkillMcpDependencies,
@@ -182,7 +183,7 @@ function SkillArchiveDetail({
           </div>
           <div className="grid min-w-0 grid-cols-2 gap-2 text-[13px] sm:grid-cols-4 lg:grid-cols-2">
             <MiniField label="版本" value={skill.version} />
-            <MiniField label="来源" value={sourceLabel(skill.source)} />
+            <MiniField label="来源" value={skillSourceLabel(skill.source)} />
             <MiniField label="创建人" value={skill.created_by_name || skill.created_by} />
             <MiniField label="最近更新" value={formatDateTime(skill.updated_at)} />
           </div>
@@ -624,11 +625,6 @@ function toneFromColor(colorToken: string): Tone {
   return "brand";
 }
 
-function sourceLabel(source: string) {
-  if (source === "upload") return "上传";
-  if (source === "system") return "系统内置";
-  return source || "未记录";
-}
 
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

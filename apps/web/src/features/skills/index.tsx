@@ -57,6 +57,7 @@ import { deleteSkill, listSkills, type Skill } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { SkillInstallDialog } from "./install-dialog";
+import { skillSourceLabel } from "./skill-labels";
 import { missingObjectLabel } from "@/lib/status-labels";
 
 type SkillsViewProps = {
@@ -349,7 +350,7 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
   const bindingCount = skill.team_bindings.length + skill.agent_bindings.length;
   return (
     <WorkSurface
-      aria-label={`${skill.name} 加载范围`}
+      aria-label={`${skill.name} 绑定范围`}
       className="min-w-0 overflow-hidden"
       role="region"
     >
@@ -357,7 +358,7 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
         <div className="flex min-w-0 items-start gap-3">
           <SkillIcon skill={skill} size="sm" />
           <div className="min-w-0">
-            <h2 className="truncate text-base font-bold text-ink">加载范围</h2>
+            <h2 className="truncate text-base font-bold text-ink">绑定范围</h2>
             <p className="mt-1 min-w-0 text-[13px] leading-5 text-ink-2">
               <span className="font-semibold text-ink">{skill.name}</span>
               <span className="px-2 text-ink-3">·</span>
@@ -371,8 +372,8 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
       {bindingCount === 0 ? (
         <EmptyState
           className="py-10"
-          title="尚未加载到任何目标"
-          description="通过“加载”把技能绑定到团队或数字员工;技能文件在下次任务派发时同步到运行环境。"
+          title="尚未绑定到任何目标"
+          description="通过「绑定」把技能授权给团队或数字员工；技能文件在下次任务派发时同步到运行环境。"
         />
       ) : (
         <div className="grid gap-3 p-4 md:grid-cols-2">
@@ -443,7 +444,7 @@ function SkillDetailSheet({
           <div className="min-w-0">
             <SheetTitle className="truncate text-base font-bold text-ink">{skill.name}</SheetTitle>
             <SheetDescription className="mt-0.5 truncate font-mono text-[11px] text-ink-3">
-              {skill.version} · {skill.source}
+              {skill.version} · {skillSourceLabel(skill.source)}
             </SheetDescription>
           </div>
         </SheetHeader>
@@ -465,7 +466,7 @@ function SkillDetailSheet({
               </div>
               <div>
                 <p className="text-[11px] font-semibold text-ink-3">来源</p>
-                <p className="mt-0.5 truncate font-mono text-[13px] text-ink">{skill.source}</p>
+                <p className="mt-0.5 truncate text-[13px] text-ink">{skillSourceLabel(skill.source)}</p>
               </div>
               <div>
                 <p className="text-[11px] font-semibold text-ink-3">团队绑定</p>
@@ -771,7 +772,7 @@ function SkillMarketGrid({
             }}
             leading={<SkillIcon skill={skill} />}
             title={skill.name}
-            subtitle={`${skill.version} · ${skill.source}`}
+            subtitle={`${skill.version} · ${skillSourceLabel(skill.source)}`}
             status={<StatusPill tone={status.tone}>{status.label}</StatusPill>}
             facts={[
               {
@@ -822,12 +823,12 @@ function SkillMarketGrid({
                     }}
                     size="sm"
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                   >
-                    查看详情
+                    详情
                   </Button>
                   <Button
-                    aria-label={`加载 ${skill.name}`}
+                    aria-label={`绑定 ${skill.name}`}
                     onClick={(event) => {
                       event.stopPropagation();
                       onSelectSkill(skill.id);
@@ -836,7 +837,7 @@ function SkillMarketGrid({
                     size="sm"
                     type="button"
                   >
-                    加载
+                    绑定
                   </Button>
                 </div>
               </div>

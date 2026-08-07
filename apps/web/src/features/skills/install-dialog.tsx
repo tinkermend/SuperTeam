@@ -147,7 +147,7 @@ export function SkillInstallDialog({
               <Bot />
             </IconTile>
             <div className="min-w-0">
-              <DialogTitle className="text-xl font-bold text-ink">加载技能</DialogTitle>
+              <DialogTitle className="text-xl font-bold text-ink">绑定技能</DialogTitle>
               <DialogDescription className="mt-1 text-sm leading-5 text-ink-2">
                 {skill?.name ?? "选择技能"} · {skill?.version ?? "待选择"}
               </DialogDescription>
@@ -157,7 +157,7 @@ export function SkillInstallDialog({
 
         <div className="space-y-5 px-5 py-5">
           <fieldset className="space-y-3">
-            <legend className="text-sm font-bold text-ink">加载范围</legend>
+            <legend className="text-sm font-bold text-ink">绑定范围</legend>
             <RadioGroup
               className="grid gap-3 sm:grid-cols-2"
               onValueChange={(value) => {
@@ -192,7 +192,7 @@ export function SkillInstallDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-bold text-ink" htmlFor="skill-install-target">
-              加载目标
+              绑定目标
             </label>
             {targetScope === "team" ? (
               <Select
@@ -204,7 +204,7 @@ export function SkillInstallDialog({
                 value={selectedTeamId}
               >
                 <SelectTrigger
-                  aria-label="加载到团队"
+                  aria-label="绑定到团队"
                   className="h-11 w-full rounded-xl border-line-strong bg-card text-ink shadow-none"
                   id="skill-install-target"
                 >
@@ -228,7 +228,7 @@ export function SkillInstallDialog({
                 value={selectedEmployeeId}
               >
                 <SelectTrigger
-                  aria-label="加载到数字员工"
+                  aria-label="绑定到数字员工"
                   className="h-11 w-full rounded-xl border-line-strong bg-card text-ink shadow-none"
                   id="skill-install-target"
                 >
@@ -244,7 +244,7 @@ export function SkillInstallDialog({
               </Select>
             )}
             <p className="text-xs leading-5 text-ink-3">
-              加载是即时生效的逻辑绑定,不依赖任何运行节点;技能文件会在该员工下次任务派发时自动同步到运行环境。
+              绑定即时生效（逻辑授权），不依赖任何运行节点；技能文件会在目标员工下次任务派发时自动同步到运行环境。
             </p>
           </div>
 
@@ -263,8 +263,8 @@ export function SkillInstallDialog({
               <CheckCircle2 className="size-4" />
               <span>
                 {installResult.already_bound
-                  ? "该目标已拥有此技能(含团队继承),无需重复加载"
-                  : "已加载,下次任务派发时同步到运行环境"}
+                  ? "该目标已拥有此技能（含团队继承），无需重复绑定"
+                  : "已绑定，下次任务派发时同步到运行环境"}
               </span>
             </div>
           ) : null}
@@ -272,7 +272,7 @@ export function SkillInstallDialog({
 
         <DialogFooter className="border-t border-line bg-card-soft px-5 py-4">
           {installResult ? (
-            <StatusPill tone="ok">{installResult.already_bound ? "已具备" : "已加载"}</StatusPill>
+            <StatusPill tone="ok">{installResult.already_bound ? "已具备" : "已绑定"}</StatusPill>
           ) : null}
           <Button
             disabled={mutation.isPending}
@@ -284,7 +284,7 @@ export function SkillInstallDialog({
           </Button>
           <Button disabled={!canSubmit} onClick={() => mutation.mutate()} type="button">
             {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            确认加载
+            确认绑定
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-07 23:41 技能市场文案收敛：主动作「加载」统一为「绑定」（含弹窗/右侧范围面板）；卡面与抽屉来源枚举中文化（upload→上传，共用 skillSourceLabel）；卡内 CTA 主次调整为「详情」次要 +「绑定」主按钮。真实浏览器验证 /skills 绑定弹窗与已绑定回执。
+
 - 2026-08-07（跨页体验续补）：Runtime 节点首屏/接入/事件改为 Skeleton；orphan waiting_human 补建决策摘要去枚举与英文技术词，等待原因中文化。
 
 - 2026-08-07（跨页体验 PR4a）：任务失败决策摘要英文化 detail 映射为中文；扩编/语义发现摘要角色用「名称（key）」；失败/取消默认摘要中文。
