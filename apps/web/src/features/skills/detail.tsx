@@ -24,7 +24,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
-  LoadingState,
+  DetailSkeleton,
   MetricCard,
   WorkSurface,
   type Tone
@@ -43,6 +43,7 @@ import {
   ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
 import { listMcpServerDefinitions } from "@/lib/api/capabilities";
+import { missingObjectLabel } from "@/lib/status-labels";
 import {
   getSkill,
   listSkillMcpDependencies,
@@ -103,9 +104,9 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
             <StatusPill tone="mute">即将支持</StatusPill>
           </div>
         ) : null}
-        {skill.isPending ? (
-          <WorkSurface>
-            <LoadingState label="加载技能档案…" />
+        {skill.isPending && !skill.data ? (
+          <WorkSurface className="p-4" data-testid="skill-detail-skeleton">
+            <DetailSkeleton />
           </WorkSurface>
         ) : skill.isError || !skill.data ? (
           <WorkSurface className="p-4">
@@ -231,9 +232,9 @@ function SkillArchiveDetail({
                   items={skill.team_bindings.map((binding) => ({
                     id: binding.team_id,
                     meta: "团队安装",
-                    name: binding.team_name || binding.team_id,
+                    name: binding.team_name?.trim() || missingObjectLabel("team", binding.team_id),
                     tone: "info"
-}))}
+                  }))}
                   title="团队安装"
                 />
                 <BindingList
@@ -241,10 +242,16 @@ function SkillArchiveDetail({
                   icon={<Bot />}
                   items={skill.agent_bindings.map((binding) => ({
                     id: binding.agent_id,
-                    meta: [binding.team_name || binding.team_id, binding.status].filter(Boolean).join(" / ") || binding.status,
-                    name: binding.agent_name || binding.agent_id,
+                    meta: [
+                      binding.team_name?.trim() ||
+                        (binding.team_id ? missingObjectLabel("team", binding.team_id) : ""),
+                      binding.status,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ") || binding.status,
+                    name: binding.agent_name?.trim() || missingObjectLabel("employee", binding.agent_id),
                     tone: "artifact"
-}))}
+                  }))}
                   title="数字员工安装"
                 />
                 <BindingList
@@ -252,11 +259,11 @@ function SkillArchiveDetail({
                   icon={<FolderKanban />}
                   items={(skill.project_bindings ?? []).map((binding) => ({
                     id: binding.project_id,
-                    meta: binding.project_id,
+                    meta: "项目绑定",
                     name:
                       (binding.project_name || "").trim() ||
                       (binding.project_id
-                        ? `未命名项目 (${binding.project_id.slice(0, 8)})`
+                        ? missingObjectLabel("project", binding.project_id)
                         : "未命名项目"),
                     tone: "brand"
                   }))}

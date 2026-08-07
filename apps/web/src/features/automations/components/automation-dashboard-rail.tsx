@@ -8,6 +8,7 @@ import { formatRelativeFuture, formatRelativeTime } from "@/lib/format-time";
 import { statusLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 import { automationFireTone } from "../fire-tone";
+import { humanWaitLabel } from "@/lib/status-labels";
 
 const PANEL_CLASS =
   "flex min-w-0 flex-col gap-2 rounded-[14px] border border-line bg-card p-4 shadow-sm";
@@ -150,10 +151,10 @@ export function AutomationDashboardRail({
         )}
       </section>
 
-      <section aria-label="待你处理" className={PANEL_CLASS} data-testid="automations-gate-panel">
+      <section aria-label={humanWaitLabel("automations_gate")} className={PANEL_CLASS} data-testid="automations-gate-panel">
         <header className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-extrabold text-ink">
-            待你处理{decisionOpenCount > 0 ? ` · ${decisionOpenCount}` : ""}
+            {humanWaitLabel("automations_gate")}{decisionOpenCount > 0 ? ` · ${decisionOpenCount}` : ""}
           </h3>
           <Link
             className="flex shrink-0 items-center gap-1 text-[12px] font-medium text-brand hover:opacity-75"

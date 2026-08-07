@@ -4,7 +4,8 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Activity, Pause, Play, RefreshCw } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
-import { MasterDetailLayout, Button, ErrorState, LoadingState } from "@/components/superteam";
+import { MasterDetailLayout, Button, DetailSkeleton, ErrorState } from "@/components/superteam";
+import { humanWaitLabel } from "@/lib/status-labels";
 import { getDigitalEmployeeActivity, getDigitalEmployeeOverview } from "@/lib/api/employees";
 import { getInboxBadge } from "@/lib/api/inbox";
 import { getProjectTaskGraph, listProjectDemands, listProjectRunSummaries } from "@/lib/api/projects";
@@ -279,7 +280,11 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
         subtitle="按楼层展示团队运行态、数字员工状态和容量占用。"
       />
       <Main width="wide" className="min-w-0">
-      {employees.isPending || teams.isPending ? <LoadingState label="正在加载运行总览" /> : null}
+      {(employees.isPending || teams.isPending) && !overview ? (
+        <div data-testid="run-overview-skeleton">
+          <DetailSkeleton />
+        </div>
+      ) : null}
       {error ? <ErrorState title="运行总览加载失败" description={error.message} /> : null}
       {overview ? (() => {
         const mapSection = (
@@ -433,7 +438,7 @@ function StatusLegend({ className }: { className?: string }) {
   const items = [
     { label: "异常", className: "bg-danger" },
     { label: "工作中", className: "bg-ok" },
-    { label: "待确认", className: "bg-warn" },
+    { label: humanWaitLabel("employee_card"), className: "bg-warn" },
     { label: "排队", className: "bg-info" },
     { label: "空闲", className: "bg-mute" },
   ];

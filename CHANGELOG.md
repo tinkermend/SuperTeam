@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+- 2026-08-07（跨页体验续补）：Runtime 节点首屏/接入/事件改为 Skeleton；orphan waiting_human 补建决策摘要去枚举与英文技术词，等待原因中文化。
+
+- 2026-08-07（跨页体验 PR4a）：任务失败决策摘要英文化 detail 映射为中文；扩编/语义发现摘要角色用「名称（key）」；失败/取消默认摘要中文。
+
+- 2026-08-07（跨页体验续）：in-scope 加载壳改为 DetailSkeleton/TableSkeleton（技能详情/运行总览/流程实例/团队详情）；`humanWaitLabel` 收敛人机等待词（KPI/badge「待人工」、员工「待人工确认」、自动化闸门与收件箱统一「待我处理」）。
+
+- 2026-08-07（控制台跨页体验 MVP 止血）：对象名缺失统一 `未命名{类型} (短id)`（D3/`missingObjectLabel`/`ObjectRef`）；收件箱 meta 禁全 UUID 与 API 字段名 meta；技能绑定/列表短 id；运行总览与成本 Provider 走 `providerDisplayName`；侧栏「技能管理」→「技能市场」；认证壳 `usePageTitle`（`炬枢 · {页名}`）。规范见 DESIGN.md 面向用户文本与 `docs/superpowers/plans/2026-08-07-console-cross-page-ux-hygiene.md`。
 - 2026-08-07 **派发投影可见性补齐 P1 + P2b**。抽取逻辑下沉 `internal/capabilityprojection`（避免 employee↔project 循环依赖）。`GET digital-employee run` 附带 `capability_projection`（command receipt + attestation 合并 + 技能补名）；员工 Run 抽屉打开时拉详情并复用能力投影块。MCP 注册表列表增加「项目绑定」列（N 个项目 + 名称 title）。验证：`go test` capabilityprojection/employee/project；web drawer/mcp/projection 19 例。
 
 - 2026-08-07 **派发投影可见性 P3 落地**（spec `docs/superpowers/specs/2026-08-07-capability-projection-visibility-design.md`）。execution-trace attempt 内嵌 `capability_projection`：从 `runtime_command_receipts.payload`（start_session）白名单抽取 skills/MCP/`source_scope`，合并 attestation `skill_conflicts`（含 `workspace_native`），batch 补技能名；响应不含 env/archive URL/MCP url。执行证据链 AttemptRow 展示「能力投影」块（来源 pill + 冲突句）；任务详情显示最近投影摘要。词表补 `workspace_native`/`project`（全局 STATUS_LABELS）。验证：`verify:contracts`；`go test ./internal/project`（含 Extract/attach）；web `attempt-capability-projection` + `project-execution-trace-panel` 13 例。

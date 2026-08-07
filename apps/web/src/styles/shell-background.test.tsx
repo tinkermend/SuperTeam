@@ -267,7 +267,7 @@ describe('authenticated v3 shell background styles', () => {
             data-slot='sidebar-menu-button'
             href='/skills'
           >
-            技能管理
+            技能市场
           </a>
         </div>
       </aside>

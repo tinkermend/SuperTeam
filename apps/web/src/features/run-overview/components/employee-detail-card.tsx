@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { GlassCard, StatusPill, Button } from "@/components/superteam";
 import type { RuntimeOverviewEmployee, RuntimeOverviewTeam } from "../runtime-overview-model";
 import { formatDurationSince, formatNumber, formatTime } from "../formatters";
+import { providerDisplayName } from "@/features/employees/provider-label";
 import {
   employeeStatusDotClass as statusDotClass,
   employeeStatusLabel as statusLabel,
@@ -73,7 +74,7 @@ function IdentityBlock({ employee, team }: { employee: RuntimeOverviewEmployee; 
         ) : null}
       </div>
       <p className="text-xs text-ink-3">
-        Runtime：{employee.runtime?.nodeId ?? "未绑定节点"} · {employee.runtime?.providerType ?? "未配置 Provider"}
+        Runtime：{employee.runtime?.nodeId ?? "未绑定节点"} · {employee.runtime?.providerType ? providerDisplayName(employee.runtime.providerType) : "未配置 Provider"}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button asChild size="sm" variant="glass">

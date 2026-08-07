@@ -33,13 +33,13 @@ func (s stubRoleLister) ListActiveRoleRows(ctx context.Context, tenantID uuid.UU
 
 func TestCastingGapDiscoverySummary(t *testing.T) {
 	t.Parallel()
-	if got := castingGapDiscoverySummary("needed", CastingGapSuggestion{RoleKey: "operator"}); !strings.Contains(got, "operator") {
+	if got := castingGapDiscoverySummary("needed", CastingGapSuggestion{RoleKey: "operator"}, "运维（operator）"); !strings.Contains(got, "运维（operator）") {
 		t.Fatalf("needed: %q", got)
 	}
-	if got := castingGapDiscoverySummary("external", CastingGapSuggestion{}); !strings.Contains(got, "词表外") {
+	if got := castingGapDiscoverySummary("external", CastingGapSuggestion{}, ""); !strings.Contains(got, "词表外") {
 		t.Fatalf("external: %q", got)
 	}
-	if got := castingGapDiscoverySummary("not_needed", CastingGapSuggestion{}); !strings.Contains(got, "无需") {
+	if got := castingGapDiscoverySummary("not_needed", CastingGapSuggestion{}, ""); !strings.Contains(got, "无需") {
 		t.Fatalf("not_needed: %q", got)
 	}
 }

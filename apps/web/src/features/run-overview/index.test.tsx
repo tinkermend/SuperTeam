@@ -350,7 +350,7 @@ describe("RunOverviewView", () => {
     await expect.element(screen.getByRole("heading", { name: "罗明" })).toBeVisible();
     const statusBlock = screen.container.querySelector<HTMLElement>("[data-employee-status-block]");
     expect(statusBlock).not.toBeNull();
-    expect(statusBlock?.textContent).toContain("待确认");
+    expect(statusBlock?.textContent).toContain("待人工确认");
     expect(statusBlock?.textContent).toContain("已等待");
     await expect.element(screen.getByText("等待人工确认后继续执行")).toBeVisible();
   });
@@ -584,8 +584,8 @@ describe("RunOverviewView", () => {
     // KPI 带:数字来自权威端点 fixture(待人工=team_open_count, 高危角标, Runtime 在线掉线红显)。
     await expect.poll(() => screen.container.querySelector("[data-display-kpi-band]")).not.toBeNull();
     const band = screen.container.querySelector<HTMLElement>("[data-display-kpi-band]");
-    await expect.poll(() => band?.querySelector("[data-display-kpi='待人工处理']")?.textContent).toContain("4");
-    expect(band?.querySelector("[data-display-kpi='待人工处理']")?.textContent).toContain("高危 1");
+    await expect.poll(() => band?.querySelector("[data-display-kpi='待人工']")?.textContent).toContain("4");
+    expect(band?.querySelector("[data-display-kpi='待人工']")?.textContent).toContain("高危 1");
     await expect.poll(() => band?.querySelector("[data-display-kpi='Runtime 在线']")?.textContent).toContain("1/2");
     await expect.poll(() => band?.querySelector("[data-display-kpi='今日完成运行']")?.textContent).toContain("5");
     expect(requests.some((request) => request.pathname === "/api/v1/inbox/badge")).toBe(true);

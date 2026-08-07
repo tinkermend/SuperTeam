@@ -7,6 +7,7 @@ import type { RuntimeOverviewActivityItem, RuntimeOverviewDTO, RuntimeOverviewEm
 import { buildProjectRunBandOptions, type ProjectLens, type ProjectRunBandOption } from "../runtime-overview-project-lens";
 import { formatCompactTokens, formatTime } from "../formatters";
 import { employeeStatusDotClass as statusDotClass } from "../status-maps";
+import { humanWaitLabel } from "@/lib/status-labels";
 
 const activityDotClass: Record<string, string> = {
   cancelled: "bg-mute",
@@ -279,7 +280,7 @@ function RunBandCounts({ option }: { option: ProjectRunBandOption }) {
   if (option.failedCount > 0)
     badges.push({ key: "failed", label: `失败 ${option.failedCount}`, className: "font-semibold text-danger" });
   if (option.waitingHumanCount > 0)
-    badges.push({ key: "waiting", label: `待人工 ${option.waitingHumanCount}`, className: "font-semibold text-warn-text" });
+    badges.push({ key: "waiting", label: `${humanWaitLabel("run_overview_badge")} ${option.waitingHumanCount}`, className: "font-semibold text-warn-text" });
   if (option.unassignedCount > 0)
     badges.push({ key: "unassigned", label: `待派发 ${option.unassignedCount}`, className: "text-ink-3" });
   return (

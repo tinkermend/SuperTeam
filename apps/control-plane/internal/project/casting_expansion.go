@@ -74,10 +74,11 @@ func (s *Service) RequestCastingExpansion(ctx context.Context, req RequestCastin
 	if templateKey == "" {
 		return nil, fmt.Errorf("%w: scenario_template_key is required for casting expansion", ErrInvalidProject)
 	}
+	roleLabel := s.lookupRoleDisplayLabel(ctx, req.TenantID, roleKey)
 	summary := strings.TrimSpace(req.Reason)
 	if summary == "" {
 		if roleKey != "" {
-			summary = fmt.Sprintf("提请扩编角色 %s", roleKey)
+			summary = fmt.Sprintf("提请扩编角色 %s", roleLabel)
 		} else {
 			summary = "提请扩编（词表外角色，需人工翻译）"
 		}
@@ -253,7 +254,7 @@ func (s *Service) MaybeRequestCastingExpansionForCompletedTask(ctx context.Conte
 		ProjectID:           projectID,
 		DemandID:            demandID,
 		SuggestedRoleKey:    roleKey,
-		Reason:              fmt.Sprintf("协调线程：任务完成后可达收口仍缺角色 %s，提请扩编", roleKey),
+		Reason:              fmt.Sprintf("协调线程：任务完成后可达收口仍缺角色 %s，提请扩编", s.lookupRoleDisplayLabel(ctx, tenantID, roleKey)),
 		ScenarioTemplateKey: templateKey,
 		ActorType:           "coordinator",
 		ActorID:             "project-coordinator",
@@ -367,7 +368,7 @@ func (s *Service) maybeDiscoverCastingGap(
 		EventType: ProjectEventCastingGapDiscovery,
 		ActorType: "judge",
 		ActorID:   "casting-gap-discoverer",
-		Summary:   castingGapDiscoverySummary(outcome, suggestion),
+		Summary:   castingGapDiscoverySummary(outcome, suggestion, s.lookupRoleDisplayLabel(ctx, tenantID, suggestion.RoleKey)),
 		Payload: map[string]any{
 			"demand_id":             demandID.String(),
 			"completed_task_id":     completedTaskID.String(),
@@ -388,7 +389,7 @@ func (s *Service) maybeDiscoverCastingGap(
 		if suggestion.External {
 			reason = "根据产出判断需要词表外的角色参与"
 		} else {
-			reason = fmt.Sprintf("根据产出判断还需要角色 %s", suggestion.RoleKey)
+			reason = fmt.Sprintf("根据产出判断还需要角色 %s", s.lookupRoleDisplayLabel(ctx, tenantID, suggestion.RoleKey))
 		}
 	}
 
@@ -421,10 +422,13 @@ func (s *Service) maybeDiscoverCastingGap(
 	}, nil
 }
 
-func castingGapDiscoverySummary(outcome string, suggestion CastingGapSuggestion) string {
+func castingGapDiscoverySummary(outcome string, suggestion CastingGapSuggestion, roleLabel string) string {
+	if strings.TrimSpace(roleLabel) == "" {
+		roleLabel = roleKeyDisplayLabel(suggestion.RoleKey, "")
+	}
 	switch outcome {
 	case "needed":
-		return fmt.Sprintf("语义扩编发现：建议补充角色 %s", suggestion.RoleKey)
+		return fmt.Sprintf("语义扩编发现：建议补充角色 %s", roleLabel)
 	case "external":
 		return "语义扩编发现：需要词表外角色"
 	case "not_needed":
@@ -432,6 +436,38 @@ func castingGapDiscoverySummary(outcome string, suggestion CastingGapSuggestion)
 	default:
 		return "语义扩编发现"
 	}
+}
+
+// roleKeyDisplayLabel prefers Chinese title with key in parentheses for inbox
+// summaries; falls back to bare key only when title is empty.
+func roleKeyDisplayLabel(roleKey, title string) string {
+	key := strings.TrimSpace(roleKey)
+	name := strings.TrimSpace(title)
+	if name != "" && key != "" && !strings.EqualFold(name, key) {
+		return fmt.Sprintf("%s（%s）", name, key)
+	}
+	if name != "" {
+		return name
+	}
+	return key
+}
+
+func (s *Service) lookupRoleDisplayLabel(ctx context.Context, tenantID uuid.UUID, roleKey string) string {
+	key := strings.TrimSpace(roleKey)
+	if key == "" {
+		return ""
+	}
+	if s != nil && s.roleVocabularyLister != nil {
+		rows, err := s.roleVocabularyLister.ListActiveRoleRows(ctx, tenantID)
+		if err == nil {
+			for _, row := range rows {
+				if strings.TrimSpace(row.RoleKey) == key {
+					return roleKeyDisplayLabel(key, row.Title)
+				}
+			}
+		}
+	}
+	return key
 }
 
 func (s *Service) castingGapDiscoveryMaxPerDemand(ctx context.Context, tenantID uuid.UUID) int {

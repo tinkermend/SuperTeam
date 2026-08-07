@@ -10,7 +10,7 @@ import {
 import {
   Button,
   ErrorState,
-  LoadingState,
+  DetailSkeleton,
   DataTable,
   Td,
   Th,
@@ -268,8 +268,10 @@ export function TeamDetailView({
         subtitle={overview.data ? `${overview.data.team.slug} / 团队治理和协作边界` : "加载团队详情"}
       />
       <Main width="wide">
-        {overview.isLoading ? (
-          <LoadingState label="团队概览加载中" />
+        {overview.isLoading && !overview.data ? (
+          <div data-testid="team-detail-skeleton">
+            <DetailSkeleton />
+          </div>
         ) : null}
         {overview.isError ? (
           <ErrorState title="团队概览加载失败" />

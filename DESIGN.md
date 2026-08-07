@@ -77,7 +77,11 @@ Soft-Flat 是当前唯一设计基线。`docs/prototypes/design-direction-v3/` �
 
 - **机器枚举不得原样面向用户**：status、risk_level、decision、verdict、类型判别字等服务端/契约枚举值，在任何用户可见位置（状态 pill、徽标、筛选 chip、meta 行、拼接文案、图表标签）都必须经 `apps/web/src/lib/status-labels.ts` 的映射函数转换后显示。该文件是唯一词表事实源；不要在页面内新建局部"英文枚举→中文"映射（既有局部映射触达时收敛进词表）。
 - **词表缺键在词表补，不在调用点绕**：遇到未收录的枚举值，在 status-labels.ts 增键或按领域加 override 函数，不要在组件里 if/else 翻译。映射函数对未知值回退原文，因此漏键的可见症状就是"页面出现英文原文"——见到即补词表。
-- **对象指称用名称，标识符只作补充**：向用户指称项目、任务、审批、团队等业务对象时显示对象名称；需要精确定位时用"名称 (id)"形式。裸 UUID 不得单独作为用户可见的对象指称；仅审计事件、执行轨迹等技术详情区的 mono 标识符列除外。名称由服务端在读路径批量补名（参考收件箱 `source_project_name/source_task_name` 先例），前端不做逐行请求解析，来源已删除时回退显示 id。
+- **对象指称用名称，标识符只作补充**：向用户指称项目、任务、审批、团队等业务对象时显示对象名称；需要精确定位时用"名称 (id)"或名称 + 短 id chip（`ObjectRef`）形式。裸 UUID 不得单独作为用户可见的对象指称；仅审计事件、执行轨迹等技术详情区的 mono 标识符列除外。名称由服务端在读路径批量补名（参考收件箱 `source_project_name/source_task_name` 先例），前端不做逐行请求解析。**来源已删除或名称缺失时**回退为 `未命名{类型} (短id)`（`missingObjectLabel`），全 id 仅可复制/title，不得把 36 位 UUID 当作列表或 meta 主文本。
+- **关联 meta / kicker 禁止 API 字段名**：工作面不得把 `demand_id`、`source_task_id ↗`、`task_title` 等契约字段名直接展示给用户；用中文类型或动作文案（`relatedRefMetaLabel`）。配置/治理面的稳定标识编辑器（如 `role_key`）除外，且须有中文标签托底。
+- **加载态保留壳**：已知布局的列表/详情首屏不得把整棵内容树替换成单行「加载中…」；保留 `ShellPageHeader` + `TableSkeleton` / `CardGridSkeleton` / `DetailSkeleton`（见 `components/superteam/patterns.tsx`）。局部区块可用 `LoadingState`。
+- **document title**：认证壳内路由为 `炬枢 · {页名}`，详情可带对象名（`usePageTitle`）；`index.html` 默认「炬枢平台」仅作 fallback。
+- **人机等待用词**：跨页「待我处理 / 待人工确认 / 待决决策」等经 `status-labels` 域函数收敛（见 `docs/superpowers/plans/2026-08-07-console-cross-page-ux-hygiene.md` Batch 4 / 规划中的 `humanWaitLabel`）；禁止同 surface 三词同义。
 - **新增枚举的完成定义**：后端/契约新增用户可见枚举值时，同一变更内为 status-labels.ts 补中文键并更新其测试；缺中文映射视为该功能未完成。
 - **项目业务状态分层**：项目 / 需求 / 任务 / 决策 / 注意力投影不是同一状态机；验收队列「待办拆分」与证据核验信号不得再合成笼统「N 项待处理」。领域不变量见 `docs/superpowers/specs/2026-07-29-project-status-layers.md`。
 - **机械护栏**：`apps/web/src/lib/status-labels.guard.test.ts` 扫描源码拦截最常见的裸枚举直渲写法（如 `{x.status}` 直接作为元素文本）。护栏只兜常见形态，不能替代本节规则。

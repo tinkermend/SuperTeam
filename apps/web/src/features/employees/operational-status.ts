@@ -1,5 +1,6 @@
 import { type Tone } from "@/components/superteam";
 import { type DigitalEmployeeOperationalStatus } from "@/lib/api/employees";
+import { humanWaitLabel } from "@/lib/status-labels";
 
 // 数字员工运行态(operational_state.status)的中文标签与色调。单一事实源:运行总览、
 // 员工列表、员工详情三处共用,保证同一运行态在各视图口径一致(跨视图一致性 P2 3.3a)。
@@ -7,7 +8,7 @@ export const operationalStatusLabel: Record<DigitalEmployeeOperationalStatus, st
   working: "工作中",
   idle: "空闲",
   queued: "排队",
-  waiting_human: "待人工确认",
+  waiting_human: humanWaitLabel("employee_card"),
   error: "异常",
   unavailable: "不可用",
   needs_configuration: "待配置",

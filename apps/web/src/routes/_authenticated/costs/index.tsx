@@ -26,6 +26,7 @@ import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import type { CostPeriod, CostSummary } from "@/lib/api/costs";
 import { getCostSummary } from "@/lib/api/costs";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
+import { providerDisplayName } from "@/features/employees/provider-label";
 
 export const Route = createFileRoute("/_authenticated/costs/")({
   component: CostsRoute
@@ -36,13 +37,6 @@ const PERIOD_OPTIONS: Array<{ label: string; value: CostPeriod }> = [
   { label: "30 天", value: "30d" },
   { label: "90 天", value: "90d" },
 ];
-
-const PROVIDER_LABELS: Record<string, string> = {
-  "claude-code": "Claude Code",
-  opencode: "OpenCode",
-  codex: "Codex",
-  unknown: "未知"
-};
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -146,7 +140,7 @@ function CostsRoute() {
                   <div key={key} className="flex flex-col gap-1">
                     <div className="flex items-center justify-between text-[13px]">
                       <span className="font-medium text-ink">
-                        {PROVIDER_LABELS[key] ?? key}
+                        {providerDisplayName(key)}
                       </span>
                       <span className="tabular-nums text-ink-2">
                         {formatTokens(tokens)}{" "}
@@ -213,7 +207,7 @@ function CostsRoute() {
                   </Td>
                   <Td>
                     <StatusPill tone="info">
-                      {PROVIDER_LABELS[row.provider_type] ?? row.provider_type}
+                      {providerDisplayName(row.provider_type)}
                     </StatusPill>
                   </Td>
                   <Td align="right" className="tabular-nums">

@@ -482,26 +482,26 @@ function InboxActionContextSummary({ action, item }: { action: InboxAction; item
       <div className={`${framing || consequence ? "mt-3 border-t border-line pt-3" : ""} space-y-2.5`}>
         {demandLabel ? (
           <ContextField label="触发需求">
-            {primaryDemandId ? <ObjectRef name={demandLabel} id={primaryDemandId} /> : <span>{demandLabel}</span>}
+            {primaryDemandId ? <ObjectRef kind="demand" name={demandLabel} id={primaryDemandId} /> : <span>{demandLabel}</span>}
           </ContextField>
         ) : null}
         {taskLabel ? (
           <ContextField label="相关任务">
             {item.source_task_id ? (
-              <ObjectRef name={taskLabel} id={item.source_task_id} />
+              <ObjectRef kind="task" name={taskLabel} id={item.source_task_id} />
             ) : (
               <span>{taskLabel}</span>
             )}
           </ContextField>
         ) : item.source_task_id ? (
           <ContextField label="相关任务">
-            <ObjectRef name={item.source_task_name} id={item.source_task_id} />
+            <ObjectRef kind="task" name={item.source_task_name} id={item.source_task_id} />
           </ContextField>
         ) : null}
         {item.source_project_id || projectName ? (
           <ContextField label="所属项目">
             {item.source_project_id ? (
-              <ObjectRef name={projectName} id={item.source_project_id} />
+              <ObjectRef kind="project" name={projectName} id={item.source_project_id} />
             ) : (
               <span>{projectName}</span>
             )}

@@ -1,3 +1,4 @@
+import { humanWaitLabel } from "@/lib/status-labels";
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -661,7 +662,7 @@ const DISPATCH_GATE_STATUS_LABELS: Record<string, string> = {
   blocked: "执行条件未满足",
   replan_required: "需要重新编排",
   retry_later: "稍后重试",
-  waiting_human: "等待人工确认"
+  waiting_human: humanWaitLabel("employee_card")
 };
 
 function demandDispatchBlockerLabel(status: string): {

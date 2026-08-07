@@ -20,11 +20,12 @@ import {
   SoftCard,
   StatusPill,
   Button,
+  DetailSkeleton,
   EmptyState,
   ErrorState,
-  LoadingState,
   MetricCard,
   DataTable,
+  TableSkeleton,
   Td,
   Th,
   Tr,
@@ -276,9 +277,9 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
               刷新
             </Button>
           </div>
-          {overview.isLoading ? (
-            <WorkSurface>
-              <LoadingState label="加载 Runtime 总览中" />
+          {overview.isLoading && !overviewData ? (
+            <WorkSurface className="p-4" data-testid="runtime-overview-skeleton">
+              <DetailSkeleton />
             </WorkSurface>
           ) : null}
 
@@ -532,7 +533,11 @@ function PendingEnrollmentPanel({
         description={showDescription ? "确认节点来源和 Provider 能力后再批准接入。" : undefined}
       />
       <div className="divide-y divide-line">
-        {isLoading ? <LoadingState className="py-8" label="加载 Runtime 接入记录中" /> : null}
+        {isLoading && enrollments.length === 0 ? (
+          <div className="p-4" data-testid="runtime-enrollments-skeleton">
+            <TableSkeleton cols={3} rows={4} />
+          </div>
+        ) : null}
         {isError ? (
           <div className="p-4">
             <ErrorState title="Runtime 接入记录加载失败" />
@@ -803,10 +808,10 @@ function EventAuditPanel({
           </tr>
         </thead>
         <tbody>
-          {isLoading ? (
+          {isLoading && events.length === 0 ? (
             <Tr>
-              <Td colSpan={5}>
-                <LoadingState className="py-8" label="加载 Runtime 事件中" />
+              <Td colSpan={5} className="p-4" data-testid="runtime-events-skeleton">
+                <TableSkeleton cols={5} rows={5} />
               </Td>
             </Tr>
           ) : null}

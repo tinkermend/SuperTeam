@@ -44,7 +44,7 @@ import {
   employeeWeekStart
 } from "./components/employee-work-calendar";
 import { RunDetailDrawer } from "./components/run-detail-drawer";
-import { deleteBlockerTypeLabel, statusLabel } from "@/lib/status-labels";
+import { deleteBlockerTypeLabel, statusLabel, missingObjectLabel } from "@/lib/status-labels";
 
 const activeRunStatuses = new Set<DigitalEmployeeRunStatus>([
   "queued",
@@ -504,10 +504,10 @@ function DeleteBlockerItem({ blocker }: { blocker: DigitalEmployeeDeleteBlocker 
         <span className="text-sm font-semibold">{blocker.title}</span>
         <StatusPill tone="danger">{`${deleteBlockerTypeLabel(blocker.type)} · ${statusLabel(blocker.status)}`}</StatusPill>
       </div>
-      <p className="mt-1 break-all font-mono text-[11px] text-ink-3">
-        {blocker.project_id ? `project ${blocker.project_id} · ` : ""}
-        {blocker.run_id ? `run ${blocker.run_id} · ` : ""}
-        id {blocker.id}
+      <p className="mt-1 break-all text-[11px] text-ink-3">
+        {blocker.project_id ? `${missingObjectLabel("project", blocker.project_id)} · ` : ""}
+        {blocker.run_id ? `运行 ${blocker.run_id.slice(0, 8)}… · ` : ""}
+        标识 {blocker.id.slice(0, 8)}…
       </p>
     </li>
   );

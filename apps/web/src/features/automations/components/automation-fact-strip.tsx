@@ -1,3 +1,4 @@
+import { humanWaitLabel } from "@/lib/status-labels";
 import {
   AlertTriangle,
   CalendarClock,
@@ -71,7 +72,7 @@ export function AutomationFactStrip({
 },
     {
       icon: UserCheck,
-      label: "待你处理",
+      label: humanWaitLabel("automations_gate"),
       value: pendingDecisionCount,
       tone: (pendingDecisionCount > 0 ? "warn" : "mute") as Tone
 },

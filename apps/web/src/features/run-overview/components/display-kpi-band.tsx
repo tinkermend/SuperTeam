@@ -1,3 +1,4 @@
+import { humanWaitLabel } from "@/lib/status-labels";
 import { GlassCard } from "@/components/superteam";
 import type { InboxBadge } from "@/lib/api/inbox";
 import type { RuntimeOverview } from "@/lib/api/runtime";
@@ -23,7 +24,7 @@ export function DisplayKpiBand({
     <GlassCard className="mb-4 p-4" data-display-kpi-band>
       <div className="grid grid-cols-3 gap-3 lg:grid-cols-6">
         <KpiCell
-          label="待人工处理"
+          label={humanWaitLabel("run_overview_kpi")}
           value={badge ? badge.team_open_count : "—"}
           tone={badge && badge.team_open_count > 0 ? "warn" : undefined}
           badge={badge && badge.high_risk_count > 0 ? `高危 ${badge.high_risk_count}` : undefined}

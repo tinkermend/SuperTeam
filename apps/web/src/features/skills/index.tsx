@@ -33,6 +33,7 @@ import {
   StatusPill,
   ToolbarSearch,
   WorkSurface,
+  shortId,
   type Tone
 } from "@/components/superteam";
 import {
@@ -56,6 +57,7 @@ import { deleteSkill, listSkills, type Skill } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { SkillInstallDialog } from "./install-dialog";
+import { missingObjectLabel } from "@/lib/status-labels";
 
 type SkillsViewProps = {
   apiBaseUrl: string;
@@ -384,8 +386,8 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
               <div className="space-y-1.5">
                 {skill.team_bindings.map((team) => (
                   <div className="flex items-center gap-2 rounded-lg border border-line bg-card-inner px-3 py-1.5 text-[12px]" key={team.team_id}>
-                    <span className="font-semibold text-ink">{team.team_name}</span>
-                    <span className="ml-auto font-mono text-[11px] text-ink-3">{team.team_id}</span>
+                    <span className="font-semibold text-ink">{team.team_name?.trim() || missingObjectLabel("team", team.team_id)}</span>
+                    <span className="ml-auto font-mono text-[11px] text-ink-3" title={team.team_id}>{shortId(team.team_id)}</span>
                   </div>
                 ))}
               </div>
@@ -401,9 +403,9 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
               <div className="space-y-1.5">
                 {skill.agent_bindings.map((agent) => (
                   <div className="flex items-center gap-2 rounded-lg border border-line bg-card-inner px-3 py-1.5 text-[12px]" key={agent.agent_id}>
-                    <span className="font-semibold text-ink">{agent.agent_name}</span>
-                    {agent.team_name ? <span className="text-ink-3">· {agent.team_name}</span> : null}
-                    <span className="ml-auto font-mono text-[11px] text-ink-3">{agent.agent_id}</span>
+                    <span className="font-semibold text-ink">{agent.agent_name?.trim() || missingObjectLabel("employee", agent.agent_id)}</span>
+                    {agent.team_name?.trim() ? <span className="text-ink-3">· {agent.team_name.trim()}</span> : null}
+                    <span className="ml-auto font-mono text-[11px] text-ink-3" title={agent.agent_id}>{shortId(agent.agent_id)}</span>
                   </div>
                 ))}
               </div>
@@ -517,8 +519,8 @@ function SkillDetailSheet({
                   <div className="space-y-1.5">
                     {skill.team_bindings.map((team) => (
                       <div className="flex items-center gap-2 rounded-lg border border-line bg-card-inner px-3 py-1.5 text-[12px]" key={team.team_id}>
-                        <span className="font-semibold text-ink">{team.team_name}</span>
-                        <span className="ml-auto font-mono text-[11px] text-ink-3">{team.team_id}</span>
+                        <span className="font-semibold text-ink">{team.team_name?.trim() || missingObjectLabel("team", team.team_id)}</span>
+                    <span className="ml-auto font-mono text-[11px] text-ink-3" title={team.team_id}>{shortId(team.team_id)}</span>
                       </div>
                     ))}
                   </div>
@@ -534,9 +536,9 @@ function SkillDetailSheet({
                   <div className="space-y-1.5">
                     {skill.agent_bindings.map((agent) => (
                       <div className="flex items-center gap-2 rounded-lg border border-line bg-card-inner px-3 py-1.5 text-[12px]" key={agent.agent_id}>
-                        <span className="font-semibold text-ink">{agent.agent_name}</span>
-                        {agent.team_name ? <span className="text-ink-3">· {agent.team_name}</span> : null}
-                        <span className="ml-auto font-mono text-[11px] text-ink-3">{agent.agent_id}</span>
+                        <span className="font-semibold text-ink">{agent.agent_name?.trim() || missingObjectLabel("employee", agent.agent_id)}</span>
+                    {agent.team_name?.trim() ? <span className="text-ink-3">· {agent.team_name.trim()}</span> : null}
+                    <span className="ml-auto font-mono text-[11px] text-ink-3" title={agent.agent_id}>{shortId(agent.agent_id)}</span>
                       </div>
                     ))}
                   </div>

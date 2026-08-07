@@ -1,3 +1,4 @@
+import { humanWaitLabel } from "@/lib/status-labels";
 import { GlassCard } from "@/components/superteam";
 import type { ProjectDemand } from "@/lib/api/projects";
 import type { ProjectLens, ProjectRunBandOption } from "../runtime-overview-project-lens";
@@ -34,7 +35,7 @@ export function DisplayProjectShotCard({
         {option.runningCount > 0 ? <span className="text-info-text">运行 {option.runningCount}</span> : null}
         {option.failedCount > 0 ? <span className="font-semibold text-danger">失败 {option.failedCount}</span> : null}
         {option.waitingHumanCount > 0 ? (
-          <span className="font-semibold text-warn-text">待人工 {option.waitingHumanCount}</span>
+          <span className="font-semibold text-warn-text">{humanWaitLabel("run_overview_badge")} {option.waitingHumanCount}</span>
         ) : null}
         {option.unassignedCount > 0 ? <span className="text-ink-3">待派发 {option.unassignedCount}</span> : null}
       </div>

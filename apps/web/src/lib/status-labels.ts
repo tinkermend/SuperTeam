@@ -87,7 +87,7 @@ const STATUS_LABELS: Record<string, string> = {
   user_disabled: "已手动停用",
   verified: "已验证",
   waiting: "等待中",
-  waiting_human: "等待人工",
+  waiting_human: "待人工确认",
 };
 
 export function statusLabel(status: string | undefined): string {
@@ -487,7 +487,7 @@ const DOSSIER_TIMELINE_KIND_LABELS: Record<string, string> = {
   task_created: "任务创建",
   task_dispatched: "任务开始",
   task_failed: "任务失败",
-  task_waiting_human: "等待人工",
+  task_waiting_human: "待人工确认",
 };
 
 export function dossierTimelineKindLabel(kind: string | undefined): string {
@@ -559,5 +559,118 @@ export function archiveReadinessCodeLabel(code: string | undefined): string {
       return "归档将取消待办收件箱";
     default:
       return code?.trim() || "未知条件";
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// 对象指称 / 关联 meta（控制台跨页体验共性问题 · D3）
+// ---------------------------------------------------------------------------
+
+export type MissingObjectKind =
+  | "project"
+  | "team"
+  | "employee"
+  | "task"
+  | "demand"
+  | "approval"
+  | "object";
+
+const MISSING_OBJECT_TYPE_TITLE: Record<MissingObjectKind, string> = {
+  project: "项目",
+  team: "团队",
+  employee: "数字员工",
+  task: "任务",
+  demand: "需求",
+  approval: "审批",
+  object: "对象",
+};
+
+/** UUID 短显（与 ObjectRef/shortId 算法一致：首段 + …）。词表侧文案用，避免页面手拆 UUID。 */
+export function shortObjectId(id: string): string {
+  const trimmed = id.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  const head = trimmed.split("-")[0] ?? trimmed;
+  return head.length < trimmed.length ? `${head}…` : head;
+}
+
+/**
+ * 名缺失时的用户可见主指称（D3）：`未命名{类型} (短id)`。
+ * 全 id 仅通过 ObjectIdChip 复制或 title，不得作为列表/meta 主文本。
+ */
+export function missingObjectLabel(kind: MissingObjectKind, id: string): string {
+  const typeTitle = MISSING_OBJECT_TYPE_TITLE[kind] ?? MISSING_OBJECT_TYPE_TITLE.object;
+  const short = shortObjectId(id);
+  return short ? `未命名${typeTitle} (${short})` : `未命名${typeTitle}`;
+}
+
+export type RelatedRefMetaKind =
+  | "demand"
+  | "demand_open"
+  | "task"
+  | "task_open"
+  | "project_open"
+  | "approval_open"
+  | "audit";
+
+const RELATED_REF_META_LABELS: Record<RelatedRefMetaKind, string> = {
+  demand: "需求",
+  demand_open: "打开需求",
+  task: "任务",
+  task_open: "打开任务",
+  project_open: "打开项目",
+  approval_open: "打开审批",
+  audit: "审计",
+};
+
+/** 收件箱关联对象行 meta：中文动作/类型，禁止 API 字段名（demand_id ↗ 等）。 */
+export function relatedRefMetaLabel(kind: RelatedRefMetaKind): string {
+  return RELATED_REF_META_LABELS[kind] ?? kind;
+}
+
+// ---------------------------------------------------------------------------
+// 人机等待跨页词表（方案 Batch 4 / humanWaitLabel）
+// 动作视角 vs 对象视角分列；同 surface 禁止三词同义。
+// ---------------------------------------------------------------------------
+
+export type HumanWaitSurface =
+  | "inbox_kpi"
+  | "inbox_badge"
+  | "inbox_progress_second_person"
+  | "project_rail"
+  | "automations_gate"
+  | "run_overview_kpi"
+  | "run_overview_badge"
+  | "employee_card"
+  | "project_object";
+
+/**
+ * 人机等待用户可见文案。
+ * - 动作视角：待我处理 / 待我决策 / 待你（仅进度）
+ * - 对象视角：待人工确认（长）/ 待人工（短 KPI·badge）/ 待决决策
+ */
+export function humanWaitLabel(surface: HumanWaitSurface): string {
+  switch (surface) {
+    case "inbox_kpi":
+    case "inbox_badge":
+      return "待我处理";
+    case "inbox_progress_second_person":
+      return "待你";
+    case "project_rail":
+      return "待我决策";
+    case "automations_gate":
+      // D9：与收件箱动作视角统一为「待我处理」
+      return "待我处理";
+    case "run_overview_kpi":
+    case "run_overview_badge":
+      return "待人工";
+    case "employee_card":
+      return "待人工确认";
+    case "project_object":
+      return "待决决策";
+    default:
+      return "待人工确认";
   }
 }

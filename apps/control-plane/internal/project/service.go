@@ -4854,7 +4854,7 @@ func taskResultFailureSummary(contract TaskResultContract) string {
 	if contract.Failure != nil && strings.TrimSpace(contract.Failure.Message) != "" {
 		return strings.TrimSpace(contract.Failure.Message)
 	}
-	return "Task result reported failure"
+	return "任务结果报告失败"
 }
 
 func taskResultFailureFamily(contract TaskResultContract) string {
@@ -4881,7 +4881,7 @@ func taskResultCancellationSummary(contract TaskResultContract) string {
 	if contract.Cancellation != nil && strings.TrimSpace(contract.Cancellation.Reason) != "" {
 		return strings.TrimSpace(contract.Cancellation.Reason)
 	}
-	return "Task result reported cancellation"
+	return "任务结果报告已取消"
 }
 
 func projectTaskAttemptResultRecordRequest(task ProjectTask, runtimeReq ProjectTaskAttemptRuntimeRequest, summaryID, eventID *uuid.UUID, contract TaskResultContract, validation TaskResultValidation) RecordProjectTaskResultRequest {
@@ -5461,7 +5461,29 @@ func humanReadableFailureSummary(failureFamily, raw string) string {
 	if raw == "" {
 		return lead
 	}
+	raw = humanizeTechnicalFailureDetail(raw)
 	return lead + "：" + raw
+}
+
+// humanizeTechnicalFailureDetail maps common English runtime/provider phrases
+// into Chinese for inbox decision summaries (cross-page UX PR4a). Unknown text
+// is returned as-is so operator diagnostics are not dropped.
+func humanizeTechnicalFailureDetail(raw string) string {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case strings.Contains(lower, "runtime node is not connected"):
+		return "Runtime 节点未连接"
+	case strings.Contains(lower, "runtime execution failed"):
+		return "Runtime 执行失败"
+	case strings.Contains(lower, "provider session") && strings.Contains(lower, "failed"):
+		return "Provider 会话失败"
+	case lower == "task result reported failure":
+		return "任务结果报告失败"
+	case lower == "task result reported cancellation":
+		return "任务结果报告已取消"
+	default:
+		return raw
+	}
 }
 
 func (s *Service) WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHumanProjectTaskAttemptRequest) (*ProjectTask, error) {
@@ -6084,7 +6106,9 @@ func (s *Service) reapStuckOrphanProjectTask(ctx context.Context, task ProjectTa
 	})
 }
 
-const orphanWaitingHumanRepairSummary = "系统补建等待人工决策卡：任务停在 waiting_human 但无可行动决策（orphan waiting_human reconciler）"
+// orphanWaitingHumanRepairSummary is the user-facing inbox summary when the
+// system repairs a task stuck waiting for a human without a usable decision card.
+const orphanWaitingHumanRepairSummary = "系统补建人工决策卡：任务已停在待人工确认，但缺少可处理的决策"
 
 // SweepOrphanWaitingHumanProjectTasks repairs waiting_human tasks with missing
 // or stale waiting_request_id links. Prefer re-binding an existing open decision
@@ -6143,7 +6167,9 @@ func (s *Service) repairOrphanWaitingHumanProjectTask(ctx context.Context, repai
 	}
 	summary := orphanWaitingHumanRepairSummary
 	if task.WaitingReason != nil && strings.TrimSpace(*task.WaitingReason) != "" {
-		summary = summary + "；waiting_reason=" + strings.TrimSpace(*task.WaitingReason)
+		if label := humanWaitReasonLabel(strings.TrimSpace(*task.WaitingReason)); label != "" {
+			summary = summary + "（原因：" + label + "）"
+		}
 	}
 	event, err := repairer.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:     task.TenantID,
@@ -6535,6 +6561,33 @@ func projectTaskHumanWaitResolutionStatus(resolution string) string {
 		return ProjectTaskStatusFailed
 	default:
 		return ""
+	}
+}
+
+func humanWaitReasonLabel(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case HumanWaitReasonMissingContext:
+		return "缺少必要上下文"
+	case HumanWaitReasonClarification:
+		return "需要澄清"
+	case HumanWaitReasonApprovalRequired:
+		return "需要人工审批"
+	case HumanWaitReasonPermissionRequired:
+		return "需要权限确认"
+	case HumanWaitReasonPlanInvalid:
+		return "计划无效需调整"
+	case HumanWaitReasonAcceptanceRequired:
+		return "需要验收"
+	case HumanWaitReasonRuntimeRecovery:
+		return "需要恢复 Runtime"
+	case HumanWaitReasonBudgetApproval:
+		return "需要预算确认"
+	default:
+		// Unknown codes stay machine-readable but without English field-name chrome.
+		if strings.TrimSpace(reason) == "" {
+			return ""
+		}
+		return "其它（" + strings.TrimSpace(reason) + "）"
 	}
 }
 

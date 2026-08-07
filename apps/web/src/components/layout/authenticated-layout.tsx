@@ -9,6 +9,7 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { AuroraBackground } from '@/components/layout/aurora-background'
 import { SkipToMain } from '@/components/skip-to-main'
+import { usePageTitle } from '@/hooks/use-page-title'
 
 type AuthenticatedLayoutProps = {
   children?: React.ReactNode
@@ -25,6 +26,7 @@ function AuthenticatedShell({
 }) {
   // 全局一条收件箱 SSE：任意路由都能让侧栏角标与收件箱列表秒级感知变更。
   useInboxChangeStream({ eventSourceFactory: inboxEventSourceFactory })
+  usePageTitle()
 
   const defaultOpen = getCookie('sidebar_state') !== 'false'
   return (

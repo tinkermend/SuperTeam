@@ -7,7 +7,10 @@ import {
   demandStatusLabel,
   employeeStatusLabel,
   governanceStatusLabel,
+  missingObjectLabel,
   projectStatusLabel,
+  humanWaitLabel,
+  relatedRefMetaLabel,
   riskLevelLabel,
   statusLabel,
   teamStatusLabel,
@@ -144,5 +147,38 @@ describe("domain overrides", () => {
     expect(demandStatusLabel("cancelled")).toBe("已取消");
     expect(demandStatusLabel("recorded")).toBe("已记录");
     expect(demandStatusLabel(undefined)).toBe("未知");
+  });
+});
+
+describe("missingObjectLabel / relatedRefMetaLabel", () => {
+  it("formats D3 missing-name labels with short id", () => {
+    expect(missingObjectLabel("project", "25a6b54b-1111-2222-3333-444444444444")).toBe(
+      "未命名项目 (25a6b54b…)",
+    );
+    expect(missingObjectLabel("team", "00000000-0000-0000-0000-000000000101")).toBe(
+      "未命名团队 (00000000…)",
+    );
+  });
+
+  it("maps related ref meta to Chinese actions", () => {
+    expect(relatedRefMetaLabel("demand_open")).toBe("打开需求");
+    expect(relatedRefMetaLabel("task")).toBe("任务");
+    expect(relatedRefMetaLabel("project_open")).toBe("打开项目");
+    expect(relatedRefMetaLabel("approval_open")).toBe("打开审批");
+    expect(relatedRefMetaLabel("audit")).toBe("审计");
+  });
+});
+
+describe("humanWaitLabel", () => {
+  it("keeps action and object surfaces distinct without triple synonyms", () => {
+    expect(humanWaitLabel("inbox_kpi")).toBe("待我处理");
+    expect(humanWaitLabel("inbox_badge")).toBe("待我处理");
+    expect(humanWaitLabel("project_rail")).toBe("待我决策");
+    expect(humanWaitLabel("automations_gate")).toBe("待我处理");
+    expect(humanWaitLabel("employee_card")).toBe("待人工确认");
+    expect(humanWaitLabel("run_overview_kpi")).toBe("待人工");
+    expect(humanWaitLabel("run_overview_badge")).toBe("待人工");
+    expect(humanWaitLabel("project_object")).toBe("待决决策");
+    expect(humanWaitLabel("inbox_progress_second_person")).toBe("待你");
   });
 });

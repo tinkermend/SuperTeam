@@ -1,3 +1,4 @@
+import { humanWaitLabel } from "@/lib/status-labels";
 import { StatusPill } from "@/components/superteam";
 import type { RuntimeOverviewEmployee, RuntimeOverviewTeam, RuntimeOverviewTeamWorkspace } from "../runtime-overview-model";
 import { EmployeeAvatarNode, type EmployeeLensState } from "./employee-avatar-node";
@@ -41,7 +42,7 @@ export function TeamWorkspaceRenderer({
         </div>
         <p className="mt-2 text-[11px] text-ink-2">
           异常 <span className="font-semibold text-danger">{team.errorCount}</span> · 工作中{" "}
-          <span className="font-semibold text-ok">{team.workingCount}</span> · 待确认{" "}
+          <span className="font-semibold text-ok">{team.workingCount}</span> · {humanWaitLabel("run_overview_badge")}{" "}
           <span className="font-semibold text-warn">{team.waitingHumanCount}</span>
         </p>
       </article>

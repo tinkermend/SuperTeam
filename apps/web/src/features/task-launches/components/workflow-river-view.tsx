@@ -7,7 +7,7 @@ import {
   Chip,
   EmptyState,
   ErrorState,
-  LoadingState,
+  TableSkeleton,
   MetricCard,
   Segmented,
   ToolbarSearch,
@@ -160,8 +160,8 @@ export function WorkflowRiverView({
 
   if (isLoading && instances.length === 0) {
     return wrap(
-      <SoftCard>
-        <LoadingState label="正在加载流程实例" />
+      <SoftCard className="p-4" data-testid="workflow-instances-skeleton">
+        <TableSkeleton cols={4} rows={6} />
       </SoftCard>,
     );
   }

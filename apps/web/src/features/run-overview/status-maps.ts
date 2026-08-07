@@ -1,3 +1,4 @@
+import { humanWaitLabel } from "@/lib/status-labels";
 import type { RuntimeOverviewEmployee } from "./runtime-overview-model";
 
 export const employeeStatusLabel: Record<RuntimeOverviewEmployee["status"], string> = {
@@ -6,7 +7,7 @@ export const employeeStatusLabel: Record<RuntimeOverviewEmployee["status"], stri
   needs_configuration: "待配置",
   queued: "排队",
   unavailable: "不可用",
-  waiting_human: "待确认",
+  waiting_human: humanWaitLabel("employee_card"),
   working: "工作中",
 };
 

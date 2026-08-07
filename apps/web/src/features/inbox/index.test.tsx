@@ -742,7 +742,7 @@ describe("InboxView", () => {
     await expect.element(dialog.getByText("高风险")).toBeVisible();
     await expect.element(dialog.getByText("所属项目")).toBeVisible();
     await expect.element(dialog.getByText("相关任务")).toBeVisible();
-    await expect.element(dialog.getByText("task-1")).toBeVisible();
+    await expect.element(dialog.getByText("未命名任务 (task…)")).toBeVisible();
     await expect.element(dialog.getByText("技术详情")).toBeVisible();
     await expect.element(dialog.getByText("上游审批服务暂时不可用")).toBeVisible();
   });

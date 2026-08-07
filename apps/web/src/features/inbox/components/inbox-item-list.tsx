@@ -8,7 +8,7 @@ import {
 } from "@/components/superteam";
 import type { InboxItem } from "@/lib/api/inbox";
 import { formatDateTime, formatRelativeTime } from "@/lib/format-time";
-import { decisionTypeLabel, humanTaskKindLabel } from "@/lib/status-labels";
+import { decisionTypeLabel, humanTaskKindLabel, missingObjectLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 
 export { formatDateTime, formatRelativeTime };
@@ -200,7 +200,7 @@ export function InboxItemList({ items, onSelect, selectedItemId }: InboxItemList
                   >
                     {formatItemType(item)}
                   </StatusPill>
-                  <span className="min-w-0 truncate font-mono text-[11px]">
+                  <span className="min-w-0 truncate text-[11px] text-ink-3">
                     {formatContext(item) ?? formatSourceType(item)} · {formatCurrentNode(item)}
                   </span>
                   <span className="inline-flex items-center gap-1 whitespace-nowrap">
@@ -387,18 +387,24 @@ export function formatContext(item: InboxItem) {
       : demandLabel;
   }
 
-  // 服务端读时补名优先于 context 快照;两者都缺时才回退裸 id。
+  // 服务端读时补名优先于 context 快照；名缺失走 D3 missingObjectLabel，禁止全 UUID 主文本。
   const projectName =
-    item.source_project_name ??
+    item.source_project_name?.trim() ||
     readContextText(item.context, ["project_name", "project", "project_title"]);
   const sourceName =
     readContextText(item.context, ["source_title", "approval_title", "task_title"]) ??
-    item.source_task_name;
+    (item.source_task_name?.trim() || undefined);
 
   if (projectName && sourceName) {
     return `${projectName} / ${sourceName}`;
   }
-  return projectName ?? sourceName ?? (item.source_project_id ? `项目 ${item.source_project_id}` : undefined);
+  if (projectName || sourceName) {
+    return projectName ?? sourceName;
+  }
+  if (item.source_project_id) {
+    return missingObjectLabel("project", item.source_project_id);
+  }
+  return undefined;
 }
 
 export function formatItemType(item: InboxItem) {

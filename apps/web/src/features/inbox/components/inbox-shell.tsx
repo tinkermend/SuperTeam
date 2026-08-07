@@ -42,7 +42,7 @@ import type {
   InboxStatus,
   InboxViewMode
 } from "@/lib/api/inbox";
-import { demandStatusLabel } from "@/lib/status-labels";
+import { demandStatusLabel, missingObjectLabel, relatedRefMetaLabel } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 import type { InboxStreamConnection } from "../inbox-stream-status";
 import { formatInboxActionLabel } from "./action-format";
@@ -554,7 +554,7 @@ function InboxDetailPanel({ data, item, view }: InboxDetailPanelProps) {
             <>
               <dt className="font-semibold text-ink-3">关联任务</dt>
               <dd className="min-w-0 text-xs font-semibold text-ink-2">
-                <ObjectRef name={item.source_task_name} id={item.source_task_id} />
+                <ObjectRef kind="task" name={item.source_task_name} id={item.source_task_id} />
               </dd>
             </>
           ) : null}
@@ -701,7 +701,7 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
       label: demand.status
         ? `关联需求 · ${demand.title}（${demandStatusLabel(demand.status)}）`
         : `关联需求 · ${demand.title}`,
-      meta: demand.id ? "demand_id ↗" : "demand",
+      meta: relatedRefMetaLabel(demand.id ? "demand_open" : "demand"),
       // 一单卷宗的 canonical 落点是项目详情需求处所。收件箱事项自带
       // source_project_id 时直接指过去，省掉 /workflows/{id} 那一跳
       // （该跳仍保留：飞书历史卡片与不带项目身份的旧数据还靠它兜底）。
@@ -718,7 +718,7 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
         key: `task-title-${taskTitle}`,
         icon: <FileText className="size-4 shrink-0 text-ink-3" />,
         label: `关联任务 · ${taskTitle}`,
-        meta: "task_title",
+        meta: relatedRefMetaLabel("task"),
         href: item.source_task_id ? resolveInboxHref(item) : undefined
 });
     }
@@ -728,8 +728,8 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
     refs.push({
       key: "task",
       icon: <FileText className="size-4 shrink-0 text-ink-3" />,
-      label: `关联任务 · ${item.source_task_name ?? item.source_task_id}`,
-      meta: "source_task_id ↗",
+      label: `关联任务 · ${item.source_task_name?.trim() || missingObjectLabel("task", item.source_task_id)}`,
+      meta: relatedRefMetaLabel("task_open"),
       href: resolveInboxHref(item)
 });
   }
@@ -738,8 +738,8 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
     refs.push({
       key: "project",
       icon: <FolderKanban className="size-4 shrink-0 text-ink-3" />,
-      label: `关联项目 · ${item.source_project_name ?? readStringFromContext(item.context, ["project_name", "project_title"]) ?? item.source_project_id}`,
-      meta: "source_project_id ↗",
+      label: `关联项目 · ${item.source_project_name?.trim() || readStringFromContext(item.context, ["project_name", "project_title"]) || missingObjectLabel("project", item.source_project_id)}`,
+      meta: relatedRefMetaLabel("project_open"),
       href: `/projects/${encodeURIComponent(item.source_project_id)}`
 });
   }
@@ -749,7 +749,7 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
       key: "approval",
       icon: <ShieldQuestion className="size-4 shrink-0 text-ink-3" />,
       label: "关联审批请求",
-      meta: "source_approval_request_id ↗",
+      meta: relatedRefMetaLabel("approval_open"),
       href: resolveInboxHref(item)
 });
   }
@@ -758,7 +758,7 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
     key: "audit",
     icon: <ShieldCheck className="size-4 shrink-0 text-ink-3" />,
     label: "操作将写入审计日志",
-    meta: "审计"
+    meta: relatedRefMetaLabel("audit")
 });
 
   return refs;

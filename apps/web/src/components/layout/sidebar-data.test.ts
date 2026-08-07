@@ -39,7 +39,7 @@ describe('sidebarData', () => {
     expect(objectItems?.map((item) => item.title)).toEqual([
       '项目管理',
       '数字员工',
-      '技能管理',
+      '技能市场',
       '团队管理',
     ])
     expect(objectItems?.[0]).toMatchObject({

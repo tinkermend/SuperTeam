@@ -71,7 +71,7 @@ export function buildSidebarData({
             iconTone: "neutral",
           },
           {
-            title: "技能管理",
+            title: "技能市场",
             url: "/skills",
             icon: Blocks,
             iconTone: "neutral",

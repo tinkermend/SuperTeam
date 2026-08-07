@@ -216,14 +216,16 @@ describe("SkillDetailView", () => {
     expect(document.body.textContent).toContain("项目绑定");
     expect(document.body.textContent).toContain("平台工程");
     expect(document.body.textContent).toContain("产品团队");
-    expect(document.body.textContent).toContain("team-without-name");
+    expect(document.body.textContent).toContain("未命名团队 (team…)");
+    expect(document.body.textContent).not.toContain("team-without-name");
 
     expect(document.body.textContent).toContain("数字员工安装");
     await expect.element(screen.getByText("需求澄清 Agent")).toBeVisible();
     await expect.element(screen.getByText("项目协调 Agent")).toBeVisible();
-    expect(document.body.textContent).toContain("agent-without-name");
+    expect(document.body.textContent).toContain("未命名数字员工 (agent…)");
+    expect(document.body.textContent).not.toContain("agent-without-name");
     await expect.element(screen.getByText("产品团队 / enabled")).toBeVisible();
-    await expect.element(screen.getByText("team-3 / enabled")).toBeVisible();
+    await expect.element(screen.getByText("未命名团队 (team…) / enabled")).toBeVisible();
 
     await expect.element(screen.getByRole("heading", { name: "上传与存储信息" })).toBeVisible();
     expect(document.querySelector('[data-testid="skill-upload-metadata"]')?.textContent).toContain(
