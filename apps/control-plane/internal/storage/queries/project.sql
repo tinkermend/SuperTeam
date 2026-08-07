@@ -2735,13 +2735,20 @@ LEFT JOIN (
     GROUP BY project_id
 ) t ON t.project_id = p.id
 LEFT JOIN (
-    SELECT project_id, COUNT(*)::integer AS completed_today_count
-    FROM task_runs
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-      AND status = 'completed'
-      AND COALESCE(finished_at, updated_at, created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
-      AND COALESCE(finished_at, updated_at, created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
-    GROUP BY project_id
+    -- chat run 挂项目锚仅为运行时落点(节点解析/预算边界),其产出不进项目流转
+    -- (tri-mode spec §5 不变量 2 + §13),故不得计入项目业务口径的「今日完成」。
+    -- run_kind 在 tasks 表(迁移 059),task_runs.task_id 非空,用 INNER JOIN 取。
+    SELECT tr.project_id, COUNT(*)::integer AS completed_today_count
+    FROM task_runs tr
+    JOIN tasks t
+      ON t.tenant_id = tr.tenant_id
+     AND t.id = tr.task_id
+    WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND t.run_kind <> 'chat'
+      AND tr.status = 'completed'
+      AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+      AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
+    GROUP BY tr.project_id
 ) r ON r.project_id = p.id
 WHERE p.tenant_id = sqlc.arg('tenant_id')::uuid
   AND p.deleted_at IS NULL
@@ -2754,9 +2761,15 @@ LIMIT sqlc.arg('limit');
 -- name: CountTaskRunsCompletedToday :one
 -- 大屏 KPI「今日完成运行」的租户级总数:独立于项目状态过滤(归档项目当日完成也计入),
 -- 保证 KPI 与运行带逐项目求和的口径差异是显式的(前者全租户,后者仅活跃项目)。
+-- 与 ListProjectRunSummaries 同口径排除 chat run:对话不是业务运行,不进 KPI
+-- (tri-mode spec §5 不变量 2)。两处必须同增同减,否则大屏总数与运行带求和口径再次分叉。
 SELECT COUNT(*)::integer AS completed_today_count
-FROM task_runs
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND status = 'completed'
-  AND COALESCE(finished_at, updated_at, created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
-  AND COALESCE(finished_at, updated_at, created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai');
+FROM task_runs tr
+JOIN tasks t
+  ON t.tenant_id = tr.tenant_id
+ AND t.id = tr.task_id
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND t.run_kind <> 'chat'
+  AND tr.status = 'completed'
+  AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) >= (date_trunc('day', timezone('Asia/Shanghai', now())) AT TIME ZONE 'Asia/Shanghai')
+  AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai');

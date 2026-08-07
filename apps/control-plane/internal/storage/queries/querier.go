@@ -101,6 +101,8 @@ type Querier interface {
 	CountRuntimeNodesForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	// 大屏 KPI「今日完成运行」的租户级总数:独立于项目状态过滤(归档项目当日完成也计入),
 	// 保证 KPI 与运行带逐项目求和的口径差异是显式的(前者全租户,后者仅活跃项目)。
+	// 与 ListProjectRunSummaries 同口径排除 chat run:对话不是业务运行,不进 KPI
+	// (tri-mode spec §5 不变量 2)。两处必须同增同减,否则大屏总数与运行带求和口径再次分叉。
 	CountTaskRunsCompletedToday(ctx context.Context, tenantID uuid.UUID) (int32, error)
 	CountTeamOwners(ctx context.Context, arg CountTeamOwnersParams) (int32, error)
 	// 单个判官明细行：一 lens 一行，ON CONFLICT 命中 uq_adversarial_judgement

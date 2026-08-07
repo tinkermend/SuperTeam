@@ -1025,10 +1025,33 @@ func (s *ProjectStore) InspectTaskResultDecision(ctx context.Context, input Insp
 	if err != nil || result == nil {
 		return InspectTaskResultDecisionResult{}, err
 	}
+	// Resolve the task's coordination mode from its accepted plan revision. The
+	// mode gates whether an upstream blocker auto-supplements (loop) or holds for
+	// a human decision (plan), so the two "we don't know the mode" cases must be
+	// kept apart — they used to share one swallowing branch:
+	//
+	//   - revision reads fine but carries a nil mode: resolve to loop. This is
+	//     tri-mode spec §8.4's deliberate back-compat rule — plans created before
+	//     the mode column keep their original auto-supplement behavior.
+	//   - the revision cannot be read at all (missing row, transient failure):
+	//     the mode is genuinely unknown, so resolve to plan, not loop. Spec §8.4
+	//     already settled this trade-off for the analogous demand-default case:
+	//     "plan 缺省误报最坏多问一次, loop 缺省误判最坏烧预算跑歪图". Falling through
+	//     to loop here would auto-dispatch supplement tasks on what may well be a
+	//     plan-mode demand, bypassing the human gate with no trace.
+	//
+	// Resolving to plan (rather than propagating the error) also keeps the
+	// coordinator alive: a returned error makes Temporal retry the activity
+	// indefinitely, and there is no coordinator-liveness alert today, so a
+	// permanently unreadable revision would stall the thread silently. Holding for
+	// a human decision instead surfaces in the inbox, which is both safe and live.
 	mode := project.CoordinationModeLoop
 	if task.AcceptedPlanRevisionID != nil {
-		if rev, err := s.repository.GetPlanRevision(ctx, input.TenantID, input.ProjectID, *task.AcceptedPlanRevisionID); err == nil &&
-			rev.CoordinationMode != nil && *rev.CoordinationMode == project.CoordinationModePlan {
+		rev, err := s.repository.GetPlanRevision(ctx, input.TenantID, input.ProjectID, *task.AcceptedPlanRevisionID)
+		switch {
+		case err != nil:
+			mode = project.CoordinationModePlan
+		case rev.CoordinationMode != nil && *rev.CoordinationMode == project.CoordinationModePlan:
 			mode = project.CoordinationModePlan
 		}
 	}

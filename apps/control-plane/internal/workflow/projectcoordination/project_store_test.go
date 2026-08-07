@@ -2233,7 +2233,13 @@ func TestInspectTaskResultDecisionResolvesCoordinationMode(t *testing.T) {
 	}
 }
 
-func TestInspectTaskResultDecisionSwallowsPlanRevisionLookupError(t *testing.T) {
+// An unreadable accepted plan revision leaves the coordination mode unknown.
+// Resolving it to loop would auto-supplement upstream blockers on what may be a
+// plan-mode demand, silently bypassing the human gate; per tri-mode spec §8.4's
+// "plan 缺省误报最坏多问一次, loop 缺省误判最坏烧预算跑歪图" the unknown case must
+// fail closed to plan. Distinct from a revision that reads fine with a nil mode
+// (legacy back-compat), which still resolves to loop — see the table test above.
+func TestInspectTaskResultDecisionFailsClosedToPlanOnRevisionLookupError(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	taskID := uuid.New()
@@ -2260,7 +2266,7 @@ func TestInspectTaskResultDecisionSwallowsPlanRevisionLookupError(t *testing.T) 
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, project.CoordinationModeLoop, result.CoordinationMode)
+	require.Equal(t, project.CoordinationModePlan, result.CoordinationMode)
 }
 
 func TestApplyTaskResultRevisionCreatesBoundedRevisionTask(t *testing.T) {
