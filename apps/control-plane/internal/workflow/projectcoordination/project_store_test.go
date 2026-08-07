@@ -1372,10 +1372,14 @@ func planExitDepthTestTasks(employeeID uuid.UUID) []PlannedTask {
 	}
 }
 
-func TestShallowExitPlanModeAutoDispatches(t *testing.T) {
-	// Plan mode, chosen exit is the shallowest declared exit (index 0 of a
-	// multi-exit template), no high-risk signal, no human_judgment criterion:
-	// the plan may auto-dispatch (Accepted) instead of holding for confirmation.
+func TestShallowExitPlanModeStillHoldsForConfirm(t *testing.T) {
+	// Plan mode with the shallowest declared exit (index 0 of a multi-exit
+	// template), no high-risk signal and no human_judgment criterion — i.e. the
+	// exact shape that Phase A Task 2 used to auto-dispatch. It must now hold:
+	// plan mode confirmation is unconditional (human decision 2026-08-07, see
+	// PersistPlanRevision). This test is the inverted form of the deleted
+	// TestShallowExitPlanModeAutoDispatches; it is kept rather than dropped so
+	// the shortcut cannot be reintroduced unnoticed.
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	demandID := uuid.New()
@@ -1395,7 +1399,7 @@ func TestShallowExitPlanModeAutoDispatches(t *testing.T) {
 		RouteDecisionID:   routeID,
 		CoordinationMode:  project.CoordinationModePlan,
 		Decision: RouteDecisionPlan{
-			Reason:          "浅出口自动派发",
+			Reason:          "浅出口仍须人类确认",
 			ExitDeliverable: "branch_ref",
 			AvailableExits: []PlanExitOption{
 				{Deliverable: "branch_ref", Label: "分支"},
@@ -1407,7 +1411,7 @@ func TestShallowExitPlanModeAutoDispatches(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, project.PlanRevisionStatusAccepted, result.Status)
+	require.Equal(t, project.PlanRevisionStatusPendingReview, result.Status)
 }
 
 func TestDeepExitPlanModeHoldsForConfirm(t *testing.T) {

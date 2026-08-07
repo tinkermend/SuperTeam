@@ -558,11 +558,26 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 	validation := ValidatePlanRevisionPayload(payload)
 	// Autonomous modes (loop/chat) keep their existing conditional-Accepted
 	// auto-dispatch path unchanged, pending the future Loop-envelope spec
-	// taking over their governance. Plan mode used to require human
-	// confirmation unconditionally; it now scales with exit depth via
-	// planRequiresHumanConfirmation (autonomy posture calibration Phase A,
-	// Task 2) — shallow, non-high-risk, no-human-criterion exits may
-	// auto-dispatch, while unknown/deep/high-risk exits still hold.
+	// taking over their governance.
+	//
+	// Plan mode ALWAYS holds for human confirmation — no exceptions. This
+	// reverts the exit-depth scaling introduced by autonomy posture calibration
+	// Phase A Task 2 (which let shallow, non-high-risk, no-human-criterion exits
+	// auto-dispatch). Human decision 2026-08-07, on two grounds:
+	//
+	//  1. The risk signals that gated the shortcut are authored by the planner
+	//     itself (RequiresHumanReview / RequiresHumanApproval / RiskLevel are
+	//     LLM-filled fields), so the AI was deciding whether its own plan needed
+	//     human review. The plans that most need a human are exactly the ones
+	//     whose risk the model failed to recognise, and those self-report as low
+	//     risk. Risk classification is a human call, not the model's.
+	//  2. Autonomy is already an explicit, human-chosen dial: that is what loop
+	//     mode is for. Letting plan mode silently auto-dispatch created a second,
+	//     implicit autonomy path chosen by the AI. One dial, held by the human.
+	//
+	// Consequence: for coordination_mode=plan, the only statuses reachable here
+	// are ValidationFailed and PendingReview. Do not reintroduce a plan-mode
+	// Accepted branch without revisiting the decision above.
 	status := project.PlanRevisionStatusPendingReview
 	if !validation.Acceptable {
 		status = project.PlanRevisionStatusValidationFailed
@@ -572,8 +587,6 @@ func (s *ProjectStore) PersistPlanRevision(ctx context.Context, input PersistPla
 		if !validation.ReviewRequired && !input.Decision.RequiresHumanReview {
 			status = project.PlanRevisionStatusAccepted
 		}
-	} else if !planRequiresHumanConfirmation(input, payload, validation) {
-		status = project.PlanRevisionStatusAccepted
 	}
 	event, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventWorkflowSignaled, input.CoordinationJobID.String(), "计划版本已生成", map[string]any{
 		"demand_id":        input.DemandID.String(),
@@ -663,64 +676,13 @@ func isAutonomousCoordinationMode(mode string) bool {
 	return mode == project.CoordinationModeLoop || mode == "chat"
 }
 
-// planRequiresHumanConfirmation reports whether a plan-mode plan revision
-// must hold for human confirmation (PendingReview) rather than auto-dispatch
-// (Accepted). It is the plan-mode counterpart to the autonomous-mode
-// validation.ReviewRequired/RequiresHumanReview gate, extended with the exit-
-// depth signal (autonomy posture calibration Phase A, Task 2). Confirmation
-// is required when ANY of:
-//   - validation flagged review as required, or the route decision explicitly
-//     requested human review (the existing triggers, unchanged);
-//   - the plan touches a constitutional high-risk signal (planTouchesHighRisk:
-//     plan- or task-level RequiresHumanReview/RequiresHumanApproval, or a
-//     high-risk task.RiskLevel);
-//   - the plan carries an explicit human_judgment acceptance criterion,
-//     whatever triggered its presence (Task 1's policy/high-risk injection,
-//     or a planner-authored one) — a human judgment call is being asked for,
-//     so it must reach a human;
-//   - the chosen exit is at or beyond the Phase-A confirmation-depth
-//     threshold: see planExitAtOrBeyondConfirmationDepth.
-func planRequiresHumanConfirmation(input PersistPlanRevisionInput, payload PlanRevisionPayload, validation PlanRevisionPayloadValidationResult) bool {
-	if validation.ReviewRequired || input.Decision.RequiresHumanReview {
-		return true
-	}
-	plan := input.Decision
-	if planTouchesHighRisk(&plan) {
-		return true
-	}
-	for _, criterion := range plan.PlanAcceptanceCriteria {
-		if criterion.VerificationMethod == VerificationMethodHumanJudgment {
-			return true
-		}
-	}
-	return planExitAtOrBeyondConfirmationDepth(payload.ExitDeliverable, payload.AvailableExits)
-}
-
-// planExitAtOrBeyondConfirmationDepth reports whether the chosen exit sits at
-// the Phase-A confirmation threshold. Depth is the exit's index in
-// AvailableExits (the scenario template declares exits shallow-to-deep — see
-// Task 2 brief); this is a conservative fallback ahead of Task 4's
-// template-declared per-exit checkpoints:
-//   - no declared exits, or an empty chosen exit deliverable: depth is
-//     unknown, so this returns true (unknown depth is never auto-dispatched —
-//     preserves existing plan-mode behavior for template-less plans);
-//   - the chosen exit is not among the declared exits: also unknown depth,
-//     same conservative true;
-//   - otherwise: true only when the chosen exit is the deepest declared exit
-//     (last index) — shallower/middle exits return false and may
-//     auto-dispatch.
-func planExitAtOrBeyondConfirmationDepth(exitDeliverable string, availableExits []PlanExitOption) bool {
-	exitDeliverable = strings.TrimSpace(exitDeliverable)
-	if exitDeliverable == "" || len(availableExits) == 0 {
-		return true
-	}
-	for i, exit := range availableExits {
-		if exit.Deliverable == exitDeliverable {
-			return i == len(availableExits)-1
-		}
-	}
-	return true
-}
+// planRequiresHumanConfirmation and planExitAtOrBeyondConfirmationDepth used to
+// live here: they let a plan-mode revision skip human confirmation when the
+// chosen exit was shallow and no risk signal fired (autonomy posture calibration
+// Phase A, Task 2). Both were removed on 2026-08-07 — plan mode now holds
+// unconditionally; see the rationale in PersistPlanRevision. planTouchesHighRisk
+// survives on its own, unrelated path: acceptance_criteria.go injects a
+// constitutional human_judgment criterion for high-risk plans regardless of mode.
 
 func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input DecomposeAcceptedPlanRevisionInput) ([]ProjectTaskResult, error) {
 	if s.repository == nil {

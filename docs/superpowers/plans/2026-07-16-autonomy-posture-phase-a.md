@@ -1,6 +1,15 @@
 # 自治姿态校准 Phase A（默认翻转）实现计划
 
-> 复核状态：已实施，现状与本设计一致且仍是当前默认：兜底人类判据从"每需求强制注入"改为"仅策略require_human_acceptance或高风险注入"，GATE PASS（低风险零触点/高风险发布出口held），安全属性端到端成立。未被07-17方向修正影响（修正只针对档2对抗式评判）。
+> 复核状态：**部分撤销（2026-08-07）**。Task 1/3 仍是当前默认：兜底人类判据从"每需求强制注入"改为"仅策略 require_human_acceptance 或高风险注入"，安全属性端到端成立，未被 07-17 方向修正影响（修正只针对档2对抗式评判）。
+>
+> **Task 2（确认密度接出口深度）已于 2026-08-07 撤销**，`planRequiresHumanConfirmation` / `planExitAtOrBeyondConfirmationDepth` 两个函数已从 `project_store.go` 删除。**plan 模式现在无条件停下等人类确认**。撤销理由（人类决策，详见 `docs/superpowers/specs/2026-08-07-task-hub-ux-remediation-design.md` §12.5）：
+>
+> 1. 该判据读的 `RequiresHumanReview` / `RequiresHumanApproval` / `RiskLevel` 全部由 planner（LLM）自己填写——等于 AI 判断自己的计划要不要给人看。最需要人看的计划，恰恰是模型没识别出风险的那些，而它们必然自报低风险。风险分级是人类职责。
+> 2. 自治已有显式开关，就是 loop 模式。plan 模式再偷偷自动派发，等于存在第二条由 AI 决定的隐式自治路径。开关只留一个，握在人类手里。
+>
+> **连带失效**：Task 4（模板 human_checkpoints 驱动确认）从未实施，且其针对 plan 模式确认闸的部分已无对象——plan 一律停，无需卡点声明来决定停不停（该 Task 若重启，只剩"注入人类判据"一半仍有意义）。**Task 5 Step 1 的判据已反转**：低风险浅出口需求现在**必然**产生 plan_review 确认卡，不再是"自动派发不停确认卡"；照原文复跑该 GATE 会误判为回归。
+>
+> 实测反证（2026-08-07 真实链路）：`software_delivery` 模板声明 3 出口，需求选中最浅的 `branch_ref`、`review_required=false`、无任何风险触发器点火——撤销前这正是自动派发的形状，撤销后落 `pending_review` 并进人类收件箱。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -63,7 +72,7 @@ func planTouchesHighRisk(plan *RouteDecisionPlan) bool    // RequiresHumanReview
 
 ---
 
-### Task 2: 确认密度接出口深度——浅出口 plan 模式自动派发（TDD）
+### ~~Task 2: 确认密度接出口深度——浅出口 plan 模式自动派发（TDD）~~【已撤销 2026-08-07，见文首】
 
 **Files:**
 - Modify: `apps/control-plane/internal/workflow/projectcoordination/project_store.go`（`PersistPlanRevision` 状态逻辑 :516-520；`isAutonomousCoordinationMode` :587 附近加出口深度判定）
