@@ -472,6 +472,12 @@ type StartProjectTaskRunResult struct {
 	RuntimeNodeID uuid.UUID
 	NodeID        string
 	ProviderType  string
+	// Session resume outcome (spec 2026-08-07). Empty Status means not attempted.
+	SessionResumeStatus     string
+	SessionResumeSkipReason string
+	SessionResumeSessionID  string
+	SessionResumeSummary    string
+	SessionResumeLabel      string
 }
 
 // ProjectTaskRunStartError lets the run starter adapter classify whether a failed

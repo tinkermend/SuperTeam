@@ -317,11 +317,16 @@ func (a projectTaskRunStarterAdapter) StartProjectTaskRun(ctx context.Context, r
 		}
 	}
 	return projectcoordination.StartProjectTaskRunResult{
-		RunID:         run.RunID,
-		RuntimeTaskID: run.RuntimeTaskID,
-		RuntimeNodeID: run.RuntimeNodeID,
-		NodeID:        run.NodeID,
-		ProviderType:  run.ProviderType,
+		RunID:                   run.RunID,
+		RuntimeTaskID:           run.RuntimeTaskID,
+		RuntimeNodeID:           run.RuntimeNodeID,
+		NodeID:                  run.NodeID,
+		ProviderType:            run.ProviderType,
+		SessionResumeStatus:     run.SessionResume.Status,
+		SessionResumeSkipReason: run.SessionResume.SkipReason,
+		SessionResumeSessionID:  run.SessionResume.SessionID,
+		SessionResumeSummary:    run.SessionResume.Summary,
+		SessionResumeLabel:      run.SessionResume.Label,
 	}, nil
 }
 

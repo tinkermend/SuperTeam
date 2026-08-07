@@ -907,6 +907,8 @@ export type ProjectExecutionTraceAttempt = {
   runtime_node_id?: string;
   provider_type?: string;
   provider_session_id?: string;
+  session_resume_status?: string;
+  session_resume_label?: string;
   started_at?: string;
   finished_at?: string;
   failure_family?: string;

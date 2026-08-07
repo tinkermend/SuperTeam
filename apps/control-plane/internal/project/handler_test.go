@@ -889,17 +889,19 @@ func TestProjectHandlerListsExecutionTrace(t *testing.T) {
 				LatestErrorFamily:        &latestErrorFamily,
 			},
 			Attempts: []ProjectExecutionTraceAttempt{{
-				ProjectTaskID:     taskID,
-				AttemptID:         attemptID,
-				AttemptNo:         1,
-				Status:            string(ProjectTaskAttemptStatusSucceeded),
-				RuntimeNodeID:     &nodeID,
-				ProviderType:      &providerType,
-				ProviderSessionID: &providerSessionID,
-				StartedAt:         &startedAt,
-				FinishedAt:        &finishedAt,
-				FailureFamily:     &failureFamily,
-				Retryable:         &attemptRetryable,
+				ProjectTaskID:        taskID,
+				AttemptID:            attemptID,
+				AttemptNo:            1,
+				Status:               string(ProjectTaskAttemptStatusSucceeded),
+				RuntimeNodeID:        &nodeID,
+				ProviderType:         &providerType,
+				ProviderSessionID:    &providerSessionID,
+				SessionResumeStatus:  strPtr("skipped"),
+				SessionResumeLabel:   strPtr("已开新会话 · 原会话过期"),
+				StartedAt:            &startedAt,
+				FinishedAt:           &finishedAt,
+				FailureFamily:        &failureFamily,
+				Retryable:            &attemptRetryable,
 				Events: []ExecutionLedgerEvent{{
 					ID:                   eventID,
 					TenantID:             tenantID,
@@ -989,6 +991,9 @@ func TestProjectHandlerListsExecutionTrace(t *testing.T) {
 	}
 	if attempt["project_task_id"] != taskID.String() || attempt["attempt_id"] != attemptID.String() || attempt["status"] != string(ProjectTaskAttemptStatusSucceeded) {
 		t.Fatalf("unexpected attempt response: %#v", attempt)
+	}
+	if attempt["session_resume_status"] != "skipped" || attempt["session_resume_label"] != "已开新会话 · 原会话过期" {
+		t.Fatalf("expected session resume fields in response, got %#v", attempt)
 	}
 	if attempt["started_at"] != startedAt.Format(time.RFC3339) || attempt["finished_at"] != finishedAt.Format(time.RFC3339) {
 		t.Fatalf("unexpected attempt time response: %#v", attempt)

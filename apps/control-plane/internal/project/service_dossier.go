@@ -623,6 +623,7 @@ func buildDemandDossierTimeline(facts *demandLaunchFacts, names demandDossierNam
 		if event.Summary != nil {
 			item.Summary = strings.TrimSpace(*event.Summary)
 		}
+		refineSessionContinuityTimelineItem(&item, event)
 		applyDemandDossierTimelineEntity(&item, event, facts, names, decisionsByID, decisionsByPlanRevision, decisionsByApproval)
 		items = append(items, item)
 
@@ -1126,4 +1127,17 @@ func valueOrEmpty(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+// refineSessionContinuityTimelineItem 按 payload.status 精化会话接续条目的严重度。
+// 基础 narrative 固定 info；skipped 升为 warn，与「降级可见但任务未失败」一致。
+func refineSessionContinuityTimelineItem(item *DemandDossierTimelineItem, event ProjectEvent) {
+	if item == nil || event.EventType != ProjectEventTaskSessionContinuity {
+		return
+	}
+	payload := mapOrEmptyAny(event.Payload)
+	status := strings.TrimSpace(stringFromAny(payload["session_resume_status"]))
+	if status == "skipped" {
+		item.Severity = NarrativeSeverityWarn
+	}
 }

@@ -282,6 +282,8 @@ type StartProjectTaskRunResult struct {
 	RuntimeNodeID uuid.UUID
 	NodeID        string
 	ProviderType  string
+	// SessionResume 是派发期会话接续结论（spec 2026-08-07）；调用方据此写卷宗事件。
+	SessionResume SessionResumeOutcome
 }
 
 type StopDigitalEmployeeRunRequest struct {

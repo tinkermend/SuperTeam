@@ -589,6 +589,69 @@ func TestGetExecutionTraceGroupsEventsByAttempt(t *testing.T) {
 	require.Equal(t, summaryID, trace.Attempts[0].Summary.ExecutionSummaryID)
 }
 
+
+func TestGetExecutionTraceProjectsSessionResumeFromAttemptPacket(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	attemptID := uuid.New()
+	now := time.Now().UTC()
+	status := "skipped"
+	label := "已开新会话 · 原会话过期"
+	repo := newMemoryRepository()
+	repo.tasks = append(repo.tasks, ProjectTask{
+		ID:        taskID,
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Title:     "接续任务",
+		Status:    ProjectTaskStatusCompleted,
+	})
+	repo.projectTaskAttempts = append(repo.projectTaskAttempts, ProjectTaskAttempt{
+		ID:            attemptID,
+		TenantID:      tenantID,
+		ProjectTaskID: taskID,
+		AttemptNo:     1,
+		Status:        ProjectTaskAttemptStatusSucceeded,
+		StartedAt:     &now,
+		FinishedAt:    &now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		ExecutionContextPacket: map[string]any{
+			"session_resume_status": status,
+			"session_resume_label":  label,
+		},
+	})
+
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	trace, err := service.GetExecutionTrace(context.Background(), GetExecutionTraceRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     100,
+	})
+	require.NoError(t, err)
+	require.Len(t, trace.Attempts, 1)
+	require.NotNil(t, trace.Attempts[0].SessionResumeStatus)
+	require.Equal(t, status, *trace.Attempts[0].SessionResumeStatus)
+	require.NotNil(t, trace.Attempts[0].SessionResumeLabel)
+	require.Equal(t, label, *trace.Attempts[0].SessionResumeLabel)
+}
+
+func TestSessionResumeFieldsFromExecutionContext(t *testing.T) {
+	status, label := sessionResumeFieldsFromExecutionContext(nil)
+	require.Nil(t, status)
+	require.Nil(t, label)
+
+	status, label = sessionResumeFieldsFromExecutionContext(map[string]any{
+		"session_resume_status": "  resumed  ",
+		"session_resume_label":  " 已接上上次会话 ",
+	})
+	require.NotNil(t, status)
+	require.Equal(t, "resumed", *status)
+	require.NotNil(t, label)
+	require.Equal(t, "已接上上次会话", *label)
+}
+
 func TestGetExecutionTraceDoesNotFallbackSummaryWhenTaskHasMatchedSummaryEvent(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

@@ -5842,19 +5842,25 @@ type ProjectExecutionTrace struct {
 
 // ProjectExecutionTraceAttempt defines model for ProjectExecutionTraceAttempt.
 type ProjectExecutionTraceAttempt struct {
-	AttemptId         openapi_types.UUID                   `json:"attempt_id"`
-	AttemptNo         int32                                `json:"attempt_no"`
-	Events            []ExecutionLedgerEvent               `json:"events"`
-	FailureFamily     *string                              `json:"failure_family,omitempty"`
-	FinishedAt        *time.Time                           `json:"finished_at,omitempty"`
-	ProjectTaskId     openapi_types.UUID                   `json:"project_task_id"`
-	ProviderSessionId *string                              `json:"provider_session_id,omitempty"`
-	ProviderType      *string                              `json:"provider_type,omitempty"`
-	Retryable         *bool                                `json:"retryable,omitempty"`
-	RuntimeNodeId     *openapi_types.UUID                  `json:"runtime_node_id,omitempty"`
-	StartedAt         *time.Time                           `json:"started_at,omitempty"`
-	Status            string                               `json:"status"`
-	Summary           *ProjectExecutionTraceAttemptSummary `json:"summary,omitempty"`
+	AttemptId         openapi_types.UUID     `json:"attempt_id"`
+	AttemptNo         int32                  `json:"attempt_no"`
+	Events            []ExecutionLedgerEvent `json:"events"`
+	FailureFamily     *string                `json:"failure_family,omitempty"`
+	FinishedAt        *time.Time             `json:"finished_at,omitempty"`
+	ProjectTaskId     openapi_types.UUID     `json:"project_task_id"`
+	ProviderSessionId *string                `json:"provider_session_id,omitempty"`
+	ProviderType      *string                `json:"provider_type,omitempty"`
+	Retryable         *bool                  `json:"retryable,omitempty"`
+	RuntimeNodeId     *openapi_types.UUID    `json:"runtime_node_id,omitempty"`
+
+	// SessionResumeLabel 执行轨迹展示用中文短标签（服务端已渲染）
+	SessionResumeLabel *string `json:"session_resume_label,omitempty"`
+
+	// SessionResumeStatus resumed | skipped | none；派发期会话接续结论
+	SessionResumeStatus *string                              `json:"session_resume_status,omitempty"`
+	StartedAt           *time.Time                           `json:"started_at,omitempty"`
+	Status              string                               `json:"status"`
+	Summary             *ProjectExecutionTraceAttemptSummary `json:"summary,omitempty"`
 }
 
 // ProjectExecutionTraceAttemptSummary defines model for ProjectExecutionTraceAttemptSummary.

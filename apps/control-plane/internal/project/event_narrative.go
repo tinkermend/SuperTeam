@@ -96,6 +96,9 @@ var projectEventNarratives = map[ProjectEventType]ProjectEventNarrative{
 	ProjectEventTaskDispatchGateReplanRequired: {Kind: TimelineKindDispatchBlocked, Title: "需重新规划", Severity: NarrativeSeverityWarn},
 
 	ProjectEventTaskDispatched:        {Kind: TimelineKindTaskDispatched, Title: "任务开始", Severity: NarrativeSeverityInfo},
+	// kind 用 other：减 OpenAPI timeline kind 枚举面；title 短名 + summary 承载一句详情。
+	// severity 基础 info；skipped 在 dossier 构建时按 payload 精化为 warn（spec §5.3）。
+	ProjectEventTaskSessionContinuity: {Kind: TimelineKindOther, Title: "会话接续", Severity: NarrativeSeverityInfo},
 	ProjectEventTaskDispatchFailed:    {Kind: TimelineKindTaskFailed, Title: "任务派发失败", Severity: NarrativeSeverityDanger},
 	ProjectEventTaskRetryScheduled:    {Kind: TimelineKindOther, Title: "已安排重试", Severity: NarrativeSeverityWarn},
 	ProjectEventTaskAttemptLost:       {Kind: TimelineKindOther, Title: "执行尝试丢失", Severity: NarrativeSeverityWarn},

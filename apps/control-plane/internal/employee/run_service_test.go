@@ -414,6 +414,9 @@ func TestStartProjectTaskRunInjectsLineageRootSessionID(t *testing.T) {
 	if metadata["provider_session_id"] != "provider-session-existing" {
 		t.Fatalf("expected metadata provider_session_id from lineage-root session hit, got %#v", metadata["provider_session_id"])
 	}
+	if metadata["session_resume_status"] != SessionResumeStatusResumed {
+		t.Fatalf("expected session_resume_status=resumed, got %#v", metadata["session_resume_status"])
+	}
 }
 
 // TestStartProjectTaskRunOmitsSessionIDWhenRootHasNoSession covers a fresh
@@ -460,6 +463,9 @@ func TestStartProjectTaskRunOmitsSessionIDWhenRootHasNoSession(t *testing.T) {
 	if _, ok := metadata["provider_session_id"]; ok {
 		t.Fatalf("expected no provider_session_id when no session exists for the lineage root, got %#v", metadata["provider_session_id"])
 	}
+	if metadata["session_resume_status"] != SessionResumeStatusNone {
+		t.Fatalf("expected session_resume_status=none when lookup attempted without candidate, got %#v", metadata["session_resume_status"])
+	}
 }
 
 // 会话过期时派发必须**照常发出**（开新会话）并把降级原因写进 metadata。
@@ -479,7 +485,7 @@ func TestStartProjectTaskRunSkipsStaleSessionAndRecordsReason(t *testing.T) {
 	service := mustNewRunService(t, repo, dispatcher)
 	service.SetProjectTaskNodeResolver(&fakeProjectTaskNodeResolver{nodeID: repo.projectTaskPreflight.RuntimeNodeID})
 
-	_, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
+	result, err := service.StartProjectTaskRun(context.Background(), StartProjectTaskRunRequest{
 		TenantID:             runServiceTenantID,
 		ProjectID:            uuid.New(),
 		DemandID:             uuid.New(),
@@ -491,6 +497,12 @@ func TestStartProjectTaskRunSkipsStaleSessionAndRecordsReason(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("过期会话不得让派发失败: %v", err)
+	}
+	if result.SessionResume.Status != SessionResumeStatusSkipped || result.SessionResume.SkipReason != SessionResumeSkipReasonStale {
+		t.Fatalf("result outcome: %#v", result.SessionResume)
+	}
+	if result.SessionResume.Summary == "" || result.SessionResume.Label == "" {
+		t.Fatalf("result must carry chinese summary/label: %#v", result.SessionResume)
 	}
 	if len(dispatcher.commands) != 1 {
 		t.Fatalf("expected one dispatched command, got %d", len(dispatcher.commands))
@@ -507,6 +519,9 @@ func TestStartProjectTaskRunSkipsStaleSessionAndRecordsReason(t *testing.T) {
 	}
 	if metadata["session_resume_skipped_session_id"] != "provider-session-stale" {
 		t.Fatalf("留痕须带上被放弃的会话 id, got %#v", metadata["session_resume_skipped_session_id"])
+	}
+	if metadata["session_resume_status"] != SessionResumeStatusSkipped {
+		t.Fatalf("expected session_resume_status=skipped, got %#v", metadata["session_resume_status"])
 	}
 }
 

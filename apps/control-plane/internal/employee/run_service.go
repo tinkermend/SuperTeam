@@ -417,6 +417,9 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 	// Session identity is decided here; runtime only consumes it. The
 	// session key is the lineage root, never the current project_task_id —
 	// this is what lets a revision task resume its predecessor's session.
+	// Outcome is returned to the coordinator so it can project continuity
+	// onto the demand dossier timeline (spec 2026-08-07).
+	var sessionResume SessionResumeOutcome
 	sessionPolicy := runtimeSessionPolicyPayload(preflight.SessionPolicy)
 	if shouldAttemptSessionResume(sessionPolicy) {
 		candidate, err := s.repository.FindProviderSessionCandidateForTaskRoot(ctx, req.TenantID, req.DigitalEmployeeID, rootTaskID)
@@ -427,15 +430,9 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		// 带着一个必失败的 session id 去 resume，会让 provider 进程直接失败、
 		// 整单跟着失败——那正是人主动接续时最不该出现的失败模式。
 		decision := evaluateSessionResume(candidate, preflight.RuntimeNodeID, time.Now(), DefaultSessionResumeMaxIdle)
-		switch {
-		case decision.Resumed():
-			metadata["provider_session_id"] = decision.SessionID
-		case decision.SkipReason != "":
-			// 留痕：不留痕的降级等于静默丢上下文，事后无法区分
-			// "该续没续"与"本就不该续"。
-			metadata["session_resume_skipped"] = decision.SkipReason
-			metadata["session_resume_skipped_session_id"] = candidate.SessionID
-		}
+		sessionResume = SessionResumeOutcomeFromDecision(decision, candidate.SessionID, true)
+		ApplySessionResumeOutcomeMetadata(metadata, sessionResume)
+		AttachSessionResumeOutcomeToMap(metadata, sessionResume)
 	}
 
 	projectID := req.ProjectID
@@ -462,11 +459,12 @@ func (s *DigitalEmployeeRunService) StartProjectTaskRun(ctx context.Context, req
 		return StartProjectTaskRunResult{}, err
 	}
 	return StartProjectTaskRunResult{
-		RunID:         run.ID,
-		RuntimeTaskID: run.TaskID,
-		RuntimeNodeID: run.RuntimeNodeID,
-		NodeID:        run.NodeID,
-		ProviderType:  run.ProviderType,
+		RunID:          run.ID,
+		RuntimeTaskID:  run.TaskID,
+		RuntimeNodeID:  run.RuntimeNodeID,
+		NodeID:         run.NodeID,
+		ProviderType:   run.ProviderType,
+		SessionResume:  sessionResume,
 	}, nil
 }
 
@@ -1080,18 +1078,36 @@ func (s *DigitalEmployeeRunService) markRunDispatched(ctx context.Context, req C
 	if err != nil {
 		return nil, fmt.Errorf("mark run dispatching: %w", err)
 	}
+	dispatchedPayload := map[string]any{
+		"command_id": run.CommandID,
+		"node_id":    preflight.NodeID,
+	}
+	if req.Metadata != nil {
+		if status, ok := req.Metadata["session_resume_status"].(string); ok && status != "" {
+			dispatchedPayload["session_resume_status"] = status
+		}
+		if reason, ok := req.Metadata["session_resume_skipped"].(string); ok && reason != "" {
+			dispatchedPayload["session_resume_skip_reason"] = reason
+		}
+		// provider_session_id 只表示实际下发续用的会话；被放弃的候选 id 另写，避免 skipped 被误读成已 resume。
+		if sessionID, ok := req.Metadata["provider_session_id"].(string); ok && strings.TrimSpace(sessionID) != "" {
+			dispatchedPayload["provider_session_id"] = strings.TrimSpace(sessionID)
+		}
+		if sessionID, ok := req.Metadata["session_resume_skipped_session_id"].(string); ok && strings.TrimSpace(sessionID) != "" {
+			dispatchedPayload["session_resume_session_id"] = strings.TrimSpace(sessionID)
+		} else if sessionID, ok := req.Metadata["session_resume_session_id"].(string); ok && strings.TrimSpace(sessionID) != "" {
+			dispatchedPayload["session_resume_session_id"] = strings.TrimSpace(sessionID)
+		}
+	}
 	if _, err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
 		TenantID:       req.TenantID,
 		TaskID:         run.TaskID,
 		RunID:          run.ID,
 		EventType:      "run_dispatched",
 		SequenceNumber: runDispatchedLifecycleSequence,
-		Payload: map[string]any{
-			"command_id": run.CommandID,
-			"node_id":    preflight.NodeID,
-		},
-		CommandID: &run.CommandID,
-		Metadata:  map[string]any{"source": "control-plane"},
+		Payload:        dispatchedPayload,
+		CommandID:      &run.CommandID,
+		Metadata:       map[string]any{"source": "control-plane"},
 	}); err != nil {
 		return nil, fmt.Errorf("append run dispatched event: %w", err)
 	}

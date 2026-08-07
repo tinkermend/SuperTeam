@@ -3247,19 +3247,22 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 	latestAttemptIndexByTaskID := make(map[uuid.UUID]int, len(attempts))
 	for _, attempt := range attempts {
 		attemptIndexes[attempt.ID] = len(trace.Attempts)
+		resumeStatus, resumeLabel := sessionResumeFieldsFromExecutionContext(attempt.ExecutionContextPacket)
 		trace.Attempts = append(trace.Attempts, ProjectExecutionTraceAttempt{
-			ProjectTaskID:     attempt.ProjectTaskID,
-			AttemptID:         attempt.ID,
-			AttemptNo:         attempt.AttemptNo,
-			Status:            attempt.Status,
-			RuntimeNodeID:     attempt.RuntimeNodeID,
-			ProviderType:      attempt.ProviderType,
-			ProviderSessionID: attempt.ProviderSessionID,
-			StartedAt:         attempt.StartedAt,
-			FinishedAt:        attempt.FinishedAt,
-			FailureFamily:     attempt.FailureFamily,
-			Retryable:         attempt.Retryable,
-			Events:            []ExecutionLedgerEvent{},
+			ProjectTaskID:        attempt.ProjectTaskID,
+			AttemptID:            attempt.ID,
+			AttemptNo:            attempt.AttemptNo,
+			Status:               attempt.Status,
+			RuntimeNodeID:        attempt.RuntimeNodeID,
+			ProviderType:         attempt.ProviderType,
+			ProviderSessionID:    attempt.ProviderSessionID,
+			SessionResumeStatus:  resumeStatus,
+			SessionResumeLabel:   resumeLabel,
+			StartedAt:            attempt.StartedAt,
+			FinishedAt:           attempt.FinishedAt,
+			FailureFamily:        attempt.FailureFamily,
+			Retryable:            attempt.Retryable,
+			Events:               []ExecutionLedgerEvent{},
 		})
 		trace.Summary.AttemptCount++
 		if isFailedExecutionTraceAttempt(attempt.Status) {
@@ -3339,6 +3342,26 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 		attachedSummaryIDs[summary.ID] = true
 	}
 	return trace
+}
+
+
+func sessionResumeFieldsFromExecutionContext(packet map[string]any) (status *string, label *string) {
+	if packet == nil {
+		return nil, nil
+	}
+	if raw, ok := packet["session_resume_status"].(string); ok {
+		raw = strings.TrimSpace(raw)
+		if raw != "" {
+			status = &raw
+		}
+	}
+	if raw, ok := packet["session_resume_label"].(string); ok {
+		raw = strings.TrimSpace(raw)
+		if raw != "" {
+			label = &raw
+		}
+	}
+	return status, label
 }
 
 func isFailedExecutionTraceAttempt(status string) bool {

@@ -10434,6 +10434,12 @@ components:
           type: string
         provider_session_id:
           type: string
+        session_resume_status:
+          type: string
+          description: resumed | skipped | none；派发期会话接续结论
+        session_resume_label:
+          type: string
+          description: 执行轨迹展示用中文短标签（服务端已渲染）
         started_at:
           type: string
           format: date-time

@@ -230,6 +230,8 @@ const (
 	ProjectEventTaskDispatchGateRetryLater     ProjectEventType = "project_task.dispatch_gate.retry_later"
 	ProjectEventTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
 	ProjectEventTaskDispatched                 ProjectEventType = "project_task.dispatched"
+	// ProjectEventTaskSessionContinuity 会话接续结论（spec 2026-08-07）：resumed/skipped 进卷宗。
+	ProjectEventTaskSessionContinuity          ProjectEventType = "project_task.session_continuity"
 	ProjectEventTaskDispatchFailed             ProjectEventType = "project_task.dispatch_failed"
 	ProjectEventTaskRetryScheduled             ProjectEventType = "project_task.retry_scheduled"
 	ProjectEventTaskAttemptLost                ProjectEventType = "project_task.attempt_lost"

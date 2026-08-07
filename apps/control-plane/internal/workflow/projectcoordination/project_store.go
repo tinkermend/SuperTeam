@@ -3274,6 +3274,10 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 			return err
 		}
 		if exists {
+			// activity 重试自愈：continuity 若上次写失败，从 attempt packet 补写（spec 2026-08-07 §7.2）。
+			if err := s.ensureSessionContinuityAfterBound(ctx, input, task); err != nil {
+				return err
+			}
 			return s.advanceDispatchedTaskDemand(ctx, input, task)
 		}
 		projectRecord, err := s.repository.GetProject(ctx, input.TenantID, input.ProjectID)
@@ -3281,6 +3285,9 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 			return err
 		}
 		if _, err = s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskDispatched, input.TaskID.String(), "项目任务已分派", reemittedDispatchedPayload(task, projectRecord))); err != nil {
+			return err
+		}
+		if err := s.ensureSessionContinuityAfterBound(ctx, input, task); err != nil {
 			return err
 		}
 		return s.advanceDispatchedTaskDemand(ctx, input, task)
@@ -3429,9 +3436,15 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 				return latestErr
 			}
 			if projectTaskBoundToAttemptRun(latest, queueResult.Attempt.ID, run) {
+				if err := s.ensureSessionContinuityEvent(ctx, input, latest, queueResult.Attempt.ID, sessionResumeOutcomeFromRun(run)); err != nil {
+					return err
+				}
 				return s.advanceDispatchedTaskDemand(ctx, input, latest)
 			}
 		}
+		return err
+	}
+	if err := s.ensureSessionContinuityEvent(ctx, input, task, queueResult.Attempt.ID, sessionResumeOutcomeFromRun(run)); err != nil {
 		return err
 	}
 	return s.advanceDispatchedTaskDemand(ctx, input, task)
@@ -3537,9 +3550,15 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 				return latestErr
 			}
 			if projectTaskBoundToAttemptRun(latest, attempt.ID, run) {
+				if err := s.ensureSessionContinuityEvent(ctx, input, latest, attempt.ID, sessionResumeOutcomeFromRun(run)); err != nil {
+					return err
+				}
 				return s.advanceDispatchedTaskDemand(ctx, input, latest)
 			}
 		}
+		return err
+	}
+	if err := s.ensureSessionContinuityEvent(ctx, input, task, attempt.ID, sessionResumeOutcomeFromRun(run)); err != nil {
 		return err
 	}
 	return s.advanceDispatchedTaskDemand(ctx, input, task)
@@ -3791,6 +3810,7 @@ func projectTaskDispatchAttachRun(packet map[string]any, run StartProjectTaskRun
 	packet["runtime_node_id"] = run.RuntimeNodeID.String()
 	packet["node_id"] = run.NodeID
 	packet["provider_type"] = run.ProviderType
+	attachSessionResumeOutcomeToPacket(packet, sessionResumeOutcomeFromRun(run))
 }
 
 func taskContractJSON(value any) string {

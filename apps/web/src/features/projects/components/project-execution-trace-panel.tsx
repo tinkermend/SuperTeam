@@ -227,6 +227,10 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <MetaBlock label="任务" value={attempt.project_task_id} />
         <MetaBlock label="Provider" value={attempt.provider_type ?? "未记录"} />
+        <MetaBlock
+          label="会话接续"
+          value={attempt.session_resume_label ?? (attempt.session_resume_status ? attempt.session_resume_status : "—")}
+        />
         <MetaBlock label="Session" value={attempt.provider_session_id ?? "未记录"} />
         <MetaBlock label="Runtime" value={attempt.runtime_node_id ?? "未记录"} />
       </div>

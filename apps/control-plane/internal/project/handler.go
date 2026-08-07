@@ -2856,6 +2856,8 @@ type projectExecutionTraceAttemptResponse struct {
 	RuntimeNodeID       *string                                      `json:"runtime_node_id,omitempty"`
 	ProviderType        *string                                      `json:"provider_type,omitempty"`
 	ProviderSessionID   *string                                      `json:"provider_session_id,omitempty"`
+	SessionResumeStatus *string                                      `json:"session_resume_status,omitempty"`
+	SessionResumeLabel  *string                                      `json:"session_resume_label,omitempty"`
 	StartedAt           *string                                      `json:"started_at,omitempty"`
 	FinishedAt          *string                                      `json:"finished_at,omitempty"`
 	FailureFamily       *string                                      `json:"failure_family,omitempty"`
@@ -4025,6 +4027,8 @@ func executionTraceAttemptResponseFromDomain(attempt ProjectExecutionTraceAttemp
 		RuntimeNodeID:       stringPtr(attempt.RuntimeNodeID),
 		ProviderType:        attempt.ProviderType,
 		ProviderSessionID:   attempt.ProviderSessionID,
+		SessionResumeStatus: attempt.SessionResumeStatus,
+		SessionResumeLabel:  attempt.SessionResumeLabel,
 		StartedAt:           timePtr(attempt.StartedAt),
 		FinishedAt:          timePtr(attempt.FinishedAt),
 		FailureFamily:       attempt.FailureFamily,

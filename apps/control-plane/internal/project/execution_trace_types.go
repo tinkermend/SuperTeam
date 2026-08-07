@@ -114,12 +114,15 @@ type ProjectExecutionTraceAttempt struct {
 	RuntimeNodeID     *uuid.UUID
 	ProviderType      *string
 	ProviderSessionID *string
-	StartedAt         *time.Time
-	FinishedAt        *time.Time
-	FailureFamily     *string
-	Retryable         *bool
-	Events            []ExecutionLedgerEvent
-	Summary           *ProjectExecutionTraceAttemptSummary
+	// SessionResumeStatus/Label 来自 attempt.execution_context_packet（派发期固化）。
+	SessionResumeStatus *string
+	SessionResumeLabel  *string
+	StartedAt           *time.Time
+	FinishedAt          *time.Time
+	FailureFamily       *string
+	Retryable           *bool
+	Events              []ExecutionLedgerEvent
+	Summary             *ProjectExecutionTraceAttemptSummary
 }
 
 type ProjectExecutionTraceAttemptSummary struct {

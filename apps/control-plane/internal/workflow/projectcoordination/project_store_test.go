@@ -4647,6 +4647,209 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.NotContains(t, dispatchedEvent.Payload, "runtime_node_id")
 }
 
+
+func TestDispatchProjectTaskWritesSessionContinuityOnResumeAndSkip(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	ownerID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	runtimeNodeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: ownerID},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "接续"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		tasks: []project.ProjectTask{{
+			ID: taskID, TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+			Title: "继续改", Status: project.ProjectTaskStatusPlanned, AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID: runID, RuntimeTaskID: runtimeTaskID, RuntimeNodeID: runtimeNodeID, NodeID: "node-1", ProviderType: "codex",
+		SessionResumeStatus: "resumed", SessionResumeSessionID: "sess-ok",
+		SessionResumeSummary: "已接上该员工上次会话继续执行", SessionResumeLabel: "已接上上次会话",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+
+	require.NoError(t, store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID,
+	}))
+
+	continuity := eventsByType(repo.events, project.ProjectEventTaskSessionContinuity)
+	require.Len(t, continuity, 1)
+	require.Equal(t, repo.projectTaskAttempts[0].ID.String(), continuity[0].ActorID)
+	require.NotNil(t, continuity[0].Summary)
+	require.Equal(t, "已接上该员工上次会话继续执行", *continuity[0].Summary)
+	require.Equal(t, "resumed", continuity[0].Payload["session_resume_status"])
+	require.Equal(t, "sess-ok", continuity[0].Payload["provider_session_id"])
+	require.Equal(t, "resumed", repo.bindAttemptRunRequests[0].ExecutionContextPacket["session_resume_status"])
+	require.Equal(t, "已接上上次会话", repo.bindAttemptRunRequests[0].ExecutionContextPacket["session_resume_label"])
+
+	// 同 attempt 重入不得双写
+	require.NoError(t, store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID,
+	}))
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskSessionContinuity), 1)
+}
+
+func TestDispatchProjectTaskWritesSessionContinuityOnSkip(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "接续"},
+		members:       []project.ProjectMember{projectStoreExecutorMember(tenantID, projectID, employeeID)},
+		tasks: []project.ProjectTask{{
+			ID: taskID, TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+			Title: "继续改", Status: project.ProjectTaskStatusPlanned, AssignedDigitalEmployeeID: &employeeID,
+		}},
+	}
+	starter := &projectTaskRunStarterFake{result: StartProjectTaskRunResult{
+		RunID: uuid.New(), RuntimeTaskID: uuid.New(), RuntimeNodeID: uuid.New(), NodeID: "node-1", ProviderType: "codex",
+		SessionResumeStatus: "skipped", SessionResumeSkipReason: "session_stale", SessionResumeSessionID: "sess-old",
+		SessionResumeSummary: "原会话超过7天未活跃，已主动开新会话（未沿用旧会话）",
+		SessionResumeLabel:   "已开新会话 · 原会话过期",
+	}}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, starter)
+	require.NoError(t, store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID,
+	}))
+	continuity := eventsByType(repo.events, project.ProjectEventTaskSessionContinuity)
+	require.Len(t, continuity, 1)
+	require.Equal(t, "skipped", continuity[0].Payload["session_resume_status"])
+	require.Equal(t, "session_stale", continuity[0].Payload["session_resume_skip_reason"])
+	require.Contains(t, *continuity[0].Summary, "7天")
+}
+
+func TestDispatchProjectTaskShortCircuitBackfillsMissingContinuity(t *testing.T) {
+	// O5: continuity 写失败后 activity 重试走已绑定短路，必须能从 packet 补写。
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	attemptID := uuid.New()
+	runID := uuid.New()
+	runtimeTaskID := uuid.New()
+	packet := map[string]any{
+		"session_resume_status":  "skipped",
+		"session_resume_skip_reason": "session_node_mismatch",
+		"session_resume_skipped_session_id": "sess-other-node",
+		"session_resume_summary": "原会话在其他运行节点，已主动开新会话",
+		"session_resume_label":   "已开新会话 · 原会话不在本节点",
+	}
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "接续"},
+		tasks: []project.ProjectTask{{
+			ID: taskID, TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+			Title: "继续改", Status: project.ProjectTaskStatusQueued, AssignedDigitalEmployeeID: &employeeID,
+			DigitalEmployeeRunID: &runID, RuntimeTaskID: &runtimeTaskID, CurrentAttemptID: &attemptID,
+		}},
+		projectTaskAttempts: []project.ProjectTaskAttempt{{
+			ID: attemptID, TenantID: tenantID, ProjectTaskID: taskID,
+			Status: project.ProjectTaskAttemptStatusQueued,
+			DigitalEmployeeRunID: &runID, RuntimeTaskID: &runtimeTaskID,
+			ExecutionContextPacket: packet,
+		}},
+		// dispatched 已存在 → 短路分支
+		events: []project.ProjectEvent{{
+			TenantID: tenantID, ProjectID: projectID,
+			EventType: project.ProjectEventTaskDispatched, ActorType: "project_coordinator", ActorID: taskID.String(),
+		}},
+	}
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{})
+	require.NoError(t, store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID,
+	}))
+	continuity := eventsByType(repo.events, project.ProjectEventTaskSessionContinuity)
+	require.Len(t, continuity, 1)
+	require.Equal(t, attemptID.String(), continuity[0].ActorID)
+	require.Equal(t, "session_node_mismatch", continuity[0].Payload["session_resume_skip_reason"])
+	// 再进一次仍一条
+	require.NoError(t, store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID,
+	}))
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskSessionContinuity), 1)
+}
+
+func TestDispatchProjectTaskSeparateAttemptsGetSeparateContinuity(t *testing.T) {
+	// O5b: 两个 attempt 各自一条，不被 task 级幂等吞掉。
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	taskID := uuid.New()
+	employeeID := uuid.New()
+	attempt1 := uuid.New()
+	attempt2 := uuid.New()
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demand:        project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "接续"},
+		tasks: []project.ProjectTask{{
+			ID: taskID, TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
+			Title: "继续改", Status: project.ProjectTaskStatusQueued, AssignedDigitalEmployeeID: &employeeID,
+			CurrentAttemptID: &attempt1,
+		}},
+		projectTaskAttempts: []project.ProjectTaskAttempt{
+			{
+				ID: attempt1, TenantID: tenantID, ProjectTaskID: taskID,
+				Status: project.ProjectTaskAttemptStatusQueued,
+				ExecutionContextPacket: map[string]any{
+					"session_resume_status": "resumed", "session_resume_session_id": "s1",
+					"provider_session_id": "s1", "session_resume_summary": "已接上该员工上次会话继续执行",
+				},
+			},
+			{
+				ID: attempt2, TenantID: tenantID, ProjectTaskID: taskID,
+				Status: project.ProjectTaskAttemptStatusQueued,
+				ExecutionContextPacket: map[string]any{
+					"session_resume_status": "skipped", "session_resume_skip_reason": "session_stale",
+					"session_resume_skipped_session_id": "s1",
+					"session_resume_summary": "原会话超过7天未活跃，已主动开新会话（未沿用旧会话）",
+				},
+			},
+		},
+		events: []project.ProjectEvent{{
+			TenantID: tenantID, ProjectID: projectID,
+			EventType: project.ProjectEventTaskDispatched, ActorID: taskID.String(),
+		}},
+	}
+	// first attempt bound state
+	run1, rt1 := uuid.New(), uuid.New()
+	repo.tasks[0].DigitalEmployeeRunID = &run1
+	repo.tasks[0].RuntimeTaskID = &rt1
+	repo.projectTaskAttempts[0].DigitalEmployeeRunID = &run1
+	repo.projectTaskAttempts[0].RuntimeTaskID = &rt1
+
+	store := NewProjectStoreWithApprovalsInboxAndRunStarter(repo, nil, nil, &projectTaskRunStarterFake{})
+	require.NoError(t, store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID,
+	}))
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskSessionContinuity), 1)
+
+	// switch current attempt to second and re-enter short-circuit
+	repo.tasks[0].CurrentAttemptID = &attempt2
+	run2, rt2 := uuid.New(), uuid.New()
+	repo.tasks[0].DigitalEmployeeRunID = &run2
+	repo.tasks[0].RuntimeTaskID = &rt2
+	repo.projectTaskAttempts[1].DigitalEmployeeRunID = &run2
+	repo.projectTaskAttempts[1].RuntimeTaskID = &rt2
+	require.NoError(t, store.DispatchProjectTask(context.Background(), DispatchProjectTaskInput{
+		TenantID: tenantID, ProjectID: projectID, TaskID: taskID,
+	}))
+	continuity := eventsByType(repo.events, project.ProjectEventTaskSessionContinuity)
+	require.Len(t, continuity, 2)
+	actors := map[string]bool{continuity[0].ActorID: true, continuity[1].ActorID: true}
+	require.True(t, actors[attempt1.String()])
+	require.True(t, actors[attempt2.String()])
+}
+
 func TestDispatchProjectTaskIncludesRepoBindingAndWorkspaceMode(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()

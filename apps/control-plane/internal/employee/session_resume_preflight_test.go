@@ -8,82 +8,127 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// resume 预检的全部判据（spec 2026-08-01 §6.1）。这条路径的价值就在于
-// "宁可开新会话，也不要带着必失败的 session id 把整单拖挂"。
 func TestEvaluateSessionResume(t *testing.T) {
 	node := uuid.New()
-	otherNode := uuid.New()
 	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 
-	t.Run("新鲜且同节点：续", func(t *testing.T) {
+	t.Run("resumes fresh same-node session", func(t *testing.T) {
 		decision := evaluateSessionResume(ProviderSessionResumeCandidate{
 			SessionID:         "sess-1",
 			RuntimeNodeID:     node,
 			LastRuntimeSeenAt: now.Add(-time.Hour),
 		}, node, now, DefaultSessionResumeMaxIdle)
-
 		require.True(t, decision.Resumed())
 		require.Equal(t, "sess-1", decision.SessionID)
 		require.Empty(t, decision.SkipReason)
 	})
 
-	t.Run("无候选：开新会话且不留痕（不是降级）", func(t *testing.T) {
+	t.Run("no candidate is not a skip", func(t *testing.T) {
 		decision := evaluateSessionResume(ProviderSessionResumeCandidate{}, node, now, DefaultSessionResumeMaxIdle)
-
 		require.False(t, decision.Resumed())
-		require.Empty(t, decision.SkipReason, "本来就没会话，不该记成一次降级")
+		require.Empty(t, decision.SkipReason)
 	})
 
-	t.Run("跨节点：放弃并留痕", func(t *testing.T) {
+	t.Run("node mismatch skips", func(t *testing.T) {
 		decision := evaluateSessionResume(ProviderSessionResumeCandidate{
-			SessionID:         "sess-1",
-			RuntimeNodeID:     otherNode,
-			LastRuntimeSeenAt: now,
+			SessionID:     "sess-other-node",
+			RuntimeNodeID: uuid.New(),
 		}, node, now, DefaultSessionResumeMaxIdle)
-
-		require.False(t, decision.Resumed(), "会话文件在原机器上，换节点后必失败")
+		require.False(t, decision.Resumed())
 		require.Equal(t, SessionResumeSkipReasonNodeMismatch, decision.SkipReason)
 	})
 
-	t.Run("过期：放弃并留痕", func(t *testing.T) {
+	t.Run("stale skips", func(t *testing.T) {
 		decision := evaluateSessionResume(ProviderSessionResumeCandidate{
-			SessionID:         "sess-1",
+			SessionID:         "sess-stale",
 			RuntimeNodeID:     node,
 			LastRuntimeSeenAt: now.Add(-DefaultSessionResumeMaxIdle - time.Minute),
 		}, node, now, DefaultSessionResumeMaxIdle)
-
 		require.False(t, decision.Resumed())
 		require.Equal(t, SessionResumeSkipReasonStale, decision.SkipReason)
 	})
 
-	t.Run("两个时间取更近的一个", func(t *testing.T) {
-		// runtime 很久没见到，但控制平面侧刚活跃过 → 仍认为可能还在，试着续。
+	t.Run("last_active_at fresher than runtime seen keeps session", func(t *testing.T) {
 		decision := evaluateSessionResume(ProviderSessionResumeCandidate{
-			SessionID:         "sess-1",
+			SessionID:         "sess-active",
 			RuntimeNodeID:     node,
 			LastRuntimeSeenAt: now.Add(-DefaultSessionResumeMaxIdle - time.Hour),
-			LastActiveAt:      now.Add(-time.Minute),
+			LastActiveAt:      now.Add(-time.Hour),
 		}, node, now, DefaultSessionResumeMaxIdle)
-
 		require.True(t, decision.Resumed())
 	})
 
-	t.Run("两个时间都缺：不据此拒绝", func(t *testing.T) {
-		// 历史数据可能没有这两列；缺一列就把所有老会话判死太粗暴。
+	t.Run("missing timestamps do not skip", func(t *testing.T) {
+		decision := evaluateSessionResume(ProviderSessionResumeCandidate{
+			SessionID:     "sess-legacy",
+			RuntimeNodeID: node,
+		}, node, now, DefaultSessionResumeMaxIdle)
+		require.True(t, decision.Resumed())
+	})
+
+	t.Run("nil target node does not force mismatch", func(t *testing.T) {
 		decision := evaluateSessionResume(ProviderSessionResumeCandidate{
 			SessionID:     "sess-1",
 			RuntimeNodeID: node,
-		}, node, now, DefaultSessionResumeMaxIdle)
-
+		}, uuid.Nil, now, DefaultSessionResumeMaxIdle)
 		require.True(t, decision.Resumed())
 	})
+}
 
-	t.Run("候选未绑节点：不按节点拒绝", func(t *testing.T) {
-		decision := evaluateSessionResume(ProviderSessionResumeCandidate{
-			SessionID:    "sess-1",
-			LastActiveAt: now,
-		}, node, now, DefaultSessionResumeMaxIdle)
+func TestSessionResumeUserSummaryLocked(t *testing.T) {
+	require.Equal(t, "已接上该员工上次会话继续执行", SessionResumeUserSummary(SessionResumeStatusResumed, ""))
+	require.Equal(t,
+		"原会话超过7天未活跃，已主动开新会话（未沿用旧会话）",
+		SessionResumeUserSummary(SessionResumeStatusSkipped, SessionResumeSkipReasonStale),
+	)
+	require.Equal(t,
+		"原会话在其他运行节点，已主动开新会话",
+		SessionResumeUserSummary(SessionResumeStatusSkipped, SessionResumeSkipReasonNodeMismatch),
+	)
+	require.Empty(t, SessionResumeUserSummary(SessionResumeStatusNone, ""))
+}
 
-		require.True(t, decision.Resumed())
-	})
+func TestSessionResumeTraceLabelLocked(t *testing.T) {
+	require.Equal(t, "已接上上次会话", SessionResumeTraceLabel(SessionResumeStatusResumed, ""))
+	require.Equal(t, "已开新会话 · 原会话过期", SessionResumeTraceLabel(SessionResumeStatusSkipped, SessionResumeSkipReasonStale))
+	require.Equal(t, "已开新会话 · 原会话不在本节点", SessionResumeTraceLabel(SessionResumeStatusSkipped, SessionResumeSkipReasonNodeMismatch))
+	require.Equal(t, "新会话", SessionResumeTraceLabel(SessionResumeStatusNone, ""))
+}
+
+func TestSessionResumeOutcomeFromDecision(t *testing.T) {
+	resumed := SessionResumeOutcomeFromDecision(SessionResumeDecision{SessionID: "s1"}, "s1", true)
+	require.Equal(t, SessionResumeStatusResumed, resumed.Status)
+	require.True(t, resumed.ShouldEmitContinuity())
+	require.Equal(t, "已接上该员工上次会话继续执行", resumed.Summary)
+
+	skipped := SessionResumeOutcomeFromDecision(SessionResumeDecision{SkipReason: SessionResumeSkipReasonStale}, "old", true)
+	require.Equal(t, SessionResumeStatusSkipped, skipped.Status)
+	require.Equal(t, "old", skipped.SessionID)
+	require.True(t, skipped.ShouldEmitContinuity())
+
+	none := SessionResumeOutcomeFromDecision(SessionResumeDecision{}, "", true)
+	require.Equal(t, SessionResumeStatusNone, none.Status)
+	require.False(t, none.ShouldEmitContinuity())
+
+	notAttempted := SessionResumeOutcomeFromDecision(SessionResumeDecision{}, "", false)
+	require.Empty(t, notAttempted.Status)
+	require.False(t, notAttempted.ShouldEmitContinuity())
+}
+
+func TestApplyAndRoundTripSessionResumeMetadata(t *testing.T) {
+	outcome := SessionResumeOutcomeFromDecision(SessionResumeDecision{SkipReason: SessionResumeSkipReasonNodeMismatch}, "sess-x", true)
+	meta := map[string]any{}
+	ApplySessionResumeOutcomeMetadata(meta, outcome)
+	AttachSessionResumeOutcomeToMap(meta, outcome)
+
+	require.Equal(t, SessionResumeStatusSkipped, meta["session_resume_status"])
+	require.Equal(t, SessionResumeSkipReasonNodeMismatch, meta["session_resume_skipped"])
+	require.Equal(t, "sess-x", meta["session_resume_skipped_session_id"])
+
+	got := SessionResumeOutcomeFromMetadata(meta)
+	require.Equal(t, outcome.Status, got.Status)
+	require.Equal(t, outcome.SkipReason, got.SkipReason)
+	require.Equal(t, outcome.SessionID, got.SessionID)
+	require.Equal(t, outcome.Summary, got.Summary)
+	require.Equal(t, outcome.Label, got.Label)
 }
