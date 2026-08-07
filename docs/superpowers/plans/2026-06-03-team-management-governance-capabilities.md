@@ -1,5 +1,7 @@
 # Team Management Governance and Capabilities Implementation Plan
 
+> 复核状态：团队能力治理已实施但演进
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement governance draft editing, approval, rejection, JSON preview, difference summaries, and Skills/MCP/knowledge/external capability bindings as draft-only changes.

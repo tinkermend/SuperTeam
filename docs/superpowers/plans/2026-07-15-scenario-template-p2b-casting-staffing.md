@@ -1,5 +1,7 @@
 # 场景模板 P2b（选角与补员）实现计划
 
+> 复核状态：已实施，现状与配对spec一致：事实性三档+PlanningGap+豁免记录+管理API+管理页均落地（feat/scenario-template-p2b @ 29dac0c9，补员闭环闸门强形态PASS）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 P2a 的"规划期拒绝"升级为"规划期判定 + 可操作的补救闭环"：事实性可行性三档取代 LLM 自评裁决、结构化缺口报告进 inbox、标准员工模板一键补员（人确认且**真正可派发**）、豁免一等决策记录、场景模板管理 API + Console 管理页。

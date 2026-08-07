@@ -1,4 +1,5 @@
 # 日志管理 Tab 导航重构 Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG无明确记录；锚点抽查未发现logs/route.tsx父布局路由明确证据
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

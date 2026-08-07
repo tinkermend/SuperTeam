@@ -1,4 +1,5 @@
 # 2026-07-23 项目详情运营首屏落地 Implementation Plan
+> 复核状态：已实现（07-23 项目详情首屏重做入main）
 
 > **For agentic workers:** Execute task-by-task. Checkboxes track progress.
 

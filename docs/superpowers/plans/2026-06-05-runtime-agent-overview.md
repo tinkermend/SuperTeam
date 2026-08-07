@@ -1,5 +1,7 @@
 # Runtime Agent 总览页实现计划
 
+> 复核状态：Runtime Agent总览已实现
+
 > 面向子代理执行：本计划按可独立验证的任务拆分执行，优先使用 `superpowers:subagent-driven-development`。每个任务完成后都需要提交小范围 commit，并在进入下一任务前做代码 review。
 
 ## 目标

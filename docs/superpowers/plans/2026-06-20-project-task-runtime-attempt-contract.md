@@ -1,5 +1,7 @@
 # ProjectTask Runtime Attempt Contract Implementation Plan
 
+> 复核状态：06-20 ProjectTask durable closure基础落地
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Switch Runtime project-task writeback from project-task-id endpoints to attempt-aware endpoints with `attempt_id`, `lease_token`, and Runtime node validation.

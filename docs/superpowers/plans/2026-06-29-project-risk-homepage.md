@@ -1,4 +1,5 @@
 # Project Risk Homepage Implementation Plan
+> 复核状态：已实现（2026-06-30完成）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

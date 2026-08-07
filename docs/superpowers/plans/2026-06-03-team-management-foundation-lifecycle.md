@@ -1,5 +1,7 @@
 # Team Management Foundation and Lifecycle Implementation Plan
 
+> 复核状态：团队生命周期已实施但重构
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the shared team-management foundation: richer team list, detail overview, lifecycle actions, allowed actions, and the frontend shell that later team tabs attach to.

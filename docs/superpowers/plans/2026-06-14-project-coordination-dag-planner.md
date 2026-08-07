@@ -1,5 +1,7 @@
 # Project Coordination DAG Planner Implementation Plan
 
+> 复核状态：对应spec显示为IMPLEMENTED_BUT_DIVERGED, DAG planner可能仍在进行中
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the backend foundation for DeepSeek-backed project coordination planning, persisted ProjectTask DAGs, dependency-aware dispatch, completion contract gates, failure recovery, append-only replanning, and a backend task-graph read API.

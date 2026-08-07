@@ -1,5 +1,7 @@
 # Digital Employee Avatar Library Implementation Plan
 
+> 复核状态：头像库已实现
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为数字员工创建和展示接入平台内置头像库，用户只能从 Control Plane 返回的资产中选择头像。

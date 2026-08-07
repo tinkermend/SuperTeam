@@ -1,6 +1,7 @@
 # SuperTeam UUID-first 分布式库表重构 Spec
 
 > 日期：2026-06-01
+> 复核状态：UUID-first基础架构已落地
 > 状态：设计稿
 > 决策：重写初始 schema，早期环境直接重建库
 > 参考边界：参考 `/Users/wangpei/src/github/agentic/paperclip/docs/database-design-analysis.md` 中的数据库设计原则，不复用其具体表名与字段。

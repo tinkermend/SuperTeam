@@ -1,5 +1,7 @@
 # Team Management Experience Gap Implementation Plan
 
+> 复核状态：团队管理体验已补齐
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 补齐团队管理第一阶段体验缺口：头像身份展示、团队图标、弱分页、目标化创建抽屉、成员页用户搜索和设计风格验收。

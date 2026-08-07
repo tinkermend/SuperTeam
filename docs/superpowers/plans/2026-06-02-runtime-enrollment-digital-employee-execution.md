@@ -1,5 +1,7 @@
 # Runtime Enrollment and Digital Employee Execution Implementation Plan
 
+> 复核状态：Runtime接入执行已实现
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 实现 Runtime 自发现接入、短期 Runtime Session、数字员工唯一执行实例、Provider Session 事件回传和对应 Web 管理入口。

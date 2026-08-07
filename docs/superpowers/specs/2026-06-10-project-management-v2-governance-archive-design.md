@@ -1,4 +1,5 @@
 # 2026-06-10-project-management-v2-governance-archive-design
+> 复核状态：未找到明确锚点证据, 可能被后续治理归档设计取代
 
 ## 1. 阶段目标
 

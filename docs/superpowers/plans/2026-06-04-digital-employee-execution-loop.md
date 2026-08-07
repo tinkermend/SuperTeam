@@ -1,5 +1,7 @@
 # Digital Employee Execution Loop Implementation Plan
 
+> 复核状态：数字员工执行循环已实现
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 打通数字员工从创建预置、发起 run、Runtime Agent 执行、Provider 事件回写、Web 详情页观测到停止/超时的完整闭环。

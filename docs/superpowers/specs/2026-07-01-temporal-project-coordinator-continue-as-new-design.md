@@ -1,6 +1,7 @@
 # Temporal ProjectCoordinator Continue-As-New 设计
 
 日期：2026-07-01
+> 复核状态：CHANGELOG 2026-07-01 15:15记录ProjectCoordinator增加历史安全续跑；锚点抽查发现workflow.go含ProjectCoordinator/ContinueAsNew/project_decision_requests
 状态：已确认，待实施计划
 
 ## 1. 背景

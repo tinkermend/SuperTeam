@@ -1,5 +1,7 @@
 # Dual Layer Skill Management Implementation Plan
 
+> 复核状态：memory中显示能力绑定统一已完成(capability-binding-unification-done), 原plan已被后续实施取代
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 实现团队公共 Skills/MCP、数字员工个人 Instructions/Skills/MCP、个人凭据池三层治理界面和控制平面 API。

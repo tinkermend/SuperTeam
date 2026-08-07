@@ -1,6 +1,7 @@
 # Runtime 数字员工能力缓存与 Provider 认证边界 Spec
 
 > 日期：2026-06-30
+> 复核状态：状态不确定
 > 状态：待评审
 > 锚定：本文展开内环 spec（`2026-06-29-project-code-workspace-runtime-affinity-design.md`）§10 待决策项 #3，并修正 §4 中把员工能力目录误当 Provider 认证 home 的倾向。
 > 决策：Provider 认证默认复用服务器/宿主统一配置；`digital_employee_id` 只作为 Runtime 本地能力缓存命名空间；员工能力缓存承载 skills/MCP/context，不承载默认 Provider auth。

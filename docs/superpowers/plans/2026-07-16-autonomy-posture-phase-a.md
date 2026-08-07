@@ -1,5 +1,7 @@
 # 自治姿态校准 Phase A（默认翻转）实现计划
 
+> 复核状态：已实施，现状与本设计一致且仍是当前默认：兜底人类判据从"每需求强制注入"改为"仅策略require_human_acceptance或高风险注入"，GATE PASS（低风险零触点/高风险发布出口held），安全属性端到端成立。未被07-17方向修正影响（修正只针对档2对抗式评判）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把已落地意图层 P1 的"每需求强制人类判据"默认翻成**自治默认**——低风险/浅出口需求零人类触点跑完，人类判据只在"策略显式要求 / 高风险不可逆动作 / 模板声明的阶段卡点"注入；收敛闸对执行接地判据自动放行。

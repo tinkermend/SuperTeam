@@ -1,6 +1,7 @@
 # 团队配置控制台 — 深入分析与设计
 
 - 日期：2026-07-26
+> 复核状态：团队配置P0-P3全完结入main
 - 范围：Web 控制台（团队详情/团队配置）、Control Plane（tenant / skill / capability / employee）、契约、DB 迁移
 - 状态：**设计草案，未开工**。2026-07-26 已拍板 D1=宪法接通、D2=能力冲突按「团队接管」收敛（不新增团队级环境变量值存储）、D7=独立配置页、D9=宪法只作约束文本注入（不参与门禁判定）、D10=当前为开发环境，历史数据可直接收敛无需 dry-run；其余待抉择项见 §9
 - 前置阅读：`docs/superpowers/specs/2026-07-08-team-governance-slimming-and-project-runtime-binding-design.md`（团队瘦身终态模型）、`DESIGN.md`

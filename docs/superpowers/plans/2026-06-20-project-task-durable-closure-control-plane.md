@@ -1,5 +1,7 @@
 # ProjectTask Durable Closure Control Plane Implementation Plan
 
+> 复核状态：06-20 ProjectTask durable closure基础落地
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the Control Plane data model and service foundation for ProjectTask durable closure: `assigned -> queued`, `project_task_attempts`, accepted plan revision exact-once decomposition, and dispatch-created attempts.

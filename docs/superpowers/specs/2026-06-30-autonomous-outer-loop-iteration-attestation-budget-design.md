@@ -1,6 +1,7 @@
 # 自治外环 Spec 提纲：返工迭代 · 执行证明 · 预算熔断 · 结论复利
 
 > 日期：2026-06-30
+> 复核状态：部分实现（Phase C1完成，但整体提纲未实现）
 > 状态：提纲（待展开评审）
 > 配套：本文是「执行基座」内环 spec（`2026-06-29-project-code-workspace-runtime-affinity-design.md`）的另一半。内环让多员工"能在真实代码/资源上跑、能交接"；外环让它"判断—返工—验收—回写"真正闭合且可信、可控、可复利。员工能力缓存与 Provider 认证边界见 `2026-06-30-runtime-digital-employee-capability-cache-auth-design.md`。
 

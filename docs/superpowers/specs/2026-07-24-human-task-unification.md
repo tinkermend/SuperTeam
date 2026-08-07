@@ -1,5 +1,7 @@
 # 人类待办统一 Spec（验收割裂治理 · HumanTask 单一对象）
 
+> 复核状态：状态：已落地（P0-P2见CHANGELOG 2026-07-24）；人类待办统一已落地+07-26复验4缺陷修复
+
 - 日期：2026-07-24
 - 状态：**已落地**（P0–P2 见 CHANGELOG 2026-07-24；本文件保留为交付基线，不再作施工图改写）
 - 演进：负荷原则、HumanTask 读权威终态、飞书 kind 分级、词表「下游放行」→ 见 `2026-07-25-human-task-load-budget-and-channel-grading.md`

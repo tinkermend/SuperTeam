@@ -2,6 +2,7 @@
 
 - 状态：已评审,实施中(2026-07-16 修订,见 §8)
 - 日期：2026-07-09
+> 复核状态：已实现（07-17 入main：artifact采集/内容寻址/presign零凭证）
 - 范围：让「证据」在 SuperTeam 里真正成立——数字员工的产出物被采集、内容寻址存储、可通过平台 API 取回，并与 evidence 读模型接上。
 - 不在范围：acceptance criterion、verification 判据、人类待办自动生成、验收就绪判据。见文末「后续 spec」。
 

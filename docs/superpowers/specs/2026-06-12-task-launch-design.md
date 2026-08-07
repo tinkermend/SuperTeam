@@ -1,4 +1,5 @@
 # 2026-06-12-task-launch-design
+> 复核状态：锚点抽查：ProjectDemand类型在API中定义, 任务发起相关测试代码存在
 
 ## 1. 阶段目标
 

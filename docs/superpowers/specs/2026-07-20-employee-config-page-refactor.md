@@ -1,6 +1,7 @@
 # 数字员工配置页重构 Spec
 
 - 日期：2026-07-20
+> 复核状态：未实施（决策已锁定可开工）；权限中心侧 A2 激活链路已由 permission-center-refactor 落地
 - 状态：草案，决策已锁定，可开工（审批闭环部分依赖并行的权限中心 spec，见 §9/§11）
 - 目标读者：接手实施本 spec 的会话（本文档自包含）
 - 姊妹 spec：`docs/superpowers/specs/2026-07-20-permission-center-refactor.md`（权限中心域，另一会话**已在开发**）。两者唯一硬接缝见 §9 与 §11。

@@ -1,5 +1,7 @@
 # 日志管理 Tab 导航重构设计
 
+> 复核状态：CHANGELOG无明确记录；锚点抽查未发现logs/route.tsx父布局路由明确证据
+
 **日期：** 2026-07-06  
 **范围：** 前端仅  
 **涉及路径：** `apps/web/src/routes/_authenticated/logs/`、`apps/web/src/components/layout/data/sidebar-data.ts`

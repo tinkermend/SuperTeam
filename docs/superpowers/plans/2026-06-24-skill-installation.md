@@ -1,5 +1,7 @@
 # Skill Installation Implementation Plan
 
+> 复核状态：06-24技能安装落地
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build synchronous all-or-nothing skill installation from the skill marketplace into team or digital employee workspaces for `opencode`, `codex`, and `claude-code`.

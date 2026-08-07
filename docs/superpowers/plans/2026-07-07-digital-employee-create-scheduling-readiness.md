@@ -1,4 +1,5 @@
 # Digital Employee Create Scheduling Readiness Implementation Plan
+> 复核状态：与配对spec相同——同上（与2026-07-07-digital-employee-create-redesign.md为同一闭环设计）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

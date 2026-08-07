@@ -1,6 +1,7 @@
 # 数字员工 Provider 固定与项目 Runtime 调度设计
 
 日期：2026-07-03
+> 复核状态：CHANGELOG 2026-07-03 23:09记录数字员工Provider提升为创建时固定身份事实；锚点抽查发现provider_type在digital_employees表中
 状态：已确认，待实现计划
 
 ## 1. 背景

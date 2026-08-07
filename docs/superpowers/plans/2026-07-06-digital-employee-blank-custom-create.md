@@ -1,4 +1,5 @@
 # Digital Employee Blank Custom Create Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG 2026-07-06 16:41记录数字员工创建页开放空白自定义路径；metadata.creation_mode已实现
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

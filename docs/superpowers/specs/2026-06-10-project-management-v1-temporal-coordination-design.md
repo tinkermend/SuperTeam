@@ -1,4 +1,5 @@
 # 2026-06-10-project-management-v1-temporal-coordination-design
+> 复核状态：锚点抽查：DemandSubmitted信号存在, RouteDecision/CoordinationJob类型在repository中定义
 
 ## 1. 阶段目标
 

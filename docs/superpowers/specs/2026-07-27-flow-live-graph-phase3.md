@@ -1,5 +1,7 @@
 # 数据流活图 Phase 3 P1：ReactFlow 权威组件上的概念 A 实现
 
+> 复核状态：状态：立项（实施中）；前置IA Phase1/2已完结
+
 - 日期：2026-07-27
 - 状态：**立项（实施中）**
 - 拍板：人类选定概念 A（粒子流动，`docs/prototypes/flow-live-graph/concept-a-flowing-edges.html`），并指出原型缺时间单位——时间显示为本期一等需求。

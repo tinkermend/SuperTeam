@@ -1,4 +1,5 @@
 # 场景模板注册表 P1 实现计划
+> 复核状态：已实现（基于CHANGELOG证据）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

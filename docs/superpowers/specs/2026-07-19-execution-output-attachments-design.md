@@ -1,6 +1,7 @@
 # 执行输出附件自动采集与预览 Spec：任务产出文件回传平台可看可下载
 
 > 日期：2026-07-19
+> 复核状态：v1+§1+v2全量完结（c5733467/23c551c2/8359a52f裹挟）
 > 状态：**v1 已实施，GATE 五项真实 E2E 全 PASS（2026-07-19 01:50，未提交，详见 CHANGELOG）**。实施中修订两处：①噪音排除补"任何隐藏路径组件"（§1.3，E2E 实证 .superteam 误采）；②HTML 预览由 iframe src 直连 302 改为 fetch+srcDoc（§3，TOS 强制 Content-Disposition: attachment 致 sandbox 内空白）+ 桶 CORS 需含 `null` origin（fetch 跨域重定向 Origin taint）。遗留：JSON presign 变体待立项（见 §6 后注）。
 > 性质：Runtime 采集面扩展 + Web 预览。v1 = 无需 agent 配合的自动兜底捕获；声明式交付物契约闭环（produces → artifact 强关联）为 v2，另行立项。
 > 关联：证据地基 spec（07-17，presign/内容寻址/302 管道即其产物，本 spec 全量复用）；intent/acceptance 判据线（deliverable 与 artifact 松关联的残债由 v2 偿还，非本 spec 范围）。

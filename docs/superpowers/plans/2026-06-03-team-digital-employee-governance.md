@@ -1,5 +1,7 @@
 # Team Digital Employee Governance Implementation Plan
 
+> 复核状态：团队治理已实施但后续演进
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first version of team-governed digital employee creation: teams define public governance boundaries, digital employees inherit those boundaries, and effective configuration previews/approvals enforce the boundary before activation.

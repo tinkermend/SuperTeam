@@ -1,5 +1,7 @@
 # Digital Employee Directory Management Refactor Implementation Plan
 
+> 复核状态：对应spec显示为IMPLEMENTED_BUT_DIVERGED, 目录重构可能仍需完成
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move digital employee execution from `agents/{execution_instance_id}` to stable team-owned employee homes, backed by DB-stored workspace files and provider-specific materialization.

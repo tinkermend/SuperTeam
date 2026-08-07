@@ -1,4 +1,5 @@
 # 2026-06-09-dual-layer-skill-management-design
+> 复核状态：锚点抽查：user_credentials表已实现(dual_layer_capability_management迁移), digital_employee_mcp_bindings演进为v2版本; 前端"宪法/人格"配置页未找到; memory显示能力绑定统一已完成(capability-binding-unification-done)
 
 ## 1. 背景与目标 (Background & Goals)
 

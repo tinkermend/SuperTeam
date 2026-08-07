@@ -1,5 +1,7 @@
 # 执行输出附件遗留立项:presign JSON 变体 / 生产桶 CORS / v2 声明式交付物
 
+> 复核状态：§1 format=json已落地（23c551c2）
+
 > 日期:2026-07-19
 > 状态:立项(用户批准),未实施
 > 上游:`2026-07-19-execution-output-attachments-design.md`(v1 已完结入 main c5733467,GATE 五项真实 E2E 全 PASS)

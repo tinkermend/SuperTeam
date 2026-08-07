@@ -1,5 +1,7 @@
 # 违反检测门 P1 实现计划
 
+> 复核状态：已实施，现状与配对spec一致：Tasks1-6全部完成并合并main（66ea3ee9），真实E2E干净放行/违规held两场景PASS；07-18跟进修复竞态缺陷后进一步稳固（交接spec 2026-07-18-review-gate-p1-followups-handoff.md）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** 把审核/门控从"证明正确性"重构为"检测违反明确条件"——检出违反才 hold（按档位），检不出（证不了伪也证不了真）默认放行，人类只在最终验收确认。落地 spec `2026-07-17-review-gate-violation-detection-design.md` P1。

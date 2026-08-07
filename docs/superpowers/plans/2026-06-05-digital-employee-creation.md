@@ -1,5 +1,7 @@
 # 数字员工创建闭环 Implementation Plan
 
+> 复核状态：数字员工创建已实现但大改
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 建成数字员工创建闭环：Web 四步向导提交创建意图，Control Plane 写入 Owner、专业类型、个人配置、生效配置和唯一执行实例，并通过 Runtime provisioning 后返回 `ready`。

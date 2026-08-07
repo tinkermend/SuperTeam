@@ -1,6 +1,7 @@
 # ProjectTask dispatch/runtime recovery 设计
 
 日期：2026-07-02
+> 复核状态：CHANGELOG 2026-07-02 17:57记录ProjectTask dispatch/runtime recovery首版；锚点抽查发现project_task_attempts与recovery相关数据库结构
 状态：已确认，待实现计划
 
 ## 1. 背景

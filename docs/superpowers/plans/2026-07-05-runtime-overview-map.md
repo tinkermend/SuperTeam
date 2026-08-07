@@ -1,4 +1,5 @@
 # Runtime Overview Map Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG 2026-07-06 00:09记录运行总览落地为真实数据驱动的三层地图
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

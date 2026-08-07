@@ -3,6 +3,7 @@
 > **已被取代（2026-07-16）**：完整版见 `2026-07-16-intent-acceptance-criteria-full-design.md`——按场景模板 P2a/P2b 落地后的现实重写（挂载单位改 demand、复用既有 PlanAcceptanceCriterion 与计划确认门、attestation 已存在无需新造）。本提纲保留作论证背景。
 
 > 日期：2026-06-30
+> 复核状态：部分实现（P1完成，P2/P3未启动）
 > 状态：提纲（待展开评审）
 > 锚定：本文填补内环 spec（`2026-06-29-project-code-workspace-runtime-affinity-design.md` §12）与外环 spec（`2026-06-30-autonomous-outer-loop-iteration-attestation-budget-design.md` §9）共同标记的 **gap #1（最大语义空洞）**。内环让系统能跑、外环让它闭合可信，但两者都在对一个**未被定义的目标**收敛。本文定义"什么算做对了"。
 

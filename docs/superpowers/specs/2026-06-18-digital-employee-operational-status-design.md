@@ -1,4 +1,5 @@
 # Digital Employee Operational Status Design
+> 复核状态：已实现（06-19 operational status 读模型落地）
 
 ## Context
 

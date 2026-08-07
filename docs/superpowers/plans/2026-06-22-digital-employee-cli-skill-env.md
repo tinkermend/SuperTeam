@@ -1,5 +1,7 @@
 # Digital Employee CLI Skill Env Implementation Plan
 
+> 复核状态：06-22 CLI技能环境变量支持
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the CLI-first skill dependency and encrypted digital-employee environment-variable runtime path described in `docs/superpowers/specs/2026-06-22-digital-employee-cli-skill-env-design.md`.

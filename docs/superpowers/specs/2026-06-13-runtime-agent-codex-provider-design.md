@@ -1,6 +1,7 @@
 # Runtime Agent Codex Provider 设计
 
 日期：2026-06-13
+> 复核状态：锚点抽查：provider_type="codex"存在, CodexProvider在runtime代码中多处引用
 
 ## 1. 背景
 

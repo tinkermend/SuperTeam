@@ -1,5 +1,7 @@
 # Incremental Authorization OpenFGA Implementation Plan
 
+> 复核状态：OpenFGA实施完成但后续重构
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 建设 SuperTeam 第一阶段统一授权边界：新增 `internal/authz`，使用 DB-backed 最小实现接入 `/api/auth/me` 与 Runtime claim，为后续权限配置页面和 OpenFGA backend 保留稳定接口。

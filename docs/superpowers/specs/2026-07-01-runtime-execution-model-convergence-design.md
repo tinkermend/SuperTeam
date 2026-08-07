@@ -1,6 +1,7 @@
 # Runtime execution model convergence 设计
 
 日期：2026-07-01
+> 复核状态：CHANGELOG无明确记录；锚点抽查发现runtime_node_id与provider_type在数据库中存在，但无法判断legacy polling路径是否已下线
 状态：已确认，待实现计划
 
 ## 1. 背景

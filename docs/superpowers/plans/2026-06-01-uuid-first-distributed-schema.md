@@ -1,5 +1,7 @@
 # UUID-first 分布式库表重构 Implementation Plan
 
+> 复核状态：UUID-first基础架构已落地
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将当前 Control Plane 主链路从 `BIGSERIAL/BIGINT` 重构为 UUID-first 初始 schema，并让现有任务、认证、Runtime、审计和 Web API 测试在重建库后跑通。

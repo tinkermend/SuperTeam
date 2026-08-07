@@ -1,5 +1,7 @@
 # Workflow Instances Read Model Implementation Plan
 
+> 复核状态：未找到对应spec, plan可能仍为待办
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add the Control Plane read model that lists the current console user's visible demand/workflow instances for the Workflow Orchestration page.

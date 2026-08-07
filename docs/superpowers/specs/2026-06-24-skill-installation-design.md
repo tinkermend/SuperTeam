@@ -1,4 +1,5 @@
 # Skill Installation Design
+> 复核状态：06-24技能安装落地
 
 Date: 2026-06-24
 Status: Confirmed design, pending implementation plan

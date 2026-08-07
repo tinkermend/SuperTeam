@@ -1,6 +1,7 @@
 # Runtime Agent token 用量采集与回写
 
 - 日期：2026-07-06
+> 复核状态：CHANGELOG 2026-07-07 16:39记录内置数字员工头像库新增（含token用量统计）；锚点抽查发现executor.rs含total_tokens累加与回写逻辑
 - 范围：Runtime Agent（Rust） + 与之对接的 Control Plane 既有 cost 查询路径
 - 目标：让任务执行后，成本管理页能统计到 token 用量（不需要非常精准）
 - 非目标：后端 cost 模块 / SQL / API / 前端改造（已验证完整，零改动）；runtime openapi 契约改动；项目任务 `token_limit_exceeded` 熔断判定

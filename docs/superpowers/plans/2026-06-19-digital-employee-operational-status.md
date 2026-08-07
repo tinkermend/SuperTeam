@@ -1,5 +1,7 @@
 # Digital Employee Operational Status Implementation Plan
 
+> 复核状态：06-19实施数字员工operational status读模型
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement the agreed digital employee operational status read model, expose it through Control Plane API and Web employee overview, and keep project-level acceptance decisions out of per-employee waiting-human status.

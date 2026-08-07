@@ -1,5 +1,7 @@
 # Digital Employee Execution Workbench Budget Implementation Plan
 
+> 复核状态：证据不足需人工确认
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Convert `/employees` into the confirmed execution workbench and add governed daily token budgets that are configurable, visible, and enforced before run dispatch.

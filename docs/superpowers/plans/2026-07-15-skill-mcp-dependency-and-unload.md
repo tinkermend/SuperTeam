@@ -1,5 +1,7 @@
 # 技能↔MCP 依赖 + 会话级自动卸载 Implementation Plan
 
+> 复核状态：已实施，现状与配对spec一致（同上，main 9f8bb03d）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 技能可声明依赖注册表中的 MCP 能力（装载派发时只校验不授权，缺失阻断）；家目录 MCP 配置改为会话作用域（会话开始注入+清单，会话结束回滚，残留兜底）。

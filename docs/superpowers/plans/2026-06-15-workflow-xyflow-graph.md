@@ -1,5 +1,7 @@
 # Workflow Xyflow Graph Implementation Plan
 
+> 复核状态：未找到对应spec, plan可能仍为待办
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the workflow detail's non-graph task summary with a read-only `@xyflow/react` ProjectTask DAG, node inspector, and final real-chain workflow smoke.

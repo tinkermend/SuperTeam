@@ -1,6 +1,7 @@
 # 系统配置中心设计（System Config Center）
 
 日期：2026-07-19
+> 复核状态：P1全量落地（df52809c，迁移085→087→088）
 状态：P1 已实施并通过真实 E2E（分支 worktree-system-config-center，合并待并发会话让路，见 §12 实施记录）
 
 ## 1. 背景与结论

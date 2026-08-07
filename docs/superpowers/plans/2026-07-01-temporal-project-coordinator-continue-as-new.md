@@ -1,4 +1,5 @@
 # Temporal ProjectCoordinator Continue-As-New Implementation Plan
+> 复核状态：已实现（CHANGELOG 2026-07-01 15:15 ProjectCoordinator 历史安全续跑）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

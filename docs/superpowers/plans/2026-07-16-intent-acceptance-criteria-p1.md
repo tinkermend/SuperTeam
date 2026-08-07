@@ -1,5 +1,7 @@
 # 意图与验收标准 Phase 1 实现计划
 
+> 复核状态：已实施，现状与配对spec一致（10任务全完成，main merge 77293480；计划文件内"实施记录"未回填但CHANGELOG 07-16 16:04条目为完整口径）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 判据获得语义（谁判/凭什么/阻断与否）并经人类确认；逐条 verdict 可查询持久化（automated_test 判据强制 attestation 证据）；人类判据经 demand_acceptance 决策通道签署；需求完成前过收敛闸；血缘全链可点。

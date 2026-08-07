@@ -1,4 +1,5 @@
 # 2026-06-10-project-management-menu-frontend-backend-design
+> 复核状态：锚点抽查：项目管理基础表结构已存在(迁移013), /projects路由在OpenAPI契约中, internal/project模块存在
 
 ## 1. 文档定位
 

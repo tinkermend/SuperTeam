@@ -1,5 +1,7 @@
 # 数字员工详情页优化 Implementation Plan
 
+> 复核状态：已实施，现状与配对spec一致（同日spec见上，10任务全部完成并合并main，遗留三瑕疵07-14当日跟进修复）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 按 `docs/superpowers/specs/2026-07-14-employee-detail-page-refinement-design.md` 优化数字员工详情页:事件流语义化时间线、指标条精简+通道警示条、状态中文化、删除上下文包流程图、技能入口修正、生效上下文去重、抽屉格式化、重复代码收敛、底部快照卡改造。

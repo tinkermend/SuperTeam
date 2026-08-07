@@ -1,5 +1,7 @@
 # Execution Ledger Trace Implementation Plan
 
+> 复核状态：06-21执行轨迹追踪落地
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a project-level execution trace backed by an Execution Ledger so project acceptance, human approvals, and retries can inspect attempt-level evidence instead of only final conclusions.

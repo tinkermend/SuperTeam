@@ -2,6 +2,7 @@
 
 - 状态：待评审
 - 日期：2026-07-16
+> 复核状态：已实施，现状与本设计一致（P1范围）：判据语义化/verdict投影/收敛闸acceptance_pending/人类签署闭环/血缘面板全落地，真实E2E两轮（首轮FAIL揪3缺陷后PASS）。后续autonomy posture Phase A把"无人判必注入"默认语义调整，不影响判据体系本身。
 - 取代：`2026-06-30-intent-acceptance-criteria-design.md`（提纲）。提纲的核心论点不变——attestation 保证"真的跑了"，acceptance criteria 才保证"跑的是对的"；本文按 2026-07-15/16 已落地的现实（场景模板 P2a/P2b、attestation、计划确认全量强制）重写落地路径。
 - 前置已全部就位：模板 v2 `default_acceptance_criteria`（对象形，`applies_from_exit` 挂出口）；出口=交付物剪枝；plan 模式计划确认全量强制（人类锚的现成挂点）；`project_task_attestations` + "通过 verification 必须引用 attestation" 契约（`task_result_contract.go:501` 家族）；planning_gap/豁免决策通道。
 

@@ -1,5 +1,7 @@
 # 团队管理详情页改造设计
 
+> 复核状态：CHANGELOG无明确记录；锚点抽查未发现team-detail-layout.tsx删除lending/audit tab明确证据
+
 **日期：** 2026-07-07  
 **状态：** 待实现  
 **范围：** `apps/web/src/features/teams/`

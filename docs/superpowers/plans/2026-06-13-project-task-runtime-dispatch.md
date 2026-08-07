@@ -1,5 +1,7 @@
 # ProjectTask Runtime Dispatch Implementation Plan
 
+> 复核状态：对应spec状态为UNCERTAIN, plan仍为待办
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Connect project coordination `DispatchProjectTask` to the real digital employee run execution chain and bind each dispatched ProjectTask to the created runtime run, with retry-safe, orphan-free, idempotent semantics.

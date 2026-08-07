@@ -1,5 +1,7 @@
 # 项目多人类负责人（Multiple Human Owners）设计 spec
 
+> 复核状态：P1a已实施并真实E2E验证入main；Web人类成员/负责人配置页增删已由2026-08-07 spec落地
+
 - 日期：2026-07-20
 - 状态：P1a 已实施并真实 E2E 验证入 main（6d4e8a74/faebec89/29afd394/ffd5845e）；**P1b 决策扇出经勘察证实冗余，已取消**（见下「§5 修正」）；剩余 Web + P1c。**Web 人类成员/负责人配置页增删已由 `2026-08-07-project-ops-config-completion-design.md` 落地。**
 - **§5 修正（2026-07-20，重要）**：原「方案 A 扇出 per-owner + 兄弟关闭」是**过度设计**。勘察实证平台早已按标准模型实现——收件箱对项目决策类事项走 **any-of-N 可见性**（`inbox.sql:150` 注释「项目决策类事项对该项目全部 active 人类成员可见」）、解决走**项目级动作授权** `project.decision.resolve`（非 target 闸,任一 owner 经 P1a-2 即过）、飞书广播给全部人类成员。DB 实证:target=owner#1 的 plan_review 决策对 owner#2 `visible_to_owner2_via_any_of_n=t`。故「所有负责人可见+任一可决+全员通知」**无需扇出**,由 P1a(操作者集合+≥1+任一授权)+既有 any-of-N 达成。

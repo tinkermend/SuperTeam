@@ -1,5 +1,7 @@
 # 项目 approval_policy / evidence_policy 字段退役
 
+> 复核状态：状态：已落地；已创建迁移20260722004800删除approval_policy和evidence_policy列
+
 **状态**: 已落地  
 **日期**: 2026-07-22  
 

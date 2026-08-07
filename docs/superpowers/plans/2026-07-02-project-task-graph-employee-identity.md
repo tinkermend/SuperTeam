@@ -1,5 +1,7 @@
 # Project Task Graph Employee Identity Implementation Plan
 
+> 复核状态：CHANGELOG 2026-07-02 20:12记录Project task graph员工身份补齐（含employee_role与avatar_asset）
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `GET /projects/{projectId}/task-graph` return each assigned digital employee's profession label (`employee_role`) and avatar (`avatar_asset`), so the web app can render employee avatars/titles on the plan/workflow graph instead of only a bare display name.

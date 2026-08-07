@@ -1,4 +1,5 @@
 # 团队管理详情页改造 Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG无明确记录；锚点抽查未发现team-detail-layout.tsx删除lending/audit tab明确证据
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

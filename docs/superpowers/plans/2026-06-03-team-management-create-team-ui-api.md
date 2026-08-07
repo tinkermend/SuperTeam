@@ -1,5 +1,7 @@
 # Team Management Create Team UI API Implementation Plan
 
+> 复核状态：团队创建API已实现
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the real Team Management list and right-side two-step Create Team flow backed by Control Plane APIs and the live database.

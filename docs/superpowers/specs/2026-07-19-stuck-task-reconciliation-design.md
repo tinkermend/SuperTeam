@@ -2,6 +2,7 @@
 
 - 状态：立项（未实施）
 - 日期：2026-07-19
+> 复核状态：立项（未实施）
 - 缺陷家族：韧性家族「任务卡 running 无自愈」
 - 归并来源：
   - `docs/superpowers/plans/2026-07-17-feishu-integration-p1.md` 遗留缺陷#1（写回失败无持久重试，任务卡 running 无恢复通路，实证 task ec160de3）

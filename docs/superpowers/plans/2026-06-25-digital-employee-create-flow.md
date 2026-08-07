@@ -1,5 +1,7 @@
 # Digital Employee Create Flow Refinement Implementation Plan
 
+> 复核状态：数字员工创建流程未落地
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Refine the digital employee creation wizard so templates only seed role/capability/governance defaults, configuration shows one selected-template summary, unavailable creation paths are clearly disabled, and Runtime binding lists real bindable Runtime Provider options as the selectable list while still surfacing unavailable runtimes with their reason for diagnosability.

@@ -1,5 +1,7 @@
 # 项目管理 V2 治理证据归档 Implementation Plan
 
+> 复核状态：对应spec状态为UNCERTAIN, plan可能仍为待办
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 基于已合并到 `main` 的 V1 项目协调能力，为项目管理补齐证据链、工件与报告引用、预算流水、验收结论、归档快照、配置修订历史，以及审计中心和成本中心的 `project_id` 联动。

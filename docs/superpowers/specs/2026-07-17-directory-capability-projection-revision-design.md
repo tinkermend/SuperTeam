@@ -1,6 +1,7 @@
 # 目录与能力投影语义修订 设计
 
 日期：2026-07-17
+> 复核状态：已实施，现状与本设计一致：三分期（P1六项E2E全PASS/P3清理闭环/P2治理）全部落地并合并main，spec文件内已含07-17当日收口状态说明。
 状态：已与人类确认设计方向；三分期已全部落地并经真实 E2E（Phase 1/3/2 分别于 2026-07-17 合并 main,GATE 记录见 CHANGELOG 同日条目与 §8/§5 附注）
 范围来源：用户发现"员工家目录版本化拉取 + 项目目录 + 任务时加载/卸载"的闭环在实现上走偏；经源码勘察证实三处断点 + chat 目录语义缺失，随后与人类逐项拍板能力投影模型与冲突策略。本 spec 是对 `2026-06-29-project-code-workspace-runtime-affinity-design.md`（下称主 spec）、`2026-06-30-runtime-digital-employee-capability-cache-auth-design.md`（下称 cache spec）的修订与最小落地，并与 `2026-07-15-skill-mcp-dependency-and-unload-design.md`（下称 unload spec，已落地）保持兼容。
 

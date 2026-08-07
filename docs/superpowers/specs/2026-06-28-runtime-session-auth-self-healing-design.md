@@ -1,4 +1,5 @@
 # Runtime Session Auth Self-Healing Design
+> 复核状态：已实现（2026-06-28完成）
 
 ## Context
 

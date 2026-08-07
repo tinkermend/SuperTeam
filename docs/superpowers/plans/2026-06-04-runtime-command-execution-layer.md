@@ -1,5 +1,7 @@
 # Runtime Command Execution Layer Implementation Plan
 
+> 复核状态：Runtime命令执行层已实现
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 Runtime Agent 通过 WebSocket 收到 `start_session`、`resume_session`、`send_input`、`stop_session` 后能在本地真实驱动 Provider 执行或取消。

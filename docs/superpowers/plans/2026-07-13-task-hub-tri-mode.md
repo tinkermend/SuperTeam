@@ -1,4 +1,5 @@
 # 任务中枢三模式(Plan/Loop/Chat)实现计划
+> 复核状态：已实现（07-14 全链 live E2E 通过）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -1,5 +1,7 @@
 # Runtime Execution Model Convergence Implementation Plan
 
+> 复核状态：同对应spec 2026-07-01-runtime-execution-model-convergence-design.md
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stop Runtime Agent from defaulting into the broken legacy `/runtime/tasks/claim` polling path and make the command-driven `start_session -> ProjectTaskAttempt writeback` path the only default execution model.

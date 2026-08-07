@@ -1,5 +1,7 @@
 # 场景模板 P2a（契约化地基）实现计划
 
+> 复核状态：已实施，现状与配对spec一致：契约化地基（迁移061+需求级解析+出口剪枝+约束评估器+web确认卡）已合并main（feat/scenario-template-p2a @ ab5bc66c，真实E2E过闸）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把场景模板从"prompt 建议"升级为"服务端契约"：需求级引用、版本钉住、出口=交付物剪枝、骨架遵循校验、三种约束服务端强制、Plan 模式计划确认全量强制——并在中途用真实 planner 验证"拒绝→重规划收敛"生死判据。

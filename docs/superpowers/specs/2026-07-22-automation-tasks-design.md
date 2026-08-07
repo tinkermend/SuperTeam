@@ -2,6 +2,7 @@
 
 - 状态：实施中（分支 `feat/automation-tasks`，独立 worktree）
 - 日期：2026-07-22
+> 复核状态：状态显示"实施中（分支feat/automation-tasks，独立worktree）"
 - 决策来源：2026-07-22 与人类负责人对齐——「自动 ≠ 默认无人」；自动化是定时触发的任务中枢发起，不是另开执行栈；完成后人类闸门（含验收）走既有 Console / 飞书投影。
 - 前置：
   - 飞书集成 P1（`2026-07-17-feishu-integration-design.md`）——外部服务凭据、on-behalf-of、决策 outbox、any-of-N；**自动化立项排在飞书之后**（该文已写明）。

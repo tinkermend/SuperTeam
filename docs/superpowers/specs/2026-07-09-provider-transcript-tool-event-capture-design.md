@@ -3,6 +3,7 @@
 - 状态：已落地（主体 commit `8cd076c4` 2026-07-10；收尾 env 脱敏接线 / 本地 0600 / 30s 时间封段于 2026-07-13 补齐；§6 items 1–6 已于 2026-07-13 真实 E2E 验证，见文末「落地记录」）
 - 遗留：§6 item 7（控制平面读 raw 时重算 sha256）依赖证据地基 spec 的读路径，转为该 spec 的首要验收项；TOS Object Lock/版本控制经核实**支持**但 bucket 未开启（§3.5.3，运维拍板后开启）
 - 日期：2026-07-09
+> 复核状态：基于CHANGELOG证据
 - 范围：让数字员工的**执行过程**（工具调用与工具结果）离开执行机，进入控制平面与 Web；并把 provider 原始输出流上传对象存储，作为证据链的原材料。
 - 依赖方：`docs/superpowers/specs/2026-07-09-evidence-grounding-artifact-collection-design.md`（证据地基）依赖本 spec 产出的 raw 对象。本 spec 必须先行落地。
 

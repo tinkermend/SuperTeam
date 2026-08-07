@@ -1,6 +1,7 @@
 # 项目协调 DAG Planner 底座设计
 
 日期：2026-06-14  
+> 复核状态：锚点抽查：ProjectEventTaskGraphPlanned事件类型存在, 但ErrProjectTaskGraphPending暗示功能仍在进行中; 部分planner代码存在但可能未完全实施
 状态：已确认，待实施计划
 
 ## 1. 摘要

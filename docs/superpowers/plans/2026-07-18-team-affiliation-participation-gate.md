@@ -1,4 +1,5 @@
 # 数字员工团队归属参与门禁实现计划
+> 复核状态：已实现（07-18 全链落地入main，GATE含G4补员PASS）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

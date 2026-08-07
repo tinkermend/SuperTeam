@@ -1,6 +1,7 @@
 # ProjectTask durable closure 设计
 
 日期：2026-06-20  
+> 复核状态：06-20 ProjectTask durable closure基础落地
 状态：已确认，待实现计划
 
 ## 1. 背景

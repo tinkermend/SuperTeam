@@ -1,5 +1,7 @@
 # Authorization Center Implementation Plan
 
+> 复核状态：被后续权限中心重构取代
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 构建 SuperTeam Web 一级菜单“权限中心”，提供真实授权审计、Runtime 范围配置、成员角色只读视图和权限诊断。

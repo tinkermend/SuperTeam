@@ -1,5 +1,7 @@
 # Dynamic Project Planning Phase 2 PlanRevision Decomposition Implementation Plan
 
+> 复核状态：06-21动态项目编排v1设计落地
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add versioned `PlanRevision` as the durable planning object, route human review to a specific revision, and decompose only accepted revisions into a ProjectTask DAG with exact-once semantics.

@@ -1,5 +1,7 @@
 # Global Shell Page Header Implementation Plan
 
+> 复核状态：CHANGELOG 2026-07-03 20:34记录Web认证后控制台页面统一Shell页头；20:52记录修正Shell页头迁移后业务主操作位置
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move SuperTeam page titles, subtitles, icons, and page-level actions from main content headers into the global shell top bar through one reusable component style.

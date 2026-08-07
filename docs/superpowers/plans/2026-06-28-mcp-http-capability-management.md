@@ -1,4 +1,5 @@
 # MCP HTTP Capability Management Implementation Plan
+> 复核状态：已实现（mig 037 + registry/binding API + /mcp 页 E2E 验证）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

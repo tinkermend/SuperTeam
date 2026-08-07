@@ -1,4 +1,5 @@
 # 2026-06-12-inbox-actionable-work-queue-design
+> 复核状态：锚点抽查：inbox_items表存在, internal/inbox模块目录完整
 
 ## 1. 设计目标
 

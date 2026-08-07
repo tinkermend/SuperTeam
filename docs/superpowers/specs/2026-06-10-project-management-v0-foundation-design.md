@@ -1,4 +1,5 @@
 # 2026-06-10-project-management-v0-foundation-design
+> 复核状态：锚点抽查：ProjectOverview/ProjectConfig接口存在, projects系列表完整, project模块目录结构丰富
 
 ## 1. 阶段目标
 

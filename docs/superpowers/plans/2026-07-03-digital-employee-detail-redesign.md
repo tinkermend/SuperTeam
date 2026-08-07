@@ -1,4 +1,5 @@
 # 数字员工详情页重构 Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG无明确记录；锚点抽查未发现run-stats聚合接口明确证据
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

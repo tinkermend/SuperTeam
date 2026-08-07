@@ -1,4 +1,5 @@
 # Project Runtime Placement Coordination Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG 2026-07-05 04:42记录项目Runtime Placement做成一等配置与诊断事实；锚点抽查发现project_placements表与相关索引
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

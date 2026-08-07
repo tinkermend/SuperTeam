@@ -1,6 +1,7 @@
 # SuperTeam 渐进式权限与 OpenFGA 演进 Spec
 
 > 日期：2026-06-01  
+> 复核状态：OpenFGA接入完成但后续重构
 > 状态：设计稿  
 > 决策：先建设统一授权接口与 DB-backed MVP，后续按资源域逐步接入 OpenFGA  
 > 适用范围：Control Plane 登录后的授权判断、租户/团队权限、Runtime 服务范围、Capability 授权、权限管理页面与后续 OpenFGA 迁移路径。

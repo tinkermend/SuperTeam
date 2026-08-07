@@ -1,5 +1,7 @@
 # 新建团队页面优化 Plan（2026-06-25）
 
+> 复核状态：06-25团队创建页面优化
+
 ## 背景与问题
 
 `apps/web/src/features/teams/components/create-team-page.tsx` 的新建团队页把"创建必填项"与"创建后待办项"混在同一视觉层，导致：

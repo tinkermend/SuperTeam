@@ -1,6 +1,7 @@
 # 审核/门控重构 Spec：违反检测门（而非正确性证明）
 
 > 日期：2026-07-17
+> 复核状态：已实施，现状与本设计一致：违反检测门P1（规则型secret_leak+LLM-prompt型code_review+coordination_policy配置层+收敛闸默认反转"检出才hold"）已合并main并真实E2E部分通过，07-18跟进修竞态缺陷后全场景PASS。
 > 状态：待评审
 > 性质：对已合并的对抗式 AI 评判（Phase B `adversarial_review` + Phase C1 自动返工）的**语义修正 + 落地收窄**。不推翻管道，改的是"门在证明什么、默认怎么走、人类在哪里"。
 > 关联：撤回 `2026-07-16-autonomy-posture-calibration-design.md` §2 档2 对"对抗证伪正确性"的过度承诺；意图层 `2026-07-16-intent-acceptance-criteria-full-design.md` 的验收判据容器保留。

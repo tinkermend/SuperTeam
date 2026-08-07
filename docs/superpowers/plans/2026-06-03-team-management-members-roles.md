@@ -1,5 +1,7 @@
 # Team Management Members and Roles Implementation Plan
 
+> 复核状态：团队成员角色已实施但演进
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement team-scoped human member management, ordinary role changes, privileged role requests, and the members tab UI.

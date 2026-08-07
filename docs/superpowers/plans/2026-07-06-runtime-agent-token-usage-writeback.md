@@ -1,4 +1,5 @@
 # Runtime Agent token 用量采集与回写 Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG 2026-07-07 16:39记录内置数字员工头像库新增（含token用量统计）；锚点抽查发现executor.rs含total_tokens累加与回写逻辑
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

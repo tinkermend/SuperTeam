@@ -1,5 +1,7 @@
 # Workflow Orchestration Workbench Read Model Implementation Plan
 
+> 复核状态：对应spec状态为UNCERTAIN, plan仍为待办
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rebuild the Workflow Orchestration experience as a workflow-instance card entrance plus a read-only task graph workbench, backed by enriched Control Plane read models.

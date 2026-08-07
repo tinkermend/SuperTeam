@@ -1,6 +1,7 @@
 # SuperTeam 权限中心 Web 功能 Spec
 
 > 日期：2026-06-01  
+> 复核状态：被后续权限中心重构取代
 > 状态：待评审  
 > 决策：采用“混合 MVP”：授权审计完整可用，Runtime 范围可配置，成员角色首版只读。  
 > 参考项目：`/Users/wangpei/src/github/agentic/paperclip`

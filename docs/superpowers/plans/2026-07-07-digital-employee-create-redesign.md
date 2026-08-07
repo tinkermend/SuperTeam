@@ -1,4 +1,5 @@
 # Digital Employee Create Redesign Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG 2026-07-07 04:57记录补齐数字员工创建到项目调度就绪的闭环；含scheduling-readiness接口与Web创建页Runtime绑定文案收敛
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -1,5 +1,7 @@
 # Plan Task Graph Visualization Implementation Plan
 
+> 复核状态：CHANGELOG 2026-07-03 09:23记录Project task graph可视化补齐桌面编排视图
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the plain card-list rendering of a project's just-created (not-yet-running) task plan with a vertically-staged `@xyflow/react` diagram — employee avatar + role on each task card, a compact stage header summarizing stage/employee counts, and bounded desktop rows that wrap large stages instead of letting cards collide or overflow — matching the reference screenshot's look.

@@ -1,4 +1,5 @@
 # ProjectTask Dispatch Runtime Recovery Implementation Plan
+> 复核状态：与配对spec相同——CHANGELOG 2026-07-02 17:57记录ProjectTask dispatch/runtime recovery首版；锚点抽查发现project_task_attempts与recovery相关数据库结构
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

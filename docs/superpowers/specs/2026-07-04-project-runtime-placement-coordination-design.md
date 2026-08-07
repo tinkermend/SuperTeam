@@ -1,6 +1,7 @@
 # 项目 Runtime Placement 与协调闭环设计
 
 日期：2026-07-04
+> 复核状态：CHANGELOG 2026-07-05 04:42记录项目Runtime Placement做成一等配置与诊断事实；锚点抽查发现project_placements表与相关索引
 状态：待用户审阅，审阅通过后进入实现计划
 
 ## 1. 背景

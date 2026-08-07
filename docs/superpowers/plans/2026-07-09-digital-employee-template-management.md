@@ -1,4 +1,5 @@
 # 数字员工模板管理 CRUD Implementation Plan
+> 复核状态：已实现（基于锚点抽查）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

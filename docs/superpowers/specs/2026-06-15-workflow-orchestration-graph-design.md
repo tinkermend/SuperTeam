@@ -1,4 +1,5 @@
 # 2026-06-15-workflow-orchestration-graph-design
+> 复核状态：未找到明确的工作流编排图相关锚点
 
 ## 1. 阶段目标
 

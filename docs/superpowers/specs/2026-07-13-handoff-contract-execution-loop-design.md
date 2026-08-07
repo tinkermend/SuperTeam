@@ -2,6 +2,7 @@
 
 - 状态：待评审（设计决策已于 2026-07-13 会话对齐，未实现）
 - 日期：2026-07-13
+> 复核状态：基于CHANGELOG证据
 - 范围：让任务链上的**信息**跟着**调度**一起流动——上游任务的 result_contract 注入直接下游的派工单，交接声明获得 schema、图校验和执行期逐项核对，缺项走已有补做循环。
 - 前置：`2026-07-09-provider-transcript-tool-event-capture-design.md`（已落地）提供证据指针的地基；`2026-07-09-evidence-grounding-artifact-collection-design.md` 提供引用解引用的读路径（本 spec 的"按引用透传"依赖其落地，P1 可先注入 summary 文本不阻塞）。
 - 后继：`2026-07-13-scenario-template-registry-design.md`（场景模板）依赖本 spec 先行——契约执行闭环不存在时，模板沉淀的默认契约同样无人执行。
