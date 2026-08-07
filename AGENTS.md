@@ -41,16 +41,22 @@ SuperTeam 把 AI 执行能力、流程调度、人类审批、上下文、工件
 - 技术栈以当前 workspace、契约和构建脚本为准；不得在没有明确共识时引入替代主栈的并行框架或重复基础设施。根级命令以 `package.json` 为准，优先通过 `corepack pnpm <script>` 运行；不要记录未在仓库脚本、Makefile 或 helper script 中确认过的命令。
 - 验证一律走仓库已有的 `verify:*` 脚本，不要手拼等价命令：`verify:foundation`（契约 + TS/Go/Rust 全量）、`verify:web`、`verify:control-plane`、`verify:runtime-agent`、`verify:db`、`verify:contracts`、`verify:design-system`、`verify:design-prototypes`。契约代码生成用 `generate:control-plane`。
 - 启停用 `scripts/dev-services.sh start|status|restart|stop`；默认 `all` 含 Temporal、Control Plane、Web、Runtime Agent、Feishu Connector，OpenFGA 需单独管理。联调前后先 `status` 确认实际状态，代码变更后优先定向 `restart <service>`（脚本只管理自己写入 pid 文件的进程）。`start|restart control-plane` 会先自动执行 Atlas 迁移，仅在明确需要时用 `SUPERTEAM_DEV_SKIP_MIGRATIONS=1` 跳过。
+- **在非主 checkout（worktree）里做联调必须先读 `docs/PARALLEL_DEVELOPMENT.md`**：未按其设置共享 `SUPERTEAM_DEV_PID_DIR` 时，从 worktree 执行 `restart` 是**退出码 0 的静默空操作**——服务仍跑别人的代码，会产出假的验证结论。`status` 的 `owner=` 字段显示服务实际跑的是哪个 checkout（从进程 cwd 观测，不会漂移），`stop`/`restart` 接管他人服务前会告警。另：`restart control-plane` 应用的是**当前 checkout 的**迁移目录，带迁移的分支切换前须与其他会话打招呼。
 - 数据库表设计、字段类型、UUID-first、租户/团队、索引、迁移、sqlc 与 OpenAPI 规则统一遵循 `DATABASE_DESIGN.md`。生产迁移唯一目录是 `apps/control-plane/internal/storage/migrations/`；变更后必须更新 `atlas.sum`，并用 `make -C apps/control-plane migrate-validate` 校验（默认 `--dev-url` 为本地 `superteam-migrate-validate-pg`：`postgres://postgres:postgres@127.0.0.1:55432/atlas_migrate_validate?sslmode=disable`；CI 可用 `DEV_URL=docker://postgres/16/dev` 覆盖）。
-- 代码发现优先使用 codebase-memory-mcp：`search_graph` 查符号、`trace_path` 追调用、`get_code_snippet` 读实现，复杂模式用 `query_graph` / `get_architecture`；工具不可用、结果不足或搜索字符串/配置/非代码文件时才回退 `rg` / 文件读取。
 - 平台面向中文用户且不做 i18n：前端用户可见的状态/枚举一律经 `apps/web/src/lib/status-labels.ts` 映射为中文，缺键补词表而非在组件内翻译；业务对象指称显示名称（必要时"名称 (id)"），不得裸 UUID，名称由服务端读路径批量补名。细则见 `DESIGN.md`「面向用户文本与枚举显示」，护栏测试 `status-labels.guard.test.ts`。
 - 前端页面、布局或样式变更前必须阅读 `DESIGN.md`；改设计系统或原型后跑 `verify:design-system` / `verify:design-prototypes`。Web 测试走 `corepack pnpm verify:web`（只跑测试时 `corepack pnpm --filter @superteam/web test`），禁止 `npx playwright install` 或 `npx vitest run`。Web 内部跳转必须用 TanStack Router 的 `Link` 或 `navigate`；只有外链、下载、同页锚点或明确需要整页刷新才允许原生 `<a href>` / `window.location`。
-- 多个会话/agent 可能**共享同一工作树（checkout）**并各自持有未提交改动；此时 git 操作必须防止互相踩踏与丢工作：**只用显式路径 `git add <path>`，禁止 `git add -A`/`git add .`**（会连带暂存其他会话的文件）；**禁止在共享工作树切换或删除分支**（`checkout`/`switch`/`branch -D` 会移动所有会话的 HEAD，可孤立他人提交），跨分支搬运只用 ref 手术（`git update-ref`，或独立 worktree + `cherry-pick`），切换用 `git symbolic-ref`；**提交前用 `git symbolic-ref HEAD` 复核当前分支**（并发下先前的状态快照会过期），提交后确认工作树仍保留他人未提交改动。与其他会话的未提交改动**交织在同一文件**（含 sqlc/OpenAPI 生成物、`CHANGELOG.md` 等）时，只暂存自己的 hunk（`git apply --cached` 或 plumbing），**不得整文件提交**；无法干净切分时改用独立 worktree 隔离后再提交。
+- 多个会话/agent 可能**共享同一工作树（checkout）**并各自持有未提交改动。新工作优先按 `docs/PARALLEL_DEVELOPMENT.md` 改用「一会话一 worktree」隔离；**在完成迁移前，共享 checkout 下的下列铁律一条不得放松**：
+  - **只用显式路径 `git add <path>`，禁止 `git add -A`/`git add .`**（会连带暂存其他会话的文件）。
+  - **禁止在共享工作树切换或删除分支**（`checkout`/`switch`/`branch -D` 会移动所有会话的 HEAD，可孤立他人提交）；跨分支搬运只用 ref 手术（`git update-ref`，或独立 worktree + `cherry-pick`），切换用 `git symbolic-ref`。
+  - **提交前用 `git symbolic-ref HEAD` 复核当前分支**（并发下先前的状态快照会过期），提交后确认工作树仍保留他人未提交改动。
+  - 与他人未提交改动**交织在同一文件**（含 sqlc/OpenAPI 生成物、`CHANGELOG.md` 等）时，只暂存自己的 hunk（`git diff --no-ext-diff` 取标准 diff → 切块 → `git apply --cached`），**不得整文件提交**；无法干净切分时改用独立 worktree 隔离后再提交。注意仓库配了外部 diff 工具，不加 `--no-ext-diff` 时输出没有 `@@` 头，按 hunk 处理的脚本会静默失效。
+  - **全仓重生成命令会吸收他人在途改动**：`make -C apps/control-plane generate-sqlc`、`generate:control-plane` 等按整个 `queries/` / 契约目录重生成，会把别人尚未提交的 `.sql` / 契约改动一并写进生成物。跑完必须核对暂存内容只含自己的改动（此坑 2026-08-07 真实发生，提交前逐 hunk 核对时才拦下）。该风险与是否用 worktree 无关，长期保留。
 - 不要盲目猜测；存在无法从本地上下文确认且影响架构或业务判断的不确定点时，先与人类沟通。
 
 ## 验证与收尾
 
-- **真实端到端验证是默认完成条件**，适用于功能、修复、合并、前后端联调、Runtime/Provider 接入、数据库/迁移变更，以及任何声称“功能可用”的任务。必须让当前代码通过真实 Web、Control Plane、数据库、Runtime、Provider 路径运行；不得把 mock、组件测试、单元测试、构建通过或代码审查表述为真实链路已验证。前后端变更需确认运行中的服务已加载当前代码，并通过浏览器或 curl 走真实接口确认结果不是 mock、缓存或旧服务；Runtime/Provider 变更需至少一次真实 smoke。Web 仿真测试用 codex chrome plug。`verify:*` 脚本是提交前的分层门禁，通过它们不等于完成了端到端验证。
+- **真实端到端验证是默认完成条件**，适用于功能、修复、合并、前后端联调、Runtime/Provider 接入、数据库/迁移变更，以及任何声称“功能可用”的任务。必须让当前代码通过真实 Web、Control Plane、数据库、Runtime、Provider 路径运行；不得把 mock、组件测试、单元测试、构建通过或代码审查表述为真实链路已验证。前后端变更需确认运行中的服务已加载当前代码，并通过浏览器或 curl 走真实接口确认结果不是 mock、缓存或旧服务；Runtime/Provider 变更需至少一次真实 smoke。浏览器验证用当前会话可用的浏览器自动化工具（Playwright MCP、Chrome 插件等，以实际可用者为准）；无可用工具时标注为阻塞，不得以"代码看起来对"替代。`verify:*` 脚本是提交前的分层门禁，通过它们不等于完成了端到端验证。
+- **声称 E2E 通过时必须证明验证期内服务未被接管**：开发服务全局仅一套，任何会话 `restart` 都会顶替他人正在验证的代码，且**不会有任何报错**。做法是验证开始时记下 `control-plane` 与 `web` 的 pid，收尾前复核未变（`dev-services.sh status` 出现 `owner=` 字段即表示服务跑的是别的 checkout）。pid 变了则本轮结论作废，须重跑，不得沿用。
 - **无法验证时标记为阻塞**并说明缺失依赖（服务未启动、认证缺失、Provider 不可用、迁移未准备、环境不安全），不得以“未做真实链路验证”的状态交付，除非人类明确把范围限定为纯单层局部验证。
 - **轻量验证例外**：纯文案替换、单个低风险样式对齐、设计规范/宪法补充等不改变交互、数据提交、路由、接口、状态流、权限、持久化或运行链路的局部变更，只需 `rg` 回查、`git diff --check`，必要时跑受影响的定向测试；不重启服务、不跑全量测试、不做端到端验证。
 - **延后工作进根目录 `TODO.md`**：人类明确决定放到后面做的事，一行一条（日期+事项+参考文档），完成即删行。收尾检查不得把其中条目当作当次任务的遗漏；新的延后决定必须写入该文件并附操作文档，不能只留在对话里。

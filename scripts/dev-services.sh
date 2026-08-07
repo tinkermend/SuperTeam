@@ -16,7 +16,13 @@ CONTROL_PLANE_CMD="${SUPERTEAM_DEV_CONTROL_PLANE_CMD:-pnpm run dev:control-plane
 CONTROL_PLANE_WAIT_URL="${SUPERTEAM_DEV_CONTROL_PLANE_WAIT_URL-http://127.0.0.1:8080/health}"
 CONTROL_PLANE_DIR="${SUPERTEAM_DEV_CONTROL_PLANE_DIR:-$PROJECT_ROOT/apps/control-plane}"
 CONTROL_PLANE_MIGRATIONS_DIR="${SUPERTEAM_DEV_CONTROL_PLANE_MIGRATIONS_DIR:-internal/storage/migrations}"
+# 同名变量同时被 package.json 的 dev:control-plane 读取（`--config ${SUPERTEAM_DEV_CONTROL_PLANE_CONFIG:-...}`），
+# 所以设了它既改本脚本解析 DB URL 的来源，也真正改 control-plane 进程加载的配置——两者不会再分叉。
+# worktree 场景下指回主 checkout 的 config.yaml 即可（该文件被 .gitignore，新 worktree 里不存在）。
 CONTROL_PLANE_CONFIG="${SUPERTEAM_DEV_CONTROL_PLANE_CONFIG:-$PROJECT_ROOT/apps/control-plane/config/config.yaml}"
+# runtime-agent 的对应项。本脚本不消费它，仅在此登记以便 usage 可见；实际由
+# package.json 的 dev:runtime-agent 读取。config.yaml 同样被 .gitignore。
+RUNTIME_AGENT_CONFIG="${SUPERTEAM_DEV_RUNTIME_AGENT_CONFIG:-$PROJECT_ROOT/apps/runtime-agent/config.yaml}"
 # 迁移在 control-plane 启动前自动执行；置 1 可跳过（例如 CI 已单独迁移）。
 SKIP_MIGRATIONS="${SUPERTEAM_DEV_SKIP_MIGRATIONS:-0}"
 ATLAS_CMD="${SUPERTEAM_DEV_ATLAS_CMD:-atlas}"
@@ -121,10 +127,12 @@ Environment overrides:
   SUPERTEAM_DEV_TEMPORAL_WAIT_URL
   SUPERTEAM_DEV_CONTROL_PLANE_CMD
   SUPERTEAM_DEV_CONTROL_PLANE_WAIT_URL
+  SUPERTEAM_DEV_CONTROL_PLANE_CONFIG
   SUPERTEAM_DEV_WEB_CMD
   SUPERTEAM_DEV_WEB_WAIT_URL
   SUPERTEAM_DEV_RUNTIME_AGENT_CMD
   SUPERTEAM_DEV_RUNTIME_AGENT_WAIT_URL
+  SUPERTEAM_DEV_RUNTIME_AGENT_CONFIG
   SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD
   SUPERTEAM_DEV_FEISHU_CONNECTOR_WAIT_URL
   SUPERTEAM_DEV_FEISHU_CONNECTOR_CONTROL_PLANE_URL
@@ -619,6 +627,7 @@ stop_service() {
         return 0
     fi
 
+    warn_if_foreign_owner "$service"
     log_info "stopping $service pid=$pid"
     kill_tree TERM "$pid"
     if ! wait_for_stop "$pid"; then
@@ -708,6 +717,30 @@ status_openfga_service() {
     echo "openfga: stopped"
 }
 
+# 探测某个已运行服务当前实际跑的是哪个 checkout 的代码：直接读进程的工作目录，
+# 而不是记账。多 worktree 并行时这是唯一不会漂移的判据——记录文件可能与实际进程
+# 脱节，进程 cwd 不会。取不到时（lsof 不可用/权限不足）返回空，调用方需容忍。
+service_owner_root() {
+    local pid="$1"
+    [ -n "$pid" ] || return 0
+    command -v lsof >/dev/null 2>&1 || return 0
+    lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep '^n' | head -1 | cut -c2-
+}
+
+# 归属提示：仅当服务跑的不是当前 checkout 的代码时才出声，避免常态刷屏。
+warn_if_foreign_owner() {
+    local service="$1"
+    local pid
+    pid="$(read_pid "$service")"
+    pid_running "$pid" || return 0
+    local owner
+    owner="$(service_owner_root "$pid")"
+    [ -n "$owner" ] || return 0
+    [ "$owner" != "$PROJECT_ROOT" ] || return 0
+    log_warn "$service 当前跑的是 $owner 的代码，可能有会话正在用它做 E2E 验证"
+    log_warn "  继续将接管该服务，对方验证结论会失效；确认无人占用再操作"
+}
+
 status_service() {
     local service="$1"
     if [ "$service" = "openfga" ]; then
@@ -721,14 +754,21 @@ status_service() {
     url="$(service_wait_url "$service")"
 
     if pid_running "$pid"; then
+        # owner=跑的是哪个 checkout 的代码。多 worktree 并行时据此判断"服务归谁"，
+        # 只在与当前 checkout 不一致时显示，同源时省略以免噪音。
+        local owner owner_note=""
+        owner="$(service_owner_root "$pid")"
+        if [ -n "$owner" ] && [ "$owner" != "$PROJECT_ROOT" ]; then
+            owner_note=" owner=$owner"
+        fi
         if [ -n "$url" ]; then
             if http_ok "$url"; then
-                echo "$service: running pid=$pid healthy=$url log=$(log_file "$service")"
+                echo "$service: running pid=$pid healthy=$url$owner_note log=$(log_file "$service")"
             else
-                echo "$service: running pid=$pid health=pending url=$url log=$(log_file "$service")"
+                echo "$service: running pid=$pid health=pending url=$url$owner_note log=$(log_file "$service")"
             fi
         else
-            echo "$service: running pid=$pid log=$(log_file "$service")"
+            echo "$service: running pid=$pid$owner_note log=$(log_file "$service")"
         fi
         return 0
     fi

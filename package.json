@@ -5,8 +5,8 @@
   "scripts": {
     "dev:web": "corepack pnpm --filter @superteam/web dev",
     "build:web": "corepack pnpm --filter @superteam/web build",
-    "dev:control-plane": "go run ./apps/control-plane/cmd/control-plane --config apps/control-plane/config/config.yaml",
-    "dev:runtime-agent": "cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config apps/runtime-agent/config.yaml",
+    "dev:control-plane": "go run ./apps/control-plane/cmd/control-plane --config ${SUPERTEAM_DEV_CONTROL_PLANE_CONFIG:-apps/control-plane/config/config.yaml}",
+    "dev:runtime-agent": "cargo run --manifest-path apps/runtime-agent/Cargo.toml -- --config ${SUPERTEAM_DEV_RUNTIME_AGENT_CONFIG:-apps/runtime-agent/config.yaml}",
     "generate:control-plane": "cd apps/control-plane && go generate . ./internal/api",
     "verify:contracts": "node scripts/verify-foundation-contracts.mjs",
     "verify:foundation": "corepack pnpm verify:contracts && corepack pnpm test:ts && corepack pnpm typecheck && corepack pnpm test:go && corepack pnpm test:rust",
