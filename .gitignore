@@ -137,3 +137,7 @@ doc/
 .gemini
 .curosr
 .superpowers/
+
+# 会话临时脚本：E2E 排障时现写的一次性 Playwright/curl 脚本，用完即弃，不入库。
+# 需要长期保留的验证脚本请去掉 _tmp- 前缀并放进 scripts/ 或对应包内。
+**/_tmp-*
