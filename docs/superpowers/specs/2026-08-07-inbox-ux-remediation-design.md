@@ -1,7 +1,7 @@
 # 收件箱 UI/UX 缺陷整治与裁决工作台收敛（Inbox UX Remediation）
 
 - 日期：2026-08-07
-- 状态：**已实施**（2026-08-07 落地：批 A/B/C；§5.2 以本页内嵌 Project/User 选择器兑现，未等待 task-hub 共享 Picker 抽离）
+- 状态：**已完结**（2026-08-08 `361aa3ac` 落地批 A/B/C；§5.2 以本页内嵌 Project/User 选择器兑现，未等待 task-hub 共享 Picker 抽离。**2026-08-09 补跑 §7.3 真实 E2E 12/12 全过，并修复迁移引入的定高工作台回归**——见 §7.3 执行记录）
 - 系列：与 `2026-08-07-task-hub-ux-remediation-design.md` 同批（同一份外部逐页审查的第 2 页）；两份 spec **无代码交集**，可并行实施
 - 交付性质：**跨两层**——Web 前端（显示/布局/交互）+ Control Plane 读路径补名（§3.1）。**不改契约**（`context` 在 [openapi.yaml](../../../contracts/control-plane/openapi.yaml) 里是自由 `type: object`）、**不改数据库**、**无迁移**
 - 目标读者：实施会话（本文自包含，含逐项证据行号、线上实测数据与验收判据）
@@ -363,6 +363,8 @@ xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.15fr)_300px]
 **另需新增测试**：需求补名读路径（Go）、`missingObjectLabel("demand")` 兜底（TS）、why/summary 同句去重（TS）、meta 节点无真实节点时不渲染（TS）、高风险行内 CTA 打开弹窗且不提交（TS）。
 
 ### 7.3 真实端到端（必做，浏览器 + 真实 CP + 真库）
+
+> **执行记录（2026-08-09 23:29）：12/12 全过。** 实施提交 `361aa3ac`（08-08）当时**未执行本节**（其 CHANGELOG 只记了分层门禁），08-09 补跑并揪出 1 个回归：§4.1 迁移丢了定高管道，导致滚动后选中卡片时决策按钮被顶到视口上方 863px。已修（`MasterDetailLayout` 新增可选 `fill` + 收件箱外层 `overflow-hidden`），详见 CHANGELOG 2026-08-09 23:29 条。验证期内 `control-plane` pid=209 / `web` pid=804 未变且无 `owner=`。
 
 前置：`scripts/dev-services.sh status` 确认在跑；改 CP 后 `restart control-plane`，改 Web 后 `restart web`。**造数用线上已存在的那 6 条 open 卡**，无需新造。
 

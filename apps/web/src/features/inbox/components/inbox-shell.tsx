@@ -187,8 +187,11 @@ export function InboxShell({
           </div>
         ) : null}
 
-        {/* 主从：未选中列表独占全宽；选中后详情+动作合一右栏（裁决工作台）。 */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* 主从：未选中列表独占全宽；选中后详情+动作合一右栏（裁决工作台）。
+            外层 overflow-hidden 是承重的：它把 Main fixed 的高度封住，两列才能
+            各自内部滚动。改回 overflow-y-auto 会让整个工作台变成一条长列——
+            滚到下方选中卡片后，决策按钮会被顶到视口之上（实测 -863px）。 */}
+        <div className="min-h-0 flex-1 overflow-hidden">
           <StateSurface
             isLoading={isLoading && !data}
             isError={Boolean(error && !data)}
@@ -206,6 +209,7 @@ export function InboxShell({
             {data && hasItems ? (
               <MasterDetailLayout
                 className="min-h-0"
+                fill
                 rail="lg"
                 detailLabel="事项详情"
                 onDetailDismiss={() => setSelectedItemId(null)}

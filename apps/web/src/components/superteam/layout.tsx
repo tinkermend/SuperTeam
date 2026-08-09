@@ -53,6 +53,14 @@ type MasterDetailLayoutProps = Omit<ComponentProps<"div">, "children"> & {
    * `stack` 适合常驻面板（如驾驶舱右栏），窄容器时堆到主列下方而非弹抽屉。
    */
   narrowDetail?: "sheet" | "stack";
+  /**
+   * 定高工作台模式（默认关，页面整体滚动）。开启后本组件把父级给的高度
+   * 透传到两列（`h-full min-h-0` + `items-stretch`），由各列自己内部滚动，
+   * 详情栏因此不会随主列滚走——收件箱这类「扫读→就地决断」的面需要它。
+   * 前提是父级已经限高（如 `Main fixed` + 外层 `overflow-hidden`）；
+   * 父级不限高时开启无效果也无害（`h-full` 解析不到约束）。
+   */
+  fill?: boolean;
 };
 
 /**
@@ -66,6 +74,7 @@ export function MasterDetailLayout({
   detailLabel = "详情",
   onDetailDismiss,
   narrowDetail = "sheet",
+  fill = false,
   className,
   ...props
 }: MasterDetailLayoutProps) {
@@ -98,13 +107,18 @@ export function MasterDetailLayout({
 
   return (
     <div
-      className={cn("@container/master-detail min-w-0", className)}
+      className={cn(
+        "@container/master-detail min-w-0",
+        fill && "h-full min-h-0",
+        className,
+      )}
       ref={rootRef}
       {...props}
     >
       <div
         className={cn(
-          "grid min-w-0 items-start gap-5",
+          "grid min-w-0 gap-5",
+          fill ? "h-full min-h-0 items-stretch" : "items-start",
           detailInFlow && isWide && railGridCols[rail],
         )}
       >

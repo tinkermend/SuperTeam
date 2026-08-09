@@ -281,14 +281,3 @@ function MetricBlock({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
-
-function stringifyValue(value: unknown) {
-  if (typeof value === "string") {
-    return value;
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}

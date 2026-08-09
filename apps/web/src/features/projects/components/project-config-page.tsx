@@ -1353,11 +1353,11 @@ function ConfigMemberRow({
   const name =
     member.display_name_snapshot?.trim() || employee?.name || resolvedName || undefined;
   const description = employee?.description?.trim();
+  // "owner" 本就在 HUMAN_PROJECT_ROLES 内，会被上面的类型守卫接住；剩下的只可能是
+  // "executor"（仅数字员工），一律按 observer 显示。原先多出的 === "owner" 分支不可达。
   const humanRole = isHumanProjectRole(member.project_role)
     ? member.project_role
-    : member.project_role === "owner"
-      ? "owner"
-      : "observer";
+    : "observer";
   return (
     <div className="flex items-start gap-3 p-4">
       {isDigital ? (

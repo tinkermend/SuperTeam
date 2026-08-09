@@ -257,8 +257,10 @@ export function InboxItemList({
     );
   };
 
+  // h-full 不带容器变体：master 在宽/窄容器下都是 in-flow 唯一主列
+  // （详情窄容器走 Sheet），限高一律由 MasterDetailLayout fill 透传。
   return (
-    <WorkSurface className="flex min-h-0 flex-col @5xl/master-detail:h-full">
+    <WorkSurface className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-card-soft px-5 py-3.5">
         <span className="text-sm font-bold text-ink">待处理事项</span>
         <div className="flex items-center gap-2">

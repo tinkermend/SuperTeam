@@ -1342,10 +1342,11 @@ export function ProjectsView({
           disabled={
             archiveMutation.isPending ||
             archivePreviewQuery.isError ||
-            // 首屏尚无 preview 时禁止；已有 can_archive=true 时允许点（后台 refetch 不挡）
+            // 首屏尚无 preview 时禁止；已有 can_archive=true 时允许点（后台 refetch 不挡）。
+            // 前两个条件已完全覆盖 isLoading（加载中必然无 data），多余的第三条会把
+            // query 联合类型收敛成 never。
             !archivePreviewQuery.data ||
-            archivePreviewQuery.data.can_archive !== true ||
-            (archivePreviewQuery.isLoading && !archivePreviewQuery.data)
+            archivePreviewQuery.data.can_archive !== true
           }
           handleConfirm={() => {
             if (effectiveProjectId && archivePreviewQuery.data?.can_archive === true) {

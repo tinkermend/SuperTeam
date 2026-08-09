@@ -523,8 +523,12 @@ export function ProjectPicker({
   const searchQuery = useQuery({
     enabled: open && searchEnabled && Boolean(baseUrl),
     placeholderData: keepPreviousData,
-    queryFn: () =>
-      listProjects(apiOptions, { limit: 50, offset: 0, q: debouncedQuery }),
+    // enabled 已要求 baseUrl 非空（其唯一来源是 apiOptions），此处的守卫不可达，
+    // 只是把「apiOptions 可选」这件事对类型说清楚，避免用非空断言掩盖。
+    queryFn: () => {
+      if (!apiOptions) throw new Error("缺少控制平面 API 配置");
+      return listProjects(apiOptions, { limit: 50, offset: 0, q: debouncedQuery });
+    },
     queryKey: [
       "task-launch-project-search",
       baseUrl,
@@ -550,7 +554,10 @@ export function ProjectPicker({
   // 深链/会话恢复等只有 id 时再按 id 补实体，避免触发器裸 UUID。
   const selectedByIdQuery = useQuery({
     enabled: Boolean(value) && !selectedFromList && Boolean(baseUrl),
-    queryFn: () => getProject(apiOptions, value),
+    queryFn: () => {
+      if (!apiOptions) throw new Error("缺少控制平面 API 配置");
+      return getProject(apiOptions, value);
+    },
     queryKey: ["task-launch-project", baseUrl, value],
     retry: false,
     staleTime: 5 * 60 * 1000,
