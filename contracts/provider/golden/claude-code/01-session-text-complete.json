@@ -1,0 +1,13 @@
+{
+  "description": "Claude successful turn: system session + assistant text + result",
+  "native_lines": [
+    "{\"type\":\"system\",\"session_id\":\"sess-1\"}",
+    "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}",
+    "{\"type\":\"result\",\"is_error\":false,\"result\":\"done\",\"usage\":{\"input_tokens\":10,\"output_tokens\":2}}"
+  ],
+  "expected_events": [
+    { "type": "session_started", "session_id": "sess-1" },
+    { "type": "text_delta", "text": "hello" },
+    { "type": "turn_completed", "summary": "done" }
+  ]
+}

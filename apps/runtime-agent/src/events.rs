@@ -30,6 +30,104 @@ pub struct TurnUsage {
     pub output_tokens: Option<i64>,
 }
 
+/// Structured provider error (L3 ErrorEnvelope). Family/retryable must be
+/// produced by `providers::error_map::map_code`, never re-derived from message
+/// on the main path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErrorEnvelope {
+    pub schema_version: String,
+    pub code: String,
+    pub family: String,
+    pub retryable: bool,
+    pub message: String,
+    pub provider_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native: Option<ErrorNative>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_refs: Option<Vec<ErrorEvidenceRef>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErrorNative {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excerpt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtype: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErrorEvidenceRef {
+    pub r#type: String,
+    #[serde(rename = "ref")]
+    pub reference: String,
+}
+
+/// Attempt-terminal outcome synthesized by the executor (L3 ProviderResult).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderResult {
+    pub schema_version: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TurnUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ErrorEnvelope>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<ProviderResultSession>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderResultSession {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_session_id: Option<String>,
+    #[serde(default)]
+    pub resumable: bool,
+}
+
+pub const RESULT_SCHEMA_VERSION: &str = "provider.result.v1";
+
+pub fn provider_result_failed(error: ErrorEnvelope) -> ProviderResult {
+    ProviderResult {
+        schema_version: RESULT_SCHEMA_VERSION.to_string(),
+        status: "failed".to_string(),
+        summary: None,
+        usage: None,
+        error: Some(error),
+        artifacts: Vec::new(),
+        session: None,
+        diagnostics: None,
+    }
+}
+
+pub fn provider_result_succeeded(
+    summary: Option<String>,
+    usage: Option<TurnUsage>,
+    provider_session_id: Option<String>,
+) -> ProviderResult {
+    ProviderResult {
+        schema_version: RESULT_SCHEMA_VERSION.to_string(),
+        status: "succeeded".to_string(),
+        summary,
+        usage,
+        error: None,
+        artifacts: Vec::new(),
+        session: Some(ProviderResultSession {
+            provider_session_id,
+            resumable: true,
+        }),
+        diagnostics: None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProviderEvent {
@@ -64,5 +162,23 @@ pub enum ProviderEvent {
     },
     TurnError {
         message: String,
+        /// Structured error when available (Phase 1+). Flat `message` remains
+        /// for compatibility; when both are present they share the same text.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<ErrorEnvelope>,
     },
+}
+
+impl ProviderEvent {
+    pub fn turn_error(message: impl Into<String>, error: Option<ErrorEnvelope>) -> Self {
+        let message = message.into();
+        Self::TurnError { message, error }
+    }
+
+    pub fn turn_error_from_envelope(envelope: ErrorEnvelope) -> Self {
+        Self::TurnError {
+            message: envelope.message.clone(),
+            error: Some(envelope),
+        }
+    }
 }

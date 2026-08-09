@@ -33,7 +33,7 @@ const ALLOWLIST_SUBSTRINGS = [
 
 // `>{x.status}<`：裸枚举成员作为元素的完整文本子节点。
 const BARE_ENUM_CHILD =
-  />\s*\{\s*[\w$]+(?:[.?!][\w$]+)*[.!]?\.(status|status_snapshot|risk_level)\s*\}\s*</g;
+  />\s*\{\s*[\w$]+(?:[.?!][\w$]+)*[.!]?\.(status|status_snapshot|risk_level|failure_family)\s*\}\s*</g;
 
 // 工作面禁止作为可见字符串字面量的 API 字段名 meta（含 ↗ 形态）。
 const FORBIDDEN_META_LITERALS = [

@@ -4,7 +4,8 @@ use anyhow::Context;
 use async_trait::async_trait;
 use tokio::process::Command;
 
-use crate::events::{ProviderEvent, truncate_excerpt};
+use crate::events::{ErrorNative, ProviderEvent, truncate_excerpt};
+use crate::providers::error_map::{self, code as error_code, refine_exit_code};
 use crate::providers::{
     ProviderAdapter, ProviderRequest, ProviderRun, apply_environment, stream_child_events,
 };
@@ -108,15 +109,59 @@ pub fn parse_claude_event(value: &str) -> anyhow::Result<Vec<ProviderEvent>> {
         }
         "assistant" => Ok(parse_assistant_blocks(&event)),
         "user" => Ok(parse_user_blocks(&event)),
-        "result" => Ok(vec![ProviderEvent::TurnCompleted {
-            summary: event
-                .get("result")
-                .and_then(|v| v.as_str())
-                .map(ToString::to_string),
-            usage: crate::providers::usage::extract_usage(&event),
-        }]),
+        "result" => Ok(parse_claude_result(&event)),
         _ => Ok(Vec::new()),
     }
+}
+
+/// Claude `type: "result"` is a terminal marker. Top-level `is_error` / `subtype`
+/// must be read — previously only the summary was taken, so error turns with
+/// exit 0 were mis-classified as `turn_completed` (spec 1.3.4).
+fn parse_claude_result(event: &serde_json::Value) -> Vec<ProviderEvent> {
+    let summary = event
+        .get("result")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let usage = crate::providers::usage::extract_usage(event);
+    let is_error = event
+        .get("is_error")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let subtype = event
+        .get("subtype")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+
+    if !is_error {
+        return vec![ProviderEvent::TurnCompleted { summary, usage }];
+    }
+
+    let message = summary
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            subtype
+                .as_ref()
+                .map(|value| format!("claude result error subtype={value}"))
+        })
+        .unwrap_or_else(|| "claude result reported is_error".to_string());
+    let code = refine_exit_code(&message);
+    let code = if code == error_code::PROVIDER_EXIT_NON_ZERO {
+        // Process may still exit 0; this is a structured protocol failure bit.
+        error_code::PROVIDER_PROTOCOL_ERROR
+    } else {
+        code
+    };
+    let mut envelope = error_map::envelope_for_code(code, message.clone(), "claude-code");
+    envelope.native = Some(ErrorNative {
+        r#type: Some("result".to_string()),
+        exit_code: None,
+        excerpt: Some({
+            let (excerpt, _) = truncate_excerpt(&message);
+            excerpt
+        }),
+        subtype,
+    });
+    vec![ProviderEvent::turn_error_from_envelope(envelope)]
 }
 
 fn message_content(event: &serde_json::Value) -> &[serde_json::Value] {

@@ -23,9 +23,12 @@ use crate::controlplane::models::{
     RuntimeCommand, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
     RuntimeCommandType, TaskResultContract,
 };
-use crate::events::ProviderEvent;
+use crate::events::{ErrorEnvelope, ProviderEvent, provider_result_failed, provider_result_succeeded};
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
+use crate::providers::error_map::{
+    self, code as error_code, envelope_from_anyhow, envelope_for_code,
+};
 use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest, ProviderRunHandle};
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
 use crate::workspace_files::{
@@ -90,7 +93,8 @@ struct ProviderTerminalCompletion {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ProviderTerminalWritebackAction {
-    Fail(String),
+    /// In-loop terminal failure (path 1). Carries structured envelope when known.
+    Fail(crate::events::ErrorEnvelope),
 }
 
 #[derive(Debug, Default)]
@@ -105,6 +109,7 @@ impl ProviderTerminalWritebackState {
         &mut self,
         event: &ProviderEvent,
         provider_session_id: Option<&str>,
+        provider_type: &str,
     ) -> Option<ProviderTerminalWritebackAction> {
         match event {
             ProviderEvent::TextDelta { text } => {
@@ -131,10 +136,15 @@ impl ProviderTerminalWritebackState {
                 }
                 None
             }
-            ProviderEvent::TurnError { message } => {
+            ProviderEvent::TurnError { message, error } => {
                 self.failed = true;
                 self.pending_completion = None;
-                Some(ProviderTerminalWritebackAction::Fail(message.clone()))
+                let envelope = crate::providers::error_map::classify_provider_error(
+                    error.as_ref(),
+                    message,
+                    provider_type,
+                );
+                Some(ProviderTerminalWritebackAction::Fail(envelope))
             }
             _ => None,
         }
@@ -460,8 +470,15 @@ impl RuntimeCommandExecutor {
         let provider_run = match provider.start(provider_request(&spec), raw_sink.clone()).await {
             Ok(provider_run) => provider_run,
             Err(error) => {
-                let message = error.to_string();
-                let _ = self.runs.finish_failed(&run_id, message.clone()).await;
+                let envelope = envelope_for_code(
+                    error_code::PROVIDER_SPAWN_FAILED,
+                    error.to_string(),
+                    payload.provider_type.as_str(),
+                );
+                let _ = self
+                    .runs
+                    .finish_failed(&run_id, envelope.message.clone())
+                    .await;
                 if let Some(writeback) = &writeback {
                     writeback.spawn_attestation(
                         spec.clone(),
@@ -470,7 +487,7 @@ impl RuntimeCommandExecutor {
                         None,
                         None,
                     );
-                    writeback.fail(message).await?;
+                    writeback.fail_with_envelope(envelope).await?;
                 }
                 self.registry.record_run_finished(&run_id);
                 rollback_session_projections_best_effort(
@@ -604,7 +621,11 @@ impl RuntimeCommandExecutor {
                     artifact_collection: None,
                     writeback_queue: self.writeback_queue.clone(),
                 }
-                .fail_project_task("operator cancelled")
+                .fail_project_task(&envelope_for_code(
+                    error_code::CANCELLED,
+                    "operator cancelled",
+                    "unknown",
+                ))
                 .await?;
             }
             self.registry.record_run_finished(&run_id);
@@ -1256,9 +1277,9 @@ impl RuntimeCommandExecutor {
         let registry = self.registry.clone();
         let failure_writeback = writeback.clone();
         let failure_raw_sink = raw_sink.clone();
-        // Kept out of `spec` (which is moved into drain_provider_events) so the
-        // Err branch below can still roll back the session MCP injection when
-        // the drain bails out early via `?` before reaching its tail hook.
+        // Clone before move so the Err branch can still roll back projections
+        // and write attestation (path 4 backstop).
+        let failure_spec = spec.clone();
         let rollback_home = spec.agent_home_dir.clone();
         let rollback_workspace = spec.workspace_path.clone();
         let rollback_command_id = spec
@@ -1298,10 +1319,8 @@ impl RuntimeCommandExecutor {
 
             if let Err(error) = result {
                 // drain_provider_events bailed out before its tail rollback hook
-                // (stream item error or a record/writeback `?`): roll back the
-                // session MCP injection here as the backstop. If the tail hook
-                // already ran, this is a safe no-op (rollback without a manifest
-                // does nothing), so no dedup logic is needed.
+                // (record/writeback `?` — stream item errors are handled inside
+                // drain with attestation). Backstop rollback + fail + attestation.
                 rollback_session_projections_best_effort(
                     &run_id,
                     rollback_home.as_deref(),
@@ -1309,13 +1328,30 @@ impl RuntimeCommandExecutor {
                     rollback_command_id.as_deref(),
                 );
                 if !run_is_cancelled(&runs, &run_id).await {
-                    let message = error.to_string();
-                    let _ = runs.finish_failed(&run_id, message.clone()).await;
+                    let envelope =
+                        envelope_from_anyhow(&error, failure_spec.provider_kind.as_str());
+                    let _ = runs
+                        .finish_failed(&run_id, envelope.message.clone())
+                        .await;
                     // A failed run still produced a transcript; the failure
                     // writeback must carry its pointer.
                     finalize_raw_log(&failure_raw_sink, failure_writeback.as_ref()).await;
                     if let Some(writeback) = &failure_writeback {
-                        let _ = writeback.fail(message).await;
+                        writeback
+                            .record_attestation(
+                                &failure_spec,
+                                "provider_terminal",
+                                "failed",
+                                None,
+                                Some(
+                                    provider_started_at
+                                        .elapsed()
+                                        .as_millis()
+                                        .min(i64::MAX as u128) as i64,
+                                ),
+                            )
+                            .await;
+                        let _ = writeback.fail_with_envelope(envelope).await;
                     }
                 }
             }
@@ -1392,10 +1428,14 @@ fn spawn_project_task_budget_heartbeat(
                 _ = tokio::time::sleep(interval) => {
                     match writeback.record_budget_heartbeat(started_at.elapsed()).await {
                         Ok(true) => {
-                            let reason = "wall_clock_exceeded";
+                            let envelope = envelope_for_code(
+                                error_code::BUDGET_FUSE,
+                                "wall_clock_exceeded",
+                                "unknown",
+                            );
                             let _ = handle.cancel().await;
-                            let _ = runs.finish_failed(&run_id, reason.to_string()).await;
-                            let _ = writeback.fail(reason.to_string()).await;
+                            let _ = runs.finish_failed(&run_id, envelope.message.clone()).await;
+                            let _ = writeback.fail_with_envelope(envelope).await;
                             break;
                         }
                         Ok(false) => {}
@@ -1782,10 +1822,10 @@ impl RuntimeCommandWritebackSink {
         crate::artifacts::upload_attachments_best_effort(&self.client, collection).await
     }
 
-    async fn fail_project_task(&self, error_message: &str) -> anyhow::Result<()> {
+    async fn fail_project_task(&self, envelope: &ErrorEnvelope) -> anyhow::Result<()> {
         if let Some(project_task) = &self.project_task {
             let mut writeback =
-                project_task_fail_writeback(project_task, &self.command_id, error_message);
+                project_task_fail_writeback_from_envelope(project_task, &self.command_id, envelope);
             writeback.raw_log = self.raw_log.lock().ok().and_then(|guard| guard.clone());
             if let Err(error) = self
                 .client
@@ -1806,14 +1846,24 @@ impl RuntimeCommandWritebackSink {
         Ok(())
     }
 
-    async fn fail(&self, error_message: String) -> anyhow::Result<()> {
+    /// Terminal fail writeback from a structured envelope (preferred).
+    async fn fail_with_envelope(&self, envelope: ErrorEnvelope) -> anyhow::Result<()> {
+        // L3 result is the single terminal fact; fail writeback derives from it.
+        let _result = provider_result_failed(envelope.clone());
         self.client
             .fail_runtime_command(
                 &self.command_id,
-                &command_failed_terminal(error_message.clone()),
+                &command_failed_terminal_from_envelope(&envelope),
             )
             .await?;
-        self.fail_project_task(&error_message).await
+        self.fail_project_task(&envelope).await
+    }
+
+    /// Legacy string entry point: classifies via error_map fallback, then fails.
+    async fn fail(&self, error_message: String) -> anyhow::Result<()> {
+        let envelope =
+            envelope_for_code(error_map::classify_message_fallback(&error_message), error_message, "unknown");
+        self.fail_with_envelope(envelope).await
     }
 }
 
@@ -1933,15 +1983,20 @@ fn runtime_event_writeback(
             }
             ("turn_completed".to_string(), payload)
         }
-        ProviderEvent::TurnError { message } => {
+        ProviderEvent::TurnError { message, error } => {
             let mut payload = HashMap::new();
+            let redacted_message = crate::redaction::redact_with_environment(message, environment);
             payload.insert(
                 "message".to_string(),
-                serde_json::Value::String(crate::redaction::redact_with_environment(
-                    message,
-                    environment,
-                )),
+                serde_json::Value::String(redacted_message.clone()),
             );
+            if let Some(envelope) = error {
+                let mut redacted = envelope.clone();
+                redacted.message = redacted_message;
+                if let Ok(value) = serde_json::to_value(&redacted) {
+                    payload.insert("error".to_string(), value);
+                }
+            }
             ("turn_error".to_string(), payload)
         }
     };
@@ -3106,7 +3161,21 @@ fn project_task_fail_writeback(
     command_id: &str,
     error_message: &str,
 ) -> ProjectTaskFailWriteback {
-    let (failure_family, retryable) = project_task_failure_classification(error_message);
+    // Deprecated entry: string-only call sites. Family comes from error_map
+    // fallback, not scattered contains chains in this function.
+    let envelope = envelope_for_code(
+        error_map::classify_message_fallback(error_message),
+        error_message.trim(),
+        "unknown",
+    );
+    project_task_fail_writeback_from_envelope(context, command_id, &envelope)
+}
+
+fn project_task_fail_writeback_from_envelope(
+    context: &ProjectTaskWritebackContext,
+    command_id: &str,
+    envelope: &ErrorEnvelope,
+) -> ProjectTaskFailWriteback {
     ProjectTaskFailWriteback {
         raw_log: None,
         project_task_id: context.project_task_id.clone(),
@@ -3117,41 +3186,33 @@ fn project_task_fail_writeback(
             "fail",
             command_id,
         ),
-        failure_summary: error_message.trim().to_string(),
-        failure_family: failure_family.to_string(),
-        retryable,
+        failure_summary: envelope.message.trim().to_string(),
+        failure_family: envelope.family.clone(),
+        retryable: envelope.retryable,
         result_contract: None,
     }
 }
 
-fn project_task_failure_classification(error_message: &str) -> (&'static str, bool) {
-    let normalized = error_message.to_ascii_lowercase();
-    if normalized.contains("wall_clock_exceeded") || normalized.contains("budget") {
-        return ("budget_fuse", false);
+/// Build L3 ProviderResult + shared fail packaging for the four terminal paths.
+fn build_provider_result_failed(envelope: ErrorEnvelope) -> (crate::events::ProviderResult, ErrorEnvelope) {
+    let result = provider_result_failed(envelope.clone());
+    (result, envelope)
+}
+
+fn command_failed_terminal_from_envelope(envelope: &ErrorEnvelope) -> RuntimeCommandTerminalWriteback {
+    RuntimeCommandTerminalWriteback {
+        status: "failed".to_string(),
+        summary: None,
+        result: None,
+        diagnostic: None,
+        provider_session_external_id: None,
+        session_state_patch: None,
+        log_ref: None,
+        raw_result_ref: None,
+        error_message: Some(envelope.message.clone()),
+        error_code: Some(envelope.code.clone()),
+        error_family: Some(envelope.family.clone()),
     }
-    if normalized.contains("operator cancelled") || normalized.contains("cancelled") {
-        return ("business_cancelled", false);
-    }
-    if normalized.contains("content_hash mismatch")
-        || normalized.contains("workspace_sync")
-        || normalized.contains("workspace sync")
-    {
-        return ("invalid_contract", false);
-    }
-    if normalized.contains("timeout") || normalized.contains("timed out") {
-        return ("timeout", true);
-    }
-    if normalized.contains("claude exited")
-        || normalized.contains("opencode exited")
-        || normalized.contains("codex exited")
-        || normalized.contains("api error")
-        || normalized.contains("rate limit")
-        || normalized.contains("overloaded")
-        || normalized.contains("unavailable")
-    {
-        return ("transient_provider", true);
-    }
-    ("non_retryable_execution", false)
 }
 
 fn project_task_attempt_idempotency_key(
@@ -3208,11 +3269,78 @@ async fn drain_provider_events(
     raw_sink: Arc<dyn crate::raw_log::RawLineSink>,
     terminal_cleanup: Option<crate::workspace_cleanup::TerminalWorkspaceCleanup>,
 ) -> anyhow::Result<()> {
+    // RunSpec still stores the short display name in `provider_kind` (e.g.
+    // "claude"); ErrorEnvelope.provider_type accepts that until Phase 1/2
+    // fully retires the dual naming (spec §13 #7).
+    let provider_type = spec.provider_kind.as_str();
     let mut latest_provider_session_id: Option<String> = None;
     let mut terminal_writeback = ProviderTerminalWritebackState::default();
     let mut fallback_text_summary = String::new();
-    while let Some(event) = events.next().await {
-        let event = event?;
+    while let Some(item) = events.next().await {
+        let event = match item {
+            Ok(event) => event,
+            // Path 4 (stream Err): synthesize turn_error + attestation + fail
+            // writeback so L2 timeline has a terminal marker and attestation
+            // is not skipped (spec §4.2.1 / §6.4).
+            Err(error) => {
+                let envelope = envelope_from_anyhow(&error, provider_type);
+                let _ = build_provider_result_failed(envelope.clone());
+                if let Some(stop) = &heartbeat_stop {
+                    stop.cancel();
+                }
+                let turn_error = ProviderEvent::turn_error_from_envelope(envelope.clone());
+                terminal_writeback.failed = true;
+                terminal_writeback.pending_completion = None;
+                if let Ok(record) = runs.record_event(&run_id, turn_error).await {
+                    if let Some(writeback) = &writeback {
+                        let _ = writeback
+                            .record_event(
+                                &record,
+                                latest_provider_session_id.as_deref(),
+                                &spec.environment,
+                            )
+                            .await;
+                    }
+                } else {
+                    let _ = runs
+                        .finish_failed(&run_id, envelope.message.clone())
+                        .await;
+                }
+                registry.record_run_finished(&run_id);
+                let command_id = spec
+                    .command_context
+                    .as_ref()
+                    .map(|context| context.command_id.as_str());
+                rollback_session_projections_best_effort(
+                    &run_id,
+                    spec.agent_home_dir.as_deref(),
+                    Some(spec.workspace_path.as_path()),
+                    command_id,
+                );
+                finalize_raw_log(&raw_sink, writeback.as_ref()).await;
+                if let Some(writeback) = &writeback {
+                    writeback
+                        .record_attestation(
+                            &spec,
+                            "provider_terminal",
+                            "failed",
+                            latest_provider_session_id.as_deref(),
+                            Some(
+                                provider_started_at
+                                    .elapsed()
+                                    .as_millis()
+                                    .min(i64::MAX as u128) as i64,
+                            ),
+                        )
+                        .await;
+                    let _ = writeback.fail_with_envelope(envelope).await;
+                }
+                if let Some(cleanup) = &terminal_cleanup {
+                    cleanup.apply(false);
+                }
+                return Ok(());
+            }
+        };
         if let ProviderEvent::TextDelta { text } = &event {
             fallback_text_summary.push_str(text);
         }
@@ -3231,8 +3359,11 @@ async fn drain_provider_events(
             event,
             ProviderEvent::TurnCompleted { .. } | ProviderEvent::TurnError { .. }
         );
-        let writeback_action =
-            terminal_writeback.observe_event(&event, latest_provider_session_id.as_deref());
+        let writeback_action = terminal_writeback.observe_event(
+            &event,
+            latest_provider_session_id.as_deref(),
+            provider_type,
+        );
         let record = runs.record_event(&run_id, event).await?;
         if is_terminal {
             registry.record_run_finished(&run_id);
@@ -3247,7 +3378,9 @@ async fn drain_provider_events(
                 .await?;
             if let Some(action) = writeback_action {
                 match action {
-                    ProviderTerminalWritebackAction::Fail(message) => {
+                    // Path 1: in-loop TurnError
+                    ProviderTerminalWritebackAction::Fail(envelope) => {
+                        let _ = build_provider_result_failed(envelope.clone());
                         if let Some(stop) = &heartbeat_stop {
                             stop.cancel();
                         }
@@ -3266,7 +3399,7 @@ async fn drain_provider_events(
                                 ),
                             )
                             .await;
-                        writeback.fail(message).await?;
+                        writeback.fail_with_envelope(envelope).await?;
                     }
                 }
             }
@@ -3301,6 +3434,7 @@ async fn drain_provider_events(
     let mut run_succeeded = false;
     let stream_failed = terminal_writeback.failed;
     match terminal_writeback.finish_successful_stream() {
+        // Path 2: stream ended with TurnCompleted
         Some(mut completion) => {
             if let Some(writeback) = &writeback {
                 let has_summary = completion
@@ -3312,6 +3446,11 @@ async fn drain_provider_events(
                 if !has_summary && !fallback_text.is_empty() {
                     completion.summary = Some(fallback_text.to_string());
                 }
+                let _ = provider_result_succeeded(
+                    completion.summary.clone(),
+                    None,
+                    completion.provider_session_id.clone(),
+                );
                 writeback
                     .record_attestation(
                         &spec,
@@ -3332,15 +3471,19 @@ async fn drain_provider_events(
                 run_succeeded = true;
             }
         }
-        // TurnError 路径(stream_failed)已在事件循环内完成 Fail 回写;这里只
-        // 处理"流结束却从未出现 TurnCompleted/TurnError"的异常早退——provider
-        // exit 0 零输出、输出格式漂移被解析层全量丢弃等。不在此收尾,run 将
-        // 永滞 dispatching 且无任何回写,只能等 stale reap(残债交接 §1,
-        // GATE 三次现场复现)。取消路径除外:cancel_run 已把 run 置终态。
+        // Path 3: stream ended without TurnCompleted/TurnError (exit 0 empty /
+        // format drift). TurnError path (stream_failed) already failed above.
         None if !stream_failed => {
             if !run_is_cancelled(&runs, &run_id).await {
-                let message = "provider exited without a terminal event".to_string();
-                let _ = runs.finish_failed(&run_id, message.clone()).await;
+                let envelope = envelope_for_code(
+                    error_code::PROVIDER_NO_TERMINAL_EVENT,
+                    "provider exited without a terminal event",
+                    provider_type,
+                );
+                let _ = build_provider_result_failed(envelope.clone());
+                let _ = runs
+                    .finish_failed(&run_id, envelope.message.clone())
+                    .await;
                 if let Some(writeback) = &writeback {
                     writeback
                         .record_attestation(
@@ -3357,7 +3500,7 @@ async fn drain_provider_events(
                             ),
                         )
                         .await;
-                    let _ = writeback.fail(message).await;
+                    let _ = writeback.fail_with_envelope(envelope).await;
                 }
             }
         }
@@ -3576,6 +3719,7 @@ mod tests {
                 usage: None,
             },
             Some("provider-session-1"),
+            "claude-code",
         );
 
         assert!(action.is_none());
@@ -3600,6 +3744,7 @@ mod tests {
                         text: "{\"summary\":\"provider final answer\"}".to_string(),
                     },
                     Some("provider-session-1"),
+                    "claude-code",
                 )
                 .is_none()
         );
@@ -3610,7 +3755,8 @@ mod tests {
                         summary: None,
                         usage: None
                     },
-                    Some("provider-session-1")
+                    Some("provider-session-1"),
+                    "claude-code",
                 )
                 .is_none()
         );
@@ -4232,19 +4378,24 @@ mod tests {
                         usage: None,
                     },
                     Some("provider-session-1"),
+                    "claude-code",
                 )
                 .is_none()
         );
         let action = state.observe_event(
             &ProviderEvent::TurnError {
                 message: "claude exited with status 1".to_string(),
+                error: None,
             },
             Some("provider-session-1"),
+            "claude-code",
         );
 
         match action {
-            Some(ProviderTerminalWritebackAction::Fail(message)) => {
-                assert_eq!(message, "claude exited with status 1");
+            Some(ProviderTerminalWritebackAction::Fail(envelope)) => {
+                assert_eq!(envelope.message, "claude exited with status 1");
+                assert_eq!(envelope.family, "transient_provider");
+                assert!(envelope.retryable);
             }
             other => panic!("expected fail action, got {other:?}"),
         }

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superteam.local/contracts/provider/schemas/provider-result.schema.json",
+  "title": "ProviderResult",
+  "description": "L3 attempt-terminal outcome synthesized by Runtime executor.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "status"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "provider.result.v1"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "cancelled", "waiting_human", "timed_out"]
+    },
+    "summary": { "type": ["string", "null"] },
+    "usage": {
+      "type": "object",
+      "properties": {
+        "total_tokens": { "type": "integer" },
+        "input_tokens": { "type": "integer" },
+        "output_tokens": { "type": "integer" }
+      }
+    },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "provider-error.schema.json" }
+      ]
+    },
+    "artifacts": { "type": "array" },
+    "session": {
+      "type": "object",
+      "properties": {
+        "provider_session_id": { "type": ["string", "null"] },
+        "resumable": { "type": "boolean" }
+      }
+    },
+    "diagnostics": { "type": "object" }
+  }
+}

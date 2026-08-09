@@ -1,0 +1,17 @@
+{
+  "description": "Claude result with is_error=true must yield turn_error (not turn_completed)",
+  "native_lines": [
+    "{\"type\":\"result\",\"is_error\":true,\"subtype\":\"error_during_execution\",\"result\":\"rate limit exceeded\"}"
+  ],
+  "expected_events": [
+    {
+      "type": "turn_error",
+      "message": "rate limit exceeded",
+      "error": {
+        "code": "RATE_LIMIT",
+        "family": "transient_provider",
+        "retryable": true
+      }
+    }
+  ]
+}

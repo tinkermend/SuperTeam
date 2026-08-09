@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superteam.local/contracts/provider/schemas/failure-family.json",
+  "title": "FailureFamilyKnownValues",
+  "description": "Cross-layer known failure_family strings. Open string on wire; both Runtime and CP constant sets must be subsets of known_values.",
+  "type": "object",
+  "required": ["known_values"],
+  "properties": {
+    "known_values": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string" },
+      "default": [
+        "budget_fuse",
+        "business_cancelled",
+        "invalid_contract",
+        "timeout",
+        "transient_provider",
+        "non_retryable_execution",
+        "provider_configuration",
+        "transient_runtime",
+        "dispatch_transient",
+        "runtime_start_timeout",
+        "runtime_lease_lost",
+        "transient_provider_start",
+        "approval_required",
+        "permission_required",
+        "plan_invalid",
+        "requirement_changed",
+        "acceptance_required"
+      ]
+    }
+  },
+  "known_values": [
+    "budget_fuse",
+    "business_cancelled",
+    "invalid_contract",
+    "timeout",
+    "transient_provider",
+    "non_retryable_execution",
+    "provider_configuration",
+    "transient_runtime",
+    "dispatch_transient",
+    "runtime_start_timeout",
+    "runtime_lease_lost",
+    "transient_provider_start",
+    "approval_required",
+    "permission_required",
+    "plan_invalid",
+    "requirement_changed",
+    "acceptance_required"
+  ]
+}

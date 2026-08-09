@@ -888,6 +888,10 @@ const (
 	FailureFamilyRuntimeLeaseLost      = "runtime_lease_lost"
 	FailureFamilyProviderStart         = "transient_provider_start"
 	FailureFamilyProviderConfig        = "provider_configuration"
+	// FailureFamilyBudgetFuse: runtime wall-clock/token fuse. Must route to
+	// waiting_human + budget_approval (spec 2026-08-09 §13 #12); previously
+	// absent here so CP fell through to default "failed".
+	FailureFamilyBudgetFuse = "budget_fuse"
 )
 
 const (

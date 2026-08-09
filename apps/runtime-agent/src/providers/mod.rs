@@ -1,6 +1,7 @@
 pub mod catalog;
 pub mod claude;
 pub mod codex;
+pub mod error_map;
 pub mod opencode;
 pub mod usage;
 
@@ -18,7 +19,10 @@ use tokio::process::{Child, ChildStderr, ChildStdout};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-use crate::events::ProviderEvent;
+use crate::events::{ErrorNative, ProviderEvent};
+use crate::providers::error_map::{
+    ProviderStreamError, code as error_code, envelope_for_code, refine_exit_code,
+};
 use crate::raw_log::{RawLineSink, RawStream};
 
 pub type ProviderEventStream = BoxStream<'static, anyhow::Result<ProviderEvent>>;
@@ -213,22 +217,43 @@ fn provider_exit_result(
     status: std::io::Result<ExitStatus>,
     stderr: String,
 ) -> Option<anyhow::Result<ProviderEvent>> {
+    // stream_child_events still passes a short display name ("claude") for
+    // human-readable messages; ErrorEnvelope.provider_type uses the same
+    // string until catalog registry names are threaded through (Phase 1
+    // keeps wire-compatible exit text: "claude exited with status N").
     match status {
         Ok(status) if status.success() => None,
         Ok(status) => {
-            let code = status
-                .code()
+            let exit_code = status.code();
+            let code_label = exit_code
                 .map(|code| code.to_string())
                 .unwrap_or_else(|| "signal".to_string());
-            let mut message = format!("{provider_name} exited with status {code}");
+            let mut message = format!("{provider_name} exited with status {code_label}");
             if !stderr.is_empty() {
                 message.push_str(": ");
                 message.push_str(&stderr);
             }
-            Some(Err(anyhow::anyhow!(message)))
+            let error_code = refine_exit_code(&message);
+            let mut envelope = envelope_for_code(error_code, message, provider_name);
+            envelope.native = Some(ErrorNative {
+                r#type: Some("process_exit".to_string()),
+                exit_code,
+                excerpt: (!stderr.is_empty()).then(|| {
+                    let (excerpt, _) = crate::events::truncate_excerpt(&stderr);
+                    excerpt
+                }),
+                subtype: None,
+            });
+            Some(Err(ProviderStreamError::new(envelope).into()))
         }
-        Err(error) => Some(Err(anyhow::anyhow!(
-            "failed to wait for {provider_name}: {error}"
-        ))),
+        Err(error) => {
+            let message = format!("failed to wait for {provider_name}: {error}");
+            Some(Err(ProviderStreamError::from_code(
+                error_code::PROVIDER_PROTOCOL_ERROR,
+                message,
+                provider_name,
+            )
+            .into()))
+        }
     }
 }

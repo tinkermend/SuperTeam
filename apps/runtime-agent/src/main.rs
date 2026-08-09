@@ -170,9 +170,11 @@ async fn stream_provider_events(
     let mut stream = match provider.run(request, raw_sink).await {
         Ok(stream) => stream,
         Err(error) => {
-            emit_event(&ProviderEvent::TurnError {
-                message: error.to_string(),
-            })?;
+            let envelope = superteam_runtime_agent::providers::error_map::envelope_from_anyhow(
+                &error,
+                "cli",
+            );
+            emit_event(&ProviderEvent::turn_error_from_envelope(envelope))?;
             return Err(error);
         }
     };
@@ -181,9 +183,11 @@ async fn stream_provider_events(
         match event {
             Ok(event) => emit_event(&event)?,
             Err(error) => {
-                emit_event(&ProviderEvent::TurnError {
-                    message: error.to_string(),
-                })?;
+                let envelope =
+                    superteam_runtime_agent::providers::error_map::envelope_from_anyhow(
+                        &error, "cli",
+                    );
+                emit_event(&ProviderEvent::turn_error_from_envelope(envelope))?;
                 return Err(error);
             }
         }

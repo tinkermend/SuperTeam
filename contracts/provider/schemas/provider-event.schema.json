@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superteam.local/contracts/provider/schemas/provider-event.schema.json",
+  "title": "ProviderEvent",
+  "description": "L2 platform event. Wire shape uses tag type=snake_case matching Runtime ProviderEvent serde.",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "session_started",
+        "turn_started",
+        "text_delta",
+        "tool_started",
+        "tool_completed",
+        "turn_completed",
+        "turn_error",
+        "native_unmapped"
+      ]
+    },
+    "schema_version": { "type": "string" },
+    "ts": { "type": "string" },
+    "seq": { "type": "integer" },
+    "provider_type": { "type": "string" },
+    "provider_session_id": { "type": "string" },
+    "session_id": { "type": "string" },
+    "session_state": {},
+    "text": { "type": "string" },
+    "tool_id": { "type": "string" },
+    "name": { "type": "string" },
+    "input_excerpt": { "type": "string" },
+    "input_truncated": { "type": "boolean" },
+    "is_error": { "type": "boolean" },
+    "output_excerpt": { "type": "string" },
+    "output_truncated": { "type": "boolean" },
+    "summary": { "type": ["string", "null"] },
+    "usage": { "type": "object" },
+    "message": { "type": "string" },
+    "error": { "$ref": "provider-error.schema.json" },
+    "native_type": { "type": "string" },
+    "reason": { "type": "string" }
+  }
+}

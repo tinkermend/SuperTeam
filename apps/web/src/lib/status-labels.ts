@@ -224,6 +224,35 @@ export function riskLevelLabel(level: string | undefined): string {
   return RISK_LEVEL_LABELS[normalized] ?? level;
 }
 
+/** project_task_attempts.failure_family — Runtime + CP 两个生产者共用词表。 */
+const FAILURE_FAMILY_LABELS: Record<string, string> = {
+  acceptance_required: "需要验收",
+  approval_required: "需要审批",
+  budget_fuse: "预算熔断",
+  business_cancelled: "业务取消",
+  dispatch_transient: "派发瞬时失败",
+  invalid_contract: "交付契约无效",
+  non_retryable_execution: "不可重试执行失败",
+  permission_required: "需要权限确认",
+  plan_invalid: "计划无效",
+  provider_configuration: "执行器配置有误",
+  requirement_changed: "需求已变更",
+  runtime_lease_lost: "运行时租约丢失",
+  runtime_start_timeout: "运行时启动超时",
+  timeout: "执行超时",
+  transient_provider: "执行器瞬时失败",
+  transient_provider_start: "执行器启动瞬时失败",
+  transient_runtime: "运行环境瞬时不可用",
+};
+
+export function failureFamilyLabel(family: string | undefined): string {
+  if (!family) {
+    return "未知";
+  }
+  const normalized = family.trim().toLowerCase();
+  return FAILURE_FAMILY_LABELS[normalized] ?? family;
+}
+
 const DECISION_TYPE_LABELS: Record<string, string> = {
   budget_approval: "预算审批",
   casting_expansion: "扩编请求",

@@ -16,7 +16,7 @@ import type {
   ProjectExecutionTrace,
   ProjectExecutionTraceAttempt
 } from "@/lib/api/projects";
-import { statusLabel } from "@/lib/status-labels";
+import { failureFamilyLabel, statusLabel } from "@/lib/status-labels";
 import { AttemptCapabilityProjection } from "./attempt-capability-projection";
 
 type ProjectExecutionTracePanelProps = {
@@ -215,7 +215,7 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
               className="mt-1 break-all text-xs text-ink-2"
               title={attempt.failure_family}
             >
-              失败族：{attempt.failure_family}
+              失败族：{failureFamilyLabel(attempt.failure_family)}
             </p>
           ) : null}
         </div>

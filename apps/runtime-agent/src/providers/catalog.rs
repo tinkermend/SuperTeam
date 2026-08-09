@@ -49,6 +49,61 @@ pub fn provider_kind(provider_type: &str) -> &'static str {
         .unwrap_or("unsupported")
 }
 
+/// Static capability matrix for a registered provider (Phase 2). Values are
+/// intentional honesty flags — not product promises of feature parity.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ProviderCapability {
+    pub schema_version: &'static str,
+    pub provider_type: &'static str,
+    pub session_resume: bool,
+    pub stream_text: bool,
+    pub stream_tools: bool,
+    pub stream_usage: bool,
+    pub structured_error: bool,
+    pub mcp_native: bool,
+    pub mcp_isolation: &'static str,
+}
+
+pub fn capability(provider_type: &str) -> Option<ProviderCapability> {
+    match provider_type {
+        CLAUDE_CODE_PROVIDER_TYPE => Some(ProviderCapability {
+            schema_version: "provider.capability.v1",
+            provider_type: CLAUDE_CODE_PROVIDER_TYPE,
+            session_resume: true,
+            stream_text: true,
+            stream_tools: true,
+            stream_usage: true,
+            // After Phase 1 is_error fix: can map some structured failures.
+            structured_error: true,
+            mcp_native: true,
+            mcp_isolation: "argv",
+        }),
+        OPENCODE_PROVIDER_TYPE => Some(ProviderCapability {
+            schema_version: "provider.capability.v1",
+            provider_type: OPENCODE_PROVIDER_TYPE,
+            session_resume: true,
+            stream_text: true,
+            stream_tools: false,
+            stream_usage: true,
+            structured_error: false,
+            mcp_native: true,
+            mcp_isolation: "home_file",
+        }),
+        CODEX_PROVIDER_TYPE => Some(ProviderCapability {
+            schema_version: "provider.capability.v1",
+            provider_type: CODEX_PROVIDER_TYPE,
+            session_resume: true,
+            stream_text: true,
+            stream_tools: false,
+            stream_usage: true,
+            structured_error: false,
+            mcp_native: true,
+            mcp_isolation: "home_file",
+        }),
+        _ => None,
+    }
+}
+
 pub fn provider_section<'a>(
     config: &'a RuntimeConfig,
     provider_type: &str,

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = process.cwd();
@@ -393,5 +393,78 @@ assertSetContainsAll("TypeScript api-client", tsClientPaths, requiredTypeScriptC
 assertSetContainsAll("Rust Control Plane client", openApiPaths, rustClientPaths);
 assertSetContainsAll("TypeScript api-client", openApiPaths, tsClientPaths);
 assertGeneratedGoIsFresh();
+assertProviderSemanticContracts();
 
 console.log("foundation contract guard passed");
+
+/**
+ * Provider semantic unification (2026-08-09): schemas/fixtures/goldens must
+ * exist and parse. Full JSON Schema validation (ajv) can be added later; this
+ * zero-dep path fails red if the tree is incomplete or failed fixtures drop
+ * required ErrorEnvelope fields. Wire transport remains control-plane openapi.
+ */
+function assertProviderSemanticContracts() {
+  const providerRoot = resolve(root, "contracts/provider");
+  const requiredSchemas = [
+    "schemas/provider-error.schema.json",
+    "schemas/provider-result.schema.json",
+    "schemas/provider-event.schema.json",
+    "schemas/provider-capability.schema.json",
+    "schemas/provider-usage.schema.json",
+    "schemas/failure-family.json",
+  ];
+  for (const rel of requiredSchemas) {
+    const path = resolve(providerRoot, rel);
+    if (!existsSync(path)) {
+      throw new Error(`provider contract missing: contracts/provider/${rel}`);
+    }
+    JSON.parse(readFileSync(path, "utf8"));
+  }
+
+  const fixturesDir = resolve(providerRoot, "fixtures");
+  if (!existsSync(fixturesDir)) {
+    throw new Error("provider contract missing: contracts/provider/fixtures/");
+  }
+  const fixtures = readdirSync(fixturesDir).filter((name) => name.endsWith(".json"));
+  if (fixtures.length === 0) {
+    throw new Error("provider fixtures empty: contracts/provider/fixtures/");
+  }
+  const envelopeKeys = [
+    "schema_version",
+    "code",
+    "family",
+    "retryable",
+    "message",
+    "provider_type",
+  ];
+  for (const name of fixtures) {
+    const body = JSON.parse(readFileSync(resolve(fixturesDir, name), "utf8"));
+    const envelope = name.startsWith("error-") ? body : body.error;
+    if (!envelope || typeof envelope !== "object") {
+      throw new Error(`fixture ${name}: expected ErrorEnvelope (top-level or .error)`);
+    }
+    for (const key of envelopeKeys) {
+      if (!(key in envelope)) {
+        throw new Error(`fixture ${name}: ErrorEnvelope missing ${key}`);
+      }
+    }
+  }
+
+  const goldenRoot = resolve(providerRoot, "golden");
+  for (const provider of ["claude-code", "opencode", "codex"]) {
+    const dir = resolve(goldenRoot, provider);
+    if (!existsSync(dir)) {
+      throw new Error(`provider golden missing: contracts/provider/golden/${provider}/`);
+    }
+    const cases = readdirSync(dir).filter((n) => n.endsWith(".json"));
+    if (cases.length === 0) {
+      throw new Error(`provider golden empty: contracts/provider/golden/${provider}/`);
+    }
+    for (const name of cases) {
+      const body = JSON.parse(readFileSync(resolve(dir, name), "utf8"));
+      if (!Array.isArray(body.native_lines) || body.native_lines.length === 0) {
+        throw new Error(`golden ${provider}/${name}: native_lines required`);
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superteam.local/contracts/provider/schemas/provider-usage.schema.json",
+  "title": "TurnUsage",
+  "type": "object",
+  "required": ["total_tokens"],
+  "properties": {
+    "total_tokens": { "type": "integer" },
+    "input_tokens": { "type": "integer" },
+    "output_tokens": { "type": "integer" }
+  }
+}

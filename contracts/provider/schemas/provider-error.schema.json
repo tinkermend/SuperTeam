@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superteam.local/contracts/provider/schemas/provider-error.schema.json",
+  "title": "ErrorEnvelope",
+  "description": "L3 structured provider error. family/retryable come from Runtime error_map only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "code",
+    "family",
+    "retryable",
+    "message",
+    "provider_type"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "provider.error.v1"
+    },
+    "code": {
+      "type": "string",
+      "enum": [
+        "PROVIDER_EXIT_NON_ZERO",
+        "PROVIDER_SPAWN_FAILED",
+        "PROVIDER_PROTOCOL_ERROR",
+        "PROVIDER_NO_TERMINAL_EVENT",
+        "RATE_LIMIT",
+        "AUTH_FAILED",
+        "TIMEOUT",
+        "BUDGET_FUSE",
+        "CANCELLED",
+        "WORKSPACE_INVALID",
+        "WAITING_HUMAN",
+        "UNKNOWN"
+      ]
+    },
+    "family": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Open string; known values listed in failure-family.json"
+    },
+    "retryable": { "type": "boolean" },
+    "message": {
+      "type": "string",
+      "description": "Technical (often English) message after redaction"
+    },
+    "provider_type": { "type": "string", "minLength": 1 },
+    "native": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string" },
+        "exit_code": { "type": ["integer", "null"] },
+        "excerpt": { "type": "string" },
+        "subtype": { "type": "string" }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "ref"],
+        "properties": {
+          "type": { "type": "string" },
+          "ref": { "type": "string" }
+        }
+      }
+    }
+  }
+}

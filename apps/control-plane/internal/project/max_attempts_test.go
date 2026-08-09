@@ -34,3 +34,14 @@ func TestProjectTaskFailureActionUsesEffectiveMaxAttempts(t *testing.T) {
 	task.MaxAttempts = nil
 	require.Equal(t, ProjectTaskStatusQueued, projectTaskFailureAction(task, FailureFamilyTransientProvider, nil, 0))
 }
+
+func TestProjectTaskFailureActionBudgetFuseWaitsHuman(t *testing.T) {
+	// Spec 2026-08-09 §13 #12: budget_fuse must not fall through to default failed.
+	task := ProjectTask{AttemptCount: 1}
+	retryableFalse := false
+	require.Equal(t, ProjectTaskStatusWaitingHuman, projectTaskFailureAction(task, FailureFamilyBudgetFuse, &retryableFalse, 3))
+	require.Equal(t, HumanWaitReasonBudgetApproval, humanWaitReasonForFailureFamily(FailureFamilyBudgetFuse))
+	summary := humanReadableFailureSummary(FailureFamilyBudgetFuse, "wall_clock_exceeded")
+	require.Contains(t, summary, "任务预算熔断")
+	require.Contains(t, summary, "wall_clock_exceeded")
+}

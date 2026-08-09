@@ -1,0 +1,17 @@
+{
+  "schema_version": "provider.result.v1",
+  "status": "failed",
+  "summary": null,
+  "usage": null,
+  "error": {
+    "schema_version": "provider.error.v1",
+    "code": "BUDGET_FUSE",
+    "family": "budget_fuse",
+    "retryable": false,
+    "message": "wall_clock_exceeded",
+    "provider_type": "claude-code"
+  },
+  "artifacts": [],
+  "session": null,
+  "diagnostics": null
+}

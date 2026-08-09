@@ -5454,6 +5454,8 @@ func humanReadableFailureSummary(failureFamily, raw string) string {
 		lead = "执行环境暂时不可用"
 	case FailureFamilyInvalidContract:
 		lead = "执行结果不符合交付契约"
+	case FailureFamilyBudgetFuse:
+		lead = "任务预算熔断"
 	default:
 		lead = "任务执行失败"
 	}
@@ -5853,6 +5855,11 @@ func isTerminalProjectTaskStatus(status string) bool {
 }
 
 func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable *bool, platformDefaultMaxAttempts int32) string {
+	// Budget fuse always waits for human budget approval, even when
+	// retryable=false (runtime marks fuse non-retryable by design).
+	if failureFamily == FailureFamilyBudgetFuse {
+		return ProjectTaskStatusWaitingHuman
+	}
 	if retryable != nil && !*retryable {
 		if failureFamily == FailureFamilyBusinessCancelled || failureFamily == FailureFamilyPlanInvalid || failureFamily == FailureFamilyRequirementChanged {
 			return ProjectTaskStatusCancelled
@@ -6511,6 +6518,8 @@ func humanWaitReasonForFailureFamily(failureFamily string) string {
 		return HumanWaitReasonPlanInvalid
 	case FailureFamilyAcceptanceRequired:
 		return HumanWaitReasonAcceptanceRequired
+	case FailureFamilyBudgetFuse:
+		return HumanWaitReasonBudgetApproval
 	default:
 		return HumanWaitReasonClarification
 	}

@@ -1,0 +1,13 @@
+{
+  "description": "Codex session + text + turn.completed",
+  "native_lines": [
+    "{\"type\":\"thread.started\",\"thread_id\":\"th-1\"}",
+    "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"codex says hi\"}}",
+    "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}"
+  ],
+  "expected_events": [
+    { "type": "session_started", "session_id": "th-1" },
+    { "type": "text_delta", "text": "codex says hi" },
+    { "type": "turn_completed" }
+  ]
+}

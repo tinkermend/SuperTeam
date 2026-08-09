@@ -1,0 +1,8 @@
+{
+  "description": "Codex turn.failed must surface as parser Err (stream error path)",
+  "native_lines": [
+    "{\"type\":\"turn.failed\",\"error\":{\"message\":\"boom\"}}"
+  ],
+  "expect_error": true,
+  "error_contains": "boom"
+}

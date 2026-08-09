@@ -1,0 +1,19 @@
+{
+  "description": "tool_use then tool_result with is_error",
+  "native_lines": [
+    "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"Bash\",\"input\":{\"command\":\"ls\"}}]}}",
+    "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"is_error\":true,\"content\":\"exit 1\"}]}}"
+  ],
+  "expected_events": [
+    {
+      "type": "tool_started",
+      "tool_id": "t1",
+      "name": "Bash"
+    },
+    {
+      "type": "tool_completed",
+      "tool_id": "t1",
+      "is_error": true
+    }
+  ]
+}

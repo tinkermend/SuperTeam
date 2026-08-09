@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superteam.local/contracts/provider/schemas/provider-capability.schema.json",
+  "title": "ProviderCapability",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider_type",
+    "session_resume",
+    "stream_text",
+    "stream_tools",
+    "stream_usage",
+    "structured_error",
+    "mcp_native"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "provider.capability.v1" },
+    "provider_type": { "type": "string" },
+    "session_resume": { "type": "boolean" },
+    "stream_text": { "type": "boolean" },
+    "stream_tools": { "type": "boolean" },
+    "stream_usage": { "type": "boolean" },
+    "structured_error": { "type": "boolean" },
+    "mcp_native": { "type": "boolean" },
+    "mcp_isolation": {
+      "type": "string",
+      "enum": ["argv", "home_file"]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "description": "OpenCode step_start + text + step_finish",
+  "native_lines": [
+    "{\"type\":\"step_start\",\"sessionID\":\"oc-1\"}",
+    "{\"type\":\"text\",\"part\":{\"text\":\"hi from opencode\"}}",
+    "{\"type\":\"step_finish\",\"part\":{\"tokens\":{\"input\":5,\"output\":1}}}"
+  ],
+  "expected_events": [
+    { "type": "session_started", "session_id": "oc-1" },
+    { "type": "text_delta", "text": "hi from opencode" },
+    { "type": "turn_completed" }
+  ]
+}

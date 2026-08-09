@@ -253,9 +253,15 @@ impl RuntimeRunStore {
     }
 
     pub async fn finish_failed(&self, run_id: &str, message: String) -> anyhow::Result<()> {
-        self.record_event(run_id, ProviderEvent::TurnError { message })
-            .await
-            .map(|_| ())
+        self.record_event(
+            run_id,
+            ProviderEvent::TurnError {
+                message,
+                error: None,
+            },
+        )
+        .await
+        .map(|_| ())
     }
 
     pub async fn cancel_run(&self, run_id: &str, reason: Option<String>) -> anyhow::Result<()> {
@@ -350,7 +356,7 @@ fn apply_event_to_snapshot(snapshot: &mut RunSnapshot, event: &ProviderEvent) {
                 snapshot.finished_at_ms = Some(now_ms());
             }
         }
-        ProviderEvent::TurnError { message } => {
+        ProviderEvent::TurnError { message, .. } => {
             if snapshot.status != RunStatus::Cancelled {
                 snapshot.status = RunStatus::Failed;
                 snapshot.finished_at_ms = Some(now_ms());
@@ -464,6 +470,7 @@ mod tests {
                 &finished.id,
                 ProviderEvent::TurnError {
                     message: "boom".to_string(),
+                    error: None,
                 },
             )
             .await

@@ -397,3 +397,43 @@ fn codex_failure_events_still_propagate_as_errors() {
         "codex turn.failed must surface as an error"
     );
 }
+
+#[test]
+fn claude_result_is_error_emits_turn_error_not_completed() {
+    // Spec 1.3.4: top-level is_error on result must fail the attempt.
+    let events = parse_claude_event(
+        r#"{"type":"result","is_error":true,"subtype":"error_during_execution","result":"rate limit exceeded"}"#,
+    )
+    .expect("valid json");
+    assert_eq!(events.len(), 1);
+    match &events[0] {
+        ProviderEvent::TurnError { message, error } => {
+            assert!(message.contains("rate limit"), "message={message}");
+            let envelope = error.as_ref().expect("structured error required");
+            assert_eq!(envelope.code, "RATE_LIMIT");
+            assert_eq!(envelope.family, "transient_provider");
+            assert!(envelope.retryable);
+            assert_eq!(
+                envelope.native.as_ref().and_then(|n| n.subtype.as_deref()),
+                Some("error_during_execution")
+            );
+        }
+        other => panic!("expected TurnError, got {other:?}"),
+    }
+}
+
+#[test]
+fn claude_result_is_error_false_still_completes() {
+    let events = parse_claude_event(
+        r#"{"type":"result","is_error":false,"result":"done","usage":{"input_tokens":1,"output_tokens":2}}"#,
+    )
+    .expect("valid json");
+    assert_eq!(events.len(), 1);
+    assert!(matches!(
+        &events[0],
+        ProviderEvent::TurnCompleted {
+            summary: Some(s),
+            ..
+        } if s == "done"
+    ));
+}
