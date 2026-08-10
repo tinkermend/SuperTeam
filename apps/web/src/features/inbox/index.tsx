@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   keepPreviousData,
   useMutation,
@@ -13,6 +13,7 @@ import {
   type InboxAction,
   type InboxItem,
   type InboxListFilters,
+  type InboxSortMode,
   type InboxViewMode
 } from "@/lib/api/inbox";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
@@ -24,6 +25,7 @@ import {
 import { inboxActionSuccessFeedback } from "./inbox-action-feedback";
 import { inboxListRefetchInterval } from "./inbox-stream-status";
 import { InboxActionDialog } from "./components/inbox-action-dialog";
+import { flatInboxRenderOrder } from "./components/inbox-item-list";
 import {
   InboxShell,
   type InboxFilterChangeValue,
@@ -33,12 +35,22 @@ import { useInboxStreamStatus } from "./use-inbox-stream-status";
 
 type InboxPageProps = {
   fetcher?: typeof fetch;
+  /** 路由 search 中的 sort（URL 为事实源）；测试可不传。 */
+  initialSort?: InboxSortMode;
+  /** 排序变更写回 URL；测试可不传。 */
+  onSortChange?: (sort: InboxSortMode) => void;
 };
 
 type InboxViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
+  initialSort?: InboxSortMode;
+  onSortChange?: (sort: InboxSortMode) => void;
 };
+
+function sortFromRoute(initialSort?: InboxSortMode): InboxSortMode | undefined {
+  return initialSort === "oldest" ? "oldest" : undefined;
+}
 
 type SelectedAction = {
   action: InboxAction;
@@ -62,11 +74,27 @@ const INBOX_ITEM_TYPES = [
   "casting_invalidated",
 ] satisfies Array<NonNullable<InboxListFilters["item_type"]>>;
 
-export function InboxPage({ fetcher }: InboxPageProps = {}) {
-  return <InboxView apiBaseUrl={resolveControlPlaneUrl()} fetcher={fetcher} />;
+export function InboxPage({
+  fetcher,
+  initialSort,
+  onSortChange,
+}: InboxPageProps = {}) {
+  return (
+    <InboxView
+      apiBaseUrl={resolveControlPlaneUrl()}
+      fetcher={fetcher}
+      initialSort={initialSort}
+      onSortChange={onSortChange}
+    />
+  );
 }
 
-export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
+export function InboxView({
+  apiBaseUrl,
+  fetcher,
+  initialSort,
+  onSortChange,
+}: InboxViewProps) {
   const queryClient = useQueryClient();
   const streamStatus = useInboxStreamStatus();
   const apiOptions = useMemo<ApiClientOptions>(
@@ -75,21 +103,45 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
   );
   const [view, setView] = useState<InboxViewMode>("mine");
   const [filters, setFilters] = useState<InboxListFilters>(() => ({
-    ...DEFAULT_INBOX_FILTERS
+    ...DEFAULT_INBOX_LIST_FILTERS,
+    ...(sortFromRoute(initialSort) ? { sort: sortFromRoute(initialSort) } : {}),
   }));
   const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   // 提交按事项并行:记录在飞事项 id,弹窗仅在"当前事项在飞"时置提交中,不同事项互不阻塞。
   const [pendingItemIds, setPendingItemIds] = useState<ReadonlySet<string>>(() => new Set());
   // 弹窗已切走或关闭后失败的后台提交,升级到页面横幅提示,不静默丢失。
   const [backgroundActionError, setBackgroundActionError] = useState<Error | null>(null);
   const selectedActionRef = useRef<SelectedAction | null>(null);
   selectedActionRef.current = selectedAction;
+  // 列表快照供 onSuccess 计算「同位置下一条」（invalidate 前的渲染序）。
+  const itemsSnapshotRef = useRef<InboxItem[]>([]);
+  // 与 onSuccess 里读 filters 时的闭包脱节无关：sort 用 ref 镜像当前值。
+  const sortRef = useRef<InboxSortMode>(filters.sort === "oldest" ? "oldest" : "risk");
+  sortRef.current = filters.sort === "oldest" ? "oldest" : "risk";
+
+  // U5 / §4.4.2：URL search 是 sort 事实源。in-SPA 改 search 不会 remount，须同步 filters。
+  useEffect(() => {
+    const fromUrl = initialSort === "oldest" ? "oldest" : "risk";
+    setFilters((current) => {
+      const currentSort = current.sort === "oldest" ? "oldest" : "risk";
+      if (currentSort === fromUrl) return current;
+      if (fromUrl === "oldest") {
+        return { ...current, sort: "oldest", offset: 0 };
+      }
+      const { sort: _drop, ...rest } = current;
+      return { ...rest, offset: 0 };
+    });
+  }, [initialSort]);
 
   const handleFilterChange = <Key extends InboxFilterKey>(
     key: Key,
     value: InboxFilterChangeValue<Key>,
   ) => {
     setFilters((current) => updateInboxFilter(current, key, value));
+    if (key === "sort") {
+      onSortChange?.(value === "oldest" ? "oldest" : "risk");
+    }
   };
 
   const inboxQuery = useQuery({
@@ -99,8 +151,9 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
     // 主刷新由全局 SSE（含 onopen 重连追平）驱动；连上时 15s 兜底，断流 5s 快拉。
     // 覆盖 main.tsx 里 DEV 关闭的 refetchOnWindowFocus——守候人切回 tab 必须追平。
     refetchInterval: inboxListRefetchInterval(streamStatus.connection),
-    refetchOnWindowFocus: true
-});
+    refetchOnWindowFocus: true,
+  });
+  itemsSnapshotRef.current = inboxQuery.data?.items ?? [];
 
   const actionMutation = useMutation({
     mutationFn: ({
@@ -121,6 +174,25 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
     onSuccess: (_data, { itemId, itemType }) => {
       // 只关掉本次提交对应的弹窗;用户已切到别的事项时不打断。
       setSelectedAction((current) => (current && current.item.id === itemId ? null : current));
+      // §4.3.2 处理后自动前进：仅在本成功回调生效。用提交前快照取渲染序位置，
+      // 选中「同位置的下一条」；已是最后一条则选中前一条；仅剩自身则清空。
+      // 若用户在后台提交期间已切到其他事项，不得抢选中（与弹窗关闭守卫同口径）。
+      // 他人处理导致消失仍由 shell 的 effect 清空，两条语义不得互污。
+      const flat = flatInboxRenderOrder(itemsSnapshotRef.current, {
+        sort: sortRef.current,
+      });
+      const idx = flat.findIndex((item) => item.id === itemId);
+      if (idx >= 0) {
+        const next =
+          idx < flat.length - 1 ? flat[idx + 1] : idx > 0 ? flat[idx - 1] : null;
+        const nextId = next && next.id !== itemId ? next.id : null;
+        setSelectedItemId((current) => {
+          if (current !== null && current !== itemId) {
+            return current;
+          }
+          return nextId;
+        });
+      }
       void queryClient.invalidateQueries({ queryKey: ["inbox-items"] });
       void queryClient.invalidateQueries({ queryKey: ["inbox-badge"] });
       const feedback = inboxActionSuccessFeedback(itemType);
@@ -157,6 +229,7 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
         mutationError={backgroundActionError}
         onAction={(item, action) => {
           setBackgroundActionError(null);
+          setSelectedItemId(item.id);
           setSelectedAction({ action, item });
         }}
         onFilterChange={handleFilterChange}
@@ -168,7 +241,10 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
         }}
         onResetFilters={() => {
           setFilters({ ...DEFAULT_INBOX_FILTERS });
+          // 排序只进 URL：重置须同步清掉 sort，避免仍停在 oldest 非分诊视图（U5）。
+          onSortChange?.("risk");
         }}
+        onSelectItem={setSelectedItemId}
         onViewChange={(nextView) => {
           setView(nextView);
           // 目标用户筛选仅团队视图有意义；切回我的待办时清掉。
@@ -180,6 +256,7 @@ export function InboxView({ apiBaseUrl, fetcher }: InboxViewProps) {
             });
           }
         }}
+        selectedItemId={selectedItemId}
         filters={filters}
         streamConnection={streamStatus.connection}
         view={view}
@@ -240,6 +317,10 @@ function clearInboxFilter(filters: InboxListFilters, key: InboxFilterKey) {
     case "risk_level":
       delete filters.risk_level;
       break;
+    case "sort":
+      // 排序回落默认 risk，不删除字段以免 queryKey 抖动无意义。
+      filters.sort = "risk";
+      break;
     case "status":
       delete filters.status;
       break;
@@ -262,6 +343,9 @@ function setInboxFilter(filters: InboxListFilters, key: InboxFilterKey, value: s
       break;
     case "risk_level":
       filters.risk_level = value;
+      break;
+    case "sort":
+      filters.sort = value === "oldest" ? "oldest" : "risk";
       break;
     case "status":
       if (isInboxStatus(value)) {

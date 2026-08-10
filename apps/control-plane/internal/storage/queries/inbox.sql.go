@@ -307,7 +307,15 @@ WHERE tenant_id = $1::uuid
     $6::uuid IS NULL
     OR source_project_id = $6::uuid
   )
-ORDER BY last_activity_at DESC, created_at DESC, id DESC
+ORDER BY
+  CASE risk_level
+    WHEN 'blocked' THEN 0
+    WHEN 'high'    THEN 1
+    WHEN 'medium'  THEN 2
+    WHEN 'low'     THEN 3
+    ELSE 4
+  END,
+  last_activity_at DESC, created_at DESC, id DESC
 LIMIT $8 OFFSET $7
 `
 
@@ -322,8 +330,119 @@ type ListInboxItemsParams struct {
 	Limit           int32         `json:"limit"`
 }
 
+// 分诊默认序：风险优先（blocked→high→medium→low），同级按最近活动。
+// NULL / 未登记 risk_level 排最后（ELSE 4），不得插队。
+// 契约：组内顺序由本查询承担；前端 groupInboxItems 不得二次排序。
+// WHERE 必须与 ListInboxItemsOldest 逐字同口径（TestInboxListQueriesShareWhereClause）。
 func (q *Queries) ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error) {
 	rows, err := q.db.Query(ctx, ListInboxItems,
+		arg.TenantID,
+		arg.Status,
+		arg.TargetUserID,
+		arg.ItemType,
+		arg.RiskLevel,
+		arg.SourceProjectID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []InboxItem{}
+	for rows.Next() {
+		var i InboxItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.TeamID,
+			&i.TargetUserID,
+			&i.Scope,
+			&i.ItemType,
+			&i.SourceType,
+			&i.SourceID,
+			&i.SourceProjectID,
+			&i.SourceTaskID,
+			&i.SourceApprovalRequestID,
+			&i.Title,
+			&i.Summary,
+			&i.RiskLevel,
+			&i.Priority,
+			&i.Status,
+			&i.ActionSchema,
+			&i.ContextPayload,
+			&i.DeepLink,
+			&i.ResolvedAt,
+			&i.LastActivityAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListInboxItemsOldest = `-- name: ListInboxItemsOldest :many
+SELECT id, tenant_id, team_id, target_user_id, scope, item_type, source_type, source_id, source_project_id, source_task_id, source_approval_request_id, title, summary, risk_level, priority, status, action_schema, context_payload, deep_link, resolved_at, last_activity_at, created_at, updated_at FROM inbox_items
+WHERE tenant_id = $1::uuid
+  AND (
+    $2::varchar IS NULL
+    OR status = $2::varchar
+  )
+  AND (
+    $3::uuid IS NULL
+    OR target_user_id = $3::uuid
+    OR (
+      -- any-of-N: 项目决策类事项对该项目全部 active 人类成员可见(成员同等身份)
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = $3::uuid
+      )
+    )
+  )
+  AND (
+    $4::varchar IS NULL
+    OR item_type = $4::varchar
+  )
+  AND (
+    $5::varchar IS NULL
+    OR risk_level = $5::varchar
+  )
+  AND (
+    $6::uuid IS NULL
+    OR source_project_id = $6::uuid
+  )
+ORDER BY created_at ASC, id ASC
+LIMIT $8 OFFSET $7
+`
+
+type ListInboxItemsOldestParams struct {
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	Status          pgtype.Text   `json:"status"`
+	TargetUserID    uuid.NullUUID `json:"target_user_id"`
+	ItemType        pgtype.Text   `json:"item_type"`
+	RiskLevel       pgtype.Text   `json:"risk_level"`
+	SourceProjectID uuid.NullUUID `json:"source_project_id"`
+	Offset          int32         `json:"offset"`
+	Limit           int32         `json:"limit"`
+}
+
+// sort=oldest：积压视角，谁被晾最久。
+// WHERE 必须与 ListInboxItems 逐字同口径（含 any-of-N 注释）；改一处漏一处会静默破坏可见性。
+// 护栏：migrations_test.go TestInboxListQueriesShareWhereClause。
+func (q *Queries) ListInboxItemsOldest(ctx context.Context, arg ListInboxItemsOldestParams) ([]InboxItem, error) {
+	rows, err := q.db.Query(ctx, ListInboxItemsOldest,
 		arg.TenantID,
 		arg.Status,
 		arg.TargetUserID,

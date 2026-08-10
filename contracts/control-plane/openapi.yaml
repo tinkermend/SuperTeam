@@ -2494,6 +2494,18 @@ paths:
           required: false
           schema:
             type: string
+        - name: sort
+          in: query
+          required: false
+          description: |
+            列表排序。缺省/非法值回落 risk（不报错、不空列表）。
+            risk=分诊（风险优先）；oldest=积压（created_at ASC）。
+          schema:
+            type: string
+            enum:
+              - risk
+              - oldest
+            default: risk
         - name: project_id
           in: query
           required: false

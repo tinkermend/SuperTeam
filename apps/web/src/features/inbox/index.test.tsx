@@ -132,11 +132,14 @@ function createInboxFetcher(
     mineItem?: InboxItem;
     mineItems?: InboxItem[];
     projects?: Array<{ id: string; name: string; status: "running" | "draft" | "archived" }>;
+    /** 提交成功后从 mine 列表移除该 id（模拟 resolve 后 refetch）。 */
+    removeAfterAction?: boolean;
     slowTeamView?: boolean;
     teamItem?: InboxItem;
   } = {},
 ) {
   const requests: Array<{ body?: string; method: string; pathname: string; url: string }> = [];
+  let mineItems = options.mineItems ?? [options.mineItem ?? makeInboxItem()];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? "GET";
@@ -168,9 +171,7 @@ function createInboxFetcher(
         );
       }
 
-      return jsonResponse(
-        makeListResponse(options.mineItems ?? [options.mineItem ?? makeInboxItem()]),
-      );
+      return jsonResponse(makeListResponse(mineItems));
     }
 
     if (url.pathname === "/api/v1/projects" && method === "GET") {
@@ -212,6 +213,10 @@ function createInboxFetcher(
         return jsonResponse({ error: "上游审批服务暂时不可用" }, status);
       }
 
+      if (options.removeAfterAction) {
+        mineItems = mineItems.filter((item) => item.id !== itemId);
+      }
+
       return jsonResponse({
         item: makeInboxItem({ id: itemId, status: "resolved" }),
         source_result: {
@@ -220,6 +225,14 @@ function createInboxFetcher(
           status: "approved"
         }
       });
+    }
+
+    // 测试用：外部模拟「他人处理」后列表变短。
+    if (url.pathname === "/__test__/drop-mine-item" && method === "POST") {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+      const dropId = typeof body.id === "string" ? body.id : "";
+      mineItems = mineItems.filter((item) => item.id !== dropId);
+      return jsonResponse({ ok: true });
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
@@ -340,6 +353,33 @@ describe("InboxView", () => {
     // primary_surface 的唯一权威落点。
     expect(screen.getByRole("link", { name: "进入流程实例" }).query()).toBeNull();
     expect(screen.getByRole("link", { name: "查看流程编排" }).query()).toBeNull();
+  });
+
+  // §4.2：kind 行内 pill + 进度条在详情栏（从列表迁入，不是删除）。
+  it("renders kind pill in the row and progress bar in the detail panel", async () => {
+    const item = makeInboxItem({
+      kind: "plan_review",
+      layer: "demand",
+      title: "确认项目计划版本",
+      progress: { step: 1, total: 4, label: "计划确认 待你 → 执行 未开始" },
+      context: {
+        demand_id: "d-1",
+        demand_title: "README 简介需求",
+        progress: { step: 1, total: 4, label: "计划确认 待你 → 执行 未开始" },
+      },
+    });
+    const screen = await renderInboxView(createInboxFetcher({ mineItem: item }));
+
+    // 列表标题位用需求名，kind pill 在行内。
+    await expect.element(screen.getByText("README 简介需求")).toBeVisible();
+    await expect.element(screen.getByText("计划确认").first()).toBeVisible();
+    // 列表内不再渲染进度条。
+    expect(document.body.querySelector('[data-inbox-list] [data-testid="inbox-progress-bar"]')).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：README 简介需求" }));
+    // 详情栏出现进度条（搬迁，非删除）。
+    await expect.element(screen.getByTestId("inbox-progress-bar")).toBeVisible();
+    await expect.element(screen.getByText("为什么需要你处理")).toBeVisible();
   });
 
   // 已处理事项(如经飞书批准)在"已处理"过滤下选中:详情必须呈终态,不得再渲染
@@ -505,11 +545,12 @@ describe("InboxView", () => {
     const screen = await renderInboxView(createInboxFetcher({ mineItem: closureItem }));
 
     await expect.element(screen.getByText("结项确认 · 测试项目")).toBeVisible();
-    // headline 取 primary(已完成)需求,而不是列表首位的已取消需求。
-    await expect.element(screen.getByText(/分析 CPU 使用率 等 2 项/).first()).toBeVisible();
-    expect(screen.getByText(/遗留 E2E 夹具需求 等 2 项/).query()).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "打开事项：结项确认 · 测试项目" }));
+    // 详情关联对象 headline 取 primary(已完成)需求，而不是列表首位的已取消需求。
+    // （§4.2 密度压缩后 demand headline 只在详情栏，不再出现在列表 meta。）
+    await expect.element(screen.getByText(/分析 CPU 使用率 等 2 项/).first()).toBeVisible();
+    expect(screen.getByText(/遗留 E2E 夹具需求 等 2 项/).query()).toBeNull();
     await expect.element(screen.getByText("关联需求 · 分析 CPU 使用率（已完成）")).toBeVisible();
     await expect.element(screen.getByText("关联需求 · 遗留 E2E 夹具需求（已取消）")).toBeVisible();
   });
@@ -965,11 +1006,191 @@ describe("InboxView", () => {
 });
     deferred.resolve();
   });
+
+  // §4.3.1 roving tabindex：↓ 跨行移动选中，Enter 开主动作弹窗。
+  it("moves selection with arrow keys and opens primary action on Enter", async () => {
+    const itemA = makeInboxItem({
+      id: "nav-a",
+      title: "导航甲",
+      risk_level: "high",
+    });
+    const itemB = makeInboxItem({
+      id: "nav-b",
+      source_id: "approval-b",
+      title: "导航乙",
+      risk_level: "medium",
+      summary: "乙的摘要",
+    });
+    const itemC = makeInboxItem({
+      id: "nav-c",
+      source_id: "approval-c",
+      title: "导航丙",
+      risk_level: "low",
+      summary: "丙的摘要",
+    });
+    const screen = await renderInboxView(
+      createInboxFetcher({ mineItems: [itemA, itemB, itemC] }),
+    );
+
+    await expect.element(screen.getByText("导航甲")).toBeVisible();
+    const rowA = screen.getByRole("button", { name: "打开事项：导航甲" }).element() as HTMLElement;
+    // 直接对行派发键盘事件，避开窄容器 Sheet 抢焦点。
+    rowA.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await expect.element(screen.getByRole("heading", { name: "导航乙" })).toBeVisible();
+    expect(
+      document.body.querySelector('[aria-label="打开事项：导航乙"]')?.getAttribute("aria-selected"),
+    ).toBe("true");
+
+    const rowB = document.body.querySelector(
+      '[aria-label="打开事项：导航乙"]',
+    ) as HTMLElement;
+    rowB.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    await expect.element(screen.getByRole("heading", { name: "导航丙" })).toBeVisible();
+
+    const rowC = document.body.querySelector(
+      '[aria-label="打开事项：导航丙"]',
+    ) as HTMLElement;
+    rowC.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    await expect.element(screen.getByRole("heading", { name: "导航乙" })).toBeVisible();
+
+    rowB.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+    await expect.element(screen.getByRole("heading", { name: "导航甲" })).toBeVisible();
+    const rowHome = document.body.querySelector(
+      '[aria-label="打开事项：导航甲"]',
+    ) as HTMLElement;
+    rowHome.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await expect.element(screen.getByRole("dialog")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "同意" })).toBeVisible();
+  });
+
+  // §4.3.2 提交成功后选中态前进到同位置下一条。
+  it("advances selection to the next item after a successful action", async () => {
+    const itemA = makeInboxItem({
+      id: "adv-a",
+      title: "前进甲",
+      risk_level: "high",
+    });
+    const itemB = makeInboxItem({
+      id: "adv-b",
+      source_id: "approval-b",
+      title: "前进乙",
+      risk_level: "high",
+      summary: "乙摘要",
+    });
+    const itemC = makeInboxItem({
+      id: "adv-c",
+      source_id: "approval-c",
+      title: "前进丙",
+      risk_level: "medium",
+      summary: "丙摘要",
+    });
+    const screen = await renderInboxView(
+      createInboxFetcher({
+        mineItems: [itemA, itemB, itemC],
+        removeAfterAction: true,
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：前进甲" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意" }));
+    await userEvent.click(screen.getByRole("button", { name: "提交" }));
+
+    // 详情标题切到乙 = 自动前进；甲从列表消失。
+    await expect.element(screen.getByRole("heading", { name: "前进乙" })).toBeVisible();
+    expect(document.body.querySelector('[aria-label="打开事项：前进乙"]')?.getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText("前进甲").query()).toBeNull();
+  });
+
+  // review: 后台提交完成时，若用户已切到其他事项，不得抢选中。
+  it("does not yank selection when a background submit completes for another item", async () => {
+    const deferred = createDeferred<void>();
+    const itemA = makeInboxItem({
+      id: "bg-a",
+      title: "后台甲",
+      risk_level: "high",
+    });
+    const itemB = makeInboxItem({
+      id: "bg-b",
+      source_id: "approval-b",
+      title: "后台乙",
+      risk_level: "high",
+      summary: "乙摘要",
+    });
+    const itemC = makeInboxItem({
+      id: "bg-c",
+      source_id: "approval-c",
+      title: "后台丙",
+      risk_level: "medium",
+      summary: "丙摘要",
+    });
+    const fetcher = createInboxFetcher({
+      actionDelays: { "bg-a": deferred.promise },
+      mineItems: [itemA, itemB, itemC],
+      removeAfterAction: true,
+    });
+    const screen = await renderInboxView(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：后台甲" }));
+    await userEvent.click(screen.getByRole("button", { name: "同意" }));
+    await userEvent.click(screen.getByRole("button", { name: "提交" }));
+    // 弹窗可关；提交在后台继续。
+    await userEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：后台丙" }));
+    await expect.element(screen.getByRole("heading", { name: "后台丙" })).toBeVisible();
+
+    deferred.resolve();
+    // 甲须从列表移除（后台提交成功）；选中仍停在丙，不得被前进到乙。
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[aria-label="打开事项：后台甲"]')).toBeNull();
+    });
+    expect(
+      document.body.querySelector('[aria-label="打开事项：后台丙"]')?.getAttribute("aria-selected"),
+    ).toBe("true");
+    await expect.element(screen.getByRole("heading", { name: "后台丙" })).toBeVisible();
+    // 若错误前进，会落到「后台乙」。
+    expect(
+      document.body.querySelector('[aria-label="打开事项：后台乙"]')?.getAttribute("aria-selected"),
+    ).not.toBe("true");
+  });
+
+  // §4.3.2 他人处理导致消失 → 清空选中（不得跳走）。
+  it("clears selection when the selected item disappears without local action", async () => {
+    const itemA = makeInboxItem({ id: "drop-a", title: "待消失甲" });
+    const itemB = makeInboxItem({
+      id: "drop-b",
+      source_id: "approval-b",
+      title: "待消失乙",
+      summary: "乙仍在",
+    });
+    const fetcher = createInboxFetcher({ mineItems: [itemA, itemB] });
+    const screen = await renderInboxView(fetcher);
+
+    await userEvent.click(screen.getByRole("button", { name: "打开事项：待消失甲" }));
+    await expect.element(screen.getByRole("heading", { name: "待消失甲" })).toBeVisible();
+
+    // 模拟他人 resolve：从 mock 列表删掉甲，再触发刷新。
+    await fetcher("http://control-plane.local/__test__/drop-mine-item", {
+      method: "POST",
+      body: JSON.stringify({ id: "drop-a" }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "刷新收件箱" }));
+
+    await expect.element(screen.getByText("待消失乙")).toBeVisible();
+    expect(screen.getByText("待消失甲").query()).toBeNull();
+    // 选中态清空：详情栏标题不再是甲，也不应自动跳到乙。
+    expect(screen.getByRole("heading", { name: "待消失甲" }).query()).toBeNull();
+    expect(screen.getByRole("heading", { name: "待消失乙" }).query()).toBeNull();
+  });
 });
 
-describe("groupInboxItems (§6.1 领域分组)", () => {
+describe("groupInboxItems (§6.1 领域分组 + §4.4 优先区)", () => {
   it("orders sections by human-task category and buckets others into 异常处理", () => {
-    const mk = (id: string, kind?: string) => makeInboxItem({ id, source_id: id, kind });
+    // 低风险夹具：高风险会进优先区，不得污染领域分组断言。
+    const mk = (id: string, kind?: string) =>
+      makeInboxItem({ id, source_id: id, kind, risk_level: "low" });
     const items = [
       mk("a", "closure_confirm"),
       mk("b", "plan_review"),
@@ -993,6 +1214,69 @@ describe("groupInboxItems (§6.1 领域分组)", () => {
     // task_failure_recovery and the kind-less item both fall into 异常处理, in入参顺序.
     expect(exception?.items.map((item) => item.id)).toEqual(["d", "e"]);
     expect(sections.find((section) => section.key === "plan_review")?.label).toBe("计划确认");
+  });
+
+  it("extracts open blocked/high into a priority section without duplicating", () => {
+    const highPlan = makeInboxItem({
+      id: "h1",
+      kind: "plan_review",
+      risk_level: "high",
+      status: "open",
+    });
+    const blockedAccept = makeInboxItem({
+      id: "h2",
+      source_id: "a2",
+      kind: "acceptance_sign",
+      risk_level: "blocked",
+      status: "open",
+    });
+    const lowPlan = makeInboxItem({
+      id: "l1",
+      source_id: "a3",
+      kind: "plan_review",
+      risk_level: "low",
+      status: "open",
+    });
+    const resolvedHigh = makeInboxItem({
+      id: "r1",
+      source_id: "a4",
+      kind: "plan_review",
+      risk_level: "high",
+      status: "resolved",
+    });
+
+    const sections = groupInboxItems([highPlan, blockedAccept, lowPlan, resolvedHigh]);
+    expect(sections.map((s) => s.key)).toEqual(["priority", "plan_review"]);
+    expect(sections[0].label).toBe("优先处理");
+    expect(sections[0].items.map((i) => i.id)).toEqual(["h1", "h2"]);
+    // 不进领域组、不重复；resolved high 不进优先区（U12）。
+    expect(sections.find((s) => s.key === "plan_review")?.items.map((i) => i.id)).toEqual([
+      "l1",
+      "r1",
+    ]);
+  });
+
+  it("flattens list without priority/groups when sort=oldest", () => {
+    const items = [
+      makeInboxItem({ id: "a", kind: "plan_review", risk_level: "high" }),
+      makeInboxItem({
+        id: "b",
+        source_id: "b",
+        kind: "acceptance_sign",
+        risk_level: "low",
+      }),
+    ];
+    const sections = groupInboxItems(items, { sort: "oldest" });
+    expect(sections).toHaveLength(1);
+    expect(sections[0].key).toBe("flat");
+    expect(sections[0].items.map((i) => i.id)).toEqual(["a", "b"]);
+  });
+
+  it("omits empty priority section", () => {
+    const sections = groupInboxItems([
+      makeInboxItem({ id: "l", risk_level: "low", kind: "plan_review" }),
+    ]);
+    expect(sections.map((s) => s.key)).toEqual(["plan_review"]);
   });
 });
 

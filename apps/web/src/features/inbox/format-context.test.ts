@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatContext,
   formatRealCurrentNode,
+  inboxItemIdentityTitle,
   inboxListDescriptionParagraphs,
   primaryDemandLabel,
   readDemandRefs,
@@ -109,6 +110,104 @@ describe("formatRealCurrentNode", () => {
         baseItem({ context: { current_node: "计划确认节点" } }),
       ),
     ).toBe("计划确认节点");
+  });
+});
+
+describe("inboxItemIdentityTitle (§4.2.1 layer 驱动身份)", () => {
+  it("uses demand name for layer=demand", () => {
+    expect(
+      inboxItemIdentityTitle(
+        baseItem({
+          layer: "demand",
+          title: "确认项目计划版本",
+          context: {
+            demand_id: "a1b2c3d4-1111-2222-3333-444444444444",
+            demand_title: "F1判别验证-浅出口",
+          },
+        }),
+      ),
+    ).toBe("F1判别验证-浅出口");
+  });
+
+  it("falls back to missingObjectLabel for demand without title", () => {
+    const demandId = "deadbeef-1111-2222-3333-444444444444";
+    const title = inboxItemIdentityTitle(
+      baseItem({
+        layer: "demand",
+        title: "确认项目计划版本",
+        context: { demand_id: demandId },
+      }),
+    );
+    expect(title).toBe("未命名需求 (deadbeef…)");
+    expect(title).not.toContain(demandId);
+    expect(title).not.toBe("确认项目计划版本");
+  });
+
+  it("uses task name for layer=task", () => {
+    expect(
+      inboxItemIdentityTitle(
+        baseItem({
+          layer: "task",
+          title: "高风险动作需要确认",
+          source_task_name: "读取README并总结仓库用途",
+          source_task_id: "task-1",
+        }),
+      ),
+    ).toBe("读取README并总结仓库用途");
+  });
+
+  it("falls back to missingObjectLabel for task without name", () => {
+    const taskId = "cafebabe-1111-2222-3333-444444444444";
+    expect(
+      inboxItemIdentityTitle(
+        baseItem({
+          layer: "task",
+          title: "高风险动作需要确认",
+          source_task_id: taskId,
+          source_task_name: undefined,
+          context: {},
+        }),
+      ),
+    ).toBe("未命名任务 (cafebabe…)");
+  });
+
+  it("uses project name for layer=project", () => {
+    expect(
+      inboxItemIdentityTitle(
+        baseItem({
+          layer: "project",
+          title: "结项确认 · 批三",
+          source_project_name: "批三 H1H4 全链路 181601",
+          source_project_id: "project-1",
+        }),
+      ),
+    ).toBe("批三 H1H4 全链路 181601");
+  });
+
+  it("falls back to missingObjectLabel for project without name", () => {
+    const projectId = "beadfeed-1111-2222-3333-444444444444";
+    expect(
+      inboxItemIdentityTitle(
+        baseItem({
+          layer: "project",
+          title: "结项确认",
+          source_project_id: projectId,
+          source_project_name: undefined,
+          context: {},
+        }),
+      ),
+    ).toBe("未命名项目 (beadfeed…)");
+  });
+
+  it("uses item.title when layer is absent (alerts)", () => {
+    expect(
+      inboxItemIdentityTitle(
+        baseItem({
+          title: "编制失效：批三 H1H4 全链路 181601",
+          item_type: "casting_invalidated",
+        }),
+      ),
+    ).toBe("编制失效：批三 H1H4 全链路 181601");
   });
 });
 

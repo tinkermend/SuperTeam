@@ -3039,6 +3039,24 @@ func (e ListInboxItemsParamsItemType) Valid() bool {
 	}
 }
 
+// Defines values for ListInboxItemsParamsSort.
+const (
+	Oldest ListInboxItemsParamsSort = "oldest"
+	Risk   ListInboxItemsParamsSort = "risk"
+)
+
+// Valid indicates whether the value is a known member of the ListInboxItemsParamsSort enum.
+func (e ListInboxItemsParamsSort) Valid() bool {
+	switch e {
+	case Oldest:
+		return true
+	case Risk:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListPermissionApprovalsParamsView.
 const (
 	ListPermissionApprovalsParamsViewMine ListPermissionApprovalsParamsView = "mine"
@@ -8068,14 +8086,18 @@ type BindEmployeeSkillJSONBody struct {
 
 // ListInboxItemsParams defines parameters for ListInboxItems.
 type ListInboxItemsParams struct {
-	View         *ListInboxItemsParamsView     `form:"view,omitempty" json:"view,omitempty"`
-	Status       *ListInboxItemsParamsStatus   `form:"status,omitempty" json:"status,omitempty"`
-	ItemType     *ListInboxItemsParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
-	RiskLevel    *string                       `form:"risk_level,omitempty" json:"risk_level,omitempty"`
-	ProjectId    *openapi_types.UUID           `form:"project_id,omitempty" json:"project_id,omitempty"`
-	TargetUserId *openapi_types.UUID           `form:"target_user_id,omitempty" json:"target_user_id,omitempty"`
-	Limit        *Limit                        `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset       *Offset                       `form:"offset,omitempty" json:"offset,omitempty"`
+	View      *ListInboxItemsParamsView     `form:"view,omitempty" json:"view,omitempty"`
+	Status    *ListInboxItemsParamsStatus   `form:"status,omitempty" json:"status,omitempty"`
+	ItemType  *ListInboxItemsParamsItemType `form:"item_type,omitempty" json:"item_type,omitempty"`
+	RiskLevel *string                       `form:"risk_level,omitempty" json:"risk_level,omitempty"`
+
+	// Sort 列表排序。缺省/非法值回落 risk（不报错、不空列表）。
+	// risk=分诊（风险优先）；oldest=积压（created_at ASC）。
+	Sort         *ListInboxItemsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+	ProjectId    *openapi_types.UUID       `form:"project_id,omitempty" json:"project_id,omitempty"`
+	TargetUserId *openapi_types.UUID       `form:"target_user_id,omitempty" json:"target_user_id,omitempty"`
+	Limit        *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset       *Offset                   `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListInboxItemsParamsView defines parameters for ListInboxItems.
@@ -8086,6 +8108,9 @@ type ListInboxItemsParamsStatus string
 
 // ListInboxItemsParamsItemType defines parameters for ListInboxItems.
 type ListInboxItemsParamsItemType string
+
+// ListInboxItemsParamsSort defines parameters for ListInboxItems.
+type ListInboxItemsParamsSort string
 
 // ListPermissionApprovalsParams defines parameters for ListPermissionApprovals.
 type ListPermissionApprovalsParams struct {
@@ -14250,6 +14275,19 @@ func (siw *ServerInterfaceWrapper) ListInboxItems(w http.ResponseWriter, r *http
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "risk_level"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "risk_level", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
 		}
 		return
 	}

@@ -158,6 +158,10 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND source_approval_request_id = sqlc.arg('source_approval_request_id')::uuid;
 
 -- name: ListInboxItems :many
+-- 分诊默认序：风险优先（blocked→high→medium→low），同级按最近活动。
+-- NULL / 未登记 risk_level 排最后（ELSE 4），不得插队。
+-- 契约：组内顺序由本查询承担；前端 groupInboxItems 不得二次排序。
+-- WHERE 必须与 ListInboxItemsOldest 逐字同口径（TestInboxListQueriesShareWhereClause）。
 SELECT * FROM inbox_items
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND (
@@ -193,7 +197,57 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     sqlc.narg('source_project_id')::uuid IS NULL
     OR source_project_id = sqlc.narg('source_project_id')::uuid
   )
-ORDER BY last_activity_at DESC, created_at DESC, id DESC
+ORDER BY
+  CASE risk_level
+    WHEN 'blocked' THEN 0
+    WHEN 'high'    THEN 1
+    WHEN 'medium'  THEN 2
+    WHEN 'low'     THEN 3
+    ELSE 4
+  END,
+  last_activity_at DESC, created_at DESC, id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: ListInboxItemsOldest :many
+-- sort=oldest：积压视角，谁被晾最久。
+-- WHERE 必须与 ListInboxItems 逐字同口径（含 any-of-N 注释）；改一处漏一处会静默破坏可见性。
+-- 护栏：migrations_test.go TestInboxListQueriesShareWhereClause。
+SELECT * FROM inbox_items
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND (
+    sqlc.narg('status')::varchar IS NULL
+    OR status = sqlc.narg('status')::varchar
+  )
+  AND (
+    sqlc.narg('target_user_id')::uuid IS NULL
+    OR target_user_id = sqlc.narg('target_user_id')::uuid
+    OR (
+      -- any-of-N: 项目决策类事项对该项目全部 active 人类成员可见(成员同等身份)
+      item_type = 'project_decision'
+      AND source_project_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM project_members pm
+        WHERE pm.tenant_id = inbox_items.tenant_id
+          AND pm.project_id = inbox_items.source_project_id
+          AND pm.principal_type = 'human_user'
+          AND pm.status = 'active'
+          AND pm.principal_id = sqlc.narg('target_user_id')::uuid
+      )
+    )
+  )
+  AND (
+    sqlc.narg('item_type')::varchar IS NULL
+    OR item_type = sqlc.narg('item_type')::varchar
+  )
+  AND (
+    sqlc.narg('risk_level')::varchar IS NULL
+    OR risk_level = sqlc.narg('risk_level')::varchar
+  )
+  AND (
+    sqlc.narg('source_project_id')::uuid IS NULL
+    OR source_project_id = sqlc.narg('source_project_id')::uuid
+  )
+ORDER BY created_at ASC, id ASC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: CountInboxItems :one

@@ -454,7 +454,15 @@ INSERT INTO inbox_items (
     sqlc.narg('source_project_id')::uuid,
     sqlc.narg('source_task_id')::uuid,
     sqlc.arg('source_approval_request_id')::uuid,`,
-		"ORDER BY last_activity_at DESC, created_at DESC, id DESC",
+		`CASE risk_level
+    WHEN 'blocked' THEN 0
+    WHEN 'high'    THEN 1
+    WHEN 'medium'  THEN 2
+    WHEN 'low'     THEN 3
+    ELSE 4
+  END,
+  last_activity_at DESC, created_at DESC, id DESC`,
+		"ORDER BY created_at ASC, id ASC",
 		`-- name: CountInboxItems :one
 SELECT COUNT(*)::bigint FROM inbox_items
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
@@ -495,6 +503,45 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 		if !strings.Contains(sql, expected) {
 			t.Fatalf("expected inbox queries to contain %q", expected)
 		}
+	}
+}
+
+// TestInboxListQueriesShareWhereClause pins ListInboxItems / ListInboxItemsOldest
+// visibility filters to the same WHERE body so sort-mode forks cannot drift.
+func TestInboxListQueriesShareWhereClause(t *testing.T) {
+	body, err := os.ReadFile("queries/inbox.sql")
+	if err != nil {
+		t.Fatalf("read inbox queries: %v", err)
+	}
+	sql := string(body)
+
+	extractWhere := func(name string) string {
+		marker := "-- name: " + name + " :many"
+		start := strings.Index(sql, marker)
+		if start < 0 {
+			t.Fatalf("missing query %s", name)
+		}
+		rest := sql[start:]
+		// Anchor on the SELECT body, not prose comments that contain "WHERE".
+		selectIdx := strings.Index(rest, "SELECT * FROM inbox_items\nWHERE ")
+		if selectIdx < 0 {
+			t.Fatalf("%s: missing SELECT * FROM inbox_items WHERE", name)
+		}
+		whereStart := selectIdx + len("SELECT * FROM inbox_items\n")
+		orderIdx := strings.Index(rest[whereStart:], "\nORDER BY")
+		if orderIdx < 0 {
+			t.Fatalf("%s: no ORDER BY after WHERE", name)
+		}
+		return rest[whereStart : whereStart+orderIdx]
+	}
+
+	riskWhere := extractWhere("ListInboxItems")
+	oldestWhere := extractWhere("ListInboxItemsOldest")
+	if riskWhere != oldestWhere {
+		t.Fatalf("ListInboxItems and ListInboxItemsOldest WHERE clauses differ:\n--- risk ---\n%s\n--- oldest ---\n%s", riskWhere, oldestWhere)
+	}
+	if !strings.Contains(sql, "ORDER BY created_at ASC, id ASC") {
+		t.Fatalf("expected oldest ORDER BY created_at ASC, id ASC")
 	}
 }
 

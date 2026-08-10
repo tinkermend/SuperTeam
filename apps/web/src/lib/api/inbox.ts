@@ -91,6 +91,9 @@ export type InboxItem = HumanTask & {
   resolved_at?: string;
 };
 
+/** 收件箱排序。非法值由服务端回落 risk。 */
+export type InboxSortMode = "risk" | "oldest";
+
 export type InboxListFilters = {
   view?: InboxViewMode;
   status?: InboxStatus;
@@ -98,6 +101,8 @@ export type InboxListFilters = {
   risk_level?: string;
   project_id?: string;
   target_user_id?: string;
+  /** 缺省 risk；只进 URL，不进 localStorage（§4.4.2 / U5）。 */
+  sort?: InboxSortMode;
   limit?: number;
   offset?: number;
 };

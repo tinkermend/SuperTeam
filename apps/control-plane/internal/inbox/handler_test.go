@@ -16,6 +16,38 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 )
 
+func TestHandlerListItemsParsesSortWithRiskFallback(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	service := &handlerService{listResult: ListItemsResult{Limit: 50}}
+	handler := NewHandler(service)
+
+	for _, tc := range []struct {
+		query string
+		want  SortMode
+	}{
+		{"", SortRisk},
+		{"sort=risk", SortRisk},
+		{"sort=oldest", SortOldest},
+		{"sort=bogus", SortRisk},
+		{"sort=recent", SortRisk}, // U7：未实现，回落 risk
+	} {
+		path := "/inbox/items?view=mine&status=open"
+		if tc.query != "" {
+			path += "&" + tc.query
+		}
+		req := withConsoleIdentity(httptest.NewRequest(http.MethodGet, path, nil), tenantID, userID)
+		resp := httptest.NewRecorder()
+		handler.ListItems(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("query %q: expected 200, got %d: %s", tc.query, resp.Code, resp.Body.String())
+		}
+		if service.listReq.Sort != tc.want {
+			t.Fatalf("query %q: want sort %q, got %q", tc.query, tc.want, service.listReq.Sort)
+		}
+	}
+}
+
 func TestHandlerListItemsUsesConsoleIdentity(t *testing.T) {
 	tenantID := uuid.New()
 	userID := uuid.New()

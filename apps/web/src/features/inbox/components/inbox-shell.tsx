@@ -68,19 +68,29 @@ import {
   formatSourceType,
   formatWaitShort,
   InboxItemList,
+  InboxProgressBar,
+  inboxItemIdentityTitle,
   primaryDemandLabel,
   primaryTaskLabel,
   readDemandRefs,
+  readInboxProgress,
   resolveInboxHref,
   riskLabel,
   riskTone
 } from "./inbox-item-list";
 
-export type InboxFilterKey = "status" | "item_type" | "risk_level" | "project_id" | "target_user_id";
+export type InboxFilterKey =
+  | "status"
+  | "item_type"
+  | "risk_level"
+  | "project_id"
+  | "target_user_id"
+  | "sort";
 export type InboxFilterChangeValue<Key extends InboxFilterKey> = {
   item_type: InboxItemType | "all";
   project_id: string;
   risk_level: string;
+  sort: "risk" | "oldest";
   status: InboxStatus | "all";
   target_user_id: string;
 }[Key];
@@ -106,7 +116,10 @@ type InboxShellProps = {
   onRefresh: () => void;
   onRetry: () => void;
   onResetFilters: () => void;
+  onSelectItem: (itemId: string | null) => void;
   onViewChange: (view: InboxViewMode) => void;
+  /** 选中态由父级持有，便于处理后自动前进与 SSE 清空语义分离。 */
+  selectedItemId: string | null;
   streamConnection: InboxStreamConnection;
   view: InboxViewMode;
 };
@@ -126,17 +139,22 @@ export function InboxShell({
   onRefresh,
   onRetry,
   onResetFilters,
+  onSelectItem,
   onViewChange,
+  selectedItemId,
   streamConnection,
   view
 }: InboxShellProps) {
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const hasItems = Boolean(data?.items.length);
   const selectedItem = useMemo(() => {
     return data?.items.find((item) => item.id === selectedItemId) ?? null;
   }, [data?.items, selectedItemId]);
 
-  // 数据真实性修正 #1：第 4 指标卡「等待最久」= 前端基于 items[].created_at 取 max(now - created_at)
+  // 第 4 指标卡「等待最久」= 前端基于当前页 items[].created_at 取 max(now - created_at)。
+  // U6（inbox-triage-workbench）：ListInboxItems 改为风险优先后，limit=50 截断集合
+  // 从「最近活动 50 条」变成「风险最高 50 条」，该 KPI 静默变为「高风险页内等最久」
+  // 而非「全部 open 里等最久」。本批按方案③：暂不处理，仅注释 + CHANGELOG 记录；
+  // 后续若要与分页解耦，再把 max wait 并入服务端 summary（方案①）。
   const maxWaitMs = useMemo(() => {
     if (!data?.items.length) return 0;
     const now = Date.now();
@@ -147,11 +165,13 @@ export function InboxShell({
     }, 0);
   }, [data?.items]);
 
+  // 他人处理（SSE）导致选中项消失 → 清空选中。处理后自动前进只在提交成功回调里生效，
+  // 不得与本 effect 互污（§4.3.2）。
   useEffect(() => {
     if (selectedItemId && data && !data.items.some((item) => item.id === selectedItemId)) {
-      setSelectedItemId(null);
+      onSelectItem(null);
     }
-  }, [data, selectedItemId]);
+  }, [data, onSelectItem, selectedItemId]);
 
   return (
     <>
@@ -212,13 +232,15 @@ export function InboxShell({
                 fill
                 rail="lg"
                 detailLabel="事项详情"
-                onDetailDismiss={() => setSelectedItemId(null)}
+                onDetailDismiss={() => onSelectItem(null)}
                 master={
                   <InboxItemList
                     items={data.items}
                     onAction={onAction}
-                    onSelect={(item) => setSelectedItemId(item.id)}
+                    onClearSelection={() => onSelectItem(null)}
+                    onSelect={(item) => onSelectItem(item.id)}
                     selectedItemId={selectedItemId}
+                    sort={filters.sort ?? "risk"}
                     view={view}
                   />
                 }
@@ -453,7 +475,9 @@ function InboxDetailPanel({ item, view }: InboxDetailPanelProps) {
             {waitLabel} {formatElapsedDuration(waitMs)} · 更新 {formatRelativeTime(item.last_activity_at)}
           </p>
         </div>
-        <h2 className="text-lg font-extrabold leading-tight text-ink">{item.title}</h2>
+        <h2 className="text-lg font-extrabold leading-tight text-ink">
+          {inboxItemIdentityTitle(item)}
+        </h2>
         <div className="mt-2.5 flex flex-wrap gap-2">
           <StatusPill tone={item.item_type === "approval" ? "info" : "artifact"}>
             {formatItemType(item)}
@@ -479,9 +503,13 @@ function InboxDetailPanel({ item, view }: InboxDetailPanelProps) {
 
       {/* 正文：内部滚动 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-      {/* 为什么需要你处理 */}
+      {/* 为什么需要你处理 — why 首行（从列表迁入）+ 进度条（从列表迁入，非删除） */}
       <section className="border-b border-line px-5 py-4">
         <h3 className="text-[13px] font-extrabold text-ink">为什么需要你处理</h3>
+        {item.why?.trim() ? (
+          <p className="mt-2 text-[13px] leading-5 text-ink-2">{item.why.trim()}</p>
+        ) : null}
+        <InboxProgressBar progress={readInboxProgress(item)} />
         <dl className="mt-3 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px]">
           <dt className="font-semibold text-ink-3">关联对象</dt>
           <dd className="min-w-0 font-semibold text-ink">
@@ -1036,6 +1064,12 @@ const riskOptions = [
   { label: "低风险", value: "low" },
 ] satisfies Array<SelectOption<string>>;
 
+// §4.4.2：默认风险优先；oldest 副文案写明不分组，避免惊吓。
+const sortOptions = [
+  { label: "风险优先（分诊）", value: "risk" },
+  { label: "等待最久（不分组）", value: "oldest" },
+] satisfies Array<SelectOption<"risk" | "oldest">>;
+
 function InboxFilters({
   apiBaseUrl,
   fetcher,
@@ -1073,6 +1107,13 @@ function InboxFilters({
         value={filters.risk_level ?? "all"}
         neutralValue="all"
         onValueChange={(value) => onFilterChange("risk_level", value)}
+      />
+      <FilterChip
+        label="排序"
+        options={sortOptions}
+        value={filters.sort === "oldest" ? "oldest" : "risk"}
+        neutralValue="risk"
+        onValueChange={(value) => onFilterChange("sort", value)}
       />
       <MoreFiltersButton
         active={showAdvanced || activeAdvancedCount > 0}

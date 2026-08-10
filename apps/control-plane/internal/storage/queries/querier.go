@@ -548,7 +548,15 @@ type Querier interface {
 	ListFeishuOutboxByStatuses(ctx context.Context, arg ListFeishuOutboxByStatusesParams) ([]FeishuOutbox, error)
 	// 收件箱来源补名:批量取需求标题(读时解析,不入库快照)。
 	ListInboxDemandTitles(ctx context.Context, arg ListInboxDemandTitlesParams) ([]ListInboxDemandTitlesRow, error)
+	// 分诊默认序：风险优先（blocked→high→medium→low），同级按最近活动。
+	// NULL / 未登记 risk_level 排最后（ELSE 4），不得插队。
+	// 契约：组内顺序由本查询承担；前端 groupInboxItems 不得二次排序。
+	// WHERE 必须与 ListInboxItemsOldest 逐字同口径（TestInboxListQueriesShareWhereClause）。
 	ListInboxItems(ctx context.Context, arg ListInboxItemsParams) ([]InboxItem, error)
+	// sort=oldest：积压视角，谁被晾最久。
+	// WHERE 必须与 ListInboxItems 逐字同口径（含 any-of-N 注释）；改一处漏一处会静默破坏可见性。
+	// 护栏：migrations_test.go TestInboxListQueriesShareWhereClause。
+	ListInboxItemsOldest(ctx context.Context, arg ListInboxItemsOldestParams) ([]InboxItem, error)
 	// 收件箱来源补名:批量取项目名称(读时解析,不入库快照)。
 	ListInboxProjectNames(ctx context.Context, arg ListInboxProjectNamesParams) ([]ListInboxProjectNamesRow, error)
 	// 收件箱来源补名:批量取项目任务标题。

@@ -301,6 +301,13 @@ func listItemsRequestFromQuery(w http.ResponseWriter, r *http.Request, tenantID,
 	if raw := query.Get("risk_level"); raw != "" {
 		req.RiskLevel = &raw
 	}
+	// sort：缺省/非法回落 risk（不报错、不空列表）。
+	switch SortMode(query.Get("sort")) {
+	case SortOldest:
+		req.Sort = SortOldest
+	default:
+		req.Sort = SortRisk
+	}
 	if raw := query.Get("project_id"); raw != "" {
 		projectID, err := uuid.Parse(raw)
 		if err != nil || projectID == uuid.Nil {

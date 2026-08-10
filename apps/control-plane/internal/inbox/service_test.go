@@ -797,6 +797,140 @@ func TestServiceListItemsHasMoreRequiresExtraFetchedItem(t *testing.T) {
 	}
 }
 
+// TestServiceListItemsOrdersByRiskLevel 钉住分诊默认序：blocked→high→medium→low，
+// NULL / 未登记值排最后；同级仍按 last_activity_at DESC。
+func TestServiceListItemsOrdersByRiskLevel(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	baseTime := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+
+	// Insert out of desired order; activity times inverted so pure activity sort
+	// would reverse the expected risk order.
+	type seed struct {
+		title    string
+		risk     *string
+		activity time.Time
+	}
+	seeds := []seed{
+		{"low-item", ptrString("low"), baseTime.Add(5 * time.Minute)},
+		{"unknown-item", ptrString("unknown"), baseTime.Add(6 * time.Minute)},
+		{"high-item", ptrString("high"), baseTime.Add(2 * time.Minute)},
+		{"null-item", nil, baseTime.Add(7 * time.Minute)},
+		{"blocked-item", ptrString("blocked"), baseTime.Add(1 * time.Minute)},
+		{"medium-item", ptrString("medium"), baseTime.Add(3 * time.Minute)},
+		// Same risk as high-item but newer activity → must precede high-item within band.
+		{"high-newer", ptrString("high"), baseTime.Add(4 * time.Minute)},
+	}
+	for _, s := range seeds {
+		req := UpsertItemRequest{
+			TenantID:       tenantID,
+			TargetUserID:   actorUserID,
+			Scope:          "personal",
+			ItemType:       ItemTypeApproval,
+			SourceType:     SourceTypeApprovalRequest,
+			SourceID:       uuid.New(),
+			Title:          s.title,
+			LastActivityAt: s.activity,
+		}
+		if s.risk != nil {
+			req.RiskLevel = *s.risk
+		}
+		if _, err := service.UpsertItem(context.Background(), req); err != nil {
+			t.Fatalf("upsert %s: %v", s.title, err)
+		}
+	}
+
+	result, err := service.ListItems(context.Background(), ListItemsRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		View:        ViewMine,
+		Status:      ptrStatus(StatusOpen),
+	})
+	if err != nil {
+		t.Fatalf("list items: %v", err)
+	}
+	if len(result.Items) != len(seeds) {
+		t.Fatalf("expected %d items, got %d", len(seeds), len(result.Items))
+	}
+	// unknown/null share ELSE rank 4 → activity DESC within band: null(7m) before unknown(6m).
+	want := []string{"blocked-item", "high-newer", "high-item", "medium-item", "low-item", "null-item", "unknown-item"}
+	got := make([]string, len(result.Items))
+	for i, item := range result.Items {
+		got[i] = item.Title
+	}
+	for i, title := range want {
+		if got[i] != title {
+			t.Fatalf("order mismatch at %d: want %v, got %v", i, want, got)
+		}
+	}
+}
+
+func TestServiceListItemsOrdersByOldest(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	baseTime := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	// Insert newer first; oldest sort should reverse by created_at.
+	for _, s := range []struct {
+		title   string
+		created time.Time
+	}{
+		{"newest", baseTime.Add(2 * time.Hour)},
+		{"oldest", baseTime},
+		{"middle", baseTime.Add(time.Hour)},
+	} {
+		item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+			TenantID:       tenantID,
+			TargetUserID:   actorUserID,
+			Scope:          "personal",
+			ItemType:       ItemTypeApproval,
+			SourceType:     SourceTypeApprovalRequest,
+			SourceID:       uuid.New(),
+			Title:          s.title,
+			RiskLevel:      "low",
+			LastActivityAt: s.created,
+		})
+		if err != nil {
+			t.Fatalf("upsert %s: %v", s.title, err)
+		}
+		// Force created_at for memory repo ordering (Upsert sets CreatedAt=now on create).
+		stored, _ := repo.GetItem(context.Background(), tenantID, item.ID)
+		stored.CreatedAt = s.created
+		repo.itemsByID[item.ID] = stored
+	}
+
+	result, err := service.ListItems(context.Background(), ListItemsRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		View:        ViewMine,
+		Status:      ptrStatus(StatusOpen),
+		Sort:        SortOldest,
+	})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	want := []string{"oldest", "middle", "newest"}
+	got := make([]string, len(result.Items))
+	for i, item := range result.Items {
+		got[i] = item.Title
+	}
+	for i, title := range want {
+		if got[i] != title {
+			t.Fatalf("oldest order at %d: want %v, got %v", i, want, got)
+		}
+	}
+}
+
 func TestServiceListsMineAndTeamItems(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)
@@ -1423,7 +1557,18 @@ func (r *memoryRepository) ListItems(_ context.Context, req ListItemsRequest) ([
 		}
 		items = append(items, item)
 	}
+	// Mirror ListInboxItems / ListInboxItemsOldest.
 	sort.Slice(items, func(i, j int) bool {
+		if req.Sort == SortOldest {
+			if !items[i].CreatedAt.Equal(items[j].CreatedAt) {
+				return items[i].CreatedAt.Before(items[j].CreatedAt)
+			}
+			return items[i].ID.String() < items[j].ID.String()
+		}
+		ri, rj := riskRank(items[i].RiskLevel), riskRank(items[j].RiskLevel)
+		if ri != rj {
+			return ri < rj
+		}
 		if !items[i].LastActivityAt.Equal(items[j].LastActivityAt) {
 			return items[i].LastActivityAt.After(items[j].LastActivityAt)
 		}
@@ -1609,6 +1754,27 @@ func sourceKey(tenantID uuid.UUID, sourceType SourceType, sourceID uuid.UUID) st
 }
 
 func ptrStatus(s Status) *Status { return &s }
+
+// riskRank mirrors ListInboxItems CASE risk_level (blocked=0 … low=3, else=4).
+func riskRank(level *string) int {
+	if level == nil {
+		return 4
+	}
+	switch *level {
+	case "blocked":
+		return 0
+	case "high":
+		return 1
+	case "medium":
+		return 2
+	case "low":
+		return 3
+	default:
+		return 4
+	}
+}
+
+func ptrString(s string) *string { return &s }
 
 type fakeApprovalResolver struct {
 	calls     int

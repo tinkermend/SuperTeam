@@ -1,8 +1,8 @@
-import { AlertTriangle, ArrowUpRight, Clock, FileText, Lightbulb } from "lucide-react";
+import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { ArrowUpRight, Clock } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import {
   Button,
-  IconTile,
   StatusPill,
   WorkSurface,
   type Tone
@@ -18,9 +18,13 @@ export { formatDateTime, formatRelativeTime };
 type InboxItemListProps = {
   items: InboxItem[];
   onSelect: (item: InboxItem) => void;
+  /** Esc（无弹窗时）清除选中。 */
+  onClearSelection?: () => void;
   selectedItemId: string | null;
   /** 行内主 CTA：打开决策弹窗（不提交），仅 mine + open + 高风险。 */
   onAction?: (item: InboxItem, action: InboxAction) => void;
+  /** 列表排序档，影响分组/优先区（§4.4）。 */
+  sort?: "risk" | "oldest" | string;
   view?: InboxViewMode;
 };
 
@@ -63,8 +67,9 @@ type InboxSection = { key: string; label: string; items: InboxItem[] };
 
 // §6.1 收件箱按人类待办类型分组:计划确认 / 执行放行 / 下游放行 / 验收签署 / 结项确认 /
 // 异常处理。类型取自服务端 HumanTask kind(§4.2);其余(planning_gap / task_failure_recovery /
-// 其它 project_task_* 以及审批 / 运行恢复 / 团队待删)归入"异常处理"。组内保持上游顺序
-// (上游按风险/关注度排序),不再二次排序。
+// 其它 project_task_* 以及审批 / 运行恢复 / 团队待删)归入"异常处理"。
+// 组内保持上游顺序、不再二次排序。排序契约由服务端 ListInboxItems 承担：
+// risk_level 优先（blocked→high→medium→low；NULL/未登记值最后），同级 last_activity_at DESC。
 const INBOX_CATEGORY_ORDER: { key: string; label: string; kinds: string[] }[] = [
   { key: "plan_review", label: "计划确认", kinds: ["plan_review"] },
   { key: "dispatch_release", label: "执行放行", kinds: ["dispatch_release"] },
@@ -84,16 +89,53 @@ function inboxCategoryKey(item: InboxItem): string {
   return INBOX_EXCEPTION_SECTION.key;
 }
 
+export type InboxGroupOptions = {
+  /**
+   * 排序档。risk（默认）= 优先区 + 领域分组；
+   * oldest = 平列表（无优先区、无领域分组），顺序由服务端承担。
+   */
+  sort?: "risk" | "oldest" | string;
+};
+
 /** Bucket inbox items into the §6.1 human-task categories, preserving upstream order within each. */
-export function groupInboxItems(items: InboxItem[]): InboxSection[] {
-  const buckets = new Map<string, InboxItem[]>();
+export function groupInboxItems(
+  items: InboxItem[],
+  options: InboxGroupOptions = {},
+): InboxSection[] {
+  const sort = options.sort === "oldest" ? "oldest" : "risk";
+
+  // 时间档：摊平列表，不渲染优先区与领域分组（§4.4.2）。
+  if (sort === "oldest") {
+    if (items.length === 0) return [];
+    return [{ key: "flat", label: "按等待时长", items }];
+  }
+
+  // 优先处理区：open + blocked/high，从领域分组中抽出不重复（§4.4.1 / U1 / U12）。
+  const priorityItems: InboxItem[] = [];
+  const remainder: InboxItem[] = [];
   for (const item of items) {
+    const risk = item.risk_level;
+    if (
+      item.status === "open" &&
+      (risk === "blocked" || risk === "high")
+    ) {
+      priorityItems.push(item);
+    } else {
+      remainder.push(item);
+    }
+  }
+
+  const buckets = new Map<string, InboxItem[]>();
+  for (const item of remainder) {
     const key = inboxCategoryKey(item);
     const bucket = buckets.get(key) ?? [];
     bucket.push(item);
     buckets.set(key, bucket);
   }
   const sections: InboxSection[] = [];
+  if (priorityItems.length > 0) {
+    sections.push({ key: "priority", label: "优先处理", items: priorityItems });
+  }
   for (const category of INBOX_CATEGORY_ORDER) {
     const bucketItems = buckets.get(category.key);
     if (bucketItems && bucketItems.length > 0) {
@@ -107,22 +149,131 @@ export function groupInboxItems(items: InboxItem[]): InboxSection[] {
   return sections;
 }
 
+/** 渲染序列（跨分组连续），供键盘导航与处理后自动前进共用。 */
+export function flatInboxRenderOrder(
+  items: InboxItem[],
+  options: InboxGroupOptions = {},
+): InboxItem[] {
+  return groupInboxItems(items, options).flatMap((section) => section.items);
+}
+
 /**
- * 紧凑列表：每行带风险 accent bar + 图标 + 标题 + 风险pill + 摘要 + 来源·节点 + 时间。
- * 装入 WorkSurface 软壳，保持 v3 脆数据面容器语义。
+ * 紧凑两行列表（inbox-triage-workbench §4.2）：
+ * 第 1 行 = 风险 accent + 身份标题 + kind pill + 风险 pill + 相对时间 +（高风险）CTA
+ * 第 2 行 = summary 单行 clamp
+ * why / 进度条 / item_type pill 已迁出（why+进度→详情栏；item_type 恒同已删）。
  */
 export function InboxItemList({
   items,
   onSelect,
+  onClearSelection,
   selectedItemId,
   onAction,
+  sort = "risk",
   view = "mine",
 }: InboxItemListProps) {
   const highRiskCount = items.filter(
     (item) => item.risk_level === "blocked" || item.risk_level === "high",
   ).length;
 
-  const sections = groupInboxItems(items);
+  const groupOptions = useMemo(() => ({ sort }), [sort]);
+  const sections = useMemo(() => groupInboxItems(items, groupOptions), [items, groupOptions]);
+  const flatItems = useMemo(
+    () => flatInboxRenderOrder(items, groupOptions),
+    [items, groupOptions],
+  );
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+
+  // roving tabindex 焦点目标：选中行优先，否则首行。
+  const focusItemId = selectedItemId && flatItems.some((item) => item.id === selectedItemId)
+    ? selectedItemId
+    : (flatItems[0]?.id ?? null);
+
+  useEffect(() => {
+    if (!selectedItemId) return;
+    const el = rowRefs.current.get(selectedItemId);
+    if (!el || document.activeElement === el) return;
+    const active = document.activeElement;
+    // 弹窗打开时不抢焦点；否则在选中变化时把焦点还给行（含提交成功自动前进后
+    // focus 落在 body/已卸载节点的情况，保证键盘队列可继续）。
+    if (active instanceof HTMLElement && active.closest('[role="dialog"]')) {
+      return;
+    }
+    el.focus({ preventScroll: false });
+  }, [selectedItemId]);
+
+  function moveSelection(delta: number) {
+    if (flatItems.length === 0) return;
+    const currentIndex = Math.max(
+      0,
+      flatItems.findIndex((item) => item.id === (selectedItemId ?? focusItemId)),
+    );
+    const nextIndex = Math.min(
+      flatItems.length - 1,
+      Math.max(0, currentIndex + delta),
+    );
+    const next = flatItems[nextIndex];
+    if (!next) return;
+    onSelect(next);
+    requestAnimationFrame(() => {
+      rowRefs.current.get(next.id)?.focus({ preventScroll: false });
+    });
+  }
+
+  function jumpSelection(to: "start" | "end") {
+    if (flatItems.length === 0) return;
+    const next = to === "start" ? flatItems[0] : flatItems[flatItems.length - 1];
+    onSelect(next);
+    requestAnimationFrame(() => {
+      rowRefs.current.get(next.id)?.focus({ preventScroll: false });
+    });
+  }
+
+  function handleRowKeyDown(event: KeyboardEvent, item: InboxItem) {
+    const key = event.key;
+    if (key === "ArrowDown" || key === "j" || key === "J") {
+      event.preventDefault();
+      moveSelection(1);
+      return;
+    }
+    if (key === "ArrowUp" || key === "k" || key === "K") {
+      event.preventDefault();
+      moveSelection(-1);
+      return;
+    }
+    if (key === "Home") {
+      event.preventDefault();
+      jumpSelection("start");
+      return;
+    }
+    if (key === "End") {
+      event.preventDefault();
+      jumpSelection("end");
+      return;
+    }
+    if (key === "Escape") {
+      event.preventDefault();
+      onClearSelection?.();
+      return;
+    }
+    if (key === "Enter") {
+      event.preventDefault();
+      onSelect(item);
+      const isHighRisk = item.risk_level === "blocked" || item.risk_level === "high";
+      const primaryAction =
+        view === "mine" && item.status === "open" && isHighRisk && onAction
+          ? firstPositiveAction(item)
+          : undefined;
+      if (primaryAction) {
+        onAction?.(item, primaryAction);
+      }
+      return;
+    }
+    if (key === " ") {
+      event.preventDefault();
+      onSelect(item);
+    }
+  }
 
   const renderRow = (item: InboxItem) => {
           const isSelected = item.id === selectedItemId;
@@ -135,22 +286,16 @@ export function InboxItemList({
               : isMediumRisk
                 ? "shadow-[inset_3px_0_0_var(--warn)]"
                 : "shadow-[inset_3px_0_0_var(--line-strong)]";
-          const iconTone: Tone = isHighRisk
-            ? "danger"
-            : item.item_type === "project_decision"
-              ? "artifact"
-              : "info";
-          const icon = isHighRisk ? (
-            <AlertTriangle />
-          ) : item.item_type === "project_decision" ? (
-            <Lightbulb />
-          ) : (
-            <FileText />
-          );
-          const descriptionParagraphs = inboxListDescriptionParagraphs(item);
-          const contextLabel = formatContext(item) ?? formatSourceType(item);
-          // 列表 meta 只渲染真实工作流节点；无节点时不回退 kind（与分组表头恒等重复）。
-          const realNode = formatRealCurrentNode(item);
+          const identityTitle = inboxItemIdentityTitle(item);
+          const summaryText = item.summary?.trim() ?? "";
+          // kind 行内 pill：与 2026-08-07 §3.3「meta 不再回退 kind」不冲突——
+          // §3.3 管的是 meta 行与分组表头恒等重复；此处 kind 是行内 pill，
+          // 位置与角色不同（表头=这一段属哪类；pill=这一条属哪类）。
+          // 阶段 4 优先区（跨 kind）与时间档（不分组）里后者不可省。
+          const kindLabel =
+            typeof item.kind === "string" && item.kind
+              ? humanTaskKindLabel(item.kind)
+              : undefined;
           const primaryAction =
             view === "mine" &&
             item.status === "open" &&
@@ -158,80 +303,67 @@ export function InboxItemList({
             onAction
               ? firstPositiveAction(item)
               : undefined;
+          const isRovingFocus = item.id === focusItemId;
 
           return (
             <div
               key={item.id}
+              ref={(node) => {
+                if (node) rowRefs.current.set(item.id, node);
+                else rowRefs.current.delete(item.id);
+              }}
               role="button"
-              tabIndex={0}
-              aria-label={`打开事项：${item.title}`}
+              tabIndex={isRovingFocus ? 0 : -1}
+              aria-label={`打开事项：${identityTitle}`}
               aria-selected={isSelected}
               className={cn(
-                "flex cursor-pointer items-start gap-3 border-b border-line px-4 py-3 transition-colors",
+                "group relative flex cursor-pointer items-start gap-2 border-b border-line px-4 py-2 transition-colors",
                 "hover:bg-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
                 accentShadow,
                 isSelected && "bg-brand-soft",
               )}
               onClick={() => onSelect(item)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelect(item);
-                }
-              }}
+              onKeyDown={(event) => handleRowKeyDown(event, item)}
             >
-              <IconTile tone={iconTone} size="sm" className="mt-0.5">
-                {icon}
-              </IconTile>
               <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <span
                     className={cn(
-                      "text-left text-sm font-bold text-ink",
+                      "min-w-0 flex-1 truncate text-left text-sm font-bold text-ink",
                       isSelected && "text-brand-deep",
                     )}
+                    title={identityTitle}
                   >
-                    {item.title}
+                    {identityTitle}
                   </span>
+                  {kindLabel ? (
+                    <StatusPill
+                      tone="mute"
+                      showDot={false}
+                      className="shrink-0 px-2 py-0.5 text-[11px]"
+                    >
+                      {kindLabel}
+                    </StatusPill>
+                  ) : null}
                   {item.risk_level ? (
                     <StatusPill
                       tone={riskTone[item.risk_level] ?? "mute"}
                       showDot={false}
-                      className="px-2 py-0.5 text-[11px]"
+                      className="shrink-0 px-2 py-0.5 text-[11px]"
                     >
                       {riskLabel[item.risk_level] ?? item.risk_level}
                     </StatusPill>
                   ) : null}
-                </div>
-                {descriptionParagraphs.map((paragraph, index) => (
-                  <p
-                    key={`desc-${index}`}
-                    className="mt-1 line-clamp-2 max-w-full break-words text-xs leading-5 text-ink-2"
-                  >
-                    {paragraph}
-                  </p>
-                ))}
-                <InboxProgressBar progress={readInboxProgress(item)} />
-                <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-ink-3">
-                  <StatusPill
-                    tone={item.item_type === "approval" ? "info" : "artifact"}
-                    showDot={false}
-                    className="px-2 py-0.5 text-[11px]"
-                  >
-                    {formatItemType(item)}
-                  </StatusPill>
-                  <span className="min-w-0 truncate text-[11px] text-ink-3">
-                    {realNode ? `${contextLabel} · ${realNode}` : contextLabel}
-                  </span>
-                  <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                  <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-ink-3">
                     <Clock aria-hidden className="size-3" />
                     {formatRelativeTime(item.last_activity_at)}
                   </span>
                   {primaryAction ? (
                     <Button
                       aria-label={`行内决策：${formatInboxActionLabel(primaryAction)}`}
-                      className="h-6 px-2 text-[11px]"
+                      className="h-6 shrink-0 px-2 text-[11px]"
                       size="sm"
+                      tabIndex={-1}
                       type="button"
                       variant="primary"
                       onClick={(event) => {
@@ -243,16 +375,26 @@ export function InboxItemList({
                       {formatInboxActionLabel(primaryAction)}
                     </Button>
                   ) : null}
-                  <Link
-                    className="inline-flex w-fit items-center gap-1 font-semibold text-brand-deep hover:text-brand"
-                    onClick={(event) => event.stopPropagation()}
-                    to={resolveInboxHref(item)}
-                  >
-                    查看上下文
-                    <ArrowUpRight aria-hidden className="size-3" />
-                  </Link>
                 </div>
+                {summaryText ? (
+                  <p className="mt-0.5 line-clamp-1 max-w-full break-words text-xs leading-5 text-ink-2">
+                    {summaryText}
+                  </p>
+                ) : null}
               </div>
+              {/* U3：保留但绝对定位，hover/focus 显形，不占行内横向预算 */}
+              <Link
+                tabIndex={-1}
+                className={cn(
+                  "absolute end-2 top-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-deep",
+                  "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100",
+                )}
+                onClick={(event) => event.stopPropagation()}
+                to={resolveInboxHref(item)}
+              >
+                查看上下文
+                <ArrowUpRight aria-hidden className="size-3" />
+              </Link>
             </div>
     );
   };
@@ -269,10 +411,16 @@ export function InboxItemList({
               {highRiskCount} 高风险
             </StatusPill>
           ) : null}
-          <span className="font-mono text-xs text-ink-3">{items.length} 项 · 按类型分组</span>
+          <span className="font-mono text-xs text-ink-3">
+            {items.length} 项 · {sort === "oldest" ? "按等待时长" : "风险优先 · 按类型分组"}
+          </span>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        data-inbox-list
+        aria-label="待处理事项列表"
+      >
         {sections.map((section) => (
           <section key={section.key}>
             {/* §6.1 领域分组表头(计划确认/执行放行/下游放行/验收签署/结项确认/异常处理);组内保持上游关注度排序。 */}
@@ -295,8 +443,45 @@ function firstPositiveAction(item: InboxItem): InboxAction | undefined {
 }
 
 /**
- * 列表说明段落：summary 与 why 并列渲染，但 trim 后相同只保留一段
+ * 行标题位身份（inbox-triage-workbench §4.2.1）：按 layer 组合，不用 item.title 常量。
+ * - demand → 需求名；task → 任务名；project → 项目名；无 layer（告警类）→ title。
+ * 缺失走 missingObjectLabel，不回落 kind 常量、不裸 UUID。
+ */
+export function inboxItemIdentityTitle(item: InboxItem): string {
+  const layer = typeof item.layer === "string" ? item.layer : "";
+  switch (layer) {
+    case "demand": {
+      const demandLabel = primaryDemandLabel(item);
+      if (demandLabel) return demandLabel;
+      const demandId =
+        readContextText(item.context ?? {}, ["primary_demand_id", "demand_id"]) ??
+        item.source_id;
+      return missingObjectLabel("demand", demandId);
+    }
+    case "task": {
+      const taskName =
+        item.source_task_name?.trim() ||
+        primaryTaskLabel(item) ||
+        readContextText(item.context ?? {}, ["task_title"]);
+      if (taskName) return taskName;
+      return missingObjectLabel("task", item.source_task_id ?? item.source_id);
+    }
+    case "project": {
+      const projectName =
+        item.source_project_name?.trim() ||
+        readContextText(item.context ?? {}, ["project_name", "project", "project_title"]);
+      if (projectName) return projectName;
+      return missingObjectLabel("project", item.source_project_id ?? item.source_id);
+    }
+    default:
+      return item.title;
+  }
+}
+
+/**
+ * 详情栏说明段落：summary 与 why 并列，trim 后相同只保留一段
  * （服务端未登记 kind 会把 summary 回填到 why，见 humanTaskWhy）。
+ * 列表侧已不再渲染 why（§4.2.2 密度压缩）。
  */
 export function inboxListDescriptionParagraphs(
   item: Pick<InboxItem, "summary" | "why">,

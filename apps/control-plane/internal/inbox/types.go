@@ -145,6 +145,14 @@ type UpsertItemRequest struct {
 	LastActivityAt          time.Time
 }
 
+// SortMode 收件箱列表排序。非法值在 handler 回落 risk（不报错、不空列表）。
+type SortMode string
+
+const (
+	SortRisk   SortMode = "risk"   // 分诊默认：风险优先
+	SortOldest SortMode = "oldest" // 积压：created_at ASC
+)
+
 type ListItemsRequest struct {
 	TenantID        uuid.UUID
 	ActorUserID     uuid.UUID
@@ -155,8 +163,10 @@ type ListItemsRequest struct {
 	RiskLevel       *string
 	ProjectID       *uuid.UUID
 	TargetUserID    *uuid.UUID
-	Limit           int32
-	Offset          int32
+	// Sort 缺省/非法 = risk。
+	Sort   SortMode
+	Limit  int32
+	Offset int32
 }
 
 type ListItemsResult struct {

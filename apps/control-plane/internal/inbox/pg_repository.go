@@ -71,7 +71,7 @@ func (r *PgRepository) GetItemByApprovalSource(ctx context.Context, tenantID, ap
 }
 
 func (r *PgRepository) ListItems(ctx context.Context, req ListItemsRequest) ([]Item, error) {
-	rows, err := r.q.ListInboxItems(ctx, queries.ListInboxItemsParams{
+	params := queries.ListInboxItemsParams{
 		TenantID:        req.TenantID,
 		Status:          textFromStatusPtr(req.Status),
 		TargetUserID:    nullUUID(req.TargetUserID),
@@ -80,7 +80,23 @@ func (r *PgRepository) ListItems(ctx context.Context, req ListItemsRequest) ([]I
 		SourceProjectID: nullUUID(req.ProjectID),
 		Offset:          req.Offset,
 		Limit:           req.Limit,
-	})
+	}
+	var rows []queries.InboxItem
+	var err error
+	if req.Sort == SortOldest {
+		rows, err = r.q.ListInboxItemsOldest(ctx, queries.ListInboxItemsOldestParams{
+			TenantID:        params.TenantID,
+			Status:          params.Status,
+			TargetUserID:    params.TargetUserID,
+			ItemType:        params.ItemType,
+			RiskLevel:       params.RiskLevel,
+			SourceProjectID: params.SourceProjectID,
+			Offset:          params.Offset,
+			Limit:           params.Limit,
+		})
+	} else {
+		rows, err = r.q.ListInboxItems(ctx, params)
+	}
 	if err != nil {
 		return nil, err
 	}
