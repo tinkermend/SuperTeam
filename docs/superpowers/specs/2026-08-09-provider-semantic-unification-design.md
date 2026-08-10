@@ -504,7 +504,7 @@ contracts/provider/
 | 2 | 流正常结束 + `TurnCompleted` | complete | ✅ succeeded | 不适用 |
 | 3 | 流正常结束但**从无终态事件** | fail（`PROVIDER_NO_TERMINAL_EVENT`） | ✅ | ✅ 2026-08-10 补 |
 | 4 | `drain_provider_events` 早退（stream `Err`：非 0 退出 / io / codex `bail!`） | fail | ✅ | ✅ |
-| 5 | 预算墙钟熔断（心跳线程） | fail（`BUDGET_FUSE`） | ✅ | ✅ 2026-08-10 补 |
+| 5 | 预算墙钟熔断（心跳线程） | fail（`BUDGET_FUSE`） | ✅ 2026-08-10 补（此前**只有** `provider_start`，终态无证明，真实 E2E 才发现——本表初版曾错标为已有） | ✅ 2026-08-10 补 |
 | — | `provider.start()` 失败（spawn） | fail（`PROVIDER_SPAWN_FAILED`） | ✅ `provider_start/failed` | 不适用（provider 从未启动） |
 
 **顺序是承重的**：CP 在 run 进入终态后拒收 run 事件，所以 `turn_error` 必须**先于**终态 writeback 发出，否则被静默丢弃、时间线在流中间戛然而止。实现收敛在 `executor.rs` `emit_turn_error_marker`，标记失败只记日志、不影响终态（终态自带 code/family）。
@@ -903,4 +903,6 @@ ProviderAdapter
 
 - L2 envelope 未实现、schema 描述过渡态、golden `expected_events` 无 schema 校验 → 立项 `docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md`（**已拍板做实**，分两批；`seq` 外层为唯一真相）。
 - 重试再派发与失败归因 → 立项见 18-1。
-- **预算熔断路径的两项修复未独立取证**：`turn_error` 标记与 `provider_type` 修正在该路径上只有共享代码路径（`emit_turn_error_marker`）+ 单测支撑，没有独立 E2E。原因是 E2E 夹具项目的新任务连续被规划器判高风险卡在预检闸，且该任务上存在一张 `approval_request_id` 全零的僵尸审批卡，批准后仍不放行（同族观察已记入重试再派发立项 §6）。派发/审批修好后补跑一次预算熔断腿即可关闭。
+- ~~预算熔断路径的两项修复未独立取证~~ **已取证 2026-08-10**（attempt `305788f7…`）：`turn_error` 标记上行、envelope `provider_type=claude-code`（不再是 `unknown`）、路由 `waiting_human`/`budget_approval`、attestation `provider_start/succeeded,provider_terminal/failed` 齐全。
+  - **此前判定"被审批闸卡住"是误诊**：真实阻塞原因是 `project_task.dispatch_blocked / reason_code=provider_unavailable`——健康探测用 `<bin> --version`（3 秒超时），而当时的假 provider 一律长睡/不应答，被判提供方不可用；"补建等待人工决策卡"是系统对被阻塞派发的正常反应，不是僵尸卡。假 provider 已加 `--version` 应答（`scripts/e2e/fake-providers/`），并把这个坑写进其 README。
+  - 该次 E2E 顺带发现并修掉：预算熔断路径**缺终态 attestation**（见 §6.4 路径 5）。

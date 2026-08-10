@@ -574,6 +574,7 @@ impl RuntimeCommandExecutor {
                 provider_started_at,
                 Duration::from_secs(heartbeat_interval_sec),
                 spec.environment.clone(),
+                spec.clone(),
             )
         });
         self.spawn_provider_event_drain(
@@ -1633,6 +1634,7 @@ fn spawn_project_task_budget_heartbeat(
     started_at: Instant,
     interval: Duration,
     environment: BTreeMap<String, String>,
+    spec: RunSpec,
 ) -> CancellationToken {
     let stop = CancellationToken::new();
     let child_stop = stop.clone();
@@ -1660,6 +1662,24 @@ fn spawn_project_task_budget_heartbeat(
                                 &environment,
                             )
                             .await;
+                            // 与另外四条终态路径对齐：熔断也必须留执行证明。
+                            // 此前这条路径只有 provider_start/succeeded，终态无
+                            // attestation（2026-08-10 真实 E2E 实测发现）。
+                            writeback
+                                .record_attestation(
+                                    &spec,
+                                    "provider_terminal",
+                                    "failed",
+                                    None,
+                                    Some(
+                                        started_at
+                                            .elapsed()
+                                            .as_millis()
+                                            .min(i64::MAX as u128)
+                                            as i64,
+                                    ),
+                                )
+                                .await;
                             let _ = writeback.fail_with_envelope(envelope, None).await;
                             break;
                         }

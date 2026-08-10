@@ -28,6 +28,8 @@ cp /tmp/config.yaml.bak apps/runtime-agent/config.yaml
 
 ## 踩过的坑（2026-08-10 实测）
 
+- **假 provider 必须应答 `--version`**（三个脚本已内置）：Runtime 每次派发前用 `<bin> --version` 探活，3 秒超时。不应答 → 提供方被判不可用 → 预检闸以 `reason_code=provider_unavailable` 拦下派发 → 任务停在 `waiting_human/attempts=0` 并**每次批准都补建一张新的等待卡**。现场极像"人类批准了却不放行"，实际与审批无关。判别器：`project_events` 里的 `project_task.dispatch_blocked` payload 直接写着 `reason_code`。
+
 - **先数进程**：曾出现一个孤儿 runtime-agent（原会话已退出、进程被 reparent 到 launchd）与受管进程同 node_id 抢单。它加载的是旧配置，于是跑的是**真** claude，任务"成功完成"，整轮结论作废。改 provider 路径前必须确认全机只有一个 agent。
 - **预算熔断腿**：dispatch 后直接改库里 attempt 的 `budget_wall_clock_limit_sec=1`，CP 在心跳时按库里的值判超（`RecordProjectTaskAttemptBudgetHeartbeat` 每次重读），默认心跳间隔 15s，所以 provider 睡够 ~20s 即可。
 - **预检闸**：规划器有时把任务判为高风险，任务会卡在 `waiting_human/approval_required`、`attempts=0`，此时 E2E 会在"等 running attempt"处超时——先看 `project_decision_requests` 再决定是批准还是换需求重来。
