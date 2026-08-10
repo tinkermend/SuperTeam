@@ -95,7 +95,26 @@ pub struct ProviderResultSession {
 
 pub const RESULT_SCHEMA_VERSION: &str = "provider.result.v1";
 
-pub fn provider_result_failed(error: ErrorEnvelope) -> ProviderResult {
+/// Stream/attempt diagnostics for L3 ProviderResult (spec §4.4 / §6.1).
+/// Always populated on terminal paths when counts are known; unmapped is
+/// counted even when L2 `native_unmapped` writeback is off.
+pub fn attempt_stream_diagnostics(
+    provider_type: &str,
+    unmapped_native_count: u64,
+) -> serde_json::Value {
+    serde_json::json!({
+        "provider_type": provider_type,
+        "unmapped_native_count": unmapped_native_count,
+        "event_counts": {
+            "native_unmapped": unmapped_native_count,
+        },
+    })
+}
+
+pub fn provider_result_failed(
+    error: ErrorEnvelope,
+    diagnostics: Option<serde_json::Value>,
+) -> ProviderResult {
     ProviderResult {
         schema_version: RESULT_SCHEMA_VERSION.to_string(),
         status: "failed".to_string(),
@@ -104,7 +123,7 @@ pub fn provider_result_failed(error: ErrorEnvelope) -> ProviderResult {
         error: Some(error),
         artifacts: Vec::new(),
         session: None,
-        diagnostics: None,
+        diagnostics,
     }
 }
 
@@ -112,6 +131,7 @@ pub fn provider_result_succeeded(
     summary: Option<String>,
     usage: Option<TurnUsage>,
     provider_session_id: Option<String>,
+    diagnostics: Option<serde_json::Value>,
 ) -> ProviderResult {
     ProviderResult {
         schema_version: RESULT_SCHEMA_VERSION.to_string(),
@@ -124,7 +144,7 @@ pub fn provider_result_succeeded(
             provider_session_id,
             resumable: true,
         }),
-        diagnostics: None,
+        diagnostics,
     }
 }
 

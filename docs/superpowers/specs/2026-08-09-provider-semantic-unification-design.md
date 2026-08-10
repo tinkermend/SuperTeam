@@ -19,6 +19,9 @@
 | 校验强度 | **S1 + S2 jsonschema v6**（不可用时结构回退）；`/health.provider_contract` 暴露计数与引擎 |
 | 漂移告警 | **`ALERT provider_stream_drift`** + Runtime health `provider_stream` 计数 |
 | 跨 Provider E2E | **脚本门禁化**：`pnpm e2e:provider-semantic`（opt-in，需真服务+假 binary） |
+| Runtime family ⊆ 词表 | **完成**：`error_map` 单测断言 `family::*` ⊆ `failure-family.json`（对齐 CP） |
+| L3 diagnostics | **完成**：终态 `ProviderResult` + runtime command terminal `diagnostic` 写入 `unmapped_native_count` |
+| spawn 失败 E2E / daemon health 探针 / L0 离线重放 | **延后**，见根 `TODO.md` |
 
 ---
 
@@ -50,33 +53,32 @@ SuperTeam 是企业数字员工**控制平面**，不是聊天聚合器：
 
 | 能力 | 位置 | 说明 |
 |---|---|---|
-| 统一事件枚举 | `apps/runtime-agent/src/events.rs` `ProviderEvent` | session / text / tool / turn（**error 变体在真实链路上是死的，见 1.3.6**） |
-| 三家 parser | `providers/claude.rs` · `opencode.rs` · `codex.rs` | 原生 JSON 行 → `ProviderEvent` |
-| 共享流管道 | `providers/mod.rs` `stream_child_events` | raw 先落、再 parse、退出合成错误 |
-| 用量 best-effort | `providers/usage.rs` | usage / token_usage 字段归一；已被预算心跳与 result contract 消费（`executor.rs` `usage_tokens`），**不是死字段** |
-| writeback | `commands/executor.rs` `runtime_event_writeback` | → CP `event_type` + payload |
-| 失败族（粗糙） | `project_task_failure_classification` | 字符串 contains → `failure_family` |
+| 统一事件枚举 | `apps/runtime-agent/src/events.rs` `ProviderEvent` | session / text / tool / turn / `turn_error`（stream Err 合成上行）/ `native_unmapped` |
+| 三家 parser | `providers/claude.rs` · `opencode.rs` · `codex.rs` | 原生 JSON 行 → `ProviderEvent`；未知 type → `native_unmapped` |
+| 共享流管道 | `providers/mod.rs` `stream_child_events` | raw 先落、再 parse、退出合成错误；unmapped/unparseable 分计 |
+| 用量 best-effort | `providers/usage.rs` | usage / token_usage 字段归一；预算心跳与 result contract 消费 |
+| writeback | `commands/executor.rs` `runtime_event_writeback` | → CP `event_type` + payload；`schema_version` + `provider_type` 元数据 |
+| 结构化错误 | `providers/error_map.rs` + `ErrorEnvelope` | code→(family, retryable) 单表；fail writeback 同源 |
+| L3 终态 | `events.rs` `ProviderResult` + `attempt_stream_diagnostics` | 四条终态路径 + attestation；diagnostics 含 `unmapped_native_count` |
+| 契约包 | `contracts/provider/schemas/*` + golden + fixtures | ajv S1（`verify:contracts`）+ CP S2 打标 |
+| family 词表 | `failure-family.json` + CP/Runtime ⊆ 单测 + Web `failureFamilyLabel` | 跨层共享；`budget_fuse` 路由 waiting_human |
 | raw 证据轨 | 2026-07-09 已落地 | 原始流不因 parse 丢弃 |
-| 零终态兜底 | `executor.rs` `drain_provider_events` 尾部 | 「流尽却无 TurnCompleted/TurnError」已会 fail，不再永滞 dispatching |
+| 零终态兜底 | `executor.rs` `drain_provider_events` 尾部 | `PROVIDER_NO_TERMINAL_EVENT` → transient 可重试 |
 
-### 1.3 仍存在的结构性缺口（每条附现场证据，实施时可直接复现）
+### 1.3 实施前的结构性缺口（历史；Phase 1–4 后状态）
 
-1. **契约债**：`contracts/provider/` 仅散文 README；事实源在 Rust 类型（AGENTS 已知债 + 2026-07-19 P2）。
-2. **错误以字符串穿透，且是自伤式往返**：熔断点 `executor.rs` 已经知道原因是 `wall_clock_exceeded`（`let reason = "wall_clock_exceeded"`），把它拼成字符串交给 fail writeback，`project_task_failure_classification` 再用 `contains("wall_clock_exceeded")` 从自己刚生成的字符串里把 family 猜回来。结构化错误不是洁癖，是消除这段往返。
-3. **能力不诚实**：三家 tool / usage / 结构化错误覆盖不均，但产品面常假设同构；未知原生行多 `Ok(Vec::new())` 静默丢（raw 仍在，业务不可观测）。
-4. **终态判据漏读原生错误位**：`claude.rs` 的 `"result"` 分支只取 `summary` + `usage`，**完全不读顶层 `is_error` / `subtype`**（`is_error` 只在 tool_result 块被读，见 `parse_user_blocks`）。claude 的报错回合若以 0 退出，会被写成 `completed`，错误文本还成了 summary。这是「终态隐含」的具体实例，Phase 1 必测。
-5. **终态不是一条路径而是四条，且 attestation 覆盖不齐**：
-   - in-loop `TurnError` → 有 attestation（`provider_terminal/failed`）
-   - 尾部成功 → 有 attestation
-   - 尾部「无终态事件」→ 有 attestation
-   - **caller 捕获 stream `Err`（`spawn` 后 `if let Err(error) = result`）→ 只有 `writeback.fail(message)`，没有 attestation**
+> 以下为 2026-08-10 复核时的现场证据。实施后多数已关；保留以便理解设计动机，**不得当作当前待办**。
 
-   而第四条恰恰是最常见的真实失败路径（见下条）。
-6. **`turn_error` 是死事件类型**：没有任何 parser 产 `ProviderEvent::TurnError`——codex 的 error/turn.failed 走 `anyhow::bail!`，非零退出走 `provider_exit_result` 返回 `Err`，`drain_provider_events` 的 `let event = event?` 直接早退。`TurnError` 只由 `runs.rs` `finish_failed` 与 `main.rs` CLI 路径产生，前者只进本地 run store，**不上行 CP**。后果：CP 侧从未收到过 `turn_error`，失败只经 fail writeback 到达，**L2 时间线在失败时没有任何终止标记，戛然而止**。
-7. **`failure_family` 有两个生产者，词表不重合**：runtime 产 6 个族（`project_task_failure_classification`），CP 自产 16 个族常量（`project/types.go` `FailureFamily*`）。runtime 的 `budget_fuse` **全仓只有 runtime 认识**——CP 无此常量，落到 `projectTaskFailureAction` 走 `default → failed`，`humanReadableFailureSummary` 也走兜底文案「任务执行失败」，预算熔断在人类侧看不出是预算问题。
-8. **同一语义三种字段名**：`provider_type = "claude-code"`（`catalog.rs`）、`provider_kind = "claude"`（同文件 descriptor）、`server.rs` 只认 `claude|opencode|codex`、现网 attestation metadata 落的是 `provider_kind`（即 `"claude"`）、CP 侧还兼容 `claude-code|claude_code|claude` 三写法（`employee/pg_repository.go`）。这本身就是本 spec 要解决的那类语义不统一。
-9. **family 没进中文词表**：Web 直接渲染裸英文枚举 `失败族：{attempt.failure_family}`（`project-execution-trace-panel.tsx`），`status-labels.ts` 无任何 family 词条，护栏测试只拦 `.status` / `.risk_level`。这违反 CLAUDE.md 的中文优先约定，也是 `TODO.md` 2026-08-07 那条积压。
-10. **验证缺失**：无 golden「原生样例 → 期望事件」；无 schema 校验 writeback；改 adapter 易回归。**且仓库当前没有任何 JSON Schema 校验器**（根 `package.json` `devDependencies` 为空、无 ajv；`runtime-agent/Cargo.toml` 无 jsonschema/schemars），见 §13 议题 8。
+1. **契约债** → **已关**：`contracts/provider/schemas/*` + golden + `verify:contracts`（ajv）消费；AGENTS 已知债已改为 runtime openapi 门禁仍债。
+2. **错误以字符串穿透 / 自伤式往返** → **已关**：`error_map::map_code` 主路径；legacy string 仅 fallback。
+3. **能力不诚实 / 未知行静默丢** → **基本关**：`native_unmapped` + 漂移告警 + capability / 摘要模式 UI；tool 全量对齐仍非目标。
+4. **claude `result.is_error` 漏读** → **已关**（golden + 单测）。
+5. **四条终态 attestation 缺 Path4** → **已关**：stream `Err` 合成 `turn_error` + attestation + fail。
+6. **`turn_error` 死类型** → **已关**（合成上行，与 fail 同源 code）。
+7. **family 两生产者不重合 / `budget_fuse` 断链** → **已关**：共享词表 + CP 常量/路由/中文 + 双侧 ⊆ 单测。
+8. **`provider_type` / `provider_kind` 三写法** → **基本关**：公开面注册表 `provider_type`；create 仍兼容 deprecated `provider_kind`。
+9. **family 裸英文** → **已关**：`failureFamilyLabel` + 护栏扩 `failure_family`。
+10. **验证缺失 / 无 ajv** → **已关**：golden≥5/家、ajv fixtures、S2 打标、opt-in E2E 脚本。
 
 ### 1.4 目标
 
@@ -654,7 +656,7 @@ ProviderAdapter
 
 ## 10. 分 Phase 实施
 
-> **修订：Phase 顺序已对调。** 原稿把「五个 schema 文件」放在最前，但仓库没有任何 JSON Schema 校验器（§1.3.10），且 writeback 的 payload/metadata 在 openapi 里是不透明对象（§4.5）——先落 schema 等于先产出一份**没有任何东西在校验它**的文档，与已腐烂的 `contracts/provider/README.md` 同构。改为：**先用错误与终态硬化把字段打出来（同时修 4 个既有缺陷），再把已经跑起来的形状固化成 schema。**
+> **修订：Phase 顺序已对调（历史决策）。** 实施时先错误/终态硬化（Phase 1），再固化 schema（Phase 2）并接 ajv。writeback 的 payload/metadata 在 openapi 里仍是不透明对象（§4.5）——语义契约在 `contracts/provider`，wire 在 control-plane openapi。
 
 ### Phase 1 — 错误与终态硬化（原 Phase B，提前）
 
@@ -671,11 +673,11 @@ ProviderAdapter
 
 **验收**
 
-- [ ] 四条终态路径各产 Result + attestation + 终态 writeback，缺一即红（单测逐条）  
-- [ ] 新 fail 路径 100% 带 `failure_family` 且与 envelope 同源  
-- [ ] Runtime 主路径无方言 contains 分类  
-- [ ] claude `is_error=true` 的 `result` 不再判成功（golden/单测各一条）  
-- [ ] **真实 E2E**：至少 1 次真实 provider 失败（建议改坏 binary path 触发 spawn 失败 + 1 次真实非 0 退出），核对 attempt 行的 family/retryable 与 Web 展示  
+- [x] 四条终态路径各产 Result + attestation + 终态 writeback，缺一即红（单测逐条）  
+- [x] 新 fail 路径 100% 带 `failure_family` 且与 envelope 同源  
+- [x] Runtime 主路径无方言 contains 分类  
+- [x] claude `is_error=true` 的 `result` 不再判成功（golden/单测各一条）  
+- [x] **真实 E2E**：假 binary `RATE_LIMIT` → attempt `error_code`/`failure_family=transient_provider`（spawn 失败专项 E2E 见 TODO 延后）  
 
 ### Phase 2 — 契约固化与可验证映射（原 Phase A，后置）
 
@@ -691,10 +693,10 @@ ProviderAdapter
 
 **验收**
 
-- [ ] `contracts/provider/schemas/*.json` 存在且被**至少一个会红的门禁**消费（不是只存在）  
-- [ ] 三家 golden 测试绿，且含各自 ≥1 条失败样例  
-- [ ] 改某一家原生字段：只动 adapter + golden 即可让门禁复绿，CP 与 openapi 不被迫改（作为一次真实演练记录在 plan 里）  
-- [ ] Web 无裸 `failure_family` 英文枚举，护栏能拦住新增裸渲染  
+- [x] `contracts/provider/schemas/*.json` 存在且被**至少一个会红的门禁**消费（不是只存在）  
+- [x] 三家 golden 测试绿，且含各自 ≥1 条失败样例  
+- [x] 改某一家原生字段：只动 adapter + golden 即可让门禁复绿，CP 与 openapi 不被迫改（作为一次真实演练记录在 plan 里）  
+- [x] Web 无裸 `failure_family` 英文枚举，护栏能拦住新增裸渲染  
 
 ### Phase 3 — 能力对齐与产品诚实
 
@@ -708,34 +710,33 @@ ProviderAdapter
 
 **验收**
 
-- [ ] 同任务换 Provider：协调状态机行为一致（成功/失败/重试）  
-- [ ] 时间线丰富度可不同，但 UI 不谎报 tool 轨迹  
-- [ ] 新 Provider 接入清单（capability + golden + catalog）成文  
+- [x] 同任务换 Provider：协调状态机行为一致（成功/失败/重试）——`e2e:provider-semantic` 对 claude-code + opencode 假 binary 校验  
+- [x] 时间线丰富度可不同，但 UI 不谎报 tool 轨迹（摘要模式文案）  
+- [x] 新 Provider 接入清单（capability + golden + catalog）成文（`contracts/provider/ONBOARDING.md`）  
+- [ ] L0 离线重放工具（**延后**，TODO）  
 
 ### Phase 4 — 生成与扩展（后置，可选）
 
-- schema → Rust/Go 类型生成（typify / oapi 等）评估  
-- 派发 payload schema 并入（接 2026-07-19 剩余）  
-- `error_code` 持久化列（§13 议题 10 若拍板要做统计告警）  
+- [x] `error_code` 持久化列（议题 10 已做）  
+- [x] 派发 payload schema 起步（`start-session-payload.schema.json` + fixture）  
+- [ ] schema → Rust/Go 类型生成（typify / oapi 等）评估——本批不接，见 `CODEGEN.md`  
 - 非目标仍成立：不引入新主栈  
 
 ---
 
 ## 11. 验证与门禁
 
-| 层级 | 手段 | 前置依赖 |
+| 层级 | 手段 | 前置依赖 / 现状 |
 |---|---|---|
-| 契约 | JSON Schema 文件 + validate writeback fixtures | **需要校验器，仓库现在没有**：根 `package.json` `devDependencies` 为空、无 ajv；`runtime-agent/Cargo.toml` 无 jsonschema/schemars。见 §13 议题 8 |
-| Adapter | golden：原生行 → 事件数组 deep equal | 纯 Rust，**零新依赖**（serde + assert_eq），这是 Phase 2 唯一无依赖的强门禁 |
-| Runtime | 单测 ErrorEnvelope 映射；executor 构造 Result（四条终态路径逐条） | 无 |
-| CP | 双读测试；禁止新增方言 contains 做 family 决策（`rg` 护栏） | 展示层 contains（`humanizeTechnicalFailureDetail`）不在拦截范围，规则要写清 |
-| Web | family 词表护栏（`status-labels.guard.test.ts` 扩 `failure_family`） | 无 |
-| 集成 | 既有 runtime smoke / project task 路径：成功 + 一类失败 | 无 |
-| 门禁脚本 | 扩展 `verify:contracts`（Node）或 `verify:runtime-agent`（Rust）子检查；**不**手拼未登记命令 | `verify-foundation-contracts.mjs` 现在是纯路径集合比对，加 schema 校验即引入第一个运行时依赖 |
+| 契约 | JSON Schema + ajv 校验 fixtures（S1） | **已落地**：根 `devDependencies.ajv`；`scripts/verify-foundation-contracts.mjs` 校验 `contracts/provider` |
+| Adapter | golden：原生行 → 事件数组 deep equal（≥5/家） | 纯 Rust，进 `verify:runtime-agent` |
+| Runtime | ErrorEnvelope 映射单测；`family::*` ⊆ 词表；executor 四终态 + diagnostics | 无额外依赖 |
+| CP | `FailureFamily*` ⊆ 词表；S2 ErrorEnvelope 打标；health `provider_contract` | 展示层 contains 不在 family 决策护栏范围 |
+| Web | `failureFamilyLabel` + `status-labels.guard` 扩 `failure_family` | 无 |
+| 集成 | opt-in `pnpm e2e:provider-semantic`（真服务 + 假 binary） | 需 dev services |
+| 门禁脚本 | `verify:contracts` / `verify:runtime-agent` / `verify:control-plane` 子检查 | 不手拼未登记命令 |
 
-真 E2E：**Phase 1 起**至少一次真实 Provider 失败分类抽检（本 spec 的核心变更就在失败路径，不允许「单测绿=完成」）；Phase 2 以单测 + golden + 契约为主。
-
-**「schema 文件存在」不算门禁**：Phase 2 验收要求 schema 至少被一个会红的检查消费，否则按 §4.5.1 的 S1 强度也未达成。
+真 E2E：假 binary `RATE_LIMIT` 路径已抽检；spawn 失败专项与 daemon 健康探针见 TODO 延后。
 
 ---
 
@@ -754,25 +755,23 @@ ProviderAdapter
 
 ---
 
-## 13. 待人类拍板项
+## 13. 拍板项（实施期已按推荐默认落地）
 
-实施前必须确认（默认推荐已标）。**议题 7–12 是 2026-08-10 代码复核新增，7/8/9 未定则 Phase 1/2 无法开工。**
-
-| # | 议题 | 推荐默认 |
+| # | 议题 | 决议 / 落地 |
 |---|---|---|
-| ~~1~~ | ~~`turn_error` payload 形状~~ **作废**：`turn_error` 在真实链路上从不出现（1.3.6），讨论其 payload 是伪问题 | — |
-| 1'（替代） | stream `Err` 是否合成 `turn_error` 事件上行 CP | **合成**（失败时 L2 时间线才有终止标记）；与 fail writeback 同源同 code，叙事层按 §4.2.1 去重。若不做，则从 v1 type 闭集删除 `turn_error` |
-| 2 | `native_unmapped` 默认开还是关 | **默认关**，diagnostics 仍计数；实现方式取「parser 在 `_ =>` 分支自产事件」，不改 parser 签名（§4.4.1） |
-| 3 | 超时用 `status=failed+TIMEOUT` 还是独立 `timed_out` | **failed + TIMEOUT** |
-| 4 | Phase 2 是否强制 `verify:foundation` 红灯 | **golden 进 `verify:runtime-agent`（零依赖，强制红）；schema 校验待议题 8** |
-| 5 | OpenCode/Codex tool 映射进哪个 Phase | **Phase 3**（不挡错误硬化） |
-| 6 | 是否改 AGENTS 已知债表述为「部分由本 spec 跟踪」 | **拍板后改一句指针** |
-| **7** | **Provider 标识字段收敛到哪个**：`provider_type`(`claude-code`) / `provider_kind`(`claude`) 现同时存在，现网 attestation metadata 用后者，CP 还兼容 `claude_code` 第三写法 | **统一 `provider_type` + 注册表取值，`provider_kind` 退役**；改动面 = `catalog.rs` descriptor、`server.rs` 校验、attestation metadata 键（**旧键需保留一版**，已有 attestation 行不回填）、CP `pg_repository.go` 归一函数 |
-| **8** | **JSON Schema 校验器加不加依赖**：仓库当前一个都没有 | **加 ajv 到根 `devDependencies`，只在 `verify:contracts` 用**（Node 侧一处，Rust 侧仍靠 golden deep-equal）。备选：schema 由 Rust `schemars` 生成——省依赖但**与「schema 优先、Rust 是实现」的宪法口径相反**，需人类明确接受才可选 |
-| **9** | **schema 校验强度**（§4.5.1）：S1 仅测试 / S2 ingest 打标 / S3 ingest 拒绝 | **S1 起步，Phase 3 评估 S2**；S3 不推荐（runtime 版本落后会批量掉事件） |
-| **10** | **`error_code` 是否加 `project_task_attempts` 列** | **Phase 4 再定**；未加之前 §15「可跨 Provider 告警统计」只兑现到「协调可比较」，不承诺统计面 |
-| **11** | **`PROVIDER_NO_TERMINAL_EVENT` 是否改判可重试**（现状 `non_retryable_execution`/false → 直接失败） | **改 `transient_provider`/true**：这一类多是上游 schema 漂移或空跑，重试耗尽后由 `max_attempts` 收敛到等人，比静默判死可观测。反对理由是系统性失败会烧 3 次预算——若人类更看重成本则维持现状 |
-| **12** | **`budget_fuse` 断链怎么修**（CP 无此常量 → 走 default「失败」，人类看不出是预算问题） | **加 CP 常量 + 路由到 `waiting_human`/`budget_approval` + 中文 lead + 词条**（复用已存在的 `HumanWaitReasonBudgetApproval` 与 `project_task_budget_approval` 决策动作）。备选：runtime 改产已有族——信息量更低，不推荐 |
+| ~~1~~ | `turn_error` payload 伪问题 | 作废 |
+| 1' | stream `Err` 合成 `turn_error` | **已落地** |
+| 2 | `native_unmapped` 默认关；diagnostics 仍计数 | **已落地**（L3 + terminal `diagnostic`） |
+| 3 | 超时 `failed + TIMEOUT` | **已落地** |
+| 4 | golden 进 `verify:runtime-agent` | **已落地** |
+| 5 | tool 映射 Phase 3 | **已落地**（诚实 capability / 摘要模式） |
+| 6 | AGENTS 已知债 | **已落地**（精简宪法 + 债表述更新） |
+| 7 | 统一 `provider_type` | **已落地**（create 仍兼容 deprecated `provider_kind`） |
+| 8 | 加 ajv | **已落地** |
+| 9 | S1 + S2 打标 | **已落地**（S3 仍不做） |
+| 10 | `error_code` 列 | **已落地**（Phase 4） |
+| 11 | `PROVIDER_NO_TERMINAL_EVENT` → transient 可重试 | **已落地** |
+| 12 | `budget_fuse` → waiting_human + 中文 | **已落地** |
 
 ---
 
@@ -799,12 +798,12 @@ ProviderAdapter
 | CP 事件 type → 中文 | `apps/control-plane/internal/employee/activity.go` `ActivityEventPresentation` |
 | CP writeback | `apps/control-plane/internal/employee/run_writeback.go` `RecordEvent` |
 | **wire 契约（payload/metadata 不透明）** | `contracts/control-plane/openapi.yaml` `RuntimeCommandEventWritebackRequest` / `FailProjectTaskAttemptRequest`（`failure_family` 是无 enum 的 string） |
-| **Web 裸枚举现场** | `apps/web/src/features/projects/components/project-execution-trace-panel.tsx`（`失败族：{attempt.failure_family}`）；词表 `apps/web/src/lib/status-labels.ts`（**无 family 条目**）；护栏 `status-labels.guard.test.ts`（只拦 `.status`/`.risk_level`） |
-| 校验器现状 | 根 `package.json`（`devDependencies` 为空）、`apps/runtime-agent/Cargo.toml`（无 schema 库）、`scripts/verify-foundation-contracts.mjs`（纯路径集合比对） |
-| Provider 散文契约 | `contracts/provider/README.md`（已指向本 spec） |
+| **Web family 词表** | `apps/web/src/lib/status-labels.ts` `failureFamilyLabel`；护栏 `status-labels.guard.test.ts` 含 `failure_family` |
+| 校验器现状 | 根 `ajv`；`verify-foundation-contracts.mjs` 校验 provider fixtures；CP S2 `jsonschema` 打标 |
+| Provider 契约 | `contracts/provider/{schemas,golden,fixtures,README,ONBOARDING}.md` |
 | 契约验证立项 | `docs/superpowers/specs/2026-07-19-runtime-provider-contract-verification.md` |
 | Transcript 已落地 | `docs/superpowers/specs/2026-07-09-provider-transcript-tool-event-capture-design.md` |
-| 架构债声明 | `AGENTS.md` 已知债段 |
+| 架构债声明 | `AGENTS.md`（schemas 已落地；runtime openapi 门禁仍债） |
 
 ---
 
@@ -865,3 +864,10 @@ ProviderAdapter
 **结构调整：** Phase A/B 对调为 Phase 1（错误与终态硬化）/ Phase 2（契约固化），理由见 §10 引言；Phase 编号由字母改数字，全文引用同步。
 
 **未改动：** §2 分层、§3 契约包布局、§9 双轨证据、§0 一句话方案（复核认为均成立）。
+
+### 2026-08-10 — Phase 1–4 落地后收口（P0 文档 + P1 护栏）
+
+1. §1.2 / §1.3 改为「现状能力」与「历史缺口+已关状态」，去掉「仓库无 ajv」等过时断言。  
+2. §10 验收勾选与 Phase 4 已做项对齐；L0 重放 / spawn E2E 记入 TODO。  
+3. §11 / §13 / §14 同步实施态。  
+4. Runtime：`family::*` ⊆ `failure-family.json` 单测；终态 `ProviderResult` / terminal `diagnostic` 写入 `unmapped_native_count`。

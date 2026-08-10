@@ -23,7 +23,10 @@ use crate::controlplane::models::{
     RuntimeCommand, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
     RuntimeCommandType, TaskResultContract,
 };
-use crate::events::{ErrorEnvelope, ProviderEvent, provider_result_failed, provider_result_succeeded};
+use crate::events::{
+    attempt_stream_diagnostics, ErrorEnvelope, ProviderEvent, provider_result_failed,
+    provider_result_succeeded,
+};
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
 use crate::providers::error_map::{
@@ -490,7 +493,7 @@ impl RuntimeCommandExecutor {
                         None,
                         None,
                     );
-                    writeback.fail_with_envelope(envelope).await?;
+                    writeback.fail_with_envelope(envelope, None).await?;
                 }
                 self.registry.record_run_finished(&run_id);
                 rollback_session_projections_best_effort(
@@ -1355,7 +1358,7 @@ impl RuntimeCommandExecutor {
                                 ),
                             )
                             .await;
-                        let _ = writeback.fail_with_envelope(envelope).await;
+                        let _ = writeback.fail_with_envelope(envelope, None).await;
                     }
                 }
             }
@@ -1439,7 +1442,7 @@ fn spawn_project_task_budget_heartbeat(
                             );
                             let _ = handle.cancel().await;
                             let _ = runs.finish_failed(&run_id, envelope.message.clone()).await;
-                            let _ = writeback.fail_with_envelope(envelope).await;
+                            let _ = writeback.fail_with_envelope(envelope, None).await;
                             break;
                         }
                         Ok(false) => {}
@@ -1477,6 +1480,7 @@ fn command_completed_terminal(
     summary: Option<String>,
     provider_session_id: Option<String>,
     total_tokens: i64,
+    diagnostics: Option<serde_json::Value>,
 ) -> RuntimeCommandTerminalWriteback {
     let mut result = HashMap::new();
     if let Some(summary) = summary.as_ref().filter(|value| !value.trim().is_empty()) {
@@ -1493,12 +1497,15 @@ fn command_completed_terminal(
         );
         result.insert("usage".to_string(), serde_json::Value::Object(usage));
     }
+    if let Some(diag) = diagnostics.as_ref() {
+        result.insert("diagnostics".to_string(), diag.clone());
+    }
 
     RuntimeCommandTerminalWriteback {
         status: "completed".to_string(),
         summary,
         result: Some(result),
-        diagnostic: None,
+        diagnostic: diagnostics_to_terminal_map(diagnostics.as_ref()),
         provider_session_external_id: provider_session_id.clone(),
         session_state_patch: provider_session_state_patch(provider_session_id.as_deref()),
         log_ref: None,
@@ -1507,6 +1514,15 @@ fn command_completed_terminal(
         error_code: None,
         error_family: None,
     }
+}
+
+fn diagnostics_to_terminal_map(
+    diagnostics: Option<&serde_json::Value>,
+) -> Option<HashMap<String, serde_json::Value>> {
+    let Some(serde_json::Value::Object(map)) = diagnostics else {
+        return None;
+    };
+    Some(map.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
 }
 
 fn command_failed_terminal(error_message: String) -> RuntimeCommandTerminalWriteback {
@@ -1657,6 +1673,7 @@ impl RuntimeCommandWritebackSink {
         &self,
         summary: Option<String>,
         provider_session_id: Option<String>,
+        diagnostics: Option<serde_json::Value>,
     ) -> anyhow::Result<()> {
         // 模型自述(conclusion)在离开执行机前统一脱敏(证据地基 §8 修订 7②):
         // 它下游流向 run_completed 事件、conclusion.md 工件、attempt.completed /
@@ -1676,6 +1693,7 @@ impl RuntimeCommandWritebackSink {
                     summary.clone(),
                     provider_session_id.clone(),
                     total_tokens,
+                    diagnostics,
                 ),
             )
             .await?;
@@ -1856,13 +1874,19 @@ impl RuntimeCommandWritebackSink {
     }
 
     /// Terminal fail writeback from a structured envelope (preferred).
-    async fn fail_with_envelope(&self, envelope: ErrorEnvelope) -> anyhow::Result<()> {
+    /// `diagnostics` is L3 attempt stream stats (unmapped counts, …); optional
+    /// when the failure is pre-stream (spawn/workspace) or early fuse.
+    async fn fail_with_envelope(
+        &self,
+        envelope: ErrorEnvelope,
+        diagnostics: Option<serde_json::Value>,
+    ) -> anyhow::Result<()> {
         // L3 result is the single terminal fact; fail writeback derives from it.
-        let _result = provider_result_failed(envelope.clone());
+        let _result = provider_result_failed(envelope.clone(), diagnostics.clone());
         self.client
             .fail_runtime_command(
                 &self.command_id,
-                &command_failed_terminal_from_envelope(&envelope),
+                &command_failed_terminal_from_envelope(&envelope, diagnostics),
             )
             .await?;
         self.fail_project_task(&envelope).await
@@ -1872,7 +1896,7 @@ impl RuntimeCommandWritebackSink {
     async fn fail(&self, error_message: String) -> anyhow::Result<()> {
         let envelope =
             envelope_for_code(error_map::classify_message_fallback(&error_message), error_message, "unknown");
-        self.fail_with_envelope(envelope).await
+        self.fail_with_envelope(envelope, None).await
     }
 }
 
@@ -3245,17 +3269,23 @@ fn project_task_fail_writeback_from_envelope(
 }
 
 /// Build L3 ProviderResult + shared fail packaging for the four terminal paths.
-fn build_provider_result_failed(envelope: ErrorEnvelope) -> (crate::events::ProviderResult, ErrorEnvelope) {
-    let result = provider_result_failed(envelope.clone());
+fn build_provider_result_failed(
+    envelope: ErrorEnvelope,
+    diagnostics: Option<serde_json::Value>,
+) -> (crate::events::ProviderResult, ErrorEnvelope) {
+    let result = provider_result_failed(envelope.clone(), diagnostics);
     (result, envelope)
 }
 
-fn command_failed_terminal_from_envelope(envelope: &ErrorEnvelope) -> RuntimeCommandTerminalWriteback {
+fn command_failed_terminal_from_envelope(
+    envelope: &ErrorEnvelope,
+    diagnostics: Option<serde_json::Value>,
+) -> RuntimeCommandTerminalWriteback {
     RuntimeCommandTerminalWriteback {
         status: "failed".to_string(),
         summary: None,
         result: None,
-        diagnostic: None,
+        diagnostic: diagnostics_to_terminal_map(diagnostics.as_ref()),
         provider_session_external_id: None,
         session_state_patch: None,
         log_ref: None,
@@ -3337,7 +3367,11 @@ async fn drain_provider_events(
             // is not skipped (spec §4.2.1 / §6.4).
             Err(error) => {
                 let envelope = envelope_from_anyhow(&error, provider_type);
-                let _ = build_provider_result_failed(envelope.clone());
+                let diagnostics = Some(attempt_stream_diagnostics(
+                    provider_type,
+                    unmapped_native_count,
+                ));
+                let _ = build_provider_result_failed(envelope.clone(), diagnostics.clone());
                 if let Some(stop) = &heartbeat_stop {
                     stop.cancel();
                 }
@@ -3386,7 +3420,7 @@ async fn drain_provider_events(
                             ),
                         )
                         .await;
-                    let _ = writeback.fail_with_envelope(envelope).await;
+                    let _ = writeback.fail_with_envelope(envelope, diagnostics).await;
                 }
                 if let Some(cleanup) = &terminal_cleanup {
                     cleanup.apply(false);
@@ -3453,7 +3487,11 @@ async fn drain_provider_events(
                 match action {
                     // Path 1: in-loop TurnError
                     ProviderTerminalWritebackAction::Fail(envelope) => {
-                        let _ = build_provider_result_failed(envelope.clone());
+                        let diagnostics = Some(attempt_stream_diagnostics(
+                            provider_type,
+                            unmapped_native_count,
+                        ));
+                        let _ = build_provider_result_failed(envelope.clone(), diagnostics.clone());
                         if let Some(stop) = &heartbeat_stop {
                             stop.cancel();
                         }
@@ -3472,7 +3510,7 @@ async fn drain_provider_events(
                                 ),
                             )
                             .await;
-                        writeback.fail_with_envelope(envelope).await?;
+                        writeback.fail_with_envelope(envelope, diagnostics).await?;
                     }
                 }
             }
@@ -3535,10 +3573,15 @@ async fn drain_provider_events(
                 if !has_summary && !fallback_text.is_empty() {
                     completion.summary = Some(fallback_text.to_string());
                 }
+                let diagnostics = Some(attempt_stream_diagnostics(
+                    provider_type,
+                    unmapped_native_count,
+                ));
                 let _ = provider_result_succeeded(
                     completion.summary.clone(),
                     None,
                     completion.provider_session_id.clone(),
+                    diagnostics.clone(),
                 );
                 writeback
                     .record_attestation(
@@ -3555,7 +3598,11 @@ async fn drain_provider_events(
                     )
                     .await;
                 writeback
-                    .complete(completion.summary, completion.provider_session_id)
+                    .complete(
+                        completion.summary,
+                        completion.provider_session_id,
+                        diagnostics,
+                    )
                     .await?;
                 run_succeeded = true;
             }
@@ -3569,7 +3616,11 @@ async fn drain_provider_events(
                     "provider exited without a terminal event",
                     provider_type,
                 );
-                let _ = build_provider_result_failed(envelope.clone());
+                let diagnostics = Some(attempt_stream_diagnostics(
+                    provider_type,
+                    unmapped_native_count,
+                ));
+                let _ = build_provider_result_failed(envelope.clone(), diagnostics.clone());
                 let _ = runs
                     .finish_failed(&run_id, envelope.message.clone())
                     .await;
@@ -3589,7 +3640,7 @@ async fn drain_provider_events(
                             ),
                         )
                         .await;
-                    let _ = writeback.fail_with_envelope(envelope).await;
+                    let _ = writeback.fail_with_envelope(envelope, diagnostics).await;
                 }
             }
         }
@@ -4662,7 +4713,7 @@ mod tests {
 
     #[test]
     fn command_completed_terminal_with_positive_tokens_writes_usage() {
-        let terminal = command_completed_terminal(Some("done".to_string()), None, 1500);
+        let terminal = command_completed_terminal(Some("done".to_string()), None, 1500, None);
 
         assert_eq!(terminal.status, "completed");
         let result = terminal.result.expect("result map");
@@ -4673,7 +4724,7 @@ mod tests {
 
     #[test]
     fn command_completed_terminal_with_zero_tokens_omits_usage() {
-        let terminal = command_completed_terminal(Some("done".to_string()), None, 0);
+        let terminal = command_completed_terminal(Some("done".to_string()), None, 0, None);
 
         let result = terminal.result.expect("result map");
         assert!(result.get("usage").is_none());
@@ -4682,11 +4733,38 @@ mod tests {
 
     #[test]
     fn command_completed_terminal_without_summary_omits_summary_and_writes_usage() {
-        let terminal = command_completed_terminal(None, Some("sess-1".to_string()), 42);
+        let terminal = command_completed_terminal(None, Some("sess-1".to_string()), 42, None);
 
         let result = terminal.result.expect("result map");
         assert!(result.get("summary").is_none());
         assert_eq!(result["usage"]["total_tokens"], serde_json::json!(42));
+    }
+
+    #[test]
+    fn command_completed_terminal_writes_unmapped_diagnostics() {
+        let diagnostics = attempt_stream_diagnostics("claude-code", 3);
+        let terminal =
+            command_completed_terminal(Some("done".to_string()), None, 0, Some(diagnostics.clone()));
+
+        let result = terminal.result.expect("result map");
+        assert_eq!(result["diagnostics"]["unmapped_native_count"], 3);
+        let diagnostic = terminal.diagnostic.expect("terminal diagnostic");
+        assert_eq!(diagnostic["unmapped_native_count"], 3);
+        assert_eq!(diagnostic["provider_type"], "claude-code");
+    }
+
+    #[test]
+    fn command_failed_terminal_from_envelope_writes_diagnostics() {
+        let envelope = envelope_for_code(
+            error_code::RATE_LIMIT,
+            "rate limit",
+            "claude-code",
+        );
+        let diagnostics = attempt_stream_diagnostics("claude-code", 2);
+        let terminal = command_failed_terminal_from_envelope(&envelope, Some(diagnostics));
+        let diagnostic = terminal.diagnostic.expect("terminal diagnostic");
+        assert_eq!(diagnostic["unmapped_native_count"], 2);
+        assert_eq!(terminal.error_code.as_deref(), Some("RATE_LIMIT"));
     }
 
     #[test]

@@ -244,6 +244,52 @@ pub struct ErrorEnvelopeJson {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// Runtime production family::* set. Must stay ⊆ failure-family.json
+    /// known_values (provider semantic unification §5.3; mirrors CP vocab test).
+    fn runtime_family_constants() -> &'static [&'static str] {
+        &[
+            family::BUDGET_FUSE,
+            family::BUSINESS_CANCELLED,
+            family::INVALID_CONTRACT,
+            family::TIMEOUT,
+            family::TRANSIENT_PROVIDER,
+            family::NON_RETRYABLE_EXECUTION,
+            family::PROVIDER_CONFIGURATION,
+        ]
+    }
+
+    fn load_failure_family_known_values() -> HashSet<String> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/provider/schemas/failure-family.json");
+        let raw = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let doc: serde_json::Value =
+            serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse failure-family.json: {e}"));
+        let values = doc
+            .get("known_values")
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("failure-family.json missing known_values array"));
+        values
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect()
+    }
+
+    #[test]
+    fn runtime_family_constants_subset_of_shared_vocab() {
+        let known = load_failure_family_known_values();
+        assert!(!known.is_empty(), "failure-family.json known_values empty");
+        for family in runtime_family_constants() {
+            assert!(
+                known.contains(*family),
+                "Runtime family::{family:?} missing from contracts/provider/schemas/failure-family.json known_values"
+            );
+        }
+    }
 
     #[test]
     fn map_code_table_covers_v1_codes() {

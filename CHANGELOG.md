@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-10 Provider 语义统一 P0/P1 收口：设计稿 §1.2–1.3/§10–§14/§17 对齐已落地态（勾选验收、去掉「无 ajv」等历史断言）；Runtime `family::*` ⊆ `failure-family.json` 单测；终态 `ProviderResult` 与 runtime command terminal `diagnostic` 写入 `unmapped_native_count`；spawn E2E / daemon health / L0 重放延后记入 `TODO.md`。
 - 2026-08-10 16:20 精简 `AGENTS.md` 宪法：只保留定位/分层/协作/工程/验证硬规范；修正 Provider 已知债（schemas+verify:contracts 已落地，runtime openapi 门禁仍债）；操作细节改指 `docs/` / `package.json` / 设计稿，不写实施进度账。
 - 2026-08-10 15:50 Provider 语义统一增强收口：① RunSnapshot/runtime openapi 公开字段改为注册表 provider_type（create 仍兼容 deprecated provider_kind）；② S2 接入 jsonschema v6 校验 ErrorEnvelope（schema 缺失时结构回退）；③ CP /health.provider_contract 与 Runtime /health.provider_stream 暴露 schema_violation/drift 计数；④ opt-in E2E 脚本 scripts/e2e/provider-semantic-fail-classification.mjs（pnpm e2e:provider-semantic）。门禁：http_server/executor/api/employee 测试绿。
 - 2026-08-10 13:10 Provider 语义统一剩余项收口：① 主写路径收敛注册表 `provider_type`（attestation 不再写短 kind；本地 HTTP 接受 `provider_type` 优先 / deprecated `provider_kind`）；② event writeback 补 `schema_version`+`provider_type` 元数据、`turn_completed.usage`；③ S2 ingest 结构打标 `metadata.schema_violation`（不拒绝）+ 计数；④ unmapped/unparseable 阈值 `ALERT provider_stream_drift`（默认 5）；⑤ 三家 golden ≥5（测试硬门槛）。**真实链路**：同项目夹具上 claude-code 与临时 opencode 假 binary 均落库 `error_code=RATE_LIMIT`/`transient_provider`，信封 `provider_type` 分别为 `claude-code`/`opencode`（attempt `7c30e52a`/`99b2d241`），员工 provider 已还原；pid 稳定。
