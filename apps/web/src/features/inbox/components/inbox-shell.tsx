@@ -446,10 +446,15 @@ function InboxDetailWorkbench({
   onAction: (item: InboxItem, action: InboxAction) => void;
   view: InboxViewMode;
 }) {
+  // 动作区 shrink-0：父级 h-full flex 时默认 shrink 会把 SoftCard 压矮，
+  // 再叠加 overflow-hidden → 按钮/「查看完整详情」被裁成半截（真实浏览器量过）。
+  // 详情区单独滚动，保证「选中即见可决断项」始终完整可见。
   return (
-    <div className="flex min-h-0 flex-col gap-3 @5xl/master-detail:h-full @5xl/master-detail:overflow-y-auto">
+    <div className="flex min-h-0 flex-col gap-3 @5xl/master-detail:h-full">
       <InboxActionPanel item={item} onAction={onAction} view={view} />
-      <InboxDetailPanel item={item} view={view} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <InboxDetailPanel item={item} view={view} />
+      </div>
     </div>
   );
 }
@@ -826,9 +831,9 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
   const detailHref = resolveInboxHref(item);
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
+    <div className="flex shrink-0 flex-col gap-3">
       {/* 可执行动作置顶 — 裁决工作台：选中即见可决断项 */}
-      <SoftCard className="overflow-hidden">
+      <SoftCard className="shrink-0 overflow-hidden">
         <div className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-3 text-[13px] font-bold text-ink">
           <Zap aria-hidden className="size-3.5" />
           可执行动作
@@ -845,7 +850,7 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
               <div className="grid grid-cols-2 gap-2">
                 {actions.map((action) => (
                   <Button
-                    className={cn("justify-center", actionToneClass[action.tone])}
+                    className={cn("min-h-9 w-full justify-center", actionToneClass[action.tone])}
                     key={action.key}
                     onClick={() => onAction(item, action)}
                     type="button"
@@ -869,7 +874,7 @@ function InboxActionPanel({ item, onAction, view }: InboxActionPanelProps) {
       </SoftCard>
 
       {/* 快速跳转：仅保留服务端 primary_surface 的唯一落点 */}
-      <SoftCard className="overflow-hidden">
+      <SoftCard className="shrink-0 overflow-hidden">
         <div className="flex items-center gap-2 border-b border-line bg-card-soft px-4 py-3 text-[13px] font-bold text-ink">
           <Layers aria-hidden className="size-3.5" />
           快速跳转

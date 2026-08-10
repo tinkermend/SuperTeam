@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-10 11:55 收件箱详情右栏：可执行动作/快速跳转 SoftCard 被 flex 压矮 + overflow-hidden 裁切按钮与「查看完整详情」；动作区改为 shrink-0，详情单独滚动。真实浏览器：动作卡 h 141 完整容纳同意/驳回，快速跳转显示「查看完整详情」。
 - 2026-08-10 11:50 收件箱列表行布局：U3「查看上下文」从行右上绝对定位改到第 2 行右下，消除选中/hover 时与行内 CTA、时间叠字；行 `overflow-hidden`、长 CTA `max-w` truncate。真实浏览器测：主从分栏 list≈726px / 视口 1116 与 1440 下 link×btn / title×btn / line1 子元素无重叠、overflowX=false、行高 63px。
 - 2026-08-10 11:45 收件箱分诊工作台（spec `docs/superpowers/specs/2026-08-10-inbox-triage-workbench-design.md` 阶段 1–4）：① `ListInboxItems` 风险优先 `ORDER BY` + `ListInboxItemsOldest`；`sort=risk|oldest`（非法回落 risk）；WHERE 同口径护栏。② 行身份按 `layer`、密度压缩、kind pill、why/进度迁详情。③ roving tabindex、提交成功自动前进（后台提交不抢他人选中）、他人 resolve 清空；URL 为 sort 事实源。④ 「优先处理」区；重置清 sort。真实 E2E 含 T9 连续补证 3 条、T15 高风险离优先区。零迁移。
 - 2026-08-10 11:35 Provider 语义统一 Phase 3（spec 同 Phase 1–2）：Codex 解析收敛为显式 `type` 分支，未知类型产出 `native_unmapped`（废除跨 type 贪婪 `session_id`/`text` 命中）；stdout 非 JSON 与未映射 type 分计诊断；`SUPERTEAM_PROVIDER_EMIT_NATIVE_UNMAPPED` 默认关写回（开则每 attempt 最多 20 条）。Web 执行轨迹对 opencode/codex 显示「摘要模式」诚实文案；CP activity 补 `turn_error`/`native_unmapped` 中文；接入清单 `contracts/provider/ONBOARDING.md`。门禁：golden/provider 测试绿、activity 单测绿、trace 面板单测绿。
