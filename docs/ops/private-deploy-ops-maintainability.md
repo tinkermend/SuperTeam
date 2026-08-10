@@ -57,7 +57,7 @@ Agents.md 分层约束对交付同样成立：Runtime 不承载业务策略；Co
 | **本地启停** | `scripts/dev-services.sh` | 启停 temporal / control-plane / web / runtime-agent / feishu-connector；迁移 atlas；OpenFGA 可 compose 或 local；pid/log 在 `.scratch/`。**明确是开发脚本**，非客户交付入口 |
 | **OpenFGA 引导** | `scripts/openfga-bootstrap.sh` | 建 store + 写 model + smoke check，吐出 `OPENFGA_*` env；偏 shadow 试验 |
 | **CP 配置样例** | `apps/control-plane/config/config.example.yaml` | `environment`、`http`（含 CORS）、`postgres`、`redis`、`objectStore`、`employeeEnv`、`temporal`、`authz`、`auth`、`planner` |
-| **Runtime 配置样例** | `apps/runtime-agent/config.example.yaml` | `control_plane_url`、`bootstrap_key`、`http.addr`、workspace、providers、logging；注释写明对象一律 **CP presign** |
+| **Runtime 配置样例** | `apps/runtime-agent/config.example.yaml` | `control_plane_url`、`bootstrap_key`、`http.addr`、workspace、providers、logging；**对象存储凭证不在 Runtime 配置中**——上传/下载走 CP presign（见 `src/artifacts.rs` / `raw_log.rs` / `skills.rs` 与 `config.rs` 说明） |
 | **Web 构建** | `pnpm build:web` / Vite；`VITE_CONTROL_PLANE_URL` | 静态资源构建；API 基址见 `apps/web/src/lib/config/control-plane-url.ts`（默认同 hostname `:8080`） |
 | **迁移** | `apps/control-plane/internal/storage/migrations/` + Atlas | 生产必须可重复 apply；dev-services 启动前自动 migrate |
 | **健康** | CP `GET /health`；Runtime `GET /health`；OpenFGA `/healthz` | CP health 偏「进程活着」；hardening 已点名 **不探 DB/Temporal**、无 `/metrics` |
@@ -428,7 +428,7 @@ Phase C（规模化）
 | 仅 dev 依赖 Compose | `docker-compose.dev.yml` |
 | 无业务 Dockerfile | 仓根检索 `Dockerfile*`（业务树无） |
 | CP 配置含 objectStore + CORS + prod 规则 | `apps/control-plane/config/config.example.yaml`，`internal/config/config.go` |
-| Runtime 对象仅 presign | `apps/runtime-agent/config.example.yaml` 注释；`src/artifacts.rs` / `raw_log.rs` / `skills.rs` |
+| Runtime 对象仅 presign | `apps/runtime-agent/src/config.rs`（presign-only 注释）；`src/artifacts.rs` / `raw_log.rs` / `skills.rs`；example 无对象存储密钥段 |
 | 开发启停 | `scripts/dev-services.sh`，`package.json` scripts |
 | 生产桶 CORS 债 | `TODO.md`；`docs/superpowers/specs/2026-07-19-execution-output-attachments-followups.md` |
 | nginx 同源债 | `TODO.md`；`apps/web/src/lib/config/control-plane-url.ts` |
