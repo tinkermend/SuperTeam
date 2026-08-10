@@ -44,9 +44,12 @@ pub fn map_code(code: &str) -> (&'static str, bool) {
         code::PROVIDER_EXIT_NON_ZERO => (family::TRANSIENT_PROVIDER, true),
         code::PROVIDER_SPAWN_FAILED => (family::PROVIDER_CONFIGURATION, false),
         code::PROVIDER_PROTOCOL_ERROR => (family::NON_RETRYABLE_EXECUTION, false),
-        // Schema drift / empty run: prefer retry so max_attempts converges to
-        // waiting_human rather than silent permanent fail (spec §13 #11).
-        code::PROVIDER_NO_TERMINAL_EVENT => (family::TRANSIENT_PROVIDER, true),
+        // Schema drift / empty run. Retry was the original §13 #11 decision, but
+        // real-chain E2E showed retries never re-reach the runtime (CP creates no
+        // runtime command for the requeued attempt), so retrying only burned
+        // ~12min and relabelled the task `runtime_recovery`, hiding this code.
+        // Held at non-retryable until 派发再送 is fixed; flip back then.
+        code::PROVIDER_NO_TERMINAL_EVENT => (family::TRANSIENT_PROVIDER, false),
         code::RATE_LIMIT => (family::TRANSIENT_PROVIDER, true),
         code::AUTH_FAILED => (family::PROVIDER_CONFIGURATION, false),
         code::TIMEOUT => (family::TIMEOUT, true),
@@ -297,9 +300,12 @@ mod tests {
             map_code(code::BUDGET_FUSE),
             (family::BUDGET_FUSE, false)
         );
+        // Non-retryable on purpose: see map_code comment (retry never re-reaches
+        // the runtime today, so it would only mask this code behind
+        // runtime_recovery). Flip to `true` together with the dispatch fix.
         assert_eq!(
             map_code(code::PROVIDER_NO_TERMINAL_EVENT),
-            (family::TRANSIENT_PROVIDER, true)
+            (family::TRANSIENT_PROVIDER, false)
         );
         assert_eq!(
             map_code(code::PROVIDER_SPAWN_FAILED),

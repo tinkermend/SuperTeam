@@ -59,11 +59,11 @@ SuperTeam 是企业数字员工**控制平面**，不是聊天聚合器：
 | 用量 best-effort | `providers/usage.rs` | usage / token_usage 字段归一；预算心跳与 result contract 消费 |
 | writeback | `commands/executor.rs` `runtime_event_writeback` | → CP `event_type` + payload；`schema_version` + `provider_type` 元数据 |
 | 结构化错误 | `providers/error_map.rs` + `ErrorEnvelope` | code→(family, retryable) 单表；fail writeback 同源 |
-| L3 终态 | `events.rs` `ProviderResult` + `attempt_stream_diagnostics` | 四条终态路径 + attestation；diagnostics 含 `unmapped_native_count` |
+| L3 终态 | 终态 writeback 的 `status` / `error_code` / `error_family` / `diagnostic` + `events.rs` `attempt_stream_diagnostics` | 四条终态路径 + attestation；diagnostics 含 `unmapped_native_count`。**不传独立 ProviderResult 对象**，见 §6.4 |
 | 契约包 | `contracts/provider/schemas/*` + golden + fixtures | ajv S1（`verify:contracts`）+ CP S2 打标 |
 | family 词表 | `failure-family.json` + CP/Runtime ⊆ 单测 + Web `failureFamilyLabel` | 跨层共享；`budget_fuse` 路由 waiting_human |
 | raw 证据轨 | 2026-07-09 已落地 | 原始流不因 parse 丢弃 |
-| 零终态兜底 | `executor.rs` `drain_provider_events` 尾部 | `PROVIDER_NO_TERMINAL_EVENT` → transient 可重试 |
+| 零终态兜底 | `executor.rs` `drain_provider_events` 尾部 | `PROVIDER_NO_TERMINAL_EVENT` → `transient_provider` / **不可重试**（§18-1） |
 
 ### 1.3 实施前的结构性缺口（历史；Phase 1–4 后状态）
 
@@ -365,7 +365,7 @@ contracts/provider/
 | `PROVIDER_EXIT_NON_ZERO` | 进程非 0 退出 | `transient_provider` 或 `non_retryable_execution`* | *见映射表 |
 | `PROVIDER_SPAWN_FAILED` | 二进制不存在/无权限 | `provider_configuration` | false |
 | `PROVIDER_PROTOCOL_ERROR` | 流协议致命错误 / codex 原生 error 行 | `non_retryable_execution` | false |
-| `PROVIDER_NO_TERMINAL_EVENT` | **exit 0 但全程无 TurnCompleted/TurnError**（现状 `provider exited without a terminal event`，即输出格式漂移被解析层全量丢弃的典型形态） | 现状落 `non_retryable_execution`（无 contains 命中）→ **建议改 `transient_provider`**，见 §13 议题 11 | 现状 false → 建议 true |
+| `PROVIDER_NO_TERMINAL_EVENT` | **exit 0 但全程无 TurnCompleted/TurnError**（输出格式漂移被解析层全量丢弃的典型形态） | `transient_provider`（保留诊断信息量） | **false**——重试在派发修好前无效且会掩盖真因，见 §13 议题 11 / §18-1 |
 | `RATE_LIMIT` | 限流 | `transient_provider` | true |
 | `AUTH_FAILED` | 鉴权/配额账号 | `provider_configuration`（CP 已有中文 lead「执行器配置有误」，比 `non_retryable_execution` 信息量高） | false |
 | `TIMEOUT` | 超时 | `timeout` | true |
@@ -487,26 +487,27 @@ contracts/provider/
 
 ### 6.4 合成时机
 
-每个 attempt **恰好一个** ProviderResult，在：
+每个 attempt **恰好一个终态**，在：
 
 - 收到 `turn_completed` 且进程成功退出，或  
 - 流错误 / 非 0 退出 / 取消 / 预算熔断 / wait-human  
 
-由 executor 统一 `build_provider_result(...)`，再派生 complete/fail writeback。  
-禁止多处手写 fail 字符串而不经 Result 构造。
+**L3 的落地形态（2026-08-10 修订）**：终态语义投影到终态 writeback 的 `status` / `error_code` / `error_family` / `diagnostic` 四个字段，**Runtime 不再额外传一个 `ProviderResult` 对象**。原实现构造了 `ProviderResult` 却在每条路径上 `let _ =` 丢弃（纯装饰、无编译警告、会静默腐烂），已删除该结构体。`provider-result.schema.json` 与 fixtures 保留为对外契约描述，是否让它真正上行（并定下消费者）留待后续立项。
 
-**现状是四条路径，不是两条**（`executor.rs`，实施时必须全部并入 `build_provider_result`）：
+**终态路径共五条，全部必须产出「终态 writeback + attestation」**：
 
-| # | 路径 | 现状终态回写 | 现状 attestation |
-|---|---|---|---|
-| 1 | 事件循环内 `TurnError` | fail | ✅ `provider_terminal/failed` |
-| 2 | 流正常结束 + 有 `TurnCompleted` | complete | ✅ `provider_terminal/succeeded` |
-| 3 | 流正常结束但**从无终态事件** | fail（`provider exited without a terminal event`） | ✅ `provider_terminal/failed` |
-| 4 | **`drain_provider_events` 早退（stream `Err`：非 0 退出 / spawn / io / codex `bail!`）**，由 spawn 处 `if let Err(error) = result` 兜底 | fail | ❌ **无 attestation** |
+| # | 路径 | 终态回写 | attestation | L2 终止标记（`turn_error`） |
+|---|---|---|---|---|
+| 1 | 事件循环内 `TurnError` | fail | ✅ | ✅ 事件本身 |
+| 2 | 流正常结束 + `TurnCompleted` | complete | ✅ succeeded | 不适用 |
+| 3 | 流正常结束但**从无终态事件** | fail（`PROVIDER_NO_TERMINAL_EVENT`） | ✅ | ✅ 2026-08-10 补 |
+| 4 | `drain_provider_events` 早退（stream `Err`：非 0 退出 / io / codex `bail!`） | fail | ✅ | ✅ |
+| 5 | 预算墙钟熔断（心跳线程） | fail（`BUDGET_FUSE`） | ✅ | ✅ 2026-08-10 补 |
+| — | `provider.start()` 失败（spawn） | fail（`PROVIDER_SPAWN_FAILED`） | ✅ `provider_start/failed` | 不适用（provider 从未启动） |
 
-第 4 条是最常见的真实失败路径，却是唯一没有执行证明的——**这是本 spec 顺带修的既有缺陷**，也是 §6.4「恰好一个 Result」能否成立的前提。路径 1 在合成 `turn_error`（§4.2.1）落地前实际不会被触发。
+**顺序是承重的**：CP 在 run 进入终态后拒收 run 事件，所以 `turn_error` 必须**先于**终态 writeback 发出，否则被静默丢弃、时间线在流中间戛然而止。实现收敛在 `executor.rs` `emit_turn_error_marker`，标记失败只记日志、不影响终态（终态自带 code/family）。
 
-验收判据：四条路径都必须产出 ProviderResult + attestation + 终态 writeback 三件套，缺一即红。
+验收判据：五条路径都必须产出 attestation + 终态 writeback；1/3/4/5 另须有 `turn_error` 上行。
 
 ---
 
@@ -770,7 +771,7 @@ ProviderAdapter
 | 8 | 加 ajv | **已落地** |
 | 9 | S1 + S2 打标 | **已落地**（S3 仍不做） |
 | 10 | `error_code` 列 | **已落地**（Phase 4） |
-| 11 | `PROVIDER_NO_TERMINAL_EVENT` → transient 可重试 | **已落地** |
+| 11 | `PROVIDER_NO_TERMINAL_EVENT` → transient 可重试 | **已翻回不可重试**（2026-08-10 人类确认，见 §18-1）：真链路证伪前提——重试根本没重跑，反而把真因盖成 `runtime_recovery` |
 | 12 | `budget_fuse` → waiting_human + 中文 | **已落地** |
 
 ---
@@ -871,3 +872,32 @@ ProviderAdapter
 2. §10 验收勾选与 Phase 4 已做项对齐；L0 重放 / spawn E2E 记入 TODO。  
 3. §11 / §13 / §14 同步实施态。  
 4. Runtime：`family::*` ⊆ `failure-family.json` 单测；终态 `ProviderResult` / terminal `diagnostic` 写入 `unmapped_native_count`。
+
+---
+
+## 18. 独立复查与回归（2026-08-10，另一会话实施后）
+
+复查方式：读码对照 + 提交态门禁（独立 detached worktree，避开工作树在途改动）+ 真实链路 E2E（假 provider + 真 claude + 浏览器）。
+
+**门禁修复**：`a3e4d43a` 在 `RunSpec` 字段收敛时于测试块留下重复字段，main 上 `cargo test` 直接编译失败（E0062），`verify:runtime-agent` / `verify:foundation` 一直是红的（非测试构建不受影响，所以运行中的服务看不出来）。已修（`9bf01fa2`）。
+
+### 18-1 议题 11 翻转：`PROVIDER_NO_TERMINAL_EVENT` 回到不可重试
+
+原判据「重试耗尽后由 max_attempts 收敛到等人，比静默判死可观测」被真链路证伪：**重试根本没重跑**。实测（需求 `6665b38e`）：attempt #1 正确分类后 requeue，attempt #2/#3 从未产生 runtime 命令（`runtime_events` 在 #1 结束后再无记录），双双空转到看门狗 `lost`，12 分钟后任务落 `waiting_human` / `runtime_recovery`——**真因被最后一次尝试的族盖掉**，人类被指向运行环境而非 provider 输出漂移。同形态在另一批 8 条 `RATE_LIMIT` 任务上复现，属既有派发缺陷，被本 spec 的改判放大到必经路径。
+
+人类 2026-08-10 确认翻回 `transient_provider` / `retryable=false`：12 分钟无效重试 + 掩盖真因 → 秒级如实失败。派发修好后连同任务级归因一起翻回，见立项 `docs/superpowers/specs/2026-08-10-retry-redispatch-and-failure-attribution.md`。
+
+### 18-2 本次一并修的三项
+
+| 项 | 问题 | 处置 |
+|---|---|---|
+| L3 空壳 | `ProviderResult` 在全部终态路径上构造后 `let _ =` 丢弃（`let _` 抑制警告，会静默腐烂），注释却称其为唯一终态事实 | 删除结构体与构造函数；§6.4 改写为「L3 投影到终态 writeback 四字段」 |
+| L2 终止标记缺失 | `turn_error` 只在「stream `Err`」一条路径上行；尾部无终态、预算熔断两条先写终态再发事件，CP 因 run 已终态拒收且错误被 `let _` 吞掉 → 时间线戛然而止（两次真实 E2E 各证一次） | 抽出 `emit_turn_error_marker`，统一在终态写回**之前**发；标记失败只记日志 |
+| 脏 provider_type | 预算心跳与 legacy `fail()` 硬编码 `"unknown"`，而 sink 自己就有该字段 | 改用 `writeback.provider_type` |
+
+另：宪法（`AGENTS.md`）在 `6ad60929` 被顺手压缩，丢了两条硬教训，已补回——worktree 未共享 PID_DIR 时 `restart` 是退出码 0 的静默空操作；禁止 `npx playwright install` / `npx vitest run`。
+
+### 18-3 仍未关闭
+
+- L2 envelope 未实现、schema 描述过渡态、golden `expected_events` 无 schema 校验 → 立项 `docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md`（先拍板再动门禁）。
+- 重试再派发与失败归因 → 立项见 18-1。

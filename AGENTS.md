@@ -42,7 +42,8 @@
 ## 工程约定
 
 - 技术栈以当前 workspace 与 `package.json` 脚本为准；不擅自引入并行主栈。命令优先 `corepack pnpm <script>`，不发明未登记命令。
-- 验证走仓库 `verify:*` / `generate:control-plane`；启停用 `scripts/dev-services.sh`。worktree 并行联调读 `docs/PARALLEL_DEVELOPMENT.md`（共享 `SUPERTEAM_DEV_PID_DIR`；`status` 的 `owner=` 为真实 cwd）。
+- 验证走仓库 `verify:*` / `generate:control-plane`；启停用 `scripts/dev-services.sh`。Web 测试走 `corepack pnpm --filter @superteam/web test`，**禁止 `npx playwright install` / `npx vitest run`**。
+- worktree 并行联调必读 `docs/PARALLEL_DEVELOPMENT.md`：**未共享 `SUPERTEAM_DEV_PID_DIR` 时从 worktree 执行 `restart` 是退出码 0 的静默空操作**——服务仍跑别人的代码，会产出假的验证结论；`status` 的 `owner=` 是真实 cwd。
 - 库表与迁移遵循 `DATABASE_DESIGN.md`；生产迁移仅 `apps/control-plane/internal/storage/migrations/`，变更后校验 `atlas.sum` / `migrate-validate`。
 - 用户可见中文：状态/枚举经 `apps/web/src/lib/status-labels.ts`（含 `failure_family` 等）；业务指称用名称而非裸 UUID。前端样式/布局先读 `DESIGN.md`；站内跳转用 TanStack Router。
 - **共享 checkout 时**：只用 `git add <显式路径>`；禁止为他人切/删分支；交织文件只暂存自己的 hunk（`git diff --no-ext-diff`）；全仓生成（sqlc/openapi）会吸收他人在途改动，提交前核对暂存。优先一会话一 worktree。

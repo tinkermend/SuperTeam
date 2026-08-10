@@ -24,8 +24,7 @@ use crate::controlplane::models::{
     RuntimeCommandType, TaskResultContract,
 };
 use crate::events::{
-    attempt_stream_diagnostics, ErrorEnvelope, ProviderEvent, provider_result_failed,
-    provider_result_succeeded,
+    attempt_stream_diagnostics, ErrorEnvelope, ProviderEvent,
 };
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
@@ -556,6 +555,7 @@ impl RuntimeCommandExecutor {
                 provider_run.handle.clone(),
                 provider_started_at,
                 Duration::from_secs(heartbeat_interval_sec),
+                spec.environment.clone(),
             )
         });
         self.spawn_provider_event_drain(
@@ -1425,6 +1425,7 @@ fn spawn_project_task_budget_heartbeat(
     handle: ProviderRunHandle,
     started_at: Instant,
     interval: Duration,
+    environment: BTreeMap<String, String>,
 ) -> CancellationToken {
     let stop = CancellationToken::new();
     let child_stop = stop.clone();
@@ -1438,10 +1439,20 @@ fn spawn_project_task_budget_heartbeat(
                             let envelope = envelope_for_code(
                                 error_code::BUDGET_FUSE,
                                 "wall_clock_exceeded",
-                                "unknown",
+                                // The sink knows the registry provider_type; the
+                                // literal "unknown" used to leak into the envelope.
+                                writeback.provider_type.as_str(),
                             );
                             let _ = handle.cancel().await;
-                            let _ = runs.finish_failed(&run_id, envelope.message.clone()).await;
+                            emit_turn_error_marker(
+                                &runs,
+                                Some(&writeback),
+                                &run_id,
+                                &envelope,
+                                None,
+                                &environment,
+                            )
+                            .await;
                             let _ = writeback.fail_with_envelope(envelope, None).await;
                             break;
                         }
@@ -1881,8 +1892,9 @@ impl RuntimeCommandWritebackSink {
         envelope: ErrorEnvelope,
         diagnostics: Option<serde_json::Value>,
     ) -> anyhow::Result<()> {
-        // L3 result is the single terminal fact; fail writeback derives from it.
-        let _result = provider_result_failed(envelope.clone(), diagnostics.clone());
+        // L3 semantics ride on the terminal writeback fields (status + error_code
+        // + error_family + diagnostic); Runtime does not send a separate
+        // ProviderResult object today (spec §6, 已知差距).
         self.client
             .fail_runtime_command(
                 &self.command_id,
@@ -1893,9 +1905,14 @@ impl RuntimeCommandWritebackSink {
     }
 
     /// Legacy string entry point: classifies via error_map fallback, then fails.
+    /// No `turn_error` marker here on purpose — callers are pre-provider failures
+    /// (start writeback, workspace sync, stop command), where no L2 stream exists.
     async fn fail(&self, error_message: String) -> anyhow::Result<()> {
-        let envelope =
-            envelope_for_code(error_map::classify_message_fallback(&error_message), error_message, "unknown");
+        let envelope = envelope_for_code(
+            error_map::classify_message_fallback(&error_message),
+            error_message,
+            self.provider_type.as_str(),
+        );
         self.fail_with_envelope(envelope, None).await
     }
 }
@@ -3268,13 +3285,38 @@ fn project_task_fail_writeback_from_envelope(
     }
 }
 
-/// Build L3 ProviderResult + shared fail packaging for the four terminal paths.
-fn build_provider_result_failed(
-    envelope: ErrorEnvelope,
-    diagnostics: Option<serde_json::Value>,
-) -> (crate::events::ProviderResult, ErrorEnvelope) {
-    let result = provider_result_failed(envelope.clone(), diagnostics);
-    (result, envelope)
+/// Emits the L2 terminal marker (`turn_error`) for a failing attempt.
+///
+/// **Ordering is load-bearing**: Control Plane rejects run events once the run is
+/// terminal, so a marker emitted after the terminal writeback is silently dropped
+/// and the execution timeline just stops mid-stream (spec §4.2.1). Call this
+/// before `fail_with_envelope`.
+///
+/// Never fatal: the terminal writeback still carries code/family, so a failed
+/// marker is logged rather than propagated.
+async fn emit_turn_error_marker(
+    runs: &RuntimeRunStore,
+    writeback: Option<&RuntimeCommandWritebackSink>,
+    run_id: &str,
+    envelope: &ErrorEnvelope,
+    provider_session_id: Option<&str>,
+    environment: &BTreeMap<String, String>,
+) {
+    let event = ProviderEvent::turn_error_from_envelope(envelope.clone());
+    match runs.record_event(run_id, event).await {
+        Ok(record) => {
+            if let Some(writeback) = writeback
+                && let Err(error) = writeback
+                    .record_event(&record, provider_session_id, environment)
+                    .await
+            {
+                eprintln!("turn_error marker writeback failed for run {run_id}: {error}");
+            }
+        }
+        Err(error) => {
+            eprintln!("turn_error marker not recorded for run {run_id}: {error}");
+        }
+    }
 }
 
 fn command_failed_terminal_from_envelope(
@@ -3371,28 +3413,20 @@ async fn drain_provider_events(
                     provider_type,
                     unmapped_native_count,
                 ));
-                let _ = build_provider_result_failed(envelope.clone(), diagnostics.clone());
                 if let Some(stop) = &heartbeat_stop {
                     stop.cancel();
                 }
-                let turn_error = ProviderEvent::turn_error_from_envelope(envelope.clone());
                 terminal_writeback.failed = true;
                 terminal_writeback.pending_completion = None;
-                if let Ok(record) = runs.record_event(&run_id, turn_error).await {
-                    if let Some(writeback) = &writeback {
-                        let _ = writeback
-                            .record_event(
-                                &record,
-                                latest_provider_session_id.as_deref(),
-                                &spec.environment,
-                            )
-                            .await;
-                    }
-                } else {
-                    let _ = runs
-                        .finish_failed(&run_id, envelope.message.clone())
-                        .await;
-                }
+                emit_turn_error_marker(
+                    &runs,
+                    writeback.as_ref(),
+                    &run_id,
+                    &envelope,
+                    latest_provider_session_id.as_deref(),
+                    &spec.environment,
+                )
+                .await;
                 registry.record_run_finished(&run_id);
                 let command_id = spec
                     .command_context
@@ -3485,13 +3519,13 @@ async fn drain_provider_events(
             }
             if let Some(action) = writeback_action {
                 match action {
-                    // Path 1: in-loop TurnError
+                    // Path 1: in-loop TurnError (the marker is the event itself,
+                    // already written back above).
                     ProviderTerminalWritebackAction::Fail(envelope) => {
                         let diagnostics = Some(attempt_stream_diagnostics(
                             provider_type,
                             unmapped_native_count,
                         ));
-                        let _ = build_provider_result_failed(envelope.clone(), diagnostics.clone());
                         if let Some(stop) = &heartbeat_stop {
                             stop.cancel();
                         }
@@ -3577,12 +3611,6 @@ async fn drain_provider_events(
                     provider_type,
                     unmapped_native_count,
                 ));
-                let _ = provider_result_succeeded(
-                    completion.summary.clone(),
-                    None,
-                    completion.provider_session_id.clone(),
-                    diagnostics.clone(),
-                );
                 writeback
                     .record_attestation(
                         &spec,
@@ -3620,10 +3648,18 @@ async fn drain_provider_events(
                     provider_type,
                     unmapped_native_count,
                 ));
-                let _ = build_provider_result_failed(envelope.clone(), diagnostics.clone());
-                let _ = runs
-                    .finish_failed(&run_id, envelope.message.clone())
-                    .await;
+                // Marker before the terminal writeback (see emit_turn_error_marker):
+                // this also replaces the old `runs.finish_failed`, which only moved
+                // the local snapshot and never reached Control Plane.
+                emit_turn_error_marker(
+                    &runs,
+                    writeback.as_ref(),
+                    &run_id,
+                    &envelope,
+                    latest_provider_session_id.as_deref(),
+                    &spec.environment,
+                )
+                .await;
                 if let Some(writeback) = &writeback {
                     writeback
                         .record_attestation(

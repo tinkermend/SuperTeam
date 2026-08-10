@@ -66,36 +66,13 @@ pub struct ErrorEvidenceRef {
     pub reference: String,
 }
 
-/// Attempt-terminal outcome synthesized by the executor (L3 ProviderResult).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderResult {
-    pub schema_version: String,
-    pub status: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub summary: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage: Option<TurnUsage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<ErrorEnvelope>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub artifacts: Vec<serde_json::Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<ProviderResultSession>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub diagnostics: Option<serde_json::Value>,
-}
+// L3 ProviderResult 没有 Rust 模型：Runtime 把终态语义投影到终态 writeback 的
+// status / error_code / error_family / diagnostic 字段，不再额外传一个结果对象。
+// 曾经存在的 ProviderResult 结构体每次都被构造后丢弃（`let _ =`），是纯装饰，
+// 已删除；`contracts/provider/schemas/provider-result.schema.json` 与其 fixtures
+// 保留为对外契约描述，是否让它真正上行见 spec §6 与后续立项。
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProviderResultSession {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_session_id: Option<String>,
-    #[serde(default)]
-    pub resumable: bool,
-}
-
-pub const RESULT_SCHEMA_VERSION: &str = "provider.result.v1";
-
-/// Stream/attempt diagnostics for L3 ProviderResult (spec §4.4 / §6.1).
+/// Stream/attempt diagnostics carried on the terminal writeback (spec §4.4 / §6.1).
 /// Always populated on terminal paths when counts are known; unmapped is
 /// counted even when L2 `native_unmapped` writeback is off.
 pub fn attempt_stream_diagnostics(
@@ -109,43 +86,6 @@ pub fn attempt_stream_diagnostics(
             "native_unmapped": unmapped_native_count,
         },
     })
-}
-
-pub fn provider_result_failed(
-    error: ErrorEnvelope,
-    diagnostics: Option<serde_json::Value>,
-) -> ProviderResult {
-    ProviderResult {
-        schema_version: RESULT_SCHEMA_VERSION.to_string(),
-        status: "failed".to_string(),
-        summary: None,
-        usage: None,
-        error: Some(error),
-        artifacts: Vec::new(),
-        session: None,
-        diagnostics,
-    }
-}
-
-pub fn provider_result_succeeded(
-    summary: Option<String>,
-    usage: Option<TurnUsage>,
-    provider_session_id: Option<String>,
-    diagnostics: Option<serde_json::Value>,
-) -> ProviderResult {
-    ProviderResult {
-        schema_version: RESULT_SCHEMA_VERSION.to_string(),
-        status: "succeeded".to_string(),
-        summary,
-        usage,
-        error: None,
-        artifacts: Vec::new(),
-        session: Some(ProviderResultSession {
-            provider_session_id,
-            resumable: true,
-        }),
-        diagnostics,
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
