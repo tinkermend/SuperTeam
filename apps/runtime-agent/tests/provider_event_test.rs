@@ -163,6 +163,7 @@ fn parses_codex_realistic_thread_item_and_turn_events() {
                 session_id: "thread-1".to_string(),
                 session_state: None,
             },
+            ProviderEvent::TurnStarted,
             ProviderEvent::TextDelta {
                 text: "OK".to_string()
             },

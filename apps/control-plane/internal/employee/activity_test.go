@@ -18,6 +18,8 @@ func TestActivityEventPresentationMapsKnownAndFallbackTypes(t *testing.T) {
 		{"run_dispatched", "命令已下发", "running"},
 		{"text_delta", "输出内容更新", "running"},
 		{"tool_started", "开始调用工具", "running"},
+		{"turn_error", "回合失败", "failed"},
+		{"native_unmapped", "未映射的原生事件", "running"},
 		{"run_completed", "运行完成", "completed"},
 		{"run_failed", "运行失败", "failed"},
 		{"run_cancelled", "运行已取消", "cancelled"},

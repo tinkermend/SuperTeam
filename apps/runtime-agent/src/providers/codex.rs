@@ -93,6 +93,8 @@ impl ProviderAdapter for CodexProvider {
     }
 }
 
+/// Explicit type-branch mapping (Phase 3). Cross-type greedy key matching is
+/// intentionally removed so unknown types can surface as `native_unmapped`.
 pub fn parse_codex_event(value: &str) -> anyhow::Result<Vec<ProviderEvent>> {
     let Some(event) = crate::providers::parse_line_json("codex", value) else {
         return Ok(Vec::new());
@@ -102,54 +104,75 @@ pub fn parse_codex_event(value: &str) -> anyhow::Result<Vec<ProviderEvent>> {
         .and_then(|value| value.as_str())
         .unwrap_or_default();
 
-    if matches!(
-        event_type,
-        "error" | "turn.error" | "turn.failed" | "failed" | "failure"
-    ) {
-        anyhow::bail!(
-            "{}",
-            extract_error_message(&event).unwrap_or("codex failed")
-        );
-    }
-
-    if let Some(session_id) = extract_session_id(&event) {
-        return Ok(vec![ProviderEvent::SessionStarted {
-            session_id,
-            session_state: None,
-        }]);
-    }
-
-    if let Some(text) = extract_text(&event) {
-        return Ok(vec![ProviderEvent::TextDelta { text }]);
-    }
-
-    if event_type == "item.completed" {
-        if let Some(text) = extract_completed_agent_message_text(&event) {
-            return Ok(vec![ProviderEvent::TextDelta { text }]);
+    match event_type {
+        "error" | "turn.error" | "turn.failed" | "failed" | "failure" => {
+            anyhow::bail!(
+                "{}",
+                extract_error_message(&event).unwrap_or("codex failed")
+            );
         }
+        // Session / thread lifecycle.
+        "session" | "session.started" | "session.created" | "thread.started" | "thread.created" => {
+            if let Some(session_id) = extract_session_id_for_session_event(&event) {
+                Ok(vec![ProviderEvent::SessionStarted {
+                    session_id,
+                    session_state: None,
+                }])
+            } else {
+                // Known type but no usable id — not "unknown type".
+                Ok(Vec::new())
+            }
+        }
+        // Text deltas and completed agent messages.
+        "message.delta" | "text.delta" | "agent.message" | "message" => {
+            if let Some(text) = extract_text_for_message_event(&event) {
+                Ok(vec![ProviderEvent::TextDelta { text }])
+            } else {
+                Ok(Vec::new())
+            }
+        }
+        "item.completed" => {
+            if let Some(text) = extract_completed_agent_message_text(&event) {
+                Ok(vec![ProviderEvent::TextDelta { text }])
+            } else {
+                // item.completed for non-agent_message kinds (tools, etc.) —
+                // no platform tool mapping yet; leave empty rather than unmapped
+                // so tool-less capability stays honest without noise.
+                Ok(Vec::new())
+            }
+        }
+        "turn.started" => Ok(vec![ProviderEvent::TurnStarted]),
+        "turn.completed" | "turn_complete" | "completed" | "result" | "done" => {
+            Ok(vec![ProviderEvent::TurnCompleted {
+                summary: extract_summary(&event),
+                usage: crate::providers::usage::extract_usage(&event),
+            }])
+        }
+        // Known noise / protocol types with no L2 event.
+        "token_count" | "rate_limits" | "response.created" | "response.in_progress" => {
+            Ok(Vec::new())
+        }
+        "" => Ok(vec![ProviderEvent::native_unmapped(
+            None,
+            "unrecognized_type",
+        )]),
+        other => Ok(vec![ProviderEvent::native_unmapped(
+            Some(other.to_string()),
+            "unrecognized_type",
+        )]),
     }
-
-    if matches!(
-        event_type,
-        "turn.completed" | "turn_complete" | "completed" | "result" | "done"
-    ) {
-        return Ok(vec![ProviderEvent::TurnCompleted {
-            summary: extract_summary(&event),
-            usage: crate::providers::usage::extract_usage(&event),
-        }]);
-    }
-
-    Ok(Vec::new())
 }
 
-fn extract_session_id(event: &Value) -> Option<String> {
+fn extract_session_id_for_session_event(event: &Value) -> Option<String> {
     first_string(event, &["session_id", "sessionId", "thread_id", "threadId"])
         .or_else(|| nested_string(event, &["session", "id"]))
         .or_else(|| nested_string(event, &["thread", "id"]))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .map(ToString::to_string)
 }
 
-fn extract_text(event: &Value) -> Option<String> {
+fn extract_text_for_message_event(event: &Value) -> Option<String> {
     first_string(event, &["text", "delta", "content"])
         .or_else(|| nested_string(event, &["message", "content"]))
         .map(str::trim)
@@ -198,4 +221,40 @@ fn nested_string<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
         current = current.get(*key)?;
     }
     current.as_str()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_type_is_native_unmapped_not_greedy_session() {
+        // Pre-Phase-3 greedy extract_session_id would have treated any object
+        // with session_id as SessionStarted regardless of type.
+        let events = parse_codex_event(
+            r#"{"type":"metrics.sample","session_id":"should-not-become-session","text":"noise"}"#,
+        )
+        .expect("parse");
+        assert_eq!(
+            events,
+            vec![ProviderEvent::native_unmapped(
+                Some("metrics.sample".to_string()),
+                "unrecognized_type"
+            )]
+        );
+    }
+
+    #[test]
+    fn thread_started_reads_nested_thread_id() {
+        let events =
+            parse_codex_event(r#"{"type":"thread.started","thread":{"id":"thread-1"}}"#)
+                .expect("parse");
+        assert_eq!(
+            events,
+            vec![ProviderEvent::SessionStarted {
+                session_id: "thread-1".to_string(),
+                session_state: None,
+            }]
+        );
+    }
 }

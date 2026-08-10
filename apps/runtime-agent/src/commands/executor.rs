@@ -1999,6 +1999,23 @@ fn runtime_event_writeback(
             }
             ("turn_error".to_string(), payload)
         }
+        ProviderEvent::NativeUnmapped {
+            native_type,
+            reason,
+        } => {
+            let mut payload = HashMap::new();
+            if let Some(native_type) = native_type {
+                payload.insert(
+                    "native_type".to_string(),
+                    serde_json::Value::String(native_type.clone()),
+                );
+            }
+            payload.insert(
+                "reason".to_string(),
+                serde_json::Value::String(reason.clone()),
+            );
+            ("native_unmapped".to_string(), payload)
+        }
     };
 
     RuntimeCommandEventWriteback {
@@ -3276,6 +3293,9 @@ async fn drain_provider_events(
     let mut latest_provider_session_id: Option<String> = None;
     let mut terminal_writeback = ProviderTerminalWritebackState::default();
     let mut fallback_text_summary = String::new();
+    let mut unmapped_native_count: u64 = 0;
+    let mut native_unmapped_writebacks: u32 = 0;
+    let emit_native_unmapped = crate::providers::emit_native_unmapped_enabled();
     while let Some(item) = events.next().await {
         let event = match item {
             Ok(event) => event,
@@ -3359,23 +3379,43 @@ async fn drain_provider_events(
             event,
             ProviderEvent::TurnCompleted { .. } | ProviderEvent::TurnError { .. }
         );
+        if event.is_native_unmapped() {
+            unmapped_native_count = unmapped_native_count.saturating_add(1);
+        }
         let writeback_action = terminal_writeback.observe_event(
             &event,
             latest_provider_session_id.as_deref(),
             provider_type,
         );
+        let skip_cp_writeback = match &event {
+            ProviderEvent::NativeUnmapped { .. } => {
+                if !emit_native_unmapped {
+                    true
+                } else if native_unmapped_writebacks
+                    >= crate::providers::NATIVE_UNMAPPED_WRITEBACK_LIMIT
+                {
+                    true
+                } else {
+                    native_unmapped_writebacks = native_unmapped_writebacks.saturating_add(1);
+                    false
+                }
+            }
+            _ => false,
+        };
         let record = runs.record_event(&run_id, event).await?;
         if is_terminal {
             registry.record_run_finished(&run_id);
         }
         if let Some(writeback) = &writeback {
-            writeback
-                .record_event(
-                    &record,
-                    latest_provider_session_id.as_deref(),
-                    &spec.environment,
-                )
-                .await?;
+            if !skip_cp_writeback {
+                writeback
+                    .record_event(
+                        &record,
+                        latest_provider_session_id.as_deref(),
+                        &spec.environment,
+                    )
+                    .await?;
+            }
             if let Some(action) = writeback_action {
                 match action {
                     // Path 1: in-loop TurnError
@@ -3407,6 +3447,12 @@ async fn drain_provider_events(
     }
     if let Some(stop) = &heartbeat_stop {
         stop.cancel();
+    }
+    if unmapped_native_count > 0 {
+        eprintln!(
+            "run {run_id}: attempt diagnostics unmapped_native={unmapped_native_count} \
+             native_unmapped_writebacks={native_unmapped_writebacks} emit={emit_native_unmapped}"
+        );
     }
     // Session-scoped projection rollback: unload project-dir skill/MCP
     // session (spec 2026-07-23 §6) and restore home-dir MCP injection.

@@ -232,6 +232,17 @@ it("renders execution trace summary, attempt, and ledger event details", async (
     await expect.element(screen.getByText(longErrorMessage)).toBeInTheDocument();
   });
 
+  it("shows summary-mode notice for providers without stream_tools", async () => {
+    const screen = await render(<ProjectExecutionTracePanel trace={trace} />);
+    // Fixture provider_type is codex (stream_tools=false) and has no tool events.
+    await expect
+      .element(screen.getByTestId("provider-summary-mode-notice"))
+      .toHaveTextContent("本提供方仅摘要模式");
+    await expect
+      .element(screen.getByTestId("provider-summary-mode-notice"))
+      .toHaveTextContent("无工具调用轨迹");
+  });
+
   it("renders a failed tool result using the provider-written is_error flag", async () => {
     const toolTrace: ProjectExecutionTrace = {
       ...trace,

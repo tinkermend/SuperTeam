@@ -89,6 +89,10 @@ struct ChildStreamState {
     raw_sink: Arc<dyn RawLineSink>,
     child: SharedChild,
     stderr_task: JoinHandle<std::io::Result<String>>,
+    /// Non-JSON stdout lines (noise). Separate from unknown native types.
+    unparseable_line_count: u64,
+    /// Unknown native type lines (parser produced `native_unmapped`).
+    unmapped_native_count: u64,
 }
 
 type SharedChild = Arc<Mutex<Child>>;
@@ -154,6 +158,8 @@ pub fn stream_child_events(
         raw_sink,
         child: child.clone(),
         stderr_task,
+        unparseable_line_count: 0,
+        unmapped_native_count: 0,
     };
 
     let events = stream::unfold(Some(state), |state| async move {
@@ -169,8 +175,24 @@ pub fn stream_child_events(
                     // Before parsing: a parser error or an unknown event type
                     // must never cost us the original bytes.
                     state.raw_sink.write_line(RawStream::Stdout, &line);
+                    if serde_json::from_str::<serde_json::Value>(&line).is_err() {
+                        // Noise vs unknown type: non-JSON is unparseable, not unmapped.
+                        state.unparseable_line_count =
+                            state.unparseable_line_count.saturating_add(1);
+                        // Still invoke parser so its skip log stays consistent.
+                        let _ = (state.parser)(&line);
+                        continue;
+                    }
                     match (state.parser)(&line) {
-                        Ok(events) => state.pending.extend(events),
+                        Ok(events) => {
+                            for event in events {
+                                if event.is_native_unmapped() {
+                                    state.unmapped_native_count =
+                                        state.unmapped_native_count.saturating_add(1);
+                                }
+                                state.pending.push_back(event);
+                            }
+                        }
                         // `Err` means the provider reported a failure (e.g. codex
                         // `turn.failed`), not that a line was unreadable. Parsers
                         // drop unreadable lines themselves.
@@ -178,6 +200,14 @@ pub fn stream_child_events(
                     }
                 }
                 Ok(None) => {
+                    if state.unmapped_native_count > 0 || state.unparseable_line_count > 0 {
+                        eprintln!(
+                            "{}: stream diagnostics unmapped_native={} unparseable_line={}",
+                            state.provider_name,
+                            state.unmapped_native_count,
+                            state.unparseable_line_count
+                        );
+                    }
                     let status = state.child.lock().await.wait().await;
                     let stderr = read_stderr(state.stderr_task).await;
                     return provider_exit_result(state.provider_name, status, stderr)
@@ -191,6 +221,21 @@ pub fn stream_child_events(
 
     ProviderRun { events, handle }
 }
+
+/// When true, L2 `native_unmapped` events are written back to Control Plane
+/// (rate-limited per attempt). Diagnostics still count when false (default).
+pub fn emit_native_unmapped_enabled() -> bool {
+    match std::env::var("SUPERTEAM_PROVIDER_EMIT_NATIVE_UNMAPPED") {
+        Ok(value) => {
+            let normalized = value.trim().to_ascii_lowercase();
+            normalized == "1" || normalized == "true" || normalized == "yes" || normalized == "on"
+        }
+        Err(_) => false,
+    }
+}
+
+/// Max `native_unmapped` writebacks per attempt when emission is enabled.
+pub const NATIVE_UNMAPPED_WRITEBACK_LIMIT: u32 = 20;
 
 /// Providers interleave non-JSON noise into stdout. Such a line carries no
 /// event, but it must not fail the run — the raw stream keeps it verbatim.

@@ -25,10 +25,17 @@ The Control Plane must not depend on provider-specific request shapes. Runtime a
 - Web: `failureFamilyLabel` + guard on bare `failure_family` render.
 - Catalog static `capability()` matrix (honest tool/structured_error flags).
 
+### Phase 3 landed (capability honesty)
+
+- Codex parser: explicit `type` branches only; unknown types → `native_unmapped` (no cross-type greedy keys).
+- Parsers emit `native_unmapped` for unknown native types; CP writeback default **off** (`SUPERTEAM_PROVIDER_EMIT_NATIVE_UNMAPPED=1` to enable, max 20/attempt). Stream logs `unmapped_native` / `unparseable_line` diagnostics.
+- Web execution trace: `stream_tools=false` providers show「摘要模式」and do not pretend to have tool trajectories.
+- Onboarding checklist: `contracts/provider/ONBOARDING.md`.
+- Activity labels: `turn_error` / `native_unmapped`.
+
 ### Still open (later phases)
 
-- Phase 3: codex greedy-fallback tighten, `native_unmapped` observability, UI honesty for `stream_tools=false`.
-- Phase 4: schema codegen, optional `error_code` column for alerting stats.
+- Phase 4: schema codegen, optional `error_code` column for alerting stats, ajv runtime validate.
 - Wire transport for process events remains `contracts/control-plane/openapi.yaml` (`payload`/`metadata` opaque objects).
 
 

@@ -167,6 +167,14 @@ pub enum ProviderEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<ErrorEnvelope>,
     },
+    /// Optional observability for unknown native types (Phase 3). Emission to
+    /// Control Plane is gated by SUPERTEAM_PROVIDER_EMIT_NATIVE_UNMAPPED;
+    /// parsers always produce these so goldens and diagnostics stay testable.
+    NativeUnmapped {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_type: Option<String>,
+        reason: String,
+    },
 }
 
 impl ProviderEvent {
@@ -180,5 +188,19 @@ impl ProviderEvent {
             message: envelope.message.clone(),
             error: Some(envelope),
         }
+    }
+
+    pub fn native_unmapped(
+        native_type: Option<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::NativeUnmapped {
+            native_type,
+            reason: reason.into(),
+        }
+    }
+
+    pub fn is_native_unmapped(&self) -> bool {
+        matches!(self, Self::NativeUnmapped { .. })
     }
 }

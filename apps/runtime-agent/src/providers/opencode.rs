@@ -168,7 +168,16 @@ pub fn parse_opencode_event(value: &str) -> anyhow::Result<Vec<ProviderEvent>> {
             summary: None,
             usage: crate::providers::usage::extract_usage(&event),
         }]),
-        _ => Ok(Vec::new()),
+        // Known no-op types (no L2 mapping yet; not "unknown").
+        "tool_use" | "tool_result" | "reasoning" | "part.updated" => Ok(Vec::new()),
+        other if !other.is_empty() => Ok(vec![ProviderEvent::native_unmapped(
+            Some(other.to_string()),
+            "unrecognized_type",
+        )]),
+        _ => Ok(vec![ProviderEvent::native_unmapped(
+            None,
+            "unrecognized_type",
+        )]),
     }
 }
 

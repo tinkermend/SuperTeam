@@ -24,6 +24,10 @@ func ActivityEventPresentation(eventType string) (label string, status string) {
 		return "工具调用完成", "running"
 	case "turn_completed":
 		return "回合完成", "running"
+	case "turn_error":
+		return "回合失败", "failed"
+	case "native_unmapped":
+		return "未映射的原生事件", "running"
 	case "run_completed":
 		return "运行完成", "completed"
 	case "run_failed":

@@ -1,0 +1,13 @@
+{
+  "description": "Unknown codex type must be native_unmapped (not greedy session/text)",
+  "native_lines": [
+    "{\"type\":\"metrics.sample\",\"session_id\":\"should-not-become-session\",\"text\":\"noise\"}"
+  ],
+  "expected_events": [
+    {
+      "type": "native_unmapped",
+      "native_type": "metrics.sample",
+      "reason": "unrecognized_type"
+    }
+  ]
+}

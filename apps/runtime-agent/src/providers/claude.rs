@@ -110,7 +110,19 @@ pub fn parse_claude_event(value: &str) -> anyhow::Result<Vec<ProviderEvent>> {
         "assistant" => Ok(parse_assistant_blocks(&event)),
         "user" => Ok(parse_user_blocks(&event)),
         "result" => Ok(parse_claude_result(&event)),
-        _ => Ok(Vec::new()),
+        // Known no-op / partial stream types (not "unknown").
+        "stream_event" | "progress" | "content_block_start" | "content_block_stop"
+        | "content_block_delta" | "message_start" | "message_delta" | "message_stop" => {
+            Ok(Vec::new())
+        }
+        other if !other.is_empty() => Ok(vec![ProviderEvent::native_unmapped(
+            Some(other.to_string()),
+            "unrecognized_type",
+        )]),
+        _ => Ok(vec![ProviderEvent::native_unmapped(
+            None,
+            "unrecognized_type",
+        )]),
     }
 }
 

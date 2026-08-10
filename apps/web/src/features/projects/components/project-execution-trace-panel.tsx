@@ -189,8 +189,26 @@ export function ProjectExecutionTracePanel({
   );
 }
 
+/** Aligns with runtime catalog.capability().stream_tools — product honesty only. */
+function providerStreamsTools(providerType: string | undefined): boolean | undefined {
+  const normalized = (providerType ?? "").trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === "claude-code" || normalized === "claude" || normalized === "claude_code") {
+    return true;
+  }
+  if (normalized === "opencode" || normalized === "codex") {
+    return false;
+  }
+  return undefined;
+}
+
 function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
   const summary = attempt.summary;
+  const streamTools = providerStreamsTools(attempt.provider_type);
+  const hasToolEvents = attempt.events.some(
+    (event) =>
+      event.input_summary === "tool_started" || event.input_summary === "tool_completed",
+  );
 
   return (
     <section
@@ -209,6 +227,11 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
                 {attempt.retryable ? "可重试" : "不可重试"}
               </StatusPill>
             ) : null}
+            {streamTools === false ? (
+              <StatusPill showDot={false} tone="mute">
+                摘要模式
+              </StatusPill>
+            ) : null}
           </div>
           {attempt.failure_family ? (
             <p
@@ -216,6 +239,11 @@ function AttemptRow({ attempt }: { attempt: ProjectExecutionTraceAttempt }) {
               title={attempt.failure_family}
             >
               失败族：{failureFamilyLabel(attempt.failure_family)}
+            </p>
+          ) : null}
+          {streamTools === false && !hasToolEvents ? (
+            <p className="mt-1 text-xs text-ink-3" data-testid="provider-summary-mode-notice">
+              本提供方仅摘要模式：无工具调用轨迹（过程细节见原始日志）。
             </p>
           ) : null}
         </div>
