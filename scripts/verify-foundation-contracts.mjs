@@ -292,7 +292,12 @@ function readTypeScriptClientPaths() {
             .replaceAll("${projectId}", "{projectId}")
             .replaceAll("${encodedProjectId}", "{projectId}")
             .replaceAll("${ruleId}", "{ruleId}")
-            .replaceAll("${encodedRuleId}", "{ruleId}"),
+            .replaceAll("${encodedRuleId}", "{ruleId}")
+            // Provider 原生配置（b84645d7）：openapi 侧是 {providerType}/{configKey}
+            .replaceAll("${providerType}", "{providerType}")
+            .replaceAll("${encodedProvider}", "{providerType}")
+            .replaceAll("${configKey}", "{configKey}")
+            .replaceAll("${encodedKey}", "{configKey}"),
         ),
       );
     }
