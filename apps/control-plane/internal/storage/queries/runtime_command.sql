@@ -56,6 +56,19 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND command_id = sqlc.arg('command_id')::varchar
 RETURNING *;
 
+-- name: UpdateRuntimeCommandReceiptTimedOutIfPending :one
+-- CAS: only flip still-pending receipts so a late complete is not overwritten.
+UPDATE runtime_command_receipts
+SET status = 'timed_out',
+    result = COALESCE(sqlc.arg('result')::jsonb, result),
+    error_message = sqlc.narg('error_message')::text,
+    completed_at = COALESCE(completed_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND command_id = sqlc.arg('command_id')::varchar
+  AND status = 'pending'
+RETURNING *;
+
 -- name: ListRuntimeCommandReceiptsByResource :many
 SELECT *
 FROM runtime_command_receipts

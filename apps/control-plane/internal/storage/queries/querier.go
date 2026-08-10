@@ -909,6 +909,8 @@ type Querier interface {
 	UpdateProviderSessionStatus(ctx context.Context, arg UpdateProviderSessionStatusParams) (ProviderSession, error)
 	UpdateRoleVocabulary(ctx context.Context, arg UpdateRoleVocabularyParams) (RoleVocabulary, error)
 	UpdateRuntimeCommandReceiptStatus(ctx context.Context, arg UpdateRuntimeCommandReceiptStatusParams) (RuntimeCommandReceipt, error)
+	// CAS: only flip still-pending receipts so a late complete is not overwritten.
+	UpdateRuntimeCommandReceiptTimedOutIfPending(ctx context.Context, arg UpdateRuntimeCommandReceiptTimedOutIfPendingParams) (RuntimeCommandReceipt, error)
 	UpdateRuntimeNodeHeartbeat(ctx context.Context, arg UpdateRuntimeNodeHeartbeatParams) (RuntimeNode, error)
 	UpdateRuntimeNodeLoad(ctx context.Context, arg UpdateRuntimeNodeLoadParams) (RuntimeNode, error)
 	UpdateRuntimeNodeScopeStatus(ctx context.Context, arg UpdateRuntimeNodeScopeStatusParams) (RuntimeNodeScope, error)

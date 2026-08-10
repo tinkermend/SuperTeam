@@ -116,13 +116,15 @@ func (s *Service) ListProviderNativeConfigs(ctx context.Context, tenantID uuid.U
 		if _, ok := seen[key]; ok {
 			continue
 		}
+		manageable, reason := defaultSurfaceManageability(surface.providerType, surface.configKey)
 		items = append(items, ProviderNativeConfigListItem{
-			ProviderType: surface.providerType,
-			ConfigKey:    surface.configKey,
-			Format:       surface.format,
-			Manageable:   true,
-			Source:       "",
-			NodeOnline:   online,
+			ProviderType:       surface.providerType,
+			ConfigKey:          surface.configKey,
+			Format:             surface.format,
+			Manageable:         manageable,
+			UnmanageableReason: reason,
+			Source:             "",
+			NodeOnline:         online,
 		})
 	}
 	return items, nil
@@ -554,6 +556,17 @@ func knownNativeConfigSurfaces() []nativeSurface {
 		{"opencode", "model_profile", "json"},
 		{"opencode", "auth", "json"},
 	}
+}
+
+// defaultSurfaceManageability is the CP-side default before a node pull reports
+// platform-specific facts. Claude Code auth is never file-writable in v1
+// (macOS keychain / Linux OAuth session); use oauth_session_protected as the
+// stable pre-pull reason (node pull may refine to platform_keychain).
+func defaultSurfaceManageability(providerType, configKey string) (manageable bool, reason string) {
+	if providerType == "claude-code" && configKey == "auth" {
+		return false, "oauth_session_protected"
+	}
+	return true, ""
 }
 
 func validateNativeConfigSurface(providerType, configKey string) error {

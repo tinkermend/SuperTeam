@@ -298,3 +298,53 @@ func (q *Queries) UpdateRuntimeCommandReceiptStatus(ctx context.Context, arg Upd
 	)
 	return i, err
 }
+
+const UpdateRuntimeCommandReceiptTimedOutIfPending = `-- name: UpdateRuntimeCommandReceiptTimedOutIfPending :one
+UPDATE runtime_command_receipts
+SET status = 'timed_out',
+    result = COALESCE($1::jsonb, result),
+    error_message = $2::text,
+    completed_at = COALESCE(completed_at, NOW()),
+    updated_at = NOW()
+WHERE tenant_id = $3::uuid
+  AND command_id = $4::varchar
+  AND status = 'pending'
+RETURNING id, tenant_id, command_id, command_type, runtime_node_id, node_id, resource_type, resource_id, status, payload, result, error_message, dispatched_at, completed_at, created_at, updated_at
+`
+
+type UpdateRuntimeCommandReceiptTimedOutIfPendingParams struct {
+	Result       []byte      `json:"result"`
+	ErrorMessage pgtype.Text `json:"error_message"`
+	TenantID     uuid.UUID   `json:"tenant_id"`
+	CommandID    string      `json:"command_id"`
+}
+
+// CAS: only flip still-pending receipts so a late complete is not overwritten.
+func (q *Queries) UpdateRuntimeCommandReceiptTimedOutIfPending(ctx context.Context, arg UpdateRuntimeCommandReceiptTimedOutIfPendingParams) (RuntimeCommandReceipt, error) {
+	row := q.db.QueryRow(ctx, UpdateRuntimeCommandReceiptTimedOutIfPending,
+		arg.Result,
+		arg.ErrorMessage,
+		arg.TenantID,
+		arg.CommandID,
+	)
+	var i RuntimeCommandReceipt
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CommandID,
+		&i.CommandType,
+		&i.RuntimeNodeID,
+		&i.NodeID,
+		&i.ResourceType,
+		&i.ResourceID,
+		&i.Status,
+		&i.Payload,
+		&i.Result,
+		&i.ErrorMessage,
+		&i.DispatchedAt,
+		&i.CompletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

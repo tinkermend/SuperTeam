@@ -2752,6 +2752,10 @@ func (r *memoryRepository) UpdateCommandReceipt(_ context.Context, req UpdateRun
 	if !ok || receipt.TenantID != req.TenantID {
 		return nil, ErrNotFound
 	}
+	if req.Status == "timed_out" && receipt.Status != "pending" {
+		// CAS miss: already terminal.
+		return nil, nil
+	}
 	receipt.Status = req.Status
 	receipt.Result = req.Result
 	receipt.ErrorMessage = req.ErrorMessage
