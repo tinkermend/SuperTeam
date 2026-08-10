@@ -196,6 +196,8 @@ contracts/provider/
 
 ### 4.1 Envelope（对外 JSON 形状）
 
+> **⚠ 本节的信封形状至今未实现**（2026-08-10 复查）：实际走的是 §4.5 过渡策略——外层 `event_type` + `sequence_number` + 扁平 `payload`，`schema_version`/`provider_type` 在 `metadata`，`ts`/`attempt_ref`/`provenance` 不存在。人类已拍板**做实**，分两批推进，且 `seq` 以外层 `sequence_number` 为唯一真相、信封内仅冗余投影；方案见 `docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md`。**批一（补齐字段、仍扁平）完成后本节仍未达成，不得据此宣布完成。**
+
 > **命名前置条件（§13 议题 7，未拍板前不要照抄本例）**：仓库现状是 `provider_type = "claude-code"`（注册表口径，CP 也用它）与 `provider_kind = "claude"`（runtime 内部短名）并存，且现网 attestation metadata 写的是后者。本 spec **推荐统一到 `provider_type` + 注册表取值（`claude-code` / `opencode` / `codex`），`provider_kind` 退役**；下例按推荐方案书写，字段名一旦拍板需全文替换并同步 `catalog.rs` / `server.rs` 校验 / `employee/pg_repository.go` 的三写法归一。
 
 ```json
@@ -899,5 +901,6 @@ ProviderAdapter
 
 ### 18-3 仍未关闭
 
-- L2 envelope 未实现、schema 描述过渡态、golden `expected_events` 无 schema 校验 → 立项 `docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md`（先拍板再动门禁）。
+- L2 envelope 未实现、schema 描述过渡态、golden `expected_events` 无 schema 校验 → 立项 `docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md`（**已拍板做实**，分两批；`seq` 外层为唯一真相）。
 - 重试再派发与失败归因 → 立项见 18-1。
+- **预算熔断路径的两项修复未独立取证**：`turn_error` 标记与 `provider_type` 修正在该路径上只有共享代码路径（`emit_turn_error_marker`）+ 单测支撑，没有独立 E2E。原因是 E2E 夹具项目的新任务连续被规划器判高风险卡在预检闸，且该任务上存在一张 `approval_request_id` 全零的僵尸审批卡，批准后仍不放行（同族观察已记入重试再派发立项 §6）。派发/审批修好后补跑一次预算熔断腿即可关闭。

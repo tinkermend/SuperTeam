@@ -27,7 +27,7 @@
 
 ### 2.1 重试 attempt 不产生 runtime 命令（主症）
 
-候选根因（需按序证伪，勘察点已备）：
+**第一交付物是诊断，不是补丁**：下面三条是候选根因，实施会话必须先证伪/证实再动手，不得直接照着改。
 
 1. **协调线程未发派发信号**——任务从 `failed → queued` 的转换是否 Signal 到 `project-coordinator:{project_id}`；
 2. **派发活动静默失败**——Temporal workflow 历史里是否有失败/重试中的 dispatch activity；
@@ -35,11 +35,28 @@
 
 先看 3：确认 attempt 重建时这三列应当置空还是重新生成。
 
+### 2.1.1 两个"身份"必须分开，别改错（重要）
+
+| 身份 | 是什么 | 重试时应当 |
+|---|---|---|
+| `runtime_task_id` / `lease_token` / `digital_employee_run_id` | **派发内部身份** | **全新**。复用是上面第 3 条嫌疑的本体 |
+| `provider_session_id` | **模型上下文会话** | **续用旧的**——已是既定行为，不要改 |
+
+`provider_session_id` 续用不是待议题：`apps/control-plane/internal/employee/run_service.go` `standaloneDispatchCommandType` 的注释已写明，凡带 `provider_session_id` 的派发都是会话延续，**明确包含 retries**（`FindProviderSessionForTaskRoot`「covering retries and revision tasks」），并解释了为什么不能开新会话——重试若按 `start_session` 下发，runtime 会用一个已用过的 id 去 `claude --session-id <id>` **创建**会话，provider 直接拒（"Session ID already in use"），而每次尝试都注入同一个血缘会话，于是永远循环失败。
+
+**风险**：修派发身份时"顺手"把会话也重开，正好踩进上面那个死循环。改动必须做到：派发身份全新、provider 会话续旧。
+
+### 2.1.2 派发修好之后的第二层障碍（预告，不是本次症状成因）
+
+resume 的已知代价是 fail fast：会话被 LRU 清理或 attempt 落到别的节点时返回 "no conversation found"（见同处注释的 Known trade-off）。而本次的失败形态是 provider 打了个 session id 就 exit——会话其实从未真正建立，重试去 resume 大概率同样失败。本次症状的成因是"根本没产生 runtime 命令"，与此无关；但派发通了之后这条会立刻浮上来，勘察时一并想清楚：**对"会话从未建立"的失败，重试应当降级为 `start_session` + 新会话 id 吗**。
+
 ### 2.2 任务级失败归因被最后一次尝试覆盖（副症，可独立修）
 
 现在任务级结论/收件箱卡片取**最后一次** attempt 的 family，于是真因（attempt #1 的 `PROVIDER_NO_TERMINAL_EVENT`）被 watchdog 产生的 `runtime_recovery` 盖掉——人类被指向错误的方向（去查运行环境，而不是 provider 输出漂移）。
 
-改法：任务级归因继承**首个非 `transient_runtime` / 非 watchdog 来源**尝试的 `error_code` + `failure_family`；watchdog 族只作为补充说明。
+改法：任务级归因继承**首个非环境噪声**尝试的 `error_code` + `failure_family`；环境噪声族只作为补充说明。
+
+**"环境噪声族"必须是一份显式清单，不能长成 contains 链**。按现有常量，属于环境噪声的是：`transient_runtime`、`runtime_lease_lost`、`runtime_start_timeout`、`dispatch_transient`（均由 CP 派发/看门狗侧产生，与 provider 实际执行无关）。`transient_provider` **不算**——它是 provider 真的跑了并失败。清单落在 `project/types.go` 与 family 词表同处，新增族时同步。
 
 ## 3. 与 provider 语义 spec 的接口
 

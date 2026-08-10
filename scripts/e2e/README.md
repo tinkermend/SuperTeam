@@ -39,7 +39,13 @@ SUPERTEAM_ASSERT_GRAPH_REVERSE=1 node scripts/e2e/casting-suite.mjs --stage=grap
 export SUPERTEAM_E2E_DB_URL='postgres://…'   # 与 control-plane config 一致
 node scripts/e2e/provider-semantic-fail-classification.mjs
 SUPERTEAM_E2E_SKIP_OPENCODE=1 node scripts/e2e/provider-semantic-fail-classification.mjs
+
+# 终态路径（turn_error 标记 / attestation / 分类与路由），一次一条腿
+node scripts/e2e/provider-semantic-terminal-paths.mjs PROVIDER_NO_TERMINAL_EVENT transient_provider false
+node scripts/e2e/provider-semantic-terminal-paths.mjs BUDGET_FUSE budget_fuse false --budget
 ```
+
+上面两组都需要把 `providers.claude_code.binary_path` 指到 `scripts/e2e/fake-providers/` 下对应脚本再重启 runtime-agent；**改之前先确认全机只有一个 agent 进程**（曾有孤儿 agent 抢单导致整轮结论作废）。用法与踩坑见 `scripts/e2e/fake-providers/README.md`。
 
 ## Stages
 
