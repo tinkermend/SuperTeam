@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>方案 A · 决策优先工作台</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    .decision-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, .8fr); gap: 16px; margin-top: 16px; }
+    .decision-list { margin: 0; padding: 0; list-style: none; }
+    .decision-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 11px; align-items: center; min-height: 72px; padding: 11px 16px; border-bottom: 1px solid var(--line); }
+    .decision-item:last-child { border-bottom: 0; }
+    .decision-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 8px; color: var(--danger); background: var(--danger-soft); font-size: 15px; font-weight: 780; }
+    .decision-icon.warn { color: var(--warn); background: var(--warn-soft); }.decision-icon.info { color: var(--info); background: var(--info-soft); }
+    .decision-main { min-width: 0; }.decision-main strong { display: block; overflow: hidden; font-size: 13px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }.decision-main span { display: block; overflow: hidden; margin-top: 4px; color: var(--ink-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.decision-tail { display: flex; align-items: flex-end; flex-direction: column; gap: 6px; }.decision-tail time { color: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .priority-note { padding: 16px; }.priority-note p { margin: 0 0 12px; color: var(--ink-2); font-size: 12px; line-height: 1.55; }.priority-rule { display: flex; align-items: center; gap: 9px; padding: 10px 0; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 12px; }.rule-num { display: grid; width: 22px; height: 22px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: var(--brand-deep); background: var(--brand-soft); font-size: 11px; font-weight: 800; }
+    .intervene-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 16px; margin-top: 16px; }.project-row { display: grid; grid-template-columns: minmax(0, 1fr) 122px 108px; gap: 12px; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--line); }.project-row:last-child { border-bottom: 0; }.project-row .summary { min-width: 0; }.project-row .summary strong { display: block; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.project-row .summary span { display: block; overflow: hidden; margin-top: 4px; color: var(--ink-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.mini-time { color: var(--ink-3); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }.calm-list { padding: 2px 16px 10px; }.calm-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 49px; border-bottom: 1px solid var(--line); }.calm-item:last-child { border-bottom: 0; }.calm-item strong { display: block; overflow: hidden; max-width: 180px; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.calm-item span { display: block; margin-top: 3px; color: var(--ink-3); font-size: 11px; }
+    @media (max-width: 1120px) { .decision-layout, .intervene-layout { grid-template-columns: 1fr; } }.decision-tail .button-secondary { min-height: 28px; }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <a class="brand" href="index.html"><span class="brand-mark">矩</span><span><strong>炬枢平台</strong><small>新矩网络</small></span></a>
+      <nav>
+        <div class="nav-group"><p class="nav-label">工作台</p><a class="nav-item" href="#"><span class="nav-ico">▹</span>任务中枢</a><a class="nav-item" href="#"><span class="nav-ico">□</span>收件箱 <span class="nav-count">20</span></a><a class="nav-item" href="#"><span class="nav-ico">◌</span>运行总览</a></div>
+        <div class="nav-group"><p class="nav-label">协作对象</p><a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理</a><a class="nav-item" href="#"><span class="nav-ico">◉</span>数字员工</a><a class="nav-item" href="#"><span class="nav-ico">◇</span>技能市场</a><a class="nav-item" href="#"><span class="nav-ico">◎</span>团队管理</a></div>
+        <div class="nav-group"><p class="nav-label">流程能力</p><a class="nav-item" href="#"><span class="nav-ico">↻</span>自动化任务</a><a class="nav-item" href="#"><span class="nav-ico">⌘</span>外部能力</a><a class="nav-item" href="#"><span class="nav-ico">⌗</span>MCP 管理</a></div>
+      </nav>
+    </aside>
+
+    <div class="page">
+      <header class="topbar"><div class="command">⌕ 搜索任务、数字员工、能力、文档 <kbd>⌘ K</kbd></div><div class="top-actions"><span class="icon-btn" title="主题">◐</span><span class="icon-btn" title="通知">◌</span><span class="account"><span class="avatar">开</span>开发管理员</span></div></header>
+      <main class="content">
+        <div class="page-heading"><div><span class="eyebrow">方案 A · 决策优先</span><h1>项目管理</h1><p class="subtitle">先让负责人清楚“此刻需要我作什么决定”，再把有阻塞的项目交给下一轮扫读。首页只导流，不在这里完成审批。</p></div><div><div class="switcher"><a class="active" href="decision-first.html">A 决策优先</a><a href="portfolio-review.html">B 组合检视</a><a href="index.html">方案说明</a></div><div style="margin-top:10px;text-align:right"><span class="button-primary">＋ 新建项目</span></div></div></div>
+
+        <section class="metric-strip" aria-label="项目组合概览"><div class="metric"><i class="metric-dot brand"></i><div><strong>6</strong><span>已加载项目</span></div></div><div class="metric"><i class="metric-dot ok"></i><div><strong>3</strong><span>推进中</span></div></div><div class="metric"><i class="metric-dot info"></i><div><strong>3</strong><span>验收中</span></div></div><div class="metric"><i class="metric-dot danger"></i><div><strong>0</strong><span>协调异常</span></div></div><div class="metric"><i class="metric-dot warn"></i><div><strong>20</strong><span>待我决策</span></div></div><div class="metric"><i class="metric-dot danger"></i><div><strong>5</strong><span>存在风险</span></div></div></section>
+
+        <div class="decision-layout">
+          <section class="surface" aria-label="现在需要你的决定"><header class="panel-title"><div><h2>现在需要你的决定 <span class="count">20</span></h2><span class="hint">按紧急程度与等待时间排序</span></div><a class="button-link" href="#">打开收件箱 →</a></header><ol class="decision-list"><li class="decision-item"><i class="decision-icon">!</i><div class="decision-main"><strong>创建跨提供商端到端测试文件</strong><span>provider-semantic-e2e-p1 · 人工决策 · 高危</span></div><div class="decision-tail"><time>1 小时前</time><span class="button-primary" style="min-height:28px;padding:0 10px;font-size:11px">查看</span></div></li><li class="decision-item"><i class="decision-icon">!</i><div class="decision-main"><strong>需求验收：F1 判别验证 - 浅出口</strong><span>批二基线项目 P1 · 人工验收 · 高危</span></div><div class="decision-tail"><time>2 天前</time><span class="button-secondary">查看</span></div></li><li class="decision-item"><i class="decision-icon warn">!</i><div class="decision-main"><strong>高风险动作需要确认</strong><span>批三语义扩编 E2E · 人工决策</span></div><div class="decision-tail"><time>4 天前</time><span class="button-secondary">查看</span></div></li><li class="decision-item"><i class="decision-icon info">↗</i><div class="decision-main"><strong>扩编请求：增加验证员工与能力范围</strong><span>provider-semantic-e2e-p1 · 资源决策</span></div><div class="decision-tail"><time>5 天前</time><span class="button-secondary">查看</span></div></li></ol></section>
+          <aside class="surface"><header class="panel-title"><h2>处理顺序</h2><span class="status-pill warn">4 项高危</span></header><div class="priority-note"><p>首页把决定本身提到主工作面，项目状态不再与人工待办混成一个数字。</p><div class="priority-rule"><b class="rule-num">1</b><span>先处理已超过 SLA 的高危决定</span></div><div class="priority-rule"><b class="rule-num">2</b><span>再处理会阻塞任务继续推进的决定</span></div><div class="priority-rule"><b class="rule-num">3</b><span>其余事项留在收件箱连续处理</span></div></div></aside>
+        </div>
+
+        <div class="intervene-layout">
+          <section class="surface"><header class="panel-title"><div><h2>需要介入的项目 <span class="count">5</span></h2><span class="hint">项目在这里按注意力信号排序，点击后进入项目详情</span></div><a class="button-link" href="#">查看完整队列 →</a></header><div><div class="project-row"><div class="summary"><strong>批二基线项目 P1</strong><span>负责人：开发管理员 · 项目处于验收中</span></div><span class="status-pill danger">待我决策</span><time class="mini-time">10:43</time></div><div class="project-row"><div class="summary"><strong>批三语义扩编 E2E</strong><span>负责人：开发管理员 · 数字员工已就绪</span></div><span class="status-pill danger">待我决策</span><time class="mini-time">10:43</time></div><div class="project-row"><div class="summary"><strong>S10 Git 屏蔽验收</strong><span>负责人：开发管理员 · 项目处于验收中</span></div><span class="status-pill warn">证据待核</span><time class="mini-time">08/08 00:39</time></div><div class="project-row"><div class="summary"><strong>provider-semantic-e2e-p1</strong><span>负责人：开发管理员 · 数字员工已就绪</span></div><span class="status-pill warn">等待人工</span><time class="mini-time">16:43</time></div></div></section>
+          <section class="surface"><header class="panel-title"><div><h2>自动推进</h2><span class="hint">无需人立即处理</span></div></header><div class="calm-list"><div class="calm-item"><div><strong>运营补完归档冒烟</strong><span>已就绪 · 无待办</span></div><time class="time">昨天</time></div><div class="calm-item"><div><strong>H1H4 全链路</strong><span>验收中 · 正在核验</span></div><time class="time">08/07</time></div><div class="calm-item"><div><strong>生产巡检整改</strong><span>推进中 · 最近任务成功</span></div><time class="time">08/07</time></div></div></section>
+        </div>
+        <p class="footer-note">方案 A 的取舍：把最可行动的“待我决策”从右栏提升为首屏主体，完整项目表降为后续扫读对象。它适合当前截图中决策数量显著高于项目数的情形。</p>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

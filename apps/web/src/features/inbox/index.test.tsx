@@ -1063,6 +1063,60 @@ describe("InboxView", () => {
     await expect.element(screen.getByRole("heading", { name: "同意" })).toBeVisible();
   });
 
+  // 关弹窗后必须把焦点还给选中行，否则键盘队列断掉。
+  // 回归历史：Radix 的 return-focus-to-trigger 在此不适用（弹窗由行 Enter / 行内 CTA
+  // 程序化打开，无 trigger 可归还），Esc 后焦点落 body，再按 ↓/↑ 全无反应，实测需
+  // Tab 穿过整个侧栏才能回到列表。上面那个导航用例抓不到它：它用 dispatchEvent 直接
+  // 派事件、且只断言 aria-selected 不断言 document.activeElement。
+  // 本用例必须用真实焦点断言，改回 dispatchEvent 就失去意义。
+  it("returns focus to the selected row after the action dialog closes", async () => {
+    const itemA = makeInboxItem({
+      id: "focus-a",
+      title: "焦点甲",
+      risk_level: "high",
+    });
+    const itemB = makeInboxItem({
+      id: "focus-b",
+      source_id: "approval-b",
+      title: "焦点乙",
+      risk_level: "high",
+      summary: "乙摘要",
+    });
+    const screen = await renderInboxView(
+      createInboxFetcher({ mineItems: [itemA, itemB] }),
+    );
+
+    await expect.element(screen.getByText("焦点甲")).toBeVisible();
+    const rowA = document.body.querySelector(
+      '[aria-label="打开事项：焦点甲"]',
+    ) as HTMLElement;
+    rowA.focus();
+    expect(document.activeElement).toBe(rowA);
+
+    // Enter 开弹窗：焦点进入弹窗。
+    await userEvent.keyboard("{Enter}");
+    await expect.element(screen.getByRole("dialog")).toBeVisible();
+    expect(rowA.contains(document.activeElement)).toBe(false);
+
+    // Esc 关闭 → 焦点必须回到行本身（此前会停在 body）。
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(
+        document.body.querySelector('[aria-label="打开事项：焦点甲"]'),
+      );
+    });
+
+    // 焦点回来了，键盘队列才能继续：↓ 应移到下一条。
+    await userEvent.keyboard("{ArrowDown}");
+    await vi.waitFor(() => {
+      expect(
+        document.body
+          .querySelector('[aria-label="打开事项：焦点乙"]')
+          ?.getAttribute("aria-selected"),
+      ).toBe("true");
+    });
+  });
+
   // §4.3.2 提交成功后选中态前进到同位置下一条。
   it("advances selection to the next item after a successful action", async () => {
     const itemA = makeInboxItem({
@@ -1101,6 +1155,25 @@ describe("InboxView", () => {
       "true",
     );
     expect(screen.getByText("前进甲").query()).toBeNull();
+
+    // 前进后焦点必须落在新选中行：否则键盘队列在每次提交后都要用鼠标救回来。
+    // 提交路径与取消路径的归还机制不同——Radix 只在用户主动关闭时调 onOpenChange，
+    // 提交是父级把 open 置 false，故这里靠 selectedItemId 变化的 effect 兜底，
+    // 与 refocusToken 无关，必须单独钉住。
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(
+        document.body.querySelector('[aria-label="打开事项：前进乙"]'),
+      );
+    });
+    // 焦点真的可用：继续按 ↓ 应移到丙。
+    await userEvent.keyboard("{ArrowDown}");
+    await vi.waitFor(() => {
+      expect(
+        document.body
+          .querySelector('[aria-label="打开事项：前进丙"]')
+          ?.getAttribute("aria-selected"),
+      ).toBe("true");
+    });
   });
 
   // review: 后台提交完成时，若用户已切到其他事项，不得抢选中。
@@ -1270,6 +1343,8 @@ describe("groupInboxItems (§6.1 领域分组 + §4.4 优先区)", () => {
     expect(sections).toHaveLength(1);
     expect(sections[0].key).toBe("flat");
     expect(sections[0].items.map((i) => i.id)).toEqual(["a", "b"]);
+    // 空 label：排序档已由列表头表达，分区不得再出同名同计数表头。
+    expect(sections[0].label).toBe("");
   });
 
   it("omits empty priority section", () => {

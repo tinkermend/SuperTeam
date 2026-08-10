@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>项目管理首页布局 · 三方案对照 · SuperTeam</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    .hero {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 48px 24px 24px;
+    }
+    .hero h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .hero .lead {
+      margin-top: 10px;
+      font-size: 15px;
+      color: var(--ink-3);
+      max-width: 720px;
+      line-height: 1.6;
+    }
+    .hero .meta {
+      margin-top: 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .tag {
+      height: 28px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--ink-2);
+      display: inline-flex;
+      align-items: center;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 8px 24px 64px;
+    }
+    .compare {
+      margin-top: 28px;
+      overflow: auto;
+      border-radius: var(--r-card);
+      border: 1px solid var(--line);
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+    }
+    .compare table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+    .compare th,
+    .compare td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      vertical-align: top;
+    }
+    .compare th {
+      background: var(--card-soft);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-3);
+    }
+    .compare tr:last-child td { border-bottom: none; }
+    .compare td strong { font-weight: 700; }
+    .compare .col-a { border-left: 3px solid #d14647; }
+    .compare .col-b { border-left: 3px solid #2f5fff; }
+    .compare .col-c { border-left: 3px solid #009a60; }
+
+    .problems {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .prob {
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .prob h3 {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .prob p { color: var(--ink-3); line-height: 1.5; font-size: 12.5px; }
+
+    .letter-a { background: linear-gradient(135deg, #e85d5d, #d14647); }
+    .letter-b { background: linear-gradient(135deg, #5b8bff, #2f5fff); }
+    .letter-c { background: linear-gradient(135deg, #34c98a, #009a60); }
+
+    @media (max-width: 900px) {
+      .index-grid { grid-template-columns: 1fr; }
+      .problems { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body style="background:var(--bg)">
+  <div style="position:relative;z-index:1">
+    <div class="hero">
+      <div class="concept-tag">Soft-Flat · 运营驾驶舱升级</div>
+      <h1>项目管理首页 · 三套布局方案</h1>
+      <p class="lead">
+        基于当前「KPI 五卡 + 项目队列 + 右栏待我决策/运行动态」现状，结合 DESIGN.md（脆数据面、工作对象规则）与
+        项目域模型（Project 闭环容器、人类一等、风险/决策信号分层），给出三种<strong>信息架构不同</strong>的布局方向供选择。
+      </p>
+      <div class="meta">
+        <span class="tag">数据口径沿用现网 mock/真值</span>
+        <span class="tag">队列 / 决策 / 运行动态 三维度保留</span>
+        <span class="tag">首页只导流 · 不在列表执行审批</span>
+        <span class="tag">禁止玻璃套密集表</span>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <div class="problems">
+        <div class="prob">
+          <h3>现状问题 ① 纵向过重</h3>
+          <p>五张等高 KPI + 双栏主从，决策（最可行动）与队列争抢视线；首屏有效行数偏少。</p>
+        </div>
+        <div class="prob">
+          <h3>现状问题 ② 状态双轨</h3>
+          <p>业务状态（验收中/已就绪）与注意力信号（待决/证据/超时）挤在「待办拆分」一列，扫读成本高。</p>
+        </div>
+        <div class="prob">
+          <h3>现状问题 ③ 角色未分层</h3>
+          <p>负责人「先决策」与运营「先扫队列」是不同主路径，现状用同一骨架兼顾，两边都不够极致。</p>
+        </div>
+      </div>
+
+      <div class="index-grid" style="margin-top:20px">
+        <a class="index-card soft-card" href="concept-a-decision-first.html">
+          <span class="letter letter-a">A</span>
+          <h3>决策优先工作台</h3>
+          <p>把「待我决策」提升为首屏主工作面（英雄区），KPI 压成胶囊条；下方分「需介入项目」与「全部队列」双列。</p>
+          <ul>
+            <li>对齐：人类一等参与者 / 收件箱导流</li>
+            <li>适合：负责人日启、决策积压多</li>
+            <li>代价：队列扫读深度次于 B</li>
+          </ul>
+          <span class="go">打开方案 A →</span>
+        </a>
+        <a class="index-card soft-card" href="concept-b-queue-command.html">
+          <span class="letter letter-b">B</span>
+          <h3>队列主控密集面</h3>
+          <p>全宽 WorkSurface 表为主，列改为「注意力信号 / 处理者 / 业务状态」；决策降为底部可折叠坞，不占常驻右栏。</p>
+          <ul>
+            <li>对齐：脆数据面 / 逐行比较</li>
+            <li>适合：运营盯盘、项目数上涨</li>
+            <li>代价：决策默认次级可见</li>
+          </ul>
+          <span class="go">打开方案 B →</span>
+        </a>
+        <a class="index-card soft-card" href="concept-c-stage-lanes.html">
+          <span class="letter letter-c">C</span>
+          <h3>阶段泳道闭环</h3>
+          <p>按注意力阶段分四栏（待人决策 / 验收中 / 已就绪 / 空闲），项目卡含「需求→执行→证据→验收」流量仪；选中出轻量 triage。</p>
+          <ul>
+            <li>对齐：Project 闭环容器叙事</li>
+            <li>适合：阶段感强、项目量中等</li>
+            <li>代价：项目多时横向压力大</li>
+          </ul>
+          <span class="go">打开方案 C →</span>
+        </a>
+      </div>
+
+      <div class="compare">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:18%">维度</th>
+              <th class="col-a" style="width:27%">A 决策优先</th>
+              <th class="col-b" style="width:27%">B 队列主控</th>
+              <th class="col-c" style="width:28%">C 阶段泳道</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>主工作对象</strong></td>
+              <td>Inbox 决策卡片</td>
+              <td>项目队列表格行</td>
+              <td>阶段内的项目卡</td>
+            </tr>
+            <tr>
+              <td><strong>Main 宽度</strong></td>
+              <td>canvas（双列铺满）</td>
+              <td>canvas（单表全宽）</td>
+              <td>canvas（四泳道）</td>
+            </tr>
+            <tr>
+              <td><strong>KPI 形态</strong></td>
+              <td>胶囊条（低高度）</td>
+              <td>五卡压缩高</td>
+              <td>阶段摘要四卡</td>
+            </tr>
+            <tr>
+              <td><strong>决策入口</strong></td>
+              <td>首屏英雄区 6 卡 + 分布</td>
+              <td>底部 sticky 坞</td>
+              <td>右上 peek + 泳道归集</td>
+            </tr>
+            <tr>
+              <td><strong>选中项目</strong></td>
+              <td>下方列表高亮 / 进入</td>
+              <td>行选中 + 底部坞并存</td>
+              <td>卡选中 + 右下 triage</td>
+            </tr>
+            <tr>
+              <td><strong>与现状差异</strong></td>
+              <td>大：信息层级倒置</td>
+              <td>中：去常驻右栏</td>
+              <td>大：表 → 卡泳道</td>
+            </tr>
+            <tr>
+              <td><strong>实现成本</strong></td>
+              <td>中（重组面板）</td>
+              <td>低（最接近现状）</td>
+              <td>中高（分组 + 卡 + 流量仪）</td>
+            </tr>
+            <tr>
+              <td><strong>推荐场景</strong></td>
+              <td>决策积压是主痛点</td>
+              <td>默认稳妥演进</td>
+              <td>强调闭环叙事 / 演示</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p style="margin-top:20px;font-size:13px;color:var(--ink-3);line-height:1.6">
+        <strong>设计约束已遵守：</strong>密集表/决策列表用实底 SoftCard·WorkSurface；状态经 pill + 左侧 accent；每行有主时间；
+        对象名而非裸 UUID；首页不承载审批提交。视觉 token 对齐 Soft-Flat（品牌蓝 <code>#2F5FFF</code>、圆角 22/14、弥散阴影）。
+      </p>
+      <p style="margin-top:8px;font-size:13px;color:var(--ink-3)">
+        文件位置：<code>docs/prototypes/project-home-layout-v2/</code>
+      </p>
+    </div>
+  </div>
+</body>
+</html>

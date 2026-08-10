@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { getJson, postJson, postJsonWithoutBody } from "./client";
+import { getJson, postJson, postJsonWithoutBody, putJson } from "./client";
 
 export type RuntimeNodeStatus = "online" | "offline";
 export type RuntimeEnrollmentStatus = "pending" | "approved" | "rejected" | "revoked";
@@ -191,5 +191,104 @@ export function rejectRuntimeEnrollment(
     `/api/v1/runtime/enrollments/${encodedEnrollmentId}/reject`,
     { reason },
     "reject runtime enrollment",
+  );
+}
+
+export type ProviderNativeConfigListItem = {
+  provider_type: string;
+  config_key: string;
+  resolved_path?: string;
+  format?: string;
+  file_content_hash?: string;
+  exists_on_node: boolean;
+  manageable: boolean;
+  unmanageable_reason?: string;
+  source?: string;
+  snapshot_at?: string;
+  last_pulled_at?: string;
+  last_pushed_at?: string;
+  node_online: boolean;
+};
+
+export type ProviderNativeConfigDetail = {
+  provider_type: string;
+  config_key: string;
+  resolved_path?: string;
+  format?: string;
+  managed_values: Record<string, unknown>;
+  file_content_hash?: string;
+  exists_on_node: boolean;
+  manageable: boolean;
+  unmanageable_reason?: string;
+  source?: string;
+  snapshot_at?: string;
+  stale_hint: boolean;
+  node_online: boolean;
+  last_pulled_at?: string;
+  last_pushed_at?: string;
+};
+
+export function listProviderNativeConfigs(
+  options: ApiClientOptions,
+  nodeId: string,
+): Promise<ProviderNativeConfigListItem[]> {
+  const encodedNodeId = encodeURIComponent(nodeId);
+  return getJson<ProviderNativeConfigListItem[]>(
+    options,
+    `/api/v1/runtime/nodes/${encodedNodeId}/provider-native-configs`,
+    "provider native configs",
+  );
+}
+
+export function pullProviderNativeConfig(
+  options: ApiClientOptions,
+  nodeId: string,
+  providerType: string,
+  configKey: string,
+): Promise<ProviderNativeConfigDetail> {
+  const encodedNodeId = encodeURIComponent(nodeId);
+  return postJson<ProviderNativeConfigDetail>(
+    options,
+    `/api/v1/runtime/nodes/${encodedNodeId}/provider-native-configs/pull`,
+    { provider_type: providerType, config_key: configKey },
+    "pull provider native config",
+  );
+}
+
+export function getProviderNativeConfig(
+  options: ApiClientOptions,
+  nodeId: string,
+  providerType: string,
+  configKey: string,
+): Promise<ProviderNativeConfigDetail> {
+  const encodedNodeId = encodeURIComponent(nodeId);
+  const encodedProvider = encodeURIComponent(providerType);
+  const encodedKey = encodeURIComponent(configKey);
+  return getJson<ProviderNativeConfigDetail>(
+    options,
+    `/api/v1/runtime/nodes/${encodedNodeId}/provider-native-configs/${encodedProvider}/${encodedKey}`,
+    "provider native config snapshot",
+  );
+}
+
+export function putProviderNativeConfig(
+  options: ApiClientOptions,
+  nodeId: string,
+  providerType: string,
+  configKey: string,
+  values: Record<string, unknown>,
+  expectedFileContentHash: string,
+): Promise<ProviderNativeConfigDetail> {
+  const encodedNodeId = encodeURIComponent(nodeId);
+  const encodedProvider = encodeURIComponent(providerType);
+  const encodedKey = encodeURIComponent(configKey);
+  return putJson<ProviderNativeConfigDetail>(
+    options,
+    `/api/v1/runtime/nodes/${encodedNodeId}/provider-native-configs/${encodedProvider}/${encodedKey}`,
+    {
+      values,
+      expected_file_content_hash: expectedFileContentHash,
+    },
+    "push provider native config",
   );
 }

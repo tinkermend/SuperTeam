@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>方案 A · 决策优先工作台 · 项目管理</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    /* A: 决策优先 — 上决策带 + 下双列（需介入 / 队列） */
+    .a-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .a-metrics .stat {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      font-size: 12.5px;
+      color: var(--ink-2);
+      font-weight: 550;
+      box-shadow: var(--shadow-sm);
+    }
+    .a-metrics .stat b {
+      font-size: 14px;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+    }
+    .a-metrics .stat.hot {
+      border-color: #f0c9c8;
+      background: var(--danger-soft);
+      color: var(--danger-text);
+    }
+    .a-metrics .stat.hot b { color: var(--danger-text); }
+    .a-metrics .stat.warm {
+      border-color: #f0d9b8;
+      background: var(--warn-soft);
+      color: var(--warn-text);
+    }
+    .a-metrics .stat.warm b { color: var(--warn-text); }
+
+    .decision-hero {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 0;
+      overflow: hidden;
+    }
+    .decision-hero .main-col {
+      border-right: 1px solid var(--line);
+      min-width: 0;
+    }
+    .decision-hero .side-col {
+      background: linear-gradient(180deg, #fff9f7 0%, #fff 40%);
+      min-width: 0;
+    }
+    .decision-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+    }
+    .decision-card {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      cursor: pointer;
+      transition: background .12s;
+    }
+    .decision-card:nth-child(2n) { border-right: none; }
+    .decision-card:hover { background: #fafbfd; }
+    .decision-card.urgent {
+      background: linear-gradient(90deg, #fff5f4 0%, #fff 55%);
+    }
+    .decision-card .kicker {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--ink-4);
+      margin-bottom: 6px;
+    }
+    .decision-card h3 {
+      font-size: 13.5px;
+      font-weight: 650;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .decision-card .foot {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .urgency-rail {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .urgency-rail h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-3);
+      margin-bottom: 10px;
+      text-transform: none;
+    }
+    .urgency-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px dashed var(--line);
+      font-size: 12.5px;
+    }
+    .urgency-item:last-child { border-bottom: none; }
+    .urgency-item .bar-wrap {
+      flex: 1;
+      margin: 0 10px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--mute-soft);
+      overflow: hidden;
+    }
+    .urgency-item .bar {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--danger);
+    }
+    .urgency-item .bar.warn { background: var(--warn); }
+    .urgency-item .bar.mute { background: var(--mute); }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .risk-row {
+      display: flex;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+    }
+    .risk-row:hover { background: #fafbfd; }
+    .risk-row:last-child { border-bottom: none; }
+    .risk-row .main { flex: 1; min-width: 0; }
+    .risk-row .signals {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+    }
+    .sig {
+      font-size: 11px;
+      font-weight: 650;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: var(--card-soft);
+      color: var(--ink-3);
+      border: 1px solid var(--line);
+    }
+    .sig.danger { background: var(--danger-soft); color: var(--danger-text); border-color: transparent; }
+    .sig.warn { background: var(--warn-soft); color: var(--warn-text); border-color: transparent; }
+    .sig.info { background: var(--info-soft); color: var(--info-text); border-color: transparent; }
+
+    .queue-mini td { padding: 10px 12px; }
+    .queue-mini .proj .name { font-size: 13px; }
+
+    @media (max-width: 1200px) {
+      .decision-hero { grid-template-columns: 1fr; }
+      .decision-hero .main-col { border-right: none; border-bottom: 1px solid var(--line); }
+      .decision-grid { grid-template-columns: 1fr; }
+      .decision-card { border-right: none !important; }
+      .split { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">矩</span>
+        <div>炬枢平台<small>新矩网络</small></div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">工作台</div>
+        <a class="nav-item" href="#"><span class="nav-ico">▸</span>任务中枢</a>
+        <a class="nav-item" href="#"><span class="nav-ico">✉</span>收件箱<span class="badge">20</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>运行总览</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">协作对象</div>
+        <a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>数字员工</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◇</span>技能市场</a>
+        <a class="nav-item" href="#"><span class="nav-ico">👥</span>团队管理</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">流程能力</div>
+        <a class="nav-item" href="#"><span class="nav-ico">⚡</span>自动化任务</a>
+        <a class="nav-item" href="#"><span class="nav-ico">🔗</span>外部能力</a>
+        <a class="nav-item" href="#"><span class="nav-ico">⬡</span>MCP 管理</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="shell-top">
+        <div class="cmd">🔍 搜索任务、数字员工、能力、文档或快捷… <kbd>⌘K</kbd></div>
+        <div class="shell-actions">
+          <button class="btn btn-ghost btn-sm">◐</button>
+          <button class="btn btn-ghost btn-sm">🔔</button>
+          <button class="btn btn-primary btn-sm">开发管理员</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="page-head">
+          <div>
+            <span class="concept-tag">方案 A · 决策优先工作台</span>
+            <h1><span class="title-ico">▦</span>项目管理</h1>
+            <p>人机协作入口：先处理「待我决策」与阻塞信号，再扫需介入项目与完整队列。对齐「人类一等参与者」。</p>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:10px">
+            <div class="proto-switch">
+              <a class="on" href="concept-a-decision-first.html">A 决策优先</a>
+              <a href="concept-b-queue-command.html">B 队列主控</a>
+              <a href="concept-c-stage-lanes.html">C 阶段泳道</a>
+              <a href="index.html">总览</a>
+            </div>
+            <button class="btn btn-primary">＋ 新建项目</button>
+          </div>
+        </div>
+
+        <!-- Compact status strip instead of 5 big KPI cards -->
+        <div class="a-metrics">
+          <span class="stat hot"><span>待我决策</span><b class="num">20</b></span>
+          <span class="stat warm"><span>存在风险</span><b class="num">5</b></span>
+          <span class="stat"><span>已加载</span><b class="num">6</b></span>
+          <span class="stat"><span>验收中</span><b class="num">3</b></span>
+          <span class="stat"><span>已就绪</span><b class="num">3</b></span>
+          <span class="stat"><span>协调异常</span><b class="num">0</b></span>
+          <span class="grow"></span>
+          <span class="muted" style="font-size:12px">按需介入排序 · 风险识别基于当前页</span>
+        </div>
+
+        <!-- Decision hero: primary work object -->
+        <section class="soft-card decision-hero">
+          <div class="main-col">
+            <div class="sec-head">
+              <h2>待我决策 <span class="count">20</span></h2>
+              <div class="flex gap-8 items-center">
+                <div class="chips">
+                  <button class="chip on">全部</button>
+                  <button class="chip">高危 <span class="n">4</span></button>
+                  <button class="chip">验收 <span class="n">2</span></button>
+                  <button class="chip">扩编</button>
+                </div>
+                <a href="#">查看收件箱 →</a>
+              </div>
+            </div>
+            <div class="decision-grid">
+              <div class="decision-card urgent">
+                <div class="kicker">
+                  <span class="pill pill-danger">高危</span>
+                  <span>人工决策 · 1 小时前</span>
+                </div>
+                <h3>创建跨提供商端到端测试文件</h3>
+                <div class="foot">
+                  <span class="muted clamp-1">provider-semantic-e2e-p1</span>
+                  <button class="btn btn-primary btn-xs">处理</button>
+                </div>
+              </div>
+              <div class="decision-card urgent">
+                <div class="kicker">
+                  <span class="pill pill-danger">高危</span>
+                  <span>人工决策 · 2 天前</span>
+                </div>
+                <h3>需求验收：F1 判别验证-浅出口</h3>
+                <div class="foot">
+                  <span class="muted clamp-1">批二基线项目 P1</span>
+                  <button class="btn btn-primary btn-xs">处理</button>
+                </div>
+              </div>
+              <div class="decision-card">
+                <div class="kicker">
+                  <span class="pill pill-danger">高危</span>
+                  <span>人工决策 · 4 天前</span>
+                </div>
+                <h3>高风险动作需要确认</h3>
+                <div class="foot">
+                  <span class="muted clamp-1">批三语义扩编 E2E</span>
+                  <button class="btn btn-ghost btn-xs">打开</button>
+                </div>
+              </div>
+              <div class="decision-card">
+                <div class="kicker">
+                  <span class="pill pill-danger">高危</span>
+                  <span>人工决策 · 4 天前</span>
+                </div>
+                <h3>需求验收：B3 H4 judge 10:18:33</h3>
+                <div class="foot">
+                  <span class="muted clamp-1">批三 H1H4 全链路</span>
+                  <button class="btn btn-ghost btn-xs">打开</button>
+                </div>
+              </div>
+              <div class="decision-card">
+                <div class="kicker">
+                  <span class="pill pill-brand">扩编</span>
+                  <span>人工决策 · 4 天前</span>
+                </div>
+                <h3>扩编请求</h3>
+                <div class="foot">
+                  <span class="muted clamp-1">S10 Git 屏蔽验收</span>
+                  <button class="btn btn-ghost btn-xs">打开</button>
+                </div>
+              </div>
+              <div class="decision-card">
+                <div class="kicker">
+                  <span class="pill pill-mute">创建文件</span>
+                  <span>人工决策 · 3 分钟前</span>
+                </div>
+                <h3>创建 provider-semantic-e2e.txt</h3>
+                <div class="foot">
+                  <span class="muted clamp-1">provider-semantic-e2e-p1</span>
+                  <button class="btn btn-ghost btn-xs">打开</button>
+                </div>
+              </div>
+            </div>
+            <div class="footer-note">首页只导流，不在此执行审批动作 · 完整上下文见收件箱 / 项目审批 Tab</div>
+          </div>
+          <aside class="side-col">
+            <div class="urgency-rail">
+              <h3>等待时长分布</h3>
+              <div class="urgency-item">
+                <span>&lt; 1 小时</span>
+                <div class="bar-wrap"><div class="bar" style="width:35%"></div></div>
+                <b class="num">7</b>
+              </div>
+              <div class="urgency-item">
+                <span>1–24 小时</span>
+                <div class="bar-wrap"><div class="bar warn" style="width:20%"></div></div>
+                <b class="num">4</b>
+              </div>
+              <div class="urgency-item">
+                <span>1–3 天</span>
+                <div class="bar-wrap"><div class="bar warn" style="width:25%"></div></div>
+                <b class="num">5</b>
+              </div>
+              <div class="urgency-item">
+                <span>&gt; 3 天</span>
+                <div class="bar-wrap"><div class="bar mute" style="width:20%"></div></div>
+                <b class="num">4</b>
+              </div>
+            </div>
+            <div class="sec-head" style="border-bottom:none;padding-bottom:4px">
+              <h2 style="font-size:13px">最近运行动态</h2>
+            </div>
+            <a class="list-row" href="#">
+              <span class="icon-tile warn" style="width:28px;height:28px;font-size:12px">●</span>
+              <div class="body">
+                <div class="title" style="font-size:12.5px">provider-semantic-e2e-p1</div>
+                <div class="meta"><span class="pill pill-warn" style="height:18px;font-size:10.5px">待人工确认</span><span class="time">3 分钟前</span></div>
+              </div>
+            </a>
+            <a class="list-row" href="#">
+              <span class="icon-tile warn" style="width:28px;height:28px;font-size:12px">●</span>
+              <div class="body">
+                <div class="title" style="font-size:12.5px">批二基线项目 P1</div>
+                <div class="meta"><span class="pill pill-info" style="height:18px;font-size:10.5px">验收中</span><span class="time">09:43</span></div>
+              </div>
+            </a>
+            <a class="list-row" href="#">
+              <span class="icon-tile ok" style="width:28px;height:28px;font-size:12px">●</span>
+              <div class="body">
+                <div class="title" style="font-size:12.5px">批三语义扩编 E2E</div>
+                <div class="meta"><span class="pill pill-ok" style="height:18px;font-size:10.5px">已就绪</span><span class="time">09:43</span></div>
+              </div>
+            </a>
+          </aside>
+        </section>
+
+        <!-- Bottom: 需介入 + 全队列 -->
+        <div class="split">
+          <section class="work-surface">
+            <div class="sec-head">
+              <h2>需介入项目 <span class="count">5</span></h2>
+              <span class="muted" style="font-size:12px">阻塞 / 风险 / 超时优先</span>
+            </div>
+            <div class="risk-row tone-danger">
+              <span class="icon-tile danger">▦</span>
+              <div class="main">
+                <div class="flex justify-between items-center gap-8">
+                  <strong class="clamp-1">批二基线项目 P1</strong>
+                  <span class="pill pill-info">验收中</span>
+                </div>
+                <div class="signals">
+                  <span class="sig danger">2 待决</span>
+                  <span class="sig warn">8 证据待核</span>
+                  <span class="sig warn">等待超时</span>
+                </div>
+                <div class="muted" style="margin-top:6px;font-size:11.5px">等待审核 · 开发管理员 · <span class="time">08/10 09:43</span></div>
+              </div>
+              <button class="btn btn-primary btn-xs">进入</button>
+            </div>
+            <div class="risk-row">
+              <span class="icon-tile warn">▦</span>
+              <div class="main">
+                <div class="flex justify-between items-center gap-8">
+                  <strong class="clamp-1">批三 H1H4 全链路 181601</strong>
+                  <span class="pill pill-info">验收中</span>
+                </div>
+                <div class="signals">
+                  <span class="sig danger">4 待决</span>
+                  <span class="sig warn">7 证据待核</span>
+                </div>
+                <div class="muted" style="margin-top:6px;font-size:11.5px">等待审核 · 开发管理员 · <span class="time">08/07 11:27</span></div>
+              </div>
+              <button class="btn btn-ghost btn-xs">进入</button>
+            </div>
+            <div class="risk-row">
+              <span class="icon-tile warn">▦</span>
+              <div class="main">
+                <div class="flex justify-between items-center gap-8">
+                  <strong class="clamp-1">S10 Git 屏蔽验收</strong>
+                  <span class="pill pill-info">验收中</span>
+                </div>
+                <div class="signals">
+                  <span class="sig danger">4 待决</span>
+                  <span class="sig warn">7 证据待核</span>
+                </div>
+                <div class="muted" style="margin-top:6px;font-size:11.5px">等待审核 · 开发管理员 · <span class="time">08/08 00:39</span></div>
+              </div>
+              <button class="btn btn-ghost btn-xs">进入</button>
+            </div>
+            <div class="risk-row">
+              <span class="icon-tile danger">▦</span>
+              <div class="main">
+                <div class="flex justify-between items-center gap-8">
+                  <strong class="clamp-1">provider-semantic-e2e-p1</strong>
+                  <span class="pill pill-ok">已就绪</span>
+                </div>
+                <div class="signals">
+                  <span class="sig danger">9 待决</span>
+                  <span class="sig warn">2 等人</span>
+                  <span class="sig">6 证据待核</span>
+                </div>
+                <div class="muted" style="margin-top:6px;font-size:11.5px">等待审核 · 开发管理员 · <span class="time">08/10 16:43</span></div>
+              </div>
+              <button class="btn btn-ghost btn-xs">进入</button>
+            </div>
+            <div class="risk-row">
+              <span class="icon-tile">▦</span>
+              <div class="main">
+                <div class="flex justify-between items-center gap-8">
+                  <strong class="clamp-1">批三语义扩编 E2E</strong>
+                  <span class="pill pill-ok">已就绪</span>
+                </div>
+                <div class="signals">
+                  <span class="sig danger">1 待决</span>
+                  <span class="sig warn">等待超时</span>
+                </div>
+                <div class="muted" style="margin-top:6px;font-size:11.5px">等待审核 · 开发管理员 · <span class="time">08/10 09:43</span></div>
+              </div>
+              <button class="btn btn-ghost btn-xs">进入</button>
+            </div>
+          </section>
+
+          <section class="work-surface">
+            <div class="sec-head">
+              <h2>全部项目 <span class="count">6</span></h2>
+              <div class="chips">
+                <button class="chip on">全部 6</button>
+                <button class="chip">阻塞 5</button>
+                <button class="chip">无阻塞 1</button>
+              </div>
+            </div>
+            <table class="data queue-mini">
+              <colgroup>
+                <col style="width:42%" />
+                <col style="width:22%" />
+                <col style="width:20%" />
+                <col style="width:16%" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>项目</th>
+                  <th>状态</th>
+                  <th>最近活动</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="tone-warn">
+                  <td>
+                    <div class="proj">
+                      <span class="icon-tile" style="width:28px;height:28px">▦</span>
+                      <div class="min-w-0">
+                        <div class="name">批二基线项目 P1</div>
+                        <div class="sub">开发管理员</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="pill pill-info">验收中</span></td>
+                  <td class="time">08/10 09:43</td>
+                  <td><a class="link-action" href="#">进入 →</a></td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="proj">
+                      <span class="icon-tile ok" style="width:28px;height:28px">▦</span>
+                      <div>
+                        <div class="name">批三语义扩编 E2E</div>
+                        <div class="sub">开发管理员</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="pill pill-ok">已就绪</span></td>
+                  <td class="time">08/10 09:43</td>
+                  <td><a class="link-action" href="#">进入 →</a></td>
+                </tr>
+                <tr class="tone-warn">
+                  <td>
+                    <div class="proj">
+                      <span class="icon-tile" style="width:28px;height:28px">▦</span>
+                      <div>
+                        <div class="name">批三 H1H4 全链路</div>
+                        <div class="sub">开发管理员</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="pill pill-info">验收中</span></td>
+                  <td class="time">08/07 11:27</td>
+                  <td><a class="link-action" href="#">进入 →</a></td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="proj">
+                      <span class="icon-tile" style="width:28px;height:28px">▦</span>
+                      <div>
+                        <div class="name">S10 Git 屏蔽验收</div>
+                        <div class="sub">开发管理员</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="pill pill-info">验收中</span></td>
+                  <td class="time">08/08 00:39</td>
+                  <td><a class="link-action" href="#">进入 →</a></td>
+                </tr>
+                <tr class="tone-danger">
+                  <td>
+                    <div class="proj">
+                      <span class="icon-tile danger" style="width:28px;height:28px">▦</span>
+                      <div>
+                        <div class="name">provider-semantic-e2e-p1</div>
+                        <div class="sub">开发管理员</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="pill pill-ok">已就绪</span></td>
+                  <td class="time">08/10 16:43</td>
+                  <td><a class="link-action" href="#">进入 →</a></td>
+                </tr>
+                <tr>
+                  <td>
+                    <div class="proj">
+                      <span class="icon-tile ok" style="width:28px;height:28px">▦</span>
+                      <div>
+                        <div class="name">运营补充归档冒烟</div>
+                        <div class="sub">开发管理员</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><span class="pill pill-ok">已就绪</span></td>
+                  <td class="time muted">暂无运行记录</td>
+                  <td><a class="link-action" href="#">进入 →</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

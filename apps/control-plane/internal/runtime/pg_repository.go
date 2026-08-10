@@ -814,3 +814,121 @@ func runtimeEventSeverityToText(severity *RuntimeEventSeverity) pgtype.Text {
 	}
 	return textFromValue(string(*severity))
 }
+
+func (r *PgRepository) UpsertProviderNativeConfig(ctx context.Context, params UpsertProviderNativeConfigParams) (ProviderNativeConfigRecord, error) {
+	managedValues, err := json.Marshal(params.ManagedValues)
+	if err != nil {
+		return ProviderNativeConfigRecord{}, err
+	}
+	if managedValues == nil {
+		managedValues = []byte("{}")
+	}
+	row, err := r.q.UpsertRuntimeProviderNativeConfig(ctx, queries.UpsertRuntimeProviderNativeConfigParams{
+		TenantID:           params.TenantID,
+		RuntimeNodeID:      params.RuntimeNodeID,
+		NodeID:             params.NodeID,
+		ProviderType:       params.ProviderType,
+		ConfigKey:          params.ConfigKey,
+		ResolvedPath:       textFromValue(params.ResolvedPath),
+		Format:             params.Format,
+		ManagedValues:      managedValues,
+		FileContentHash:    textFromValue(params.FileContentHash),
+		ExistsOnNode:       params.ExistsOnNode,
+		Manageable:         params.Manageable,
+		UnmanageableReason: textFromValue(params.UnmanageableReason),
+		Source:             params.Source,
+		NodeMtime:          timestamptzFromTimePtr(params.NodeMtime),
+		SnapshotAt:         timestamptzFromTime(params.SnapshotAt),
+		LastPulledAt:       timestamptzFromTimePtr(params.LastPulledAt),
+		LastPushedAt:       timestamptzFromTimePtr(params.LastPushedAt),
+		LastPushedBy:       uuidToNull(params.LastPushedBy),
+	})
+	if err != nil {
+		return ProviderNativeConfigRecord{}, err
+	}
+	return providerNativeConfigFromQuery(row), nil
+}
+
+func (r *PgRepository) ListProviderNativeConfigsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]ProviderNativeConfigRecord, error) {
+	rows, err := r.q.ListRuntimeProviderNativeConfigsForNode(ctx, queries.ListRuntimeProviderNativeConfigsForNodeParams{
+		TenantID: tenantID,
+		NodeID:   nodeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ProviderNativeConfigRecord, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, providerNativeConfigFromQuery(row))
+	}
+	return out, nil
+}
+
+func (r *PgRepository) GetProviderNativeConfig(ctx context.Context, tenantID uuid.UUID, nodeID, providerType, configKey string) (ProviderNativeConfigRecord, error) {
+	row, err := r.q.GetRuntimeProviderNativeConfig(ctx, queries.GetRuntimeProviderNativeConfigParams{
+		TenantID:     tenantID,
+		NodeID:       nodeID,
+		ProviderType: providerType,
+		ConfigKey:    configKey,
+	})
+	if err != nil {
+		return ProviderNativeConfigRecord{}, err
+	}
+	return providerNativeConfigFromQuery(row), nil
+}
+
+func providerNativeConfigFromQuery(row queries.RuntimeProviderNativeConfig) ProviderNativeConfigRecord {
+	return ProviderNativeConfigRecord{
+		ID:                 row.ID,
+		TenantID:           row.TenantID,
+		RuntimeNodeID:      row.RuntimeNodeID,
+		NodeID:             row.NodeID,
+		ProviderType:       row.ProviderType,
+		ConfigKey:          row.ConfigKey,
+		ResolvedPath:       textValue(row.ResolvedPath),
+		Format:             row.Format,
+		ManagedValues:      jsonMapFromBytes(row.ManagedValues),
+		FileContentHash:    textValue(row.FileContentHash),
+		ExistsOnNode:       row.ExistsOnNode,
+		Manageable:         row.Manageable,
+		UnmanageableReason: textValue(row.UnmanageableReason),
+		Source:             row.Source,
+		NodeMtime:          timePtrFromTimestamptz(row.NodeMtime),
+		SnapshotAt:         timeFromTimestamptz(row.SnapshotAt),
+		LastPulledAt:       timePtrFromTimestamptz(row.LastPulledAt),
+		LastPushedAt:       timePtrFromTimestamptz(row.LastPushedAt),
+		LastPushedBy:       uuidPtrFromNull(row.LastPushedBy),
+		CreatedAt:          timeFromTimestamptz(row.CreatedAt),
+		UpdatedAt:          timeFromTimestamptz(row.UpdatedAt),
+	}
+}
+
+func timestamptzFromTimePtr(t *time.Time) pgtype.Timestamptz {
+	if t == nil || t.IsZero() {
+		return pgtype.Timestamptz{Valid: false}
+	}
+	return timestamptzFromTime(*t)
+}
+
+func timePtrFromTimestamptz(value pgtype.Timestamptz) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	t := value.Time
+	return &t
+}
+
+func uuidToNull(id *uuid.UUID) uuid.NullUUID {
+	if id == nil || *id == uuid.Nil {
+		return uuid.NullUUID{}
+	}
+	return uuid.NullUUID{UUID: *id, Valid: true}
+}
+
+func uuidPtrFromNull(id uuid.NullUUID) *uuid.UUID {
+	if !id.Valid {
+		return nil
+	}
+	u := id.UUID
+	return &u
+}

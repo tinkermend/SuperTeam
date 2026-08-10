@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>项目管理首页布局方案</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+  <main class="content compare-page">
+    <div class="page-heading">
+      <div>
+        <span class="eyebrow">SuperTeam · 本地原型</span>
+        <h1>项目管理首页，两条明确的工作路径</h1>
+        <p class="subtitle">不是把现有 KPI、项目表和右栏重新排版，而是让首页先服务“人现在要不要做决策”或“运营现在该先看哪个项目”的不同目的。</p>
+      </div>
+    </div>
+
+    <section class="surface compare-intro">
+      <div class="intro-copy">
+        <span class="eyebrow">当前问题</span>
+        <h2>同一屏同时承担决策、扫读与运行回顾</h2>
+        <p>现状的“待我决策”在指标卡、项目行和右侧导轨重复出现；而项目生命周期、任务执行和人类决策又是不同层级，不能压成一个笼统状态。</p>
+      </div>
+      <div class="principles">
+        <div class="principle"><strong>首页只导流</strong><span>审批仍在收件箱或项目详情完成。</span></div>
+        <div class="principle"><strong>层级不混用</strong><span>生命周期、执行进展、人工信号分别表达。</span></div>
+        <div class="principle"><strong>表格仍是实底</strong><span>密集扫读不放入玻璃或装饰卡。</span></div>
+        <div class="principle"><strong>对象先于标识</strong><span>列表始终先显示项目名、当前动作和时间。</span></div>
+      </div>
+    </section>
+
+    <section class="concepts" aria-label="布局方案">
+      <a class="surface concept-card" href="decision-first.html">
+        <span class="letter">A</span>
+        <h2>决策优先工作台</h2>
+        <p>首屏先给负责人一个可快速清空的决策工作面，再给需要介入的项目队列。</p>
+        <ul>
+          <li>主对象：待我决策与阻塞动作</li>
+          <li>适合：负责人日启、决策积压明显</li>
+          <li>代价：完整项目比较放到第二屏</li>
+        </ul>
+        <span class="button-primary">查看方案 A <span aria-hidden="true">→</span></span>
+      </a>
+
+      <a class="surface concept-card b" href="portfolio-review.html">
+        <span class="letter">B</span>
+        <h2>组合检视工作台</h2>
+        <p>首屏先给运营人员一张可比较的项目组合表，以独立列拆开不同状态层级。</p>
+        <ul>
+          <li>主对象：项目组合与被选中的项目</li>
+          <li>适合：运营盯盘、项目数量增长</li>
+          <li>代价：决策导流不如方案 A 强</li>
+        </ul>
+        <span class="button-primary">查看方案 B <span aria-hidden="true">→</span></span>
+      </a>
+    </section>
+
+    <p class="footer-note">两张原型均复用当前 Soft-Flat 方向：中性底色、品牌蓝只用于强调、实底数据面、中文状态与稳定时间字段。示例数字仅沿用截图的展示口径，用于比较信息层级，并非接口数据。</p>
+  </main>
+</body>
+</html>

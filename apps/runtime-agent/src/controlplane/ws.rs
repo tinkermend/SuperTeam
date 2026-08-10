@@ -62,6 +62,9 @@ async fn run_command_loop_once(
         .insert("Authorization", authorization.clone());
 
     let (mut socket, _) = connect_async(request).await?;
+    // Handle each command on its own task so short-lived control-plane commands
+    // (e.g. provider native config pull/push) are not blocked behind a long
+    // start_session / workspace materialization that is still in handle_command.
     while let Some(message) = socket.next().await {
         let message = match message {
             Ok(message) => message,
@@ -74,15 +77,18 @@ async fn run_command_loop_once(
             continue;
         }
         let text = match message.to_text() {
-            Ok(text) => text,
+            Ok(text) => text.to_string(),
             Err(error) => {
                 eprintln!("Runtime command websocket text decode failed: {}", error);
                 continue;
             }
         };
-        if let Err(error) = handle_text_command(executor, text).await {
-            eprintln!("Runtime command handling failed: {}", error);
-        }
+        let executor = executor.clone();
+        tokio::spawn(async move {
+            if let Err(error) = handle_text_command(&executor, &text).await {
+                eprintln!("Runtime command handling failed: {}", error);
+            }
+        });
     }
     Ok(())
 }
@@ -223,7 +229,15 @@ mod tests {
             .join(team_id)
             .join("employees")
             .join(digital_employee_id);
-        assert!(agent_home_dir.is_dir());
+        // Commands are spawned concurrently; wait briefly for ensure_instance to finish.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while !agent_home_dir.is_dir() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(
+            agent_home_dir.is_dir(),
+            "expected ensure_instance to create agent home after concurrent command handling"
+        );
         assert!(!agent_home_dir.join("state").exists());
         assert!(!agent_home_dir.join("sessions").exists());
         assert!(!agent_home_dir.join("runs").exists());

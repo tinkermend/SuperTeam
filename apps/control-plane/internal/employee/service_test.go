@@ -2747,6 +2747,20 @@ func (r *memoryRepository) CreateRuntimeCommandReceipt(_ context.Context, req Cr
 	return nil
 }
 
+func (r *memoryRepository) UpdateCommandReceipt(_ context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error) {
+	receipt, ok := r.commandReceipts[req.CommandID]
+	if !ok || receipt.TenantID != req.TenantID {
+		return nil, ErrNotFound
+	}
+	receipt.Status = req.Status
+	receipt.Result = req.Result
+	receipt.ErrorMessage = req.ErrorMessage
+	receipt.UpdatedAt = time.Now().UTC()
+	now := receipt.UpdatedAt
+	receipt.CompletedAt = &now
+	return receipt, nil
+}
+
 func (r *memoryRepository) WaitForRuntimeCommandCompletion(ctx context.Context, tenantID uuid.UUID, commandID string, interval time.Duration) (*RuntimeCommandReceipt, error) {
 	if r.waitHook != nil {
 		return r.waitHook(ctx, tenantID, commandID, interval)

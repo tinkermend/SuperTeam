@@ -309,6 +309,20 @@ func (s *claimRuntimeService) ListRuntimeCapabilitiesForNode(ctx context.Context
 	return []runtime.RuntimeCapability{}, nil
 }
 
+func (s *claimRuntimeService) ListProviderNativeConfigs(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.ProviderNativeConfigListItem, error) {
+	return nil, nil
+}
+func (s *claimRuntimeService) GetProviderNativeConfigSnapshot(ctx context.Context, tenantID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigNotFound
+}
+func (s *claimRuntimeService) PullProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigOffline
+}
+func (s *claimRuntimeService) PushProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string, values map[string]any, expectedHash string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigOffline
+}
+
+
 type claimTaskService struct {
 	tasksByProvider map[string][]*task.Task
 	listedProviders []string

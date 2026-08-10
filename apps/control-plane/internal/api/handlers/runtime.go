@@ -33,6 +33,10 @@ type RuntimeService interface {
 	GetOverview(ctx context.Context, filter runtime.RuntimeOverviewFilter) (*runtime.RuntimeOverview, error)
 	ListRuntimeEvents(ctx context.Context, filter runtime.ListRuntimeEventsFilter) ([]runtime.RuntimeEvent, error)
 	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.RuntimeCapability, error)
+	ListProviderNativeConfigs(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.ProviderNativeConfigListItem, error)
+	GetProviderNativeConfigSnapshot(ctx context.Context, tenantID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error)
+	PullProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error)
+	PushProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string, values map[string]any, expectedHash string) (*runtime.ProviderNativeConfigDetail, error)
 }
 
 type Poller interface {

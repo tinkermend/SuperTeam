@@ -273,3 +273,55 @@ type ListRuntimeEventsParams struct {
 	Limit        int32
 	Offset       int32
 }
+
+// ProviderNativeConfigRepository persists managed-key snapshots for host provider configs.
+type ProviderNativeConfigRepository interface {
+	UpsertProviderNativeConfig(ctx context.Context, params UpsertProviderNativeConfigParams) (ProviderNativeConfigRecord, error)
+	ListProviderNativeConfigsForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]ProviderNativeConfigRecord, error)
+	GetProviderNativeConfig(ctx context.Context, tenantID uuid.UUID, nodeID, providerType, configKey string) (ProviderNativeConfigRecord, error)
+}
+
+type ProviderNativeConfigRecord struct {
+	ID                 uuid.UUID
+	TenantID           uuid.UUID
+	RuntimeNodeID      uuid.UUID
+	NodeID             string
+	ProviderType       string
+	ConfigKey          string
+	ResolvedPath       string
+	Format             string
+	ManagedValues      map[string]any
+	FileContentHash    string
+	ExistsOnNode       bool
+	Manageable         bool
+	UnmanageableReason string
+	Source             string
+	NodeMtime          *time.Time
+	SnapshotAt         time.Time
+	LastPulledAt       *time.Time
+	LastPushedAt       *time.Time
+	LastPushedBy       *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type UpsertProviderNativeConfigParams struct {
+	TenantID           uuid.UUID
+	RuntimeNodeID      uuid.UUID
+	NodeID             string
+	ProviderType       string
+	ConfigKey          string
+	ResolvedPath       string
+	Format             string
+	ManagedValues      map[string]any
+	FileContentHash    string
+	ExistsOnNode       bool
+	Manageable         bool
+	UnmanageableReason string
+	Source             string
+	NodeMtime          *time.Time
+	SnapshotAt         time.Time
+	LastPulledAt       *time.Time
+	LastPushedAt       *time.Time
+	LastPushedBy       *uuid.UUID
+}

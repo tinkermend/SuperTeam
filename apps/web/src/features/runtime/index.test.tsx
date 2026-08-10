@@ -150,7 +150,54 @@ function jsonResponse(body: unknown) {
 });
 }
 
-function createRuntimeFetcher() {
+const providerNativeListFixture = [
+  {
+    provider_type: "codex",
+    config_key: "model_profile",
+    resolved_path: "/Users/agent/.codex/config.toml",
+    format: "toml",
+    file_content_hash: "sha256:abc123def456",
+    exists_on_node: true,
+    manageable: true,
+    source: "pulled",
+    snapshot_at: "2026-06-05T03:22:00Z",
+    node_online: true
+  },
+  {
+    provider_type: "claude-code",
+    config_key: "auth",
+    format: "json",
+    exists_on_node: false,
+    manageable: false,
+    unmanageable_reason: "platform_keychain",
+    node_online: true
+  }
+];
+
+const providerNativeDetailFixture = {
+  provider_type: "codex",
+  config_key: "model_profile",
+  resolved_path: "/Users/agent/.codex/config.toml",
+  format: "toml",
+  managed_values: {
+    model: "gpt-5.6-terra",
+    model_provider: "custom",
+    "model_providers.custom.experimental_bearer_token": "sk-secret"
+  },
+  file_content_hash: "sha256:abc123def456",
+  exists_on_node: true,
+  manageable: true,
+  source: "pulled",
+  snapshot_at: "2026-06-05T03:22:00Z",
+  stale_hint: true,
+  node_online: true
+};
+
+function createRuntimeFetcher(options?: {
+  pullErrorText?: string;
+  pullStatus?: number;
+  snapshotDetail?: typeof providerNativeDetailFixture;
+}) {
   const requests: RuntimeRequest[] = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -172,7 +219,7 @@ function createRuntimeFetcher() {
         items: url.searchParams.get("severity") ? [] : runtimeOverviewFixture.recent_events,
         limit: Number(url.searchParams.get("limit") ?? 50),
         offset: Number(url.searchParams.get("offset") ?? 0)
-});
+      });
     }
 
     if (url.pathname === "/api/v1/runtime/enrollments" && method === "GET") {
@@ -186,7 +233,7 @@ function createRuntimeFetcher() {
       return jsonResponse({
         ...runtimeOverviewFixture.pending_enrollments[0],
         status: "approved"
-});
+      });
     }
 
     if (
@@ -196,13 +243,63 @@ function createRuntimeFetcher() {
       return jsonResponse({
         ...runtimeOverviewFixture.pending_enrollments[0],
         status: "rejected"
-});
+      });
+    }
+
+    if (
+      url.pathname === "/api/v1/runtime/nodes/prod-runtime-shanghai-01/provider-native-configs" &&
+      method === "GET"
+    ) {
+      return jsonResponse(providerNativeListFixture);
+    }
+
+    if (
+      url.pathname ===
+        "/api/v1/runtime/nodes/prod-runtime-shanghai-01/provider-native-configs/codex/model_profile" &&
+      method === "GET"
+    ) {
+      return jsonResponse(options?.snapshotDetail ?? providerNativeDetailFixture);
+    }
+
+    if (
+      url.pathname === "/api/v1/runtime/nodes/prod-runtime-shanghai-01/provider-native-configs/pull" &&
+      method === "POST"
+    ) {
+      if (options?.pullErrorText) {
+        return new Response(options.pullErrorText, {
+          headers: { "content-type": "text/plain" },
+          status: options.pullStatus ?? 500
+        });
+      }
+      return jsonResponse({
+        ...providerNativeDetailFixture,
+        stale_hint: false,
+        source: "pulled"
+      });
+    }
+
+    if (
+      url.pathname ===
+        "/api/v1/runtime/nodes/prod-runtime-shanghai-01/provider-native-configs/codex/model_profile" &&
+      method === "PUT"
+    ) {
+      return jsonResponse({
+        ...providerNativeDetailFixture,
+        stale_hint: false,
+        source: "pushed",
+        managed_values: {
+          ...providerNativeDetailFixture.managed_values,
+          ...(typeof request.body === "object" && request.body && "values" in request.body
+            ? (request.body as { values: Record<string, unknown> }).values
+            : {})
+        }
+      });
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: { "content-type": "application/json" },
       status: 404
-});
+    });
   }) as unknown as typeof fetch;
 
   return { fetcher, requests };
@@ -418,7 +515,7 @@ describe("RuntimeNodesView", () => {
         return new Response(JSON.stringify({ error: "该 Runtime 接入申请已被其他管理员处理" }), {
           headers: { "content-type": "application/json" },
           status: 409
-});
+        });
       }
 
       return fetcher(input, init);
@@ -432,5 +529,106 @@ describe("RuntimeNodesView", () => {
     await expect
       .element(screen.getByText("approve runtime enrollment request failed with status 409: 该 Runtime 接入申请已被其他管理员处理"))
       .toBeVisible();
+  });
+
+  it("auto-selects the online node and loads provider native config surfaces", async () => {
+    const { fetcher, requests } = createRuntimeFetcher();
+    const screen = await renderRuntimeNodesView(fetcher);
+
+    await expect.element(screen.getByTestId("provider-native-config-panel")).toBeVisible();
+    await expect.element(screen.getByText("Provider 原生配置")).toBeVisible();
+    await expect.element(screen.getByTestId("provider-native-surface-codex-model_profile")).toBeVisible();
+    await expect.element(screen.getByText("模型配置").first()).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "打开快照" }).first()).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "从节点拉取" }).first()).toBeVisible();
+
+    await vi.waitFor(() => {
+      expect(
+        requests.some(
+          (req) =>
+            req.method === "GET" &&
+            req.pathname === "/api/v1/runtime/nodes/prod-runtime-shanghai-01/provider-native-configs"
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("opens the snapshot sheet with managed fields and masked sensitive input", async () => {
+    const { fetcher, requests } = createRuntimeFetcher();
+    const screen = await renderRuntimeNodesView(fetcher);
+
+    const surface = screen.getByTestId("provider-native-surface-codex-model_profile");
+    await expect.element(surface).toBeVisible();
+    await userEvent.click(surface.getByRole("button", { name: "打开快照" }));
+
+    await expect.element(screen.getByTestId("provider-native-config-editor")).toBeVisible();
+    await expect.element(screen.getByText("codex / 模型配置", { exact: false })).toBeVisible();
+    await expect.element(screen.getByText("非实时快照", { exact: false })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "保存下发" })).toBeVisible();
+
+    await vi.waitFor(() => {
+      const editor = document.querySelector('[data-testid="provider-native-config-editor"]');
+      const modelInput = editor?.querySelector('input[value="gpt-5.6-terra"]');
+      expect(modelInput).toBeTruthy();
+      const passwordInputs = editor?.querySelectorAll('input[type="password"]') ?? [];
+      expect(passwordInputs.length).toBeGreaterThanOrEqual(1);
+    });
+
+    await vi.waitFor(() => {
+      expect(
+        requests.some(
+          (req) =>
+            req.method === "GET" &&
+            req.pathname ===
+              "/api/v1/runtime/nodes/prod-runtime-shanghai-01/provider-native-configs/codex/model_profile"
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("humanizes command-channel timeout when pull fails", async () => {
+    const { fetcher } = createRuntimeFetcher({
+      pullStatus: 500,
+      pullErrorText:
+        "provider native config command failed: timeout: context deadline exceeded"
+    });
+    const screen = await renderRuntimeNodesView(fetcher);
+
+    const surface = screen.getByTestId("provider-native-surface-codex-model_profile");
+    await expect.element(surface).toBeVisible();
+    await userEvent.click(surface.getByRole("button", { name: "从节点拉取" }));
+
+    await expect.element(screen.getByTestId("provider-native-config-error")).toBeVisible();
+    await expect
+      .element(
+        screen.getByText("节点命令通道超时。请确认 Runtime Agent 在线后重试「从节点拉取」。若仅需查看，可先「打开快照」。")
+      )
+      .toBeVisible();
+  });
+
+  it("pulls live config into the sheet editor", async () => {
+    const { fetcher, requests } = createRuntimeFetcher();
+    const screen = await renderRuntimeNodesView(fetcher);
+
+    const surface = screen.getByTestId("provider-native-surface-codex-model_profile");
+    await userEvent.click(surface.getByRole("button", { name: "从节点拉取" }));
+
+    await expect.element(screen.getByTestId("provider-native-config-editor")).toBeVisible();
+    await expect.element(screen.getByText("实时拉取", { exact: false })).toBeVisible();
+    await vi.waitFor(() => {
+      const editor = document.querySelector('[data-testid="provider-native-config-editor"]');
+      expect(editor?.querySelector('input[value="gpt-5.6-terra"]')).toBeTruthy();
+    });
+
+    await vi.waitFor(() => {
+      expect(
+        requests.some(
+          (req) =>
+            req.method === "POST" &&
+            req.pathname ===
+              "/api/v1/runtime/nodes/prod-runtime-shanghai-01/provider-native-configs/pull"
+        )
+      ).toBe(true);
+    });
   });
 });

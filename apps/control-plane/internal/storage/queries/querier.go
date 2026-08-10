@@ -402,6 +402,7 @@ type Querier interface {
 	GetRuntimeEnrollmentByNodeID(ctx context.Context, arg GetRuntimeEnrollmentByNodeIDParams) (RuntimeEnrollment, error)
 	GetRuntimeNode(ctx context.Context, nodeID string) (RuntimeNode, error)
 	GetRuntimeNodeByID(ctx context.Context, id uuid.UUID) (RuntimeNode, error)
+	GetRuntimeProviderNativeConfig(ctx context.Context, arg GetRuntimeProviderNativeConfigParams) (RuntimeProviderNativeConfig, error)
 	GetRuntimeToken(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetRuntimeTokenByNodeID(ctx context.Context, nodeID string) (AuthRuntimeToken, error)
 	GetScenarioTemplateByKey(ctx context.Context, arg GetScenarioTemplateByKeyParams) (ScenarioTemplate, error)
@@ -664,6 +665,7 @@ type Querier interface {
 	ListRuntimeNodesForTenant(ctx context.Context, arg ListRuntimeNodesForTenantParams) ([]RuntimeNode, error)
 	ListRuntimeNodesWithScopes(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeNodesWithScopesRow, error)
 	ListRuntimeProviderCapabilitiesForTenant(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderCapabilitiesForTenantRow, error)
+	ListRuntimeProviderNativeConfigsForNode(ctx context.Context, arg ListRuntimeProviderNativeConfigsForNodeParams) ([]RuntimeProviderNativeConfig, error)
 	ListRuntimeProviderOptionsForDigitalEmployeeCreate(ctx context.Context, arg ListRuntimeProviderOptionsForDigitalEmployeeCreateParams) ([]ListRuntimeProviderOptionsForDigitalEmployeeCreateRow, error)
 	// Team-less variant: no team governance, all providers/runtime nodes allowed.
 	ListRuntimeProviderOptionsForTeamLessCreate(ctx context.Context, tenantID uuid.UUID) ([]ListRuntimeProviderOptionsForTeamLessCreateRow, error)
@@ -939,6 +941,7 @@ type Querier interface {
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
 	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	UpsertRuntimeNodeForTenant(ctx context.Context, arg UpsertRuntimeNodeForTenantParams) (RuntimeNode, error)
+	UpsertRuntimeProviderNativeConfig(ctx context.Context, arg UpsertRuntimeProviderNativeConfigParams) (RuntimeProviderNativeConfig, error)
 	UpsertSystemConfigOverride(ctx context.Context, arg UpsertSystemConfigOverrideParams) (SystemConfigOverride, error)
 	UpsertUserProjectTeamScope(ctx context.Context, arg UpsertUserProjectTeamScopeParams) (UserProjectTeamScope, error)
 	UserHasActiveProjectTeamScope(ctx context.Context, arg UserHasActiveProjectTeamScopeParams) (bool, error)

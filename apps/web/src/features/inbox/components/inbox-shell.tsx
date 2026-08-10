@@ -118,6 +118,8 @@ type InboxShellProps = {
   onResetFilters: () => void;
   onSelectItem: (itemId: string | null) => void;
   onViewChange: (view: InboxViewMode) => void;
+  /** 决策弹窗关闭时递增：让列表把焦点还给选中行（键盘队列不断）。 */
+  refocusToken?: number;
   /** 选中态由父级持有，便于处理后自动前进与 SSE 清空语义分离。 */
   selectedItemId: string | null;
   streamConnection: InboxStreamConnection;
@@ -141,6 +143,7 @@ export function InboxShell({
   onResetFilters,
   onSelectItem,
   onViewChange,
+  refocusToken,
   selectedItemId,
   streamConnection,
   view
@@ -239,6 +242,7 @@ export function InboxShell({
                     onAction={onAction}
                     onClearSelection={() => onSelectItem(null)}
                     onSelect={(item) => onSelectItem(item.id)}
+                    refocusToken={refocusToken}
                     selectedItemId={selectedItemId}
                     sort={filters.sort ?? "risk"}
                     view={view}

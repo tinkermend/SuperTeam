@@ -597,6 +597,12 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		}
 	}
 	capabilityService := capability.NewService(capabilityRepository, credentialSealer)
+	// Provider 原生配置：敏感键加密 + 节点 command 编排 + writeback 落快照。
+	if credentialSealer != nil {
+		runtimeService.SetCredentialSealer(credentialSealer)
+	}
+	runtimeService.SetNativeConfigCommander(employee.NewNativeConfigCommanderAdapter(runtimeCommands, employeeRepository))
+	runWritebackService.WithProviderNativeConfigCommandHook(employee.NewProviderNativeConfigWritebackAdapter(runtimeService))
 
 	// The planning profile's capability view comes from the authoritative
 	// binding tables (team inheritance included), not from the retired

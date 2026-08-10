@@ -25,6 +25,12 @@ type InboxItemListProps = {
   onAction?: (item: InboxItem, action: InboxAction) => void;
   /** 列表排序档，影响分组/优先区（§4.4）。 */
   sort?: "risk" | "oldest" | string;
+  /**
+   * 决策弹窗关闭时由父级递增：把焦点还给选中行。
+   * Radix 的 return-focus-to-trigger 在此不适用——弹窗由行的 Enter 或行内 CTA
+   * 程序化打开，没有可归还的 trigger 元素，关闭后焦点会落到 body。
+   */
+  refocusToken?: number;
   view?: InboxViewMode;
 };
 
@@ -105,9 +111,12 @@ export function groupInboxItems(
   const sort = options.sort === "oldest" ? "oldest" : "risk";
 
   // 时间档：摊平列表，不渲染优先区与领域分组（§4.4.2）。
+  // label 留空：排序档已由列表头「N 项 · 按等待时长」表达，再出一个同名同计数的
+  // 分区表头就是相隔 40px 的重复——正是本 spec（D3/D4）要消除的那类冗余。
+  // 渲染侧据空 label 跳过表头，见 InboxItemList。
   if (sort === "oldest") {
     if (items.length === 0) return [];
-    return [{ key: "flat", label: "按等待时长", items }];
+    return [{ key: "flat", label: "", items }];
   }
 
   // 优先处理区：open + blocked/high，从领域分组中抽出不重复（§4.4.1 / U1 / U12）。
@@ -170,6 +179,7 @@ export function InboxItemList({
   selectedItemId,
   onAction,
   sort = "risk",
+  refocusToken = 0,
   view = "mine",
 }: InboxItemListProps) {
   const highRiskCount = items.filter(
@@ -201,6 +211,29 @@ export function InboxItemList({
     }
     el.focus({ preventScroll: false });
   }, [selectedItemId]);
+
+  // 弹窗关闭后把焦点还给选中行。上面那个 effect 只在 selectedItemId 变化时跑，
+  // 而「Enter 开弹窗 → Esc 取消」不改选中，于是焦点停在 body：再按 ↓/↑ 全无反应，
+  // 键盘队列就此断掉（实测 Esc 后需 Tab 穿过整个侧栏才能回到列表）。
+  // 逐帧重试：onOpenChange(false) 触发时 Radix 可能仍在收敛/归还焦点，
+  // 单帧不足以稳定命中；命中或帧数耗尽即停。
+  useEffect(() => {
+    if (!refocusToken || !selectedItemId) return;
+    let frame = 0;
+    let raf = 0;
+    const tick = () => {
+      const el = rowRefs.current.get(selectedItemId);
+      const active = document.activeElement;
+      if (el && active !== el && !(active instanceof HTMLElement && active.closest('[role="dialog"]'))) {
+        el.focus({ preventScroll: false });
+        return;
+      }
+      if (el && active === el) return;
+      if (frame++ < 6) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [refocusToken, selectedItemId]);
 
   function moveSelection(delta: number) {
     if (flatItems.length === 0) return;
@@ -431,11 +464,14 @@ export function InboxItemList({
       >
         {sections.map((section) => (
           <section key={section.key}>
-            {/* §6.1 领域分组表头(计划确认/执行放行/下游放行/验收签署/结项确认/异常处理);组内保持上游关注度排序。 */}
-            <div className="flex items-center justify-between gap-2 border-b border-line bg-card-soft/80 px-4 py-1.5 text-[11px] font-bold text-ink-2">
-              <span>{section.label}</span>
-              <span className="font-mono text-ink-3">{section.items.length}</span>
-            </div>
+            {/* §6.1 领域分组表头(计划确认/执行放行/下游放行/验收签署/结项确认/异常处理);组内保持上游关注度排序。
+                空 label = 摊平的时间档单分区，不出表头（避免与列表头同名同计数重复）。 */}
+            {section.label ? (
+              <div className="flex items-center justify-between gap-2 border-b border-line bg-card-soft/80 px-4 py-1.5 text-[11px] font-bold text-ink-2">
+                <span>{section.label}</span>
+                <span className="font-mono text-ink-3">{section.items.length}</span>
+              </div>
+            ) : null}
             {section.items.map(renderRow)}
           </section>
         ))}

@@ -272,11 +272,29 @@ impl RuntimeCommandExecutor {
             RuntimeCommandType::ValidateProjectWorkspace => {
                 self.handle_validate_project_workspace(command).await
             }
-            RuntimeCommandType::Unsupported(_) => Ok(RuntimeCommandOutcome {
-                command_id: command.id,
-                accepted: false,
-                run_id: None,
-            }),
+            RuntimeCommandType::ReadProviderNativeConfig => {
+                self.handle_read_provider_native_config(command).await
+            }
+            RuntimeCommandType::WriteProviderNativeConfig => {
+                self.handle_write_provider_native_config(command).await
+            }
+            RuntimeCommandType::Unsupported(name) => {
+                // Write a failed receipt so CP WaitForRuntimeCommandCompletion does not spin until timeout.
+                let message = format!("unsupported runtime command type: {name}");
+                let _ = self
+                    .write_command_failure_with_code(
+                        &command.id,
+                        message.clone(),
+                        "unsupported_command",
+                        "runtime",
+                    )
+                    .await;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: false,
+                    run_id: None,
+                })
+            }
         }
     }
 
@@ -918,6 +936,146 @@ impl RuntimeCommandExecutor {
         }
     }
 
+    async fn handle_read_provider_native_config(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        let request: crate::provider_native_config::ReadRequest =
+            match serde_json::from_value(command.payload.clone()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let message =
+                        format!("invalid read_provider_native_config command payload: {error}");
+                    self.write_command_failure_with_code(
+                        &command.id,
+                        message.clone(),
+                        "validation_error",
+                        "config",
+                    )
+                    .await?;
+                    return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
+                }
+            };
+        match crate::provider_native_config::read_config(
+            &request.provider_type,
+            &request.config_key,
+        ) {
+            Ok(result) => {
+                let transit = crate::provider_native_config::receipt_transit_result(&result);
+                let mut map = HashMap::new();
+                for (k, v) in transit {
+                    map.insert(k, v);
+                }
+                self.write_command_completed(
+                    &command.id,
+                    Some(format!(
+                        "read {}/{} from {}",
+                        result.provider_type, result.config_key, result.resolved_path
+                    )),
+                    Some(map),
+                )
+                .await?;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: true,
+                    run_id: None,
+                })
+            }
+            Err(error) => {
+                let message = error.to_string();
+                self.write_command_failure_with_code(
+                    &command.id,
+                    message,
+                    error.error_code(),
+                    "config",
+                )
+                .await?;
+                // Expected validation/unmanageable failures already wrote a terminal receipt;
+                // return accepted=false without Err so the command loop does not tear down WS.
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: false,
+                    run_id: None,
+                })
+            }
+        }
+    }
+
+    async fn handle_write_provider_native_config(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        let request: crate::provider_native_config::WriteRequest =
+            match serde_json::from_value(command.payload.clone()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let message =
+                        format!("invalid write_provider_native_config command payload: {error}");
+                    self.write_command_failure_with_code(
+                        &command.id,
+                        message.clone(),
+                        "validation_error",
+                        "config",
+                    )
+                    .await?;
+                    return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
+                }
+            };
+        match crate::provider_native_config::write_config(&request) {
+            Ok(result) => {
+                let transit = crate::provider_native_config::receipt_transit_result(&result);
+                let mut map = HashMap::new();
+                for (k, v) in transit {
+                    map.insert(k, v);
+                }
+                self.write_command_completed(
+                    &command.id,
+                    Some(format!(
+                        "wrote {}/{} to {}",
+                        result.provider_type, result.config_key, result.resolved_path
+                    )),
+                    Some(map),
+                )
+                .await?;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: true,
+                    run_id: None,
+                })
+            }
+            Err(error) => {
+                let message = error.to_string();
+                let mut result = HashMap::new();
+                if let crate::provider_native_config::ConfigError::Conflict { actual_hash } = &error
+                {
+                    result.insert(
+                        "actual_file_content_hash".to_string(),
+                        serde_json::Value::String(actual_hash.clone()),
+                    );
+                }
+                if let crate::provider_native_config::ConfigError::Unmanageable { reason } = &error {
+                    result.insert(
+                        "unmanageable_reason".to_string(),
+                        serde_json::Value::String(reason.clone()),
+                    );
+                }
+                self.write_command_failure_with_code_and_result(
+                    &command.id,
+                    message,
+                    error.error_code(),
+                    "config",
+                    if result.is_empty() { None } else { Some(result) },
+                )
+                .await?;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: false,
+                    run_id: None,
+                })
+            }
+        }
+    }
+
     fn ensure_instance_from_command(
         &self,
         command: &RuntimeCommand,
@@ -972,9 +1130,58 @@ impl RuntimeCommandExecutor {
         command_id: &str,
         error_message: String,
     ) -> anyhow::Result<()> {
+        self.write_command_failure_with_code(
+            command_id,
+            error_message,
+            "provider_failed",
+            "provider",
+        )
+        .await
+    }
+
+    async fn write_command_failure_with_code(
+        &self,
+        command_id: &str,
+        error_message: String,
+        error_code: &str,
+        error_family: &str,
+    ) -> anyhow::Result<()> {
+        self.write_command_failure_with_code_and_result(
+            command_id,
+            error_message,
+            error_code,
+            error_family,
+            None,
+        )
+        .await
+    }
+
+    async fn write_command_failure_with_code_and_result(
+        &self,
+        command_id: &str,
+        error_message: String,
+        error_code: &str,
+        error_family: &str,
+        result: Option<HashMap<String, serde_json::Value>>,
+    ) -> anyhow::Result<()> {
         if let Some(control_plane) = &self.control_plane {
             control_plane
-                .fail_runtime_command(command_id, &command_failed_terminal(error_message))
+                .fail_runtime_command(
+                    command_id,
+                    &RuntimeCommandTerminalWriteback {
+                        status: "failed".to_string(),
+                        summary: None,
+                        result,
+                        diagnostic: None,
+                        provider_session_external_id: None,
+                        session_state_patch: None,
+                        log_ref: None,
+                        raw_result_ref: None,
+                        error_message: Some(error_message),
+                        error_code: Some(error_code.to_string()),
+                        error_family: Some(error_family.to_string()),
+                    },
+                )
                 .await?;
         }
         Ok(())

@@ -18,11 +18,12 @@ const (
 )
 
 type DigitalEmployeeRunWritebackService struct {
-	repository            DigitalEmployeeRunRepository
-	audit                 AuditLogger
-	runtimeEventRecorders []RuntimeEventRecorder
-	executionLedger       ExecutionLedgerRecorder
-	projectWorkspaceHook  ProjectWorkspaceCommandHook
+	repository               DigitalEmployeeRunRepository
+	audit                    AuditLogger
+	runtimeEventRecorders    []RuntimeEventRecorder
+	executionLedger          ExecutionLedgerRecorder
+	projectWorkspaceHook     ProjectWorkspaceCommandHook
+	providerNativeConfigHook ProviderNativeConfigCommandHook
 }
 
 // ProjectWorkspaceCommandHook observes project_workspace command terminals
@@ -31,8 +32,18 @@ type ProjectWorkspaceCommandHook interface {
 	OnProjectWorkspaceCommandTerminal(ctx context.Context, receipt RuntimeCommandReceipt, success bool) error
 }
 
+// ProviderNativeConfigCommandHook persists encrypted managed-key snapshots from read/write terminals.
+type ProviderNativeConfigCommandHook interface {
+	OnProviderNativeConfigTerminal(ctx context.Context, receipt RuntimeCommandReceipt, terminal RuntimeCommandTerminalWriteback, success bool) error
+}
+
 func (s *DigitalEmployeeRunWritebackService) WithProjectWorkspaceCommandHook(hook ProjectWorkspaceCommandHook) *DigitalEmployeeRunWritebackService {
 	s.projectWorkspaceHook = hook
+	return s
+}
+
+func (s *DigitalEmployeeRunWritebackService) WithProviderNativeConfigCommandHook(hook ProviderNativeConfigCommandHook) *DigitalEmployeeRunWritebackService {
+	s.providerNativeConfigHook = hook
 	return s
 }
 
@@ -281,6 +292,43 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 			}
 			return false, nil, nil
 		}
+		// provider_native_config 读/写命令无关联 run：先加密落快照，receipt 不存 managed_values。
+		// 快照落库失败不得阻塞回执终态，否则 WaitForCompletion 一直 pending 直到调用方超时。
+		if receipt.ResourceType == "provider_native_config" {
+			if isTerminalReceiptStatus(receipt.Status) && receipt.Status != string(spec.status) {
+				return false, nil, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
+			}
+			success := string(spec.status) == string(DigitalEmployeeRunStatusCompleted)
+			receiptResult := terminalReceiptResult(terminal, spec.status)
+			// Never persist managed key values in receipts.
+			delete(receiptResult, "managed_values")
+			if nested, ok := receiptResult["result"].(map[string]any); ok {
+				delete(nested, "managed_values")
+			}
+			if s.providerNativeConfigHook != nil {
+				if hookErr := s.providerNativeConfigHook.OnProviderNativeConfigTerminal(ctx, *receipt, terminal, success); hookErr != nil {
+					// Keep command terminal so pull/push waiters unblock; surface snapshot error in result.
+					if receiptResult == nil {
+						receiptResult = map[string]any{}
+					}
+					receiptResult["snapshot_error"] = hookErr.Error()
+				}
+			}
+			errorMessage := terminal.ErrorMessage
+			if errorMessage == nil && spec.receiptErrorMsg != nil {
+				errorMessage = spec.receiptErrorMsg
+			}
+			if _, err := s.repository.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
+				TenantID:     identity.TenantID,
+				CommandID:    commandID,
+				Status:       string(spec.status),
+				Result:       receiptResult,
+				ErrorMessage: errorMessage,
+			}); err != nil {
+				return false, nil, fmt.Errorf("update provider native config command receipt: %w", err)
+			}
+			return false, nil, nil
+		}
 		// provision_instance 与 sync_workspace_files 命令均已退役:
 		// 不再存在任何合法的"无 run"命令回执。
 		return false, nil, fmt.Errorf("%w: command receipt does not belong to a digital employee run", ErrNotFound)
@@ -404,7 +452,7 @@ func (s *DigitalEmployeeRunWritebackService) loadCommandRun(ctx context.Context,
 	if errors.Is(err, ErrNotFound) && receipt.ResourceType == "digital_employee_run" && receipt.ResourceID != uuid.Nil {
 		run, err = s.repository.GetRunByID(ctx, identity.TenantID, receipt.ResourceID)
 	}
-	if errors.Is(err, ErrNotFound) && (receipt.ResourceType == "digital_employee_execution_instance" || receipt.ResourceType == "digital_employee_workspace_sync" || receipt.ResourceType == "project_workspace") {
+	if errors.Is(err, ErrNotFound) && (receipt.ResourceType == "digital_employee_execution_instance" || receipt.ResourceType == "digital_employee_workspace_sync" || receipt.ResourceType == "project_workspace" || receipt.ResourceType == "provider_native_config") {
 		return receipt, nil, nil
 	}
 	if err != nil {

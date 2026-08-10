@@ -2183,6 +2183,52 @@ type RuntimeNodeScope struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Runtime 节点上 Provider 原生配置的受管键快照（不含全文）；敏感键值 AES-GCM 加密后写入 managed_values
+type RuntimeProviderNativeConfig struct {
+	// 快照主键 UUID
+	ID uuid.UUID `json:"id"`
+	// 所属租户 ID
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 内部 runtime_nodes.id
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// 对外 node 字符串，冗余便于查询
+	NodeID string `json:"node_id"`
+	// Provider 类型：claude-code / opencode / codex
+	ProviderType string `json:"provider_type"`
+	// 逻辑配置面：model_profile / auth
+	ConfigKey string `json:"config_key"`
+	// 节点侧解析出的绝对路径（展示与审计；由节点回报）
+	ResolvedPath pgtype.Text `json:"resolved_path"`
+	// 文件格式：json 或 toml
+	Format string `json:"format"`
+	// 白名单内键值；敏感键值为 aesgcm:v1: 密文
+	ManagedValues []byte `json:"managed_values"`
+	// 整文件 sha256 指纹，用于乐观锁与漂移提示
+	FileContentHash pgtype.Text `json:"file_content_hash"`
+	// 上次探测/读写时文件是否存在
+	ExistsOnNode bool `json:"exists_on_node"`
+	// 该平台该面是否可经文件管理
+	Manageable bool `json:"manageable"`
+	// manageable=false 时的原因码
+	UnmanageableReason pgtype.Text `json:"unmanageable_reason"`
+	// 快照来源：pulled 或 pushed
+	Source string `json:"source"`
+	// 节点侧文件 mtime（可选）
+	NodeMtime pgtype.Timestamptz `json:"node_mtime"`
+	// 快照生成时间
+	SnapshotAt pgtype.Timestamptz `json:"snapshot_at"`
+	// 最近一次成功拉取时间
+	LastPulledAt pgtype.Timestamptz `json:"last_pulled_at"`
+	// 最近一次成功下发时间
+	LastPushedAt pgtype.Timestamptz `json:"last_pushed_at"`
+	// 最近一次下发操作者用户 ID
+	LastPushedBy uuid.NullUUID `json:"last_pushed_by"`
+	// 行创建时间
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 行更新时间
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Runtime Agent 短期会话表
 type RuntimeSession struct {
 	// Runtime 会话主键 UUID

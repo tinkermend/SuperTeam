@@ -802,6 +802,24 @@ func (r *PgRepository) WaitForRuntimeCommandCompletion(ctx context.Context, tena
 	}
 }
 
+func (r *PgRepository) UpdateCommandReceipt(ctx context.Context, req UpdateRuntimeCommandReceiptRequest) (*RuntimeCommandReceipt, error) {
+	result, err := nullableJSONBytesFromMap(req.Result, "result")
+	if err != nil {
+		return nil, err
+	}
+	receipt, err := r.q.UpdateRuntimeCommandReceiptStatus(ctx, queries.UpdateRuntimeCommandReceiptStatusParams{
+		Status:       req.Status,
+		Result:       result,
+		ErrorMessage: textFromPtr(req.ErrorMessage),
+		TenantID:     req.TenantID,
+		CommandID:    req.CommandID,
+	})
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return runtimeCommandReceiptFromQuery(receipt), nil
+}
+
 func (r *PgRepository) ListEnvironmentVariables(ctx context.Context, req ListEnvironmentVariablesRequest) ([]EnvironmentVariableRecord, error) {
 	store, err := r.envSQLStore()
 	if err != nil {

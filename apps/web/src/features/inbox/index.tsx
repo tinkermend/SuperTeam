@@ -108,6 +108,8 @@ export function InboxView({
   }));
   const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  // 弹窗关闭（取消或提交完成）后递增，触发列表把焦点还给选中行。
+  const [refocusToken, setRefocusToken] = useState(0);
   // 提交按事项并行:记录在飞事项 id,弹窗仅在"当前事项在飞"时置提交中,不同事项互不阻塞。
   const [pendingItemIds, setPendingItemIds] = useState<ReadonlySet<string>>(() => new Set());
   // 弹窗已切走或关闭后失败的后台提交,升级到页面横幅提示,不静默丢失。
@@ -245,6 +247,7 @@ export function InboxView({
           onSortChange?.("risk");
         }}
         onSelectItem={setSelectedItemId}
+        refocusToken={refocusToken}
         onViewChange={(nextView) => {
           setView(nextView);
           // 目标用户筛选仅团队视图有意义；切回我的待办时清掉。
@@ -268,6 +271,9 @@ export function InboxView({
           // 提交中也允许关闭:提交在后台继续,结果由 onSuccess/onError 按事项归属处理。
           if (!open) {
             setSelectedAction(null);
+            // 焦点归还：Radix 无 trigger 可归还（弹窗由行 Enter / 行内 CTA 程序化
+            // 打开），不还则焦点落 body，键盘队列断掉。取消与提交后都要还。
+            setRefocusToken((n) => n + 1);
           }
         }}
         onSubmit={(input) => {

@@ -797,6 +797,119 @@ paths:
                 $ref: "#/components/schemas/RuntimeSession"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/runtime/nodes/{nodeId}/provider-native-configs:
+    get:
+      operationId: listProviderNativeConfigs
+      summary: List provider-native config surfaces for a Runtime node (no managed values)
+      parameters:
+        - $ref: "#/components/parameters/NodeId"
+      responses:
+        "200":
+          description: Provider native config list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProviderNativeConfigListItem"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/runtime/nodes/{nodeId}/provider-native-configs/pull:
+    post:
+      operationId: pullProviderNativeConfig
+      summary: Pull managed keys from a live Runtime node and upsert snapshot
+      parameters:
+        - $ref: "#/components/parameters/NodeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PullProviderNativeConfigRequest"
+      responses:
+        "200":
+          description: Live managed keys after pull
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderNativeConfigDetail"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
+  /api/v1/runtime/nodes/{nodeId}/provider-native-configs/{providerType}/{configKey}:
+    get:
+      operationId: getProviderNativeConfig
+      summary: Get provider-native config snapshot (may be stale; includes managed values)
+      parameters:
+        - $ref: "#/components/parameters/NodeId"
+        - name: providerType
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: configKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Provider native config snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderNativeConfigDetail"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: putProviderNativeConfig
+      summary: Push managed key changes to a live Runtime node
+      parameters:
+        - $ref: "#/components/parameters/NodeId"
+        - name: providerType
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: configKey
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutProviderNativeConfigRequest"
+      responses:
+        "200":
+          description: Updated managed keys after push
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderNativeConfigDetail"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "422":
+          $ref: "#/components/responses/Error"
   /api/v1/runtime/nodes/{nodeId}/capabilities:
     get:
       operationId: listRuntimeCapabilitiesForNode
@@ -7505,6 +7618,8 @@ components:
         - command_failed
         - command_cancelled
         - command_timed_out
+        - provider_native_config_pull
+        - provider_native_config_push
     RuntimeEventSeverity:
       type: string
       enum:
@@ -7526,6 +7641,115 @@ components:
         - runtime_capability
         - runtime_command
         - provider_session
+        - provider_native_config
+    ProviderNativeConfigListItem:
+      type: object
+      required:
+        - provider_type
+        - config_key
+        - exists_on_node
+        - manageable
+        - node_online
+      properties:
+        provider_type:
+          type: string
+        config_key:
+          type: string
+        resolved_path:
+          type: string
+        format:
+          type: string
+          enum: [json, toml]
+        file_content_hash:
+          type: string
+        exists_on_node:
+          type: boolean
+        manageable:
+          type: boolean
+        unmanageable_reason:
+          type: string
+        source:
+          type: string
+          enum: [pulled, pushed]
+        snapshot_at:
+          type: string
+          format: date-time
+        last_pulled_at:
+          type: string
+          format: date-time
+        last_pushed_at:
+          type: string
+          format: date-time
+        node_online:
+          type: boolean
+    ProviderNativeConfigDetail:
+      type: object
+      required:
+        - provider_type
+        - config_key
+        - managed_values
+        - exists_on_node
+        - manageable
+        - stale_hint
+        - node_online
+      properties:
+        provider_type:
+          type: string
+        config_key:
+          type: string
+        resolved_path:
+          type: string
+        format:
+          type: string
+          enum: [json, toml]
+        managed_values:
+          type: object
+          additionalProperties: true
+        file_content_hash:
+          type: string
+        exists_on_node:
+          type: boolean
+        manageable:
+          type: boolean
+        unmanageable_reason:
+          type: string
+        source:
+          type: string
+          enum: [pulled, pushed]
+        snapshot_at:
+          type: string
+          format: date-time
+        stale_hint:
+          type: boolean
+        node_online:
+          type: boolean
+        last_pulled_at:
+          type: string
+          format: date-time
+        last_pushed_at:
+          type: string
+          format: date-time
+    PullProviderNativeConfigRequest:
+      type: object
+      required:
+        - provider_type
+        - config_key
+      properties:
+        provider_type:
+          type: string
+        config_key:
+          type: string
+    PutProviderNativeConfigRequest:
+      type: object
+      required:
+        - values
+        - expected_file_content_hash
+      properties:
+        values:
+          type: object
+          additionalProperties: true
+        expected_file_content_hash:
+          type: string
     RuntimeEvent:
       type: object
       required:

@@ -2187,6 +2187,78 @@ func (e ProjectTaskGraphHandoffDeliverableVerdict) Valid() bool {
 	}
 }
 
+// Defines values for ProviderNativeConfigDetailFormat.
+const (
+	ProviderNativeConfigDetailFormatJson ProviderNativeConfigDetailFormat = "json"
+	ProviderNativeConfigDetailFormatToml ProviderNativeConfigDetailFormat = "toml"
+)
+
+// Valid indicates whether the value is a known member of the ProviderNativeConfigDetailFormat enum.
+func (e ProviderNativeConfigDetailFormat) Valid() bool {
+	switch e {
+	case ProviderNativeConfigDetailFormatJson:
+		return true
+	case ProviderNativeConfigDetailFormatToml:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderNativeConfigDetailSource.
+const (
+	ProviderNativeConfigDetailSourcePulled ProviderNativeConfigDetailSource = "pulled"
+	ProviderNativeConfigDetailSourcePushed ProviderNativeConfigDetailSource = "pushed"
+)
+
+// Valid indicates whether the value is a known member of the ProviderNativeConfigDetailSource enum.
+func (e ProviderNativeConfigDetailSource) Valid() bool {
+	switch e {
+	case ProviderNativeConfigDetailSourcePulled:
+		return true
+	case ProviderNativeConfigDetailSourcePushed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderNativeConfigListItemFormat.
+const (
+	ProviderNativeConfigListItemFormatJson ProviderNativeConfigListItemFormat = "json"
+	ProviderNativeConfigListItemFormatToml ProviderNativeConfigListItemFormat = "toml"
+)
+
+// Valid indicates whether the value is a known member of the ProviderNativeConfigListItemFormat enum.
+func (e ProviderNativeConfigListItemFormat) Valid() bool {
+	switch e {
+	case ProviderNativeConfigListItemFormatJson:
+		return true
+	case ProviderNativeConfigListItemFormatToml:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderNativeConfigListItemSource.
+const (
+	ProviderNativeConfigListItemSourcePulled ProviderNativeConfigListItemSource = "pulled"
+	ProviderNativeConfigListItemSourcePushed ProviderNativeConfigListItemSource = "pushed"
+)
+
+// Valid indicates whether the value is a known member of the ProviderNativeConfigListItemSource enum.
+func (e ProviderNativeConfigListItemSource) Valid() bool {
+	switch e {
+	case ProviderNativeConfigListItemSourcePulled:
+		return true
+	case ProviderNativeConfigListItemSourcePushed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RequestPrivilegedRoleRequestRequestedRole.
 const (
 	RequestPrivilegedRoleRequestRequestedRoleAdmin    RequestPrivilegedRoleRequestRequestedRole = "admin"
@@ -2420,16 +2492,19 @@ func (e RuntimeEventSeverity) Valid() bool {
 
 // Defines values for RuntimeEventSource.
 const (
-	RuntimeEventSourceProviderSession   RuntimeEventSource = "provider_session"
-	RuntimeEventSourceRuntimeCapability RuntimeEventSource = "runtime_capability"
-	RuntimeEventSourceRuntimeCommand    RuntimeEventSource = "runtime_command"
-	RuntimeEventSourceRuntimeEnrollment RuntimeEventSource = "runtime_enrollment"
-	RuntimeEventSourceRuntimeNode       RuntimeEventSource = "runtime_node"
+	RuntimeEventSourceProviderNativeConfig RuntimeEventSource = "provider_native_config"
+	RuntimeEventSourceProviderSession      RuntimeEventSource = "provider_session"
+	RuntimeEventSourceRuntimeCapability    RuntimeEventSource = "runtime_capability"
+	RuntimeEventSourceRuntimeCommand       RuntimeEventSource = "runtime_command"
+	RuntimeEventSourceRuntimeEnrollment    RuntimeEventSource = "runtime_enrollment"
+	RuntimeEventSourceRuntimeNode          RuntimeEventSource = "runtime_node"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeEventSource enum.
 func (e RuntimeEventSource) Valid() bool {
 	switch e {
+	case RuntimeEventSourceProviderNativeConfig:
+		return true
 	case RuntimeEventSourceProviderSession:
 		return true
 	case RuntimeEventSourceRuntimeCapability:
@@ -2447,19 +2522,21 @@ func (e RuntimeEventSource) Valid() bool {
 
 // Defines values for RuntimeEventType.
 const (
-	CapabilityDegraded  RuntimeEventType = "capability_degraded"
-	CapabilityReported  RuntimeEventType = "capability_reported"
-	CommandCancelled    RuntimeEventType = "command_cancelled"
-	CommandCompleted    RuntimeEventType = "command_completed"
-	CommandEvent        RuntimeEventType = "command_event"
-	CommandFailed       RuntimeEventType = "command_failed"
-	CommandTimedOut     RuntimeEventType = "command_timed_out"
-	EnrollmentApproved  RuntimeEventType = "enrollment_approved"
-	EnrollmentRejected  RuntimeEventType = "enrollment_rejected"
-	EnrollmentRequested RuntimeEventType = "enrollment_requested"
-	EnrollmentRevoked   RuntimeEventType = "enrollment_revoked"
-	NodeOffline         RuntimeEventType = "node_offline"
-	NodeOnline          RuntimeEventType = "node_online"
+	CapabilityDegraded       RuntimeEventType = "capability_degraded"
+	CapabilityReported       RuntimeEventType = "capability_reported"
+	CommandCancelled         RuntimeEventType = "command_cancelled"
+	CommandCompleted         RuntimeEventType = "command_completed"
+	CommandEvent             RuntimeEventType = "command_event"
+	CommandFailed            RuntimeEventType = "command_failed"
+	CommandTimedOut          RuntimeEventType = "command_timed_out"
+	EnrollmentApproved       RuntimeEventType = "enrollment_approved"
+	EnrollmentRejected       RuntimeEventType = "enrollment_rejected"
+	EnrollmentRequested      RuntimeEventType = "enrollment_requested"
+	EnrollmentRevoked        RuntimeEventType = "enrollment_revoked"
+	NodeOffline              RuntimeEventType = "node_offline"
+	NodeOnline               RuntimeEventType = "node_online"
+	ProviderNativeConfigPull RuntimeEventType = "provider_native_config_pull"
+	ProviderNativeConfigPush RuntimeEventType = "provider_native_config_push"
 )
 
 // Valid indicates whether the value is a known member of the RuntimeEventType enum.
@@ -2490,6 +2567,10 @@ func (e RuntimeEventType) Valid() bool {
 	case NodeOffline:
 		return true
 	case NodeOnline:
+		return true
+	case ProviderNativeConfigPull:
+		return true
+	case ProviderNativeConfigPush:
 		return true
 	default:
 		return false
@@ -6541,6 +6622,54 @@ type PromptTemplateVariable struct {
 	Type        *string   `json:"type,omitempty"`
 }
 
+// ProviderNativeConfigDetail defines model for ProviderNativeConfigDetail.
+type ProviderNativeConfigDetail struct {
+	ConfigKey          string                            `json:"config_key"`
+	ExistsOnNode       bool                              `json:"exists_on_node"`
+	FileContentHash    *string                           `json:"file_content_hash,omitempty"`
+	Format             *ProviderNativeConfigDetailFormat `json:"format,omitempty"`
+	LastPulledAt       *time.Time                        `json:"last_pulled_at,omitempty"`
+	LastPushedAt       *time.Time                        `json:"last_pushed_at,omitempty"`
+	Manageable         bool                              `json:"manageable"`
+	ManagedValues      map[string]interface{}            `json:"managed_values"`
+	NodeOnline         bool                              `json:"node_online"`
+	ProviderType       string                            `json:"provider_type"`
+	ResolvedPath       *string                           `json:"resolved_path,omitempty"`
+	SnapshotAt         *time.Time                        `json:"snapshot_at,omitempty"`
+	Source             *ProviderNativeConfigDetailSource `json:"source,omitempty"`
+	StaleHint          bool                              `json:"stale_hint"`
+	UnmanageableReason *string                           `json:"unmanageable_reason,omitempty"`
+}
+
+// ProviderNativeConfigDetailFormat defines model for ProviderNativeConfigDetail.Format.
+type ProviderNativeConfigDetailFormat string
+
+// ProviderNativeConfigDetailSource defines model for ProviderNativeConfigDetail.Source.
+type ProviderNativeConfigDetailSource string
+
+// ProviderNativeConfigListItem defines model for ProviderNativeConfigListItem.
+type ProviderNativeConfigListItem struct {
+	ConfigKey          string                              `json:"config_key"`
+	ExistsOnNode       bool                                `json:"exists_on_node"`
+	FileContentHash    *string                             `json:"file_content_hash,omitempty"`
+	Format             *ProviderNativeConfigListItemFormat `json:"format,omitempty"`
+	LastPulledAt       *time.Time                          `json:"last_pulled_at,omitempty"`
+	LastPushedAt       *time.Time                          `json:"last_pushed_at,omitempty"`
+	Manageable         bool                                `json:"manageable"`
+	NodeOnline         bool                                `json:"node_online"`
+	ProviderType       string                              `json:"provider_type"`
+	ResolvedPath       *string                             `json:"resolved_path,omitempty"`
+	SnapshotAt         *time.Time                          `json:"snapshot_at,omitempty"`
+	Source             *ProviderNativeConfigListItemSource `json:"source,omitempty"`
+	UnmanageableReason *string                             `json:"unmanageable_reason,omitempty"`
+}
+
+// ProviderNativeConfigListItemFormat defines model for ProviderNativeConfigListItem.Format.
+type ProviderNativeConfigListItemFormat string
+
+// ProviderNativeConfigListItemSource defines model for ProviderNativeConfigListItem.Source.
+type ProviderNativeConfigListItemSource string
+
 // ProviderSession defines model for ProviderSession.
 type ProviderSession struct {
 	ClosedAt            *time.Time              `json:"closed_at,omitempty"`
@@ -6586,6 +6715,12 @@ type ProviderSessionEvent0 = interface{}
 // ProviderSessionEvent1 defines model for .
 type ProviderSessionEvent1 = interface{}
 
+// PullProviderNativeConfigRequest defines model for PullProviderNativeConfigRequest.
+type PullProviderNativeConfigRequest struct {
+	ConfigKey    string `json:"config_key"`
+	ProviderType string `json:"provider_type"`
+}
+
 // PushTaskEventsRequest defines model for PushTaskEventsRequest.
 type PushTaskEventsRequest struct {
 	Events []map[string]interface{} `json:"events"`
@@ -6613,6 +6748,12 @@ type PutProjectSkillBindingsRequest struct {
 	Items []struct {
 		SkillId openapi_types.UUID `json:"skill_id"`
 	} `json:"items"`
+}
+
+// PutProviderNativeConfigRequest defines model for PutProviderNativeConfigRequest.
+type PutProviderNativeConfigRequest struct {
+	ExpectedFileContentHash string                 `json:"expected_file_content_hash"`
+	Values                  map[string]interface{} `json:"values"`
 }
 
 // ReassignDigitalEmployeeTeamRequest defines model for ReassignDigitalEmployeeTeamRequest.
@@ -8672,6 +8813,12 @@ type HeartbeatRuntimeNodeJSONRequestBody = RuntimeHeartbeatRequest
 // UpsertRuntimeCapabilitiesJSONRequestBody defines body for UpsertRuntimeCapabilities for application/json ContentType.
 type UpsertRuntimeCapabilitiesJSONRequestBody = RuntimeCapabilityReportRequest
 
+// PullProviderNativeConfigJSONRequestBody defines body for PullProviderNativeConfig for application/json ContentType.
+type PullProviderNativeConfigJSONRequestBody = PullProviderNativeConfigRequest
+
+// PutProviderNativeConfigJSONRequestBody defines body for PutProviderNativeConfig for application/json ContentType.
+type PutProviderNativeConfigJSONRequestBody = PutProviderNativeConfigRequest
+
 // RecordProjectTaskAttemptBudgetHeartbeatJSONRequestBody defines body for RecordProjectTaskAttemptBudgetHeartbeat for application/json ContentType.
 type RecordProjectTaskAttemptBudgetHeartbeatJSONRequestBody = RecordProjectTaskAttemptBudgetHeartbeatRequest
 
@@ -9936,6 +10083,18 @@ type ServerInterface interface {
 	// Upsert capabilities reported by a Runtime Agent node
 	// (PUT /api/v1/runtime/nodes/{nodeId}/capabilities)
 	UpsertRuntimeCapabilities(w http.ResponseWriter, r *http.Request, nodeId NodeId, params UpsertRuntimeCapabilitiesParams)
+	// List provider-native config surfaces for a Runtime node (no managed values)
+	// (GET /api/v1/runtime/nodes/{nodeId}/provider-native-configs)
+	ListProviderNativeConfigs(w http.ResponseWriter, r *http.Request, nodeId NodeId)
+	// Pull managed keys from a live Runtime node and upsert snapshot
+	// (POST /api/v1/runtime/nodes/{nodeId}/provider-native-configs/pull)
+	PullProviderNativeConfig(w http.ResponseWriter, r *http.Request, nodeId NodeId)
+	// Get provider-native config snapshot (may be stale; includes managed values)
+	// (GET /api/v1/runtime/nodes/{nodeId}/provider-native-configs/{providerType}/{configKey})
+	GetProviderNativeConfig(w http.ResponseWriter, r *http.Request, nodeId NodeId, providerType string, configKey string)
+	// Push managed key changes to a live Runtime node
+	// (PUT /api/v1/runtime/nodes/{nodeId}/provider-native-configs/{providerType}/{configKey})
+	PutProviderNativeConfig(w http.ResponseWriter, r *http.Request, nodeId NodeId, providerType string, configKey string)
 	// Get Runtime Agent fleet overview
 	// (GET /api/v1/runtime/overview)
 	GetRuntimeOverview(w http.ResponseWriter, r *http.Request)
@@ -11229,6 +11388,30 @@ func (_ Unimplemented) ListRuntimeCapabilitiesForNode(w http.ResponseWriter, r *
 // Upsert capabilities reported by a Runtime Agent node
 // (PUT /api/v1/runtime/nodes/{nodeId}/capabilities)
 func (_ Unimplemented) UpsertRuntimeCapabilities(w http.ResponseWriter, r *http.Request, nodeId NodeId, params UpsertRuntimeCapabilitiesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List provider-native config surfaces for a Runtime node (no managed values)
+// (GET /api/v1/runtime/nodes/{nodeId}/provider-native-configs)
+func (_ Unimplemented) ListProviderNativeConfigs(w http.ResponseWriter, r *http.Request, nodeId NodeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Pull managed keys from a live Runtime node and upsert snapshot
+// (POST /api/v1/runtime/nodes/{nodeId}/provider-native-configs/pull)
+func (_ Unimplemented) PullProviderNativeConfig(w http.ResponseWriter, r *http.Request, nodeId NodeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get provider-native config snapshot (may be stale; includes managed values)
+// (GET /api/v1/runtime/nodes/{nodeId}/provider-native-configs/{providerType}/{configKey})
+func (_ Unimplemented) GetProviderNativeConfig(w http.ResponseWriter, r *http.Request, nodeId NodeId, providerType string, configKey string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Push managed key changes to a live Runtime node
+// (PUT /api/v1/runtime/nodes/{nodeId}/provider-native-configs/{providerType}/{configKey})
+func (_ Unimplemented) PutProviderNativeConfig(w http.ResponseWriter, r *http.Request, nodeId NodeId, providerType string, configKey string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -18041,6 +18224,146 @@ func (siw *ServerInterfaceWrapper) UpsertRuntimeCapabilities(w http.ResponseWrit
 	handler.ServeHTTP(w, r)
 }
 
+// ListProviderNativeConfigs operation middleware
+func (siw *ServerInterfaceWrapper) ListProviderNativeConfigs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "nodeId" -------------
+	var nodeId NodeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "nodeId", chi.URLParam(r, "nodeId"), &nodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "nodeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProviderNativeConfigs(w, r, nodeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PullProviderNativeConfig operation middleware
+func (siw *ServerInterfaceWrapper) PullProviderNativeConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "nodeId" -------------
+	var nodeId NodeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "nodeId", chi.URLParam(r, "nodeId"), &nodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "nodeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PullProviderNativeConfig(w, r, nodeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProviderNativeConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetProviderNativeConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "nodeId" -------------
+	var nodeId NodeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "nodeId", chi.URLParam(r, "nodeId"), &nodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "nodeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "providerType" -------------
+	var providerType string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "providerType", chi.URLParam(r, "providerType"), &providerType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "providerType", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "configKey" -------------
+	var configKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "configKey", chi.URLParam(r, "configKey"), &configKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "configKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProviderNativeConfig(w, r, nodeId, providerType, configKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutProviderNativeConfig operation middleware
+func (siw *ServerInterfaceWrapper) PutProviderNativeConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "nodeId" -------------
+	var nodeId NodeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "nodeId", chi.URLParam(r, "nodeId"), &nodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "nodeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "providerType" -------------
+	var providerType string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "providerType", chi.URLParam(r, "providerType"), &providerType, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "providerType", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "configKey" -------------
+	var configKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "configKey", chi.URLParam(r, "configKey"), &configKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "configKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutProviderNativeConfig(w, r, nodeId, providerType, configKey)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetRuntimeOverview operation middleware
 func (siw *ServerInterfaceWrapper) GetRuntimeOverview(w http.ResponseWriter, r *http.Request) {
 
@@ -20998,6 +21321,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/runtime/nodes/{nodeId}/capabilities", wrapper.UpsertRuntimeCapabilities)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/runtime/nodes/{nodeId}/provider-native-configs", wrapper.ListProviderNativeConfigs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/runtime/nodes/{nodeId}/provider-native-configs/pull", wrapper.PullProviderNativeConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/runtime/nodes/{nodeId}/provider-native-configs/{providerType}/{configKey}", wrapper.GetProviderNativeConfig)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v1/runtime/nodes/{nodeId}/provider-native-configs/{providerType}/{configKey}", wrapper.PutProviderNativeConfig)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/runtime/overview", wrapper.GetRuntimeOverview)

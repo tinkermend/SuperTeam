@@ -11,6 +11,7 @@ pub mod mcp_config;
 pub mod platform_limits;
 pub mod project_session;
 pub mod project_workspace;
+pub mod provider_native_config;
 pub mod providers;
 pub mod raw_log;
 pub mod redaction;

@@ -52,6 +52,8 @@ type Service struct {
 	sessionTTLResolver       SessionTTLResolver
 	heartbeatTimeoutResolver HeartbeatTimeoutResolver
 	platformLimitsResolver   PlatformLimitsResolver
+	sealer                   CredentialSealer
+	nativeConfigCommander    NativeConfigCommander
 }
 
 type RequiredToolsResolver interface {

@@ -224,6 +224,8 @@ const (
 	RuntimeEventCommandFailed       RuntimeEventType = "command_failed"
 	RuntimeEventCommandCancelled    RuntimeEventType = "command_cancelled"
 	RuntimeEventCommandTimedOut     RuntimeEventType = "command_timed_out"
+	RuntimeEventProviderNativeConfigPull RuntimeEventType = "provider_native_config_pull"
+	RuntimeEventProviderNativeConfigPush RuntimeEventType = "provider_native_config_push"
 )
 
 const (
@@ -239,6 +241,7 @@ const (
 	RuntimeEventSourceCapability     RuntimeEventSource = "runtime_capability"
 	RuntimeEventSourceRuntimeCommand RuntimeEventSource = "runtime_command"
 	RuntimeEventSourceProvider       RuntimeEventSource = "provider_session"
+	RuntimeEventSourceProviderNativeConfig RuntimeEventSource = "provider_native_config"
 )
 
 func (t RuntimeEventType) IsValid() bool {
@@ -255,7 +258,9 @@ func (t RuntimeEventType) IsValid() bool {
 		RuntimeEventCommandCompleted,
 		RuntimeEventCommandFailed,
 		RuntimeEventCommandCancelled,
-		RuntimeEventCommandTimedOut:
+		RuntimeEventCommandTimedOut,
+		RuntimeEventProviderNativeConfigPull,
+		RuntimeEventProviderNativeConfigPush:
 		return true
 	}
 	return false
@@ -278,7 +283,8 @@ func (s RuntimeEventSource) IsValid() bool {
 		RuntimeEventSourceRuntimeNode,
 		RuntimeEventSourceCapability,
 		RuntimeEventSourceRuntimeCommand,
-		RuntimeEventSourceProvider:
+		RuntimeEventSourceProvider,
+		RuntimeEventSourceProviderNativeConfig:
 		return true
 	}
 	return false

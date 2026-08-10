@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>方案 C · 阶段泳道闭环 · 项目管理</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    /* C: 阶段泳道 — 按业务闭环阶段分栏，项目卡承载信号 */
+    .c-top {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: stretch;
+    }
+    .stage-summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .stage-sum {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 14px;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      overflow: hidden;
+    }
+    .stage-sum::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+    }
+    .stage-sum.s-decision::before { background: var(--danger); }
+    .stage-sum.s-accept::before { background: var(--info); }
+    .stage-sum.s-ready::before { background: var(--ok); }
+    .stage-sum.s-idle::before { background: var(--mute); }
+    .stage-sum .k {
+      font-size: 12px;
+      color: var(--ink-3);
+      font-weight: 600;
+    }
+    .stage-sum .v {
+      margin-top: 4px;
+      font-size: 26px;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+    }
+    .stage-sum .s {
+      margin-top: 2px;
+      font-size: 11.5px;
+      color: var(--ink-4);
+    }
+
+    .inbox-peek {
+      width: 280px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .inbox-peek .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, #fff5f4, #fff);
+    }
+    .inbox-peek .head h3 {
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .inbox-peek .head .n {
+      background: var(--danger);
+      color: #fff;
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .inbox-peek .row {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 550;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .inbox-peek .row:last-child { border-bottom: none; }
+    .inbox-peek .row .t {
+      flex: 1;
+      min-width: 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .inbox-peek .foot {
+      padding: 8px 12px;
+      border-top: 1px solid var(--line);
+      text-align: center;
+    }
+
+    .lanes {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+      min-height: 480px;
+    }
+    .lane {
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+    .lane-head {
+      padding: 12px 12px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 18px 18px 0 0;
+    }
+    .lane-head h2 {
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .lane-head .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .lane.decision .lane-head .dot { background: var(--danger); }
+    .lane.accept .lane-head .dot { background: var(--info); }
+    .lane.ready .lane-head .dot { background: var(--ok); }
+    .lane.idle .lane-head .dot { background: var(--mute); }
+    .lane-head .cnt {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-3);
+      background: var(--mute-soft);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-variant-numeric: tabular-nums;
+    }
+    .lane-body {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+    .lane-hint {
+      font-size: 11.5px;
+      color: var(--ink-4);
+      padding: 0 2px 2px;
+    }
+
+    .p-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: border-color .12s, box-shadow .12s, transform .12s;
+    }
+    .p-card:hover {
+      border-color: #c9d4f0;
+      box-shadow: var(--shadow);
+      transform: translateY(-1px);
+    }
+    .p-card.selected {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(47, 95, 255, 0.12);
+    }
+    .p-card .top {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .p-card .top .icon-tile {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      font-size: 13px;
+    }
+    .p-card h3 {
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .p-card .owner {
+      margin-top: 2px;
+      font-size: 11.5px;
+      color: var(--ink-4);
+    }
+    .flow-meter {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 3px;
+    }
+    .flow-meter .seg {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--mute-soft);
+    }
+    .flow-meter .seg.on-ok { background: var(--ok); }
+    .flow-meter .seg.on-info { background: var(--info); }
+    .flow-meter .seg.on-warn { background: var(--warn); }
+    .flow-meter .seg.on-danger { background: var(--danger); }
+    .flow-labels {
+      margin-top: 4px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2px;
+      font-size: 9.5px;
+      color: var(--ink-4);
+      text-align: center;
+    }
+    .signals {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .sig {
+      font-size: 11px;
+      font-weight: 650;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: var(--card-soft);
+      color: var(--ink-3);
+      border: 1px solid var(--line);
+    }
+    .sig.d { background: var(--danger-soft); color: var(--danger-text); border-color: transparent; }
+    .sig.w { background: var(--warn-soft); color: var(--warn-text); border-color: transparent; }
+    .sig.i { background: var(--info-soft); color: var(--info-text); border-color: transparent; }
+    .p-card .foot {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .p-card .foot .time {
+      font-size: 11px;
+    }
+
+    .board-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .context-rail {
+      margin-top: 4px;
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 12px;
+      align-items: start;
+    }
+    .context-rail .detail {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .detail-head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #f7f9ff, #fff);
+    }
+    .detail-head h3 {
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .detail-head .meta {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .detail-body { padding: 12px 16px 16px; }
+    .detail-body h4 {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-3);
+      margin: 12px 0 8px;
+    }
+    .detail-body h4:first-child { margin-top: 0; }
+    .fact {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 7px 0;
+      border-bottom: 1px dashed var(--line);
+      font-size: 12.5px;
+    }
+    .fact:last-child { border-bottom: none; }
+    .fact .k { color: var(--ink-4); }
+    .fact .v { font-weight: 600; text-align: right; }
+
+    @media (max-width: 1400px) {
+      .c-top { grid-template-columns: 1fr; }
+      .inbox-peek { width: 100%; }
+      .lanes { grid-template-columns: repeat(2, 1fr); }
+      .context-rail { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .lanes { grid-template-columns: 1fr; }
+      .stage-summary { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">矩</span>
+        <div>炬枢平台<small>新矩网络</small></div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">工作台</div>
+        <a class="nav-item" href="#"><span class="nav-ico">▸</span>任务中枢</a>
+        <a class="nav-item" href="#"><span class="nav-ico">✉</span>收件箱<span class="badge">20</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>运行总览</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">协作对象</div>
+        <a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>数字员工</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◇</span>技能市场</a>
+        <a class="nav-item" href="#"><span class="nav-ico">👥</span>团队管理</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">流程能力</div>
+        <a class="nav-item" href="#"><span class="nav-ico">⚡</span>自动化任务</a>
+        <a class="nav-item" href="#"><span class="nav-ico">🔗</span>外部能力</a>
+        <a class="nav-item" href="#"><span class="nav-ico">⬡</span>MCP 管理</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="shell-top">
+        <div class="cmd">🔍 搜索项目、阶段、决策… <kbd>⌘K</kbd></div>
+        <div class="shell-actions">
+          <button class="btn btn-ghost btn-sm">◐</button>
+          <button class="btn btn-ghost btn-sm">🔔</button>
+          <button class="btn btn-primary btn-sm">开发管理员</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="page-head">
+          <div>
+            <span class="concept-tag">方案 C · 阶段泳道闭环</span>
+            <h1><span class="title-ico">▦</span>项目管理</h1>
+            <p>Project 是业务闭环容器：按「待决策 → 验收中 → 已就绪 → 空闲」阶段分栏，卡上展示闭环进度仪与注意力信号。</p>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:10px">
+            <div class="proto-switch">
+              <a href="concept-a-decision-first.html">A 决策优先</a>
+              <a href="concept-b-queue-command.html">B 队列主控</a>
+              <a class="on" href="concept-c-stage-lanes.html">C 阶段泳道</a>
+              <a href="index.html">总览</a>
+            </div>
+            <button class="btn btn-primary">＋ 新建项目</button>
+          </div>
+        </div>
+
+        <div class="c-top">
+          <div class="stage-summary">
+            <div class="stage-sum s-decision">
+              <div class="k">待人决策</div>
+              <div class="v num">5</div>
+              <div class="s">有待决 / 等人任务的项目</div>
+            </div>
+            <div class="stage-sum s-accept">
+              <div class="k">验收中</div>
+              <div class="v num">3</div>
+              <div class="s">证据待核 · 验收闸口</div>
+            </div>
+            <div class="stage-sum s-ready">
+              <div class="k">已就绪可推进</div>
+              <div class="v num">2</div>
+              <div class="s">可发需求 / 继续执行</div>
+            </div>
+            <div class="stage-sum s-idle">
+              <div class="k">空闲 / 无阻塞</div>
+              <div class="v num">1</div>
+              <div class="s">暂无在办事项</div>
+            </div>
+          </div>
+          <aside class="inbox-peek">
+            <div class="head">
+              <h3>待我决策 <span class="n num">20</span></h3>
+              <a class="link-action" href="#" style="font-size:12px">收件箱 →</a>
+            </div>
+            <div class="row">
+              <span class="pill pill-danger" style="height:18px;font-size:10px;padding:0 5px">高危</span>
+              <span class="t">创建跨提供商端到端测试文件</span>
+              <span class="time">1h</span>
+            </div>
+            <div class="row">
+              <span class="pill pill-danger" style="height:18px;font-size:10px;padding:0 5px">高危</span>
+              <span class="t">需求验收：F1 判别验证-浅出口</span>
+              <span class="time">2d</span>
+            </div>
+            <div class="row">
+              <span class="pill pill-danger" style="height:18px;font-size:10px;padding:0 5px">高危</span>
+              <span class="t">高风险动作需要确认</span>
+              <span class="time">4d</span>
+            </div>
+            <div class="foot">
+              <a class="link-action" href="#">查看全部 20 条 →</a>
+            </div>
+          </aside>
+        </div>
+
+        <div class="board-toolbar">
+          <div class="search" style="max-width:280px">🔍 搜索项目名称或目标</div>
+          <div class="chips">
+            <button class="chip on">我的负责</button>
+            <button class="chip">全部项目</button>
+            <button class="chip">存在风险</button>
+            <button class="chip">等待超时</button>
+          </div>
+          <span class="grow"></span>
+          <span class="muted" style="font-size:12px">泳道按注意力阶段分组 · 非可拖拽 Kanban 状态机</span>
+        </div>
+
+        <div class="lanes">
+          <!-- Lane 1: 待人决策 -->
+          <section class="lane decision">
+            <div class="lane-head">
+              <h2><span class="dot"></span>待人决策</h2>
+              <span class="cnt">3</span>
+            </div>
+            <div class="lane-body">
+              <div class="lane-hint">人类决策阻塞推进 · 优先处理</div>
+
+              <article class="p-card selected">
+                <div class="top">
+                  <span class="icon-tile danger">▦</span>
+                  <div style="min-width:0;flex:1">
+                    <h3>provider-semantic-e2e-p1</h3>
+                    <div class="owner">开发管理员 · 等待审核</div>
+                  </div>
+                </div>
+                <div class="flow-meter" title="需求→执行→证据→验收">
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-warn"></div>
+                  <div class="seg on-danger"></div>
+                </div>
+                <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                <div class="signals">
+                  <span class="sig d">9 待决</span>
+                  <span class="sig d">2 等人</span>
+                  <span class="sig w">6 证据待核</span>
+                </div>
+                <div class="foot">
+                  <span class="time">08/10 16:43</span>
+                  <button class="btn btn-primary btn-xs">进入 →</button>
+                </div>
+              </article>
+
+              <article class="p-card">
+                <div class="top">
+                  <span class="icon-tile warn">▦</span>
+                  <div style="min-width:0;flex:1">
+                    <h3>批三 H1H4 全链路 181601</h3>
+                    <div class="owner">开发管理员 · 等待审核</div>
+                  </div>
+                </div>
+                <div class="flow-meter">
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-warn"></div>
+                  <div class="seg on-info"></div>
+                </div>
+                <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                <div class="signals">
+                  <span class="sig d">4 待决</span>
+                  <span class="sig w">7 证据待核</span>
+                </div>
+                <div class="foot">
+                  <span class="time">08/07 11:27</span>
+                  <button class="btn btn-ghost btn-xs">进入 →</button>
+                </div>
+              </article>
+
+              <article class="p-card">
+                <div class="top">
+                  <span class="icon-tile warn">▦</span>
+                  <div style="min-width:0;flex:1">
+                    <h3>批三语义扩编 E2E</h3>
+                    <div class="owner">开发管理员 · 等待审核</div>
+                  </div>
+                </div>
+                <div class="flow-meter">
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-danger"></div>
+                </div>
+                <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                <div class="signals">
+                  <span class="sig d">1 待决</span>
+                  <span class="sig w">等待超时</span>
+                </div>
+                <div class="foot">
+                  <span class="time">08/10 09:43</span>
+                  <button class="btn btn-ghost btn-xs">进入 →</button>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <!-- Lane 2: 验收中 -->
+          <section class="lane accept">
+            <div class="lane-head">
+              <h2><span class="dot"></span>验收中</h2>
+              <span class="cnt">2</span>
+            </div>
+            <div class="lane-body">
+              <div class="lane-hint">业务状态 = 验收中 · 闸口未过</div>
+
+              <article class="p-card">
+                <div class="top">
+                  <span class="icon-tile info">▦</span>
+                  <div style="min-width:0;flex:1">
+                    <h3>批二基线项目 P1</h3>
+                    <div class="owner">开发管理员 · 等待审核</div>
+                  </div>
+                </div>
+                <div class="flow-meter">
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-warn"></div>
+                  <div class="seg on-info"></div>
+                </div>
+                <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                <div class="signals">
+                  <span class="sig d">2 待决</span>
+                  <span class="sig w">8 证据待核</span>
+                  <span class="sig w">超时</span>
+                </div>
+                <div class="foot">
+                  <span class="time">08/10 09:43</span>
+                  <button class="btn btn-ghost btn-xs">进入 →</button>
+                </div>
+              </article>
+
+              <article class="p-card">
+                <div class="top">
+                  <span class="icon-tile info">▦</span>
+                  <div style="min-width:0;flex:1">
+                    <h3>S10 Git 屏蔽验收</h3>
+                    <div class="owner">开发管理员 · 等待审核</div>
+                  </div>
+                </div>
+                <div class="flow-meter">
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-ok"></div>
+                  <div class="seg on-warn"></div>
+                  <div class="seg on-info"></div>
+                </div>
+                <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                <div class="signals">
+                  <span class="sig d">4 待决</span>
+                  <span class="sig w">7 证据待核</span>
+                </div>
+                <div class="foot">
+                  <span class="time">08/08 00:39</span>
+                  <button class="btn btn-ghost btn-xs">进入 →</button>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <!-- Lane 3: 已就绪 -->
+          <section class="lane ready">
+            <div class="lane-head">
+              <h2><span class="dot"></span>已就绪</h2>
+              <span class="cnt">0</span>
+            </div>
+            <div class="lane-body">
+              <div class="lane-hint">可推进 · 无决策阻塞</div>
+              <div class="empty-quiet" style="padding:40px 12px">
+                当前页无「纯就绪」项目<br />
+                <span style="font-size:12px">就绪但仍有待决的已归入左侧</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Lane 4: 空闲 -->
+          <section class="lane idle">
+            <div class="lane-head">
+              <h2><span class="dot"></span>空闲 / 无阻塞</h2>
+              <span class="cnt">1</span>
+            </div>
+            <div class="lane-body">
+              <div class="lane-hint">暂无在办 · 可发新需求</div>
+
+              <article class="p-card">
+                <div class="top">
+                  <span class="icon-tile ok">▦</span>
+                  <div style="min-width:0;flex:1">
+                    <h3>运营补充归档冒烟-216301</h3>
+                    <div class="owner">开发管理员 · 无在办</div>
+                  </div>
+                </div>
+                <div class="flow-meter">
+                  <div class="seg"></div>
+                  <div class="seg"></div>
+                  <div class="seg"></div>
+                  <div class="seg"></div>
+                </div>
+                <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                <div class="signals">
+                  <span class="sig">暂无阻塞</span>
+                </div>
+                <div class="foot">
+                  <span class="time muted">暂无运行记录</span>
+                  <button class="btn btn-ghost btn-xs">进入 →</button>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <!-- Selected project context -->
+        <div class="context-rail">
+          <section class="soft-card" style="padding:16px 18px">
+            <div class="flex justify-between items-center" style="margin-bottom:10px">
+              <h2 style="font-size:14px;font-weight:700">最近运行动态</h2>
+              <span class="muted" style="font-size:12px">复用 workflow instances</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+              <a class="list-row soft-card" href="#" style="border-radius:12px;border:1px solid var(--line);padding:10px 12px">
+                <span class="icon-tile warn" style="width:28px;height:28px">●</span>
+                <div class="body">
+                  <div class="title" style="font-size:12.5px">provider-semantic-e2e-p1</div>
+                  <div class="meta"><span class="pill pill-warn" style="height:18px;font-size:10px">待人工确认</span><span class="time">3 分钟前</span></div>
+                </div>
+              </a>
+              <a class="list-row soft-card" href="#" style="border-radius:12px;border:1px solid var(--line);padding:10px 12px">
+                <span class="icon-tile info" style="width:28px;height:28px">●</span>
+                <div class="body">
+                  <div class="title" style="font-size:12.5px">批二基线项目 P1</div>
+                  <div class="meta"><span class="pill pill-info" style="height:18px;font-size:10px">验收中</span><span class="time">09:43</span></div>
+                </div>
+              </a>
+              <a class="list-row soft-card" href="#" style="border-radius:12px;border:1px solid var(--line);padding:10px 12px">
+                <span class="icon-tile ok" style="width:28px;height:28px">●</span>
+                <div class="body">
+                  <div class="title" style="font-size:12.5px">批三语义扩编 E2E</div>
+                  <div class="meta"><span class="pill pill-ok" style="height:18px;font-size:10px">已就绪</span><span class="time">09:43</span></div>
+                </div>
+              </a>
+            </div>
+          </section>
+
+          <aside class="detail">
+            <div class="detail-head">
+              <h3>provider-semantic-e2e-p1</h3>
+              <div class="meta">
+                <span class="pill pill-ok">已就绪</span>
+                <span class="pill pill-warn">待决决策</span>
+                <span class="muted" style="font-size:12px">选中预览 · 非完整详情</span>
+              </div>
+            </div>
+            <div class="detail-body">
+              <h4>当前阻塞</h4>
+              <div class="fact"><span class="k">待决决策</span><span class="v">9</span></div>
+              <div class="fact"><span class="k">等人任务</span><span class="v">2</span></div>
+              <div class="fact"><span class="k">证据待核</span><span class="v">6</span></div>
+              <h4>处理建议</h4>
+              <p style="font-size:12.5px;color:var(--ink-2);line-height:1.5">
+                优先处理 9 条待决决策；其中高危项在收件箱置顶。证据链 6 项待核，可与验收一并关闭。
+              </p>
+              <div style="margin-top:14px;display:flex;gap:8px">
+                <button class="btn btn-primary btn-sm" style="flex:1">进入项目</button>
+                <button class="btn btn-ghost btn-sm">打开决策</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

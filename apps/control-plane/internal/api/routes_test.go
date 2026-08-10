@@ -1767,6 +1767,20 @@ func (s *routeRuntimeService) ListRuntimeCapabilitiesForNode(ctx context.Context
 	return []runtime.RuntimeCapability{}, nil
 }
 
+func (s *routeRuntimeService) ListProviderNativeConfigs(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.ProviderNativeConfigListItem, error) {
+	return nil, nil
+}
+func (s *routeRuntimeService) GetProviderNativeConfigSnapshot(ctx context.Context, tenantID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigNotFound
+}
+func (s *routeRuntimeService) PullProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigOffline
+}
+func (s *routeRuntimeService) PushProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string, values map[string]any, expectedHash string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigOffline
+}
+
+
 func (s *routeRuntimeService) ApproveEnrollment(ctx context.Context, req runtime.ApproveEnrollmentRequest) (*runtime.RuntimeEnrollment, error) {
 	s.approveEnrollmentCalled = true
 	s.approvedEnrollmentID = req.EnrollmentID
@@ -1848,6 +1862,20 @@ func (s *fakeRuntimeService) ListRuntimeEvents(ctx context.Context, filter runti
 func (s *fakeRuntimeService) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.RuntimeCapability, error) {
 	return []runtime.RuntimeCapability{}, nil
 }
+
+func (s *fakeRuntimeService) ListProviderNativeConfigs(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.ProviderNativeConfigListItem, error) {
+	return nil, nil
+}
+func (s *fakeRuntimeService) GetProviderNativeConfigSnapshot(ctx context.Context, tenantID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigNotFound
+}
+func (s *fakeRuntimeService) PullProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigOffline
+}
+func (s *fakeRuntimeService) PushProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string, values map[string]any, expectedHash string) (*runtime.ProviderNativeConfigDetail, error) {
+	return nil, runtime.ErrProviderNativeConfigOffline
+}
+
 
 type routeTaskService struct {
 	tasks          []*task.Task
