@@ -40,9 +40,17 @@ The Control Plane must not depend on provider-specific request shapes. Runtime a
 - `start-session-payload.schema.json` + fixture; `CODEGEN.md` records **no** schema→type codegen this batch.
 - Follow-up: ErrorEnvelope / attestation prefer registry `provider_type` over short `provider_kind` (kind kept one release).
 
+### Follow-ups landed (post Phase 4)
+
+- Registry `provider_type` is the write path for envelopes/events/attestation; local HTTP accepts `provider_type` (preferred) or deprecated `provider_kind`.
+- Golden ≥5 per provider (enforced by `provider_golden_test`).
+- S2 ingest: CP `RecordEvent` structural tag `metadata.schema_violation` (never rejects).
+- Unmapped/unparseable stream drift: `ALERT provider_stream_drift` when count ≥ `SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD` (default 5; 0 disables).
+
 ### Still open
 
-- Full `provider_kind` retirement; golden count target (≥5/provider); S2 ingest tagging; unmapped threshold alerts.
+- Complete deletion of short-kind fields from all public snapshots/API responses.
+- S2 full JSON Schema engine (current is structural subset); S3 reject mode not planned.
 - Wire transport for process events remains `contracts/control-plane/openapi.yaml` (`payload`/`metadata` opaque objects).
 
 

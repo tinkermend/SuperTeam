@@ -74,6 +74,8 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 	if event.SequenceNumber <= 0 {
 		return fmt.Errorf("%w: sequence_number is required", ErrInvalidInput)
 	}
+	// S2: structural schema check — annotate only, never reject (§4.5.1).
+	annotateProviderSchemaViolations(&event)
 
 	_, run, err := s.loadCommandRun(ctx, identity, commandID, false)
 	if err != nil {

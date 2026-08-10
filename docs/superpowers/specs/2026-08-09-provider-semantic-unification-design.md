@@ -14,11 +14,11 @@
 
 | 项 | 说明 |
 |---|---|
-| §13 议题 7 退役 | `provider_kind` 短名仍保留一版兼容；ErrorEnvelope / attestation 已优先写注册表 `provider_type`。全量退役短名字段另开切片 |
-| golden 数量 | 设计写「每家 ≥5」；当前以「含失败样例 + 会红门禁」为硬门槛，数量未凑满 |
-| 校验强度 | 议题 9：**S1**（fixture/ajv）；S2 ingest 打标未做 |
-| 漂移告警 | 有 unmapped/unparseable 日志，无阈值告警与 overview 指标面 |
-| 跨 Provider 同任务 E2E | 北极星项，未作为门禁强制 |
+| §13 议题 7 退役 | **主写路径已收敛到注册表 `provider_type`**；本地 HTTP 仍接受 deprecated `provider_kind`。`RunSnapshot.provider_kind` 短展示字段暂留（由 type 派生） |
+| golden 数量 | **已达 ≥5/家**（`provider_golden_test` 硬门槛） |
+| 校验强度 | **S1 + S2 结构打标**（`metadata.schema_violation`，不拒绝）；完整 JSON Schema 引擎与 overview 指标面可再增强 |
+| 漂移告警 | **`ALERT provider_stream_drift`** 阈值（默认 5，env 可调） |
+| 跨 Provider 同任务 E2E | 实跑 opencode 假 binary 失败分类（见 CHANGELOG 当次记录）；非门禁强制 |
 
 ---
 

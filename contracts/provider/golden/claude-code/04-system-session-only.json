@@ -1,0 +1,12 @@
+{
+  "description": "Claude system init line alone yields session_started",
+  "native_lines": [
+    "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"sess-sys-only\"}"
+  ],
+  "expected_events": [
+    {
+      "type": "session_started",
+      "session_id": "sess-sys-only"
+    }
+  ]
+}

@@ -111,6 +111,13 @@ fn run_provider_goldens(provider: &str) {
         "no golden cases for {provider} under {}",
         golden_root().join(provider).display()
     );
+    // Design target: ≥5 cases per provider (incl. ≥1 failure / unmapped path).
+    assert!(
+        cases.len() >= 5,
+        "{provider}: expected ≥5 golden cases, got {} under {}",
+        cases.len(),
+        golden_root().join(provider).display()
+    );
     for (path, case) in cases {
         let label = path.display().to_string();
         if case.expect_error {

@@ -1,0 +1,12 @@
+{
+  "description": "Legacy session.updated maps to session_started",
+  "native_lines": [
+    "{\"type\":\"session.updated\",\"sessionID\":\"ses_legacy_1\"}"
+  ],
+  "expected_events": [
+    {
+      "type": "session_started",
+      "session_id": "ses_legacy_1"
+    }
+  ]
+}

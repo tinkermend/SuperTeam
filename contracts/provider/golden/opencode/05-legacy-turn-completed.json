@@ -1,0 +1,11 @@
+{
+  "description": "Legacy turn.completed maps to turn_completed",
+  "native_lines": [
+    "{\"type\":\"turn.completed\"}"
+  ],
+  "expected_events": [
+    {
+      "type": "turn_completed"
+    }
+  ]
+}

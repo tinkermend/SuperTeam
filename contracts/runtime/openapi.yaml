@@ -139,12 +139,15 @@ components:
     CreateRuntimeRunRequest:
       type: object
       required:
-        - provider_kind
         - workspace_path
         - prompt
       properties:
+        provider_type:
+          type: string
+          description: Registry provider type (claude-code / opencode / codex). Preferred.
         provider_kind:
           type: string
+          description: Deprecated short kind (claude / opencode / codex). Accepted when provider_type is absent.
         workspace_path:
           type: string
         prompt:
@@ -171,6 +174,7 @@ components:
           type: string
         provider_kind:
           type: string
+          description: Short display kind (derived from registry provider_type).
         workspace_path:
           type: string
         prompt:

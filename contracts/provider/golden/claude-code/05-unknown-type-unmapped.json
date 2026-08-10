@@ -1,0 +1,13 @@
+{
+  "description": "Unknown claude type surfaces as native_unmapped",
+  "native_lines": [
+    "{\"type\":\"metrics.sample\",\"session_id\":\"x\",\"value\":1}"
+  ],
+  "expected_events": [
+    {
+      "type": "native_unmapped",
+      "native_type": "metrics.sample",
+      "reason": "unrecognized_type"
+    }
+  ]
+}

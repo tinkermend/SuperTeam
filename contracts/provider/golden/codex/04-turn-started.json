@@ -1,0 +1,11 @@
+{
+  "description": "Codex turn.started maps to turn_started",
+  "native_lines": [
+    "{\"type\":\"turn.started\"}"
+  ],
+  "expected_events": [
+    {
+      "type": "turn_started"
+    }
+  ]
+}

@@ -118,7 +118,12 @@ async fn providers(State(state): State<RuntimeHttpState>) -> Json<Vec<ProviderHe
 
 #[derive(Debug, Deserialize)]
 struct CreateRunRequest {
-    provider_kind: String,
+    /// Preferred registry type (`claude-code` / `opencode` / `codex`).
+    #[serde(default)]
+    provider_type: Option<String>,
+    /// Deprecated short kind (`claude` / …). Accepted for one release.
+    #[serde(default)]
+    provider_kind: Option<String>,
     workspace_path: PathBuf,
     #[serde(default)]
     agent_home_dir: Option<PathBuf>,
@@ -135,11 +140,31 @@ async fn create_run(
     State(state): State<RuntimeHttpState>,
     Json(request): Json<CreateRunRequest>,
 ) -> Result<Response, ApiError> {
-    let kind = request.provider_kind.trim().to_string();
+    let raw = request
+        .provider_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .or_else(|| {
+            request
+                .provider_kind
+                .as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+        })
+        .ok_or_else(|| {
+            ApiError::bad_request("provider_type (or deprecated provider_kind) is required")
+        })?;
+    let provider_type = crate::providers::catalog::canonical_provider_type(raw).to_string();
+    let provider_kind = crate::providers::catalog::provider_kind(&provider_type).to_string();
+    if provider_kind == "unsupported" {
+        return Err(ApiError::bad_request(format!(
+            "unsupported provider_type: {raw}"
+        )));
+    }
     let spec = RunSpec {
-        // Local HTTP accepts short kind historically; store registry type too.
-        provider_type: crate::providers::catalog::canonical_provider_type(&kind).to_string(),
-        provider_kind: kind,
+        provider_type,
+        provider_kind,
         workspace_path: request.workspace_path,
         agent_home_dir: request.agent_home_dir,
         employee_capability_dir: None,
@@ -252,23 +277,20 @@ async fn stream_ws_events(socket: WebSocket, state: RuntimeHttpState) {
 
 fn spawn_provider_run(state: RuntimeHttpState, run_id: String, spec: RunSpec) {
     tokio::spawn(async move {
-        let result = match spec.provider_kind.as_str() {
-            "claude" => {
+        let result = match spec.registry_provider_type() {
+            crate::providers::catalog::CLAUDE_CODE_PROVIDER_TYPE => {
                 let provider = ClaudeProvider::new(state.config.claude_bin.clone());
                 run_provider_stream(state.runs.clone(), run_id.clone(), provider, spec).await
             }
-            "opencode" => {
+            crate::providers::catalog::OPENCODE_PROVIDER_TYPE => {
                 let provider = OpenCodeProvider::new(state.config.opencode_bin.clone());
                 run_provider_stream(state.runs.clone(), run_id.clone(), provider, spec).await
             }
-            "codex" => {
+            crate::providers::catalog::CODEX_PROVIDER_TYPE => {
                 let provider = CodexProvider::new(state.config.codex_bin.clone());
                 run_provider_stream(state.runs.clone(), run_id.clone(), provider, spec).await
             }
-            _ => Err(anyhow::anyhow!(
-                "unsupported provider kind: {}",
-                spec.provider_kind
-            )),
+            other => Err(anyhow::anyhow!("unsupported provider_type: {other}")),
         };
 
         if let Err(error) = result {
@@ -323,11 +345,15 @@ async fn run_provider_stream(
 }
 
 fn validate_run_spec(spec: &RunSpec) -> Result<(), ApiError> {
-    if !matches!(spec.provider_kind.as_str(), "claude" | "opencode" | "codex") {
-        return Err(ApiError::bad_request(format!(
-            "unsupported provider kind: {}",
-            spec.provider_kind
-        )));
+    match spec.registry_provider_type() {
+        crate::providers::catalog::CLAUDE_CODE_PROVIDER_TYPE
+        | crate::providers::catalog::OPENCODE_PROVIDER_TYPE
+        | crate::providers::catalog::CODEX_PROVIDER_TYPE => {}
+        other => {
+            return Err(ApiError::bad_request(format!(
+                "unsupported provider_type: {other}"
+            )));
+        }
     }
     if spec.prompt.trim().is_empty() {
         return Err(ApiError::bad_request("prompt is required"));

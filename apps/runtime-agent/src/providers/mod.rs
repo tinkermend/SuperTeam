@@ -95,6 +95,17 @@ struct ChildStreamState {
     unmapped_native_count: u64,
 }
 
+/// Default unmapped/unparseable lines per attempt before a WARN alert is emitted.
+pub const DEFAULT_UNMAPPED_ALERT_THRESHOLD: u64 = 5;
+
+/// Env `SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD` (0 disables alerting).
+pub fn unmapped_alert_threshold() -> u64 {
+    match std::env::var("SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD") {
+        Ok(raw) => raw.trim().parse().unwrap_or(DEFAULT_UNMAPPED_ALERT_THRESHOLD),
+        Err(_) => DEFAULT_UNMAPPED_ALERT_THRESHOLD,
+    }
+}
+
 type SharedChild = Arc<Mutex<Child>>;
 
 #[derive(Clone)]
@@ -201,12 +212,26 @@ pub fn stream_child_events(
                 }
                 Ok(None) => {
                     if state.unmapped_native_count > 0 || state.unparseable_line_count > 0 {
-                        eprintln!(
-                            "{}: stream diagnostics unmapped_native={} unparseable_line={}",
-                            state.provider_name,
-                            state.unmapped_native_count,
-                            state.unparseable_line_count
-                        );
+                        let threshold = unmapped_alert_threshold();
+                        let total = state
+                            .unmapped_native_count
+                            .saturating_add(state.unparseable_line_count);
+                        if threshold > 0 && total >= threshold {
+                            eprintln!(
+                                "ALERT provider_stream_drift provider={} unmapped_native={} unparseable_line={} threshold={}",
+                                state.provider_name,
+                                state.unmapped_native_count,
+                                state.unparseable_line_count,
+                                threshold,
+                            );
+                        } else {
+                            eprintln!(
+                                "{}: stream diagnostics unmapped_native={} unparseable_line={}",
+                                state.provider_name,
+                                state.unmapped_native_count,
+                                state.unparseable_line_count
+                            );
+                        }
                     }
                     let status = state.child.lock().await.wait().await;
                     let stderr = read_stderr(state.stderr_task).await;

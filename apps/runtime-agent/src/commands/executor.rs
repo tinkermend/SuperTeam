@@ -62,6 +62,8 @@ struct CommandWorkspace {
 struct RuntimeCommandWritebackSink {
     client: ControlPlaneClient,
     command_id: String,
+    /// Registry provider_type for event metadata (spec §4.5 / §13 #7).
+    provider_type: String,
     project_task: Option<ProjectTaskWritebackContext>,
     usage_tokens: Arc<AtomicI64>,
     /// Set once the raw transcript has been finalized, so every terminal
@@ -431,6 +433,7 @@ impl RuntimeCommandExecutor {
             .map(|client| RuntimeCommandWritebackSink {
                 client: client.clone(),
                 command_id: payload.command_id.clone(),
+                provider_type: payload.provider_type.clone(),
                 project_task: project_task.clone(),
                 usage_tokens: Arc::new(AtomicI64::new(0)),
                 raw_log: Arc::new(std::sync::Mutex::new(None)),
@@ -616,6 +619,7 @@ impl RuntimeCommandExecutor {
                 RuntimeCommandWritebackSink {
                     client: control_plane.clone(),
                     command_id: start_command_id.to_string(),
+                    provider_type: String::new(),
                     project_task,
                     usage_tokens: Arc::new(AtomicI64::new(0)),
                     raw_log: Arc::new(std::sync::Mutex::new(None)),
@@ -1568,7 +1572,12 @@ impl RuntimeCommandWritebackSink {
         self.client
             .record_runtime_command_event(
                 &self.command_id,
-                &runtime_event_writeback(record, provider_session_id, environment),
+                &runtime_event_writeback(
+                    record,
+                    provider_session_id,
+                    environment,
+                    Some(self.provider_type.as_str()),
+                ),
             )
             .await
     }
@@ -1893,6 +1902,7 @@ fn runtime_event_writeback(
     record: &RunEventRecord,
     provider_session_id: Option<&str>,
     environment: &BTreeMap<String, String>,
+    provider_type: Option<&str>,
 ) -> RuntimeCommandEventWriteback {
     let mut provider_session_external_id = provider_session_id.map(ToString::to_string);
     let mut session_state_patch = provider_session_state_patch(provider_session_id);
@@ -1971,7 +1981,7 @@ fn runtime_event_writeback(
             );
             ("tool_completed".to_string(), payload)
         }
-        ProviderEvent::TurnCompleted { summary, .. } => {
+        ProviderEvent::TurnCompleted { summary, usage } => {
             let mut payload = HashMap::new();
             if let Some(summary) = summary {
                 payload.insert(
@@ -1981,6 +1991,11 @@ fn runtime_event_writeback(
                         environment,
                     )),
                 );
+            }
+            if let Some(usage) = usage {
+                if let Ok(value) = serde_json::to_value(usage) {
+                    payload.insert("usage".to_string(), value);
+                }
             }
             ("turn_completed".to_string(), payload)
         }
@@ -2019,16 +2034,31 @@ fn runtime_event_writeback(
         }
     };
 
+    let mut metadata = HashMap::from([
+        (
+            "source".to_string(),
+            serde_json::Value::String("runtime-agent".to_string()),
+        ),
+        (
+            "schema_version".to_string(),
+            serde_json::Value::String("provider.event.v1".to_string()),
+        ),
+    ]);
+    if let Some(provider_type) = provider_type.map(str::trim).filter(|v| !v.is_empty()) {
+        metadata.insert(
+            "provider_type".to_string(),
+            serde_json::Value::String(
+                crate::providers::catalog::canonical_provider_type(provider_type).to_string(),
+            ),
+        );
+    }
     RuntimeCommandEventWriteback {
         event_type,
         sequence_number: record.sequence.min(i32::MAX as u64) as i32,
         payload,
         provider_session_external_id,
         session_state_patch,
-        metadata: Some(HashMap::from([(
-            "source".to_string(),
-            serde_json::Value::String("runtime-agent".to_string()),
-        )])),
+        metadata: Some(metadata),
     }
 }
 
@@ -2346,11 +2376,6 @@ fn project_task_attestation_writeback(
     metadata.insert(
         "provider_type".to_string(),
         serde_json::Value::String(spec.registry_provider_type().to_string()),
-    );
-    // Keep provider_kind for one release (existing attestation readers).
-    metadata.insert(
-        "provider_kind".to_string(),
-        serde_json::Value::String(spec.provider_kind.clone()),
     );
     metadata.insert(
         "workspace_ref".to_string(),
@@ -3458,10 +3483,19 @@ async fn drain_provider_events(
         stop.cancel();
     }
     if unmapped_native_count > 0 {
-        eprintln!(
-            "run {run_id}: attempt diagnostics unmapped_native={unmapped_native_count} \
-             native_unmapped_writebacks={native_unmapped_writebacks} emit={emit_native_unmapped}"
-        );
+        let threshold = crate::providers::unmapped_alert_threshold();
+        if threshold > 0 && unmapped_native_count >= threshold {
+            eprintln!(
+                "ALERT provider_stream_drift run={run_id} provider={provider_type} \
+                 unmapped_native={unmapped_native_count} \
+                 native_unmapped_writebacks={native_unmapped_writebacks} threshold={threshold}"
+            );
+        } else {
+            eprintln!(
+                "run {run_id}: attempt diagnostics unmapped_native={unmapped_native_count} \
+                 native_unmapped_writebacks={native_unmapped_writebacks} emit={emit_native_unmapped}"
+            );
+        }
     }
     // Session-scoped projection rollback: unload project-dir skill/MCP
     // session (spec 2026-07-23 §6) and restore home-dir MCP injection.
@@ -4478,7 +4512,7 @@ mod tests {
             },
             recorded_at_ms: 0,
         };
-        let writeback = runtime_event_writeback(&record, None, &environment);
+        let writeback = runtime_event_writeback(&record, None, &environment, Some("claude-code"));
         assert_eq!(
             writeback.payload["output_excerpt"],
             serde_json::Value::String("echo [REDACTED:env:MY_API_TOKEN]".to_string())
@@ -4496,7 +4530,7 @@ mod tests {
             },
             recorded_at_ms: 0,
         };
-        let writeback = runtime_event_writeback(&record, None, &environment);
+        let writeback = runtime_event_writeback(&record, None, &environment, Some("claude-code"));
         let input = writeback.payload["input_excerpt"].as_str().unwrap();
         assert!(input.contains("[REDACTED:env:MY_API_TOKEN]"));
         assert!(!input.contains("supersecretvalue123"));

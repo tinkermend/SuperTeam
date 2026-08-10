@@ -1,0 +1,12 @@
+{
+  "description": "Codex message.delta maps to text_delta",
+  "native_lines": [
+    "{\"type\":\"message.delta\",\"delta\":\"hello-codex\"}"
+  ],
+  "expected_events": [
+    {
+      "type": "text_delta",
+      "text": "hello-codex"
+    }
+  ]
+}

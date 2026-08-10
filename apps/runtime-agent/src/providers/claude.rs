@@ -73,6 +73,8 @@ impl ProviderAdapter for ClaudeProvider {
             .take()
             .context("failed to capture claude stderr")?;
         Ok(stream_child_events(
+            // Short name for human exit text ("claude exited…"); envelope.provider_type
+            // is canonicalized in error_map (claude → claude-code).
             "claude",
             parse_claude_event,
             raw_sink,
