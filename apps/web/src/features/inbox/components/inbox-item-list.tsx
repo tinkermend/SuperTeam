@@ -317,7 +317,8 @@ export function InboxItemList({
               aria-label={`打开事项：${identityTitle}`}
               aria-selected={isSelected}
               className={cn(
-                "group relative flex cursor-pointer items-start gap-2 border-b border-line px-4 py-2 transition-colors",
+                // overflow-hidden：防止绝对子元素（查看上下文）在窄列下画到邻行/详情区
+                "group relative flex cursor-pointer items-start gap-2 overflow-hidden border-b border-line px-4 py-2 transition-colors",
                 "hover:bg-card-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/60",
                 accentShadow,
                 isSelected && "bg-brand-soft",
@@ -326,7 +327,8 @@ export function InboxItemList({
               onKeyDown={(event) => handleRowKeyDown(event, item)}
             >
               <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
+                {/* §4.2.2 第 1 行：身份 + kind + 风险 + 时间 +（高风险）CTA；全部 in-flow，互不叠压 */}
+                <div className="flex min-w-0 items-center gap-1.5">
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-left text-sm font-bold text-ink",
@@ -354,14 +356,14 @@ export function InboxItemList({
                       {riskLabel[item.risk_level] ?? item.risk_level}
                     </StatusPill>
                   ) : null}
-                  <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-ink-3">
+                  <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] tabular-nums text-ink-3">
                     <Clock aria-hidden className="size-3" />
                     {formatRelativeTime(item.last_activity_at)}
                   </span>
                   {primaryAction ? (
                     <Button
                       aria-label={`行内决策：${formatInboxActionLabel(primaryAction)}`}
-                      className="h-6 shrink-0 px-2 text-[11px]"
+                      className="h-6 max-w-[7.5rem] shrink-0 truncate px-2 text-[11px]"
                       size="sm"
                       tabIndex={-1}
                       type="button"
@@ -376,25 +378,31 @@ export function InboxItemList({
                     </Button>
                   ) : null}
                 </div>
-                {summaryText ? (
-                  <p className="mt-0.5 line-clamp-1 max-w-full break-words text-xs leading-5 text-ink-2">
-                    {summaryText}
-                  </p>
-                ) : null}
+                {/*
+                  第 2 行：summary + U3「查看上下文」。
+                  链接绝对定位在本行容器右下（非整行 top-end），避免与第 1 行 CTA/时间叠字；
+                  summary 预留 pe 使 hover 显形时不盖住文案末尾。
+                */}
+                <div className="relative mt-0.5 min-h-5">
+                  {summaryText ? (
+                    <p className="line-clamp-1 max-w-full break-words pe-[5.5rem] text-xs leading-5 text-ink-2">
+                      {summaryText}
+                    </p>
+                  ) : null}
+                  <Link
+                    tabIndex={-1}
+                    className={cn(
+                      "absolute end-0 top-0 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-deep",
+                      "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100",
+                    )}
+                    onClick={(event) => event.stopPropagation()}
+                    to={resolveInboxHref(item)}
+                  >
+                    查看上下文
+                    <ArrowUpRight aria-hidden className="size-3" />
+                  </Link>
+                </div>
               </div>
-              {/* U3：保留但绝对定位，hover/focus 显形，不占行内横向预算 */}
-              <Link
-                tabIndex={-1}
-                className={cn(
-                  "absolute end-2 top-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-deep",
-                  "opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100",
-                )}
-                onClick={(event) => event.stopPropagation()}
-                to={resolveInboxHref(item)}
-              >
-                查看上下文
-                <ArrowUpRight aria-hidden className="size-3" />
-              </Link>
             </div>
     );
   };
