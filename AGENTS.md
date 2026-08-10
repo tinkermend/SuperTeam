@@ -1,64 +1,58 @@
-DO NOT send optional commentary. Keep only necessary facts, blockers, verification evidence, risks, and actionable recommendations that directly affect the user's next decision or task outcome.
+# SuperTeam 工程宪法
+
+面向实现与协作的**硬规范**。进度、设计论证、操作手册不写在此——见对应设计稿、`CHANGELOG.md`、`docs/`。
 
 ## 项目定位
 
-SuperTeam 把 AI 执行能力、流程调度、人类审批、上下文、工件和审计纳入统一控制平面。
+统一控制平面：AI 执行、流程调度、人类审批、上下文、工件与审计。
 
-- **数字员工**是 agent 型业务身份，围绕角色、任务边界、权限、上下文策略和输出契约建模，只作为项目内可调度的执行者。运行落点在项目派发时动态解析（项目 Runtime placement + 员工 Provider），员工本身不绑固定 Runtime/执行实例。
-- **人类**是一等的管理、审批、决策和验收参与者，不归入数字员工。不要把人类管理职责建模成数字员工能力，也不要让数字员工绕过人类决策。
-- **Project** 是面向具体目标或问题场景的业务闭环容器（不限于软件交付），聚合目标、负责人、虚拟协调线程、任务、证据、预算、审批和验收结论。流程编排只是驱动项目运行的模板，不替代 Project 作为业务事实入口。核心模型不定义封闭的项目类型枚举，场景差异通过场景模板、Workflow Template、项目画像、标签、Policy 和服务端注册校验表达。
+- **数字员工**：可调度的 agent 业务身份（角色、边界、权限、上下文策略、输出契约）。运行落点在派发时解析（项目 Runtime placement + 员工 Provider），员工本身不绑固定 Runtime/执行实例。
+- **人类**：一等参与者（管理、审批、决策、验收）；不得把人类职责建模成数字员工，也不得让数字员工绕过人类决策。
+- **Project**：面向目标/问题场景的业务闭环容器；流程模板只驱动运行，不替代 Project 作为业务事实入口。场景差异用模板、画像、标签、Policy 与服务端校验表达，**不**在核心模型做封闭项目类型枚举。
 
 ## 架构分层
 
 | 层 | 目录 | 职责 | 禁止 |
 |---|---|---|---|
-| Console | `apps/web/` | 管理、观察、审批、验收入口 | 本机执行能力、业务事实源、长期业务状态 |
-| Control Plane | `apps/control-plane/` | 业务状态、任务、审批、审计、流程调度、上下文、工件、Runtime 与能力注册；对 Console 和 Runtime 提供 API | 直接执行本地命令 |
-| Runtime | `apps/runtime-agent/` | 领任务、维护租约、管理本机 Provider 进程/会话、工作目录、日志、工件、执行槽位 | 控制台 UI、业务策略、长期业务状态 |
-| Provider | Claude Code / OpenCode / Codex | 在 Runtime Agent 管理下执行 | 承载平台级状态 |
-| Capability | `apps/control-plane/internal/capability/` | 外部能力与 MCP server 的注册、绑定、凭据加密、授权和审计；HTTP 与 MCP transport 调用 | 硬编码客户专属逻辑 |
-| Authorization | `apps/control-plane/internal/authz/`、`internal/authzcenter/` | 关系型授权决策点、runtime scope、成员与决策记录；后端为 OpenFGA（外部服务，独立启停） | 在业务代码里绕过决策点自行判权 |
+| Console | `apps/web/` | 管理、观察、审批、验收 | 本机执行、业务事实源、长期业务状态 |
+| Control Plane | `apps/control-plane/` | 业务状态、任务、审批、审计、调度、上下文、工件、Runtime/能力注册 | 直接执行本地命令 |
+| Runtime | `apps/runtime-agent/` | 领任务、租约、Provider 进程/会话、工作目录、日志、工件 | 控制台 UI、业务策略、长期业务状态 |
+| Provider | Claude Code / OpenCode / Codex 等 | 在 Runtime 管理下执行 | 承载平台级状态 |
+| Capability | `apps/control-plane/internal/capability/` | 外部能力与 MCP 的注册、绑定、凭据、授权、调用 | 硬编码客户专属逻辑 |
+| Authorization | `internal/authz/`、`authzcenter/` | 关系型授权（OpenFGA 为外部后端） | 业务代码绕过决策点自行判权 |
 
-- API 契约放在 `contracts/`；修改契约后必须走生成与契约验证流程。
-- Provider 协议必须语言无关，用结构化 schema 描述输入、事件、结果、工件和错误；Rust 只是一种 adapter 实现语言。接入优先走统一 `provider` contract，协议不完整时再用 CLI、stdio、JSON stream、PTY 或 HTTP adapter 兜底。
-- Provider 类型和外部能力类型不要在业务核心里依赖封闭枚举，以注册表和服务端校验为准。
-- 客户差异不进核心流程代码，放入 Tenant Profile、Connector、Semantic Mapping、Capability 配置和 Policy。
+**契约与扩展**
 
-### 已知债（现状与本章规范不符，不得据现状反推规范）
+- API wire 契约在 `contracts/`（control-plane openapi 等）；修改后走生成与 `verify:contracts`。
+- **Provider 语义**契约在 `contracts/provider/`（JSON Schema + fixtures/golden）；`verify:contracts` 会消费。Rust/Go 类型是实现，不得只改实现不改 schema/门禁。CP/协调/Web **只消费平台语义**（事件 type、ErrorEnvelope code/family 等），禁止在业务核心解析 Provider CLI 方言。
+- Provider 类型与外部能力类型 **不以业务核心封闭枚举为准**，以注册表与服务端校验为准。
+- 客户差异进 Tenant Profile / Connector / Semantic Mapping / Capability / Policy，**不进**核心流程代码。
 
-- `contracts/provider/` 目前只有散文 README，没有机器可读 schema；事实上的 Provider 协议活在 `apps/runtime-agent/src/providers/` 的 Rust 类型里。这与"协议必须语言无关"相悖，属待偿债务，不是可依赖的先例。
-- 契约验证只覆盖 `contracts/control-plane/openapi.yaml`（见 `scripts/verify-foundation-contracts.mjs`）；`contracts/runtime/openapi.yaml` 与 `contracts/provider/` 未纳入。改这两处契约时，"走契约验证流程"目前无自动化可依，需人工核对下游生成物。
+**已知债**（现状 ≠ 规范，不得据现状反推规范）
+
+- `contracts/runtime/openapi.yaml` 尚未与 control-plane 同等纳入自动契约门禁；改 runtime 契约时需人工核对下游。
 
 ## 协作模型
 
-- 一个 Project 绑定一个虚拟协调线程，由 Temporal Workflow 承载（WorkflowID = `project-coordinator:{project_id}`）。它是项目内置的独占协调状态机，不是数字员工实体，不出现在数字员工列表中；通过 Signal 接收事件、串行处理协调决策、并发分派执行任务，所有协调动作必须产出结构化的 RouteDecision、ProjectTask 和审计记录。
-- 每个项目必须绑定**至少一个人类负责人（human owner）**，可多个且平级；负责人集合不得为空（可自由增删，但至少保留一个）。任一负责人都可审批、结果验收、驳回、补证要求、接收汇报与充当决策兜底路由目标——任一处理即生效（any-of-N，先到生效）。项目人类成员同等身份，不划分 leader/验收人等子角色。人类成员负责最终业务判断、审批、结果验收、驳回、补证要求、汇报接收和验收结论。（实现：`human_owner_user_ids[]` 为负责人集合，等同 owner 角色的人类成员；旧单值 `human_owner_user_id` 保留作 primary/归属指针，不承担"唯一负责人"语义。）
-- Agent 之间不直接自由聊天，通过结构化对象协作；每个阶段必须产出可持久化的工件、证据、决策或交接包。
-- 全局上下文由控制平面持久化；执行时只注入当前任务需要的上下文切片；关键结论必须结构化回写。
+- 每 Project 一个虚拟协调线程（Temporal，`WorkflowID = project-coordinator:{project_id}`）：独占协调状态机，非数字员工实体；协调动作须产出结构化 RouteDecision / ProjectTask / 审计。
+- 项目 **至少一名**人类负责人（可多、平级、any-of-N）；人类成员负责最终业务判断与验收，不划分子角色特权。
+- Agent 之间不靠自由聊天协作，靠结构化对象；阶段产出须可持久化（工件、证据、决策、交接包）。
+- 全局上下文由控制平面持久化；执行只注入任务所需切片；关键结论结构化回写。
 
 ## 工程约定
 
-- 技术栈以当前 workspace、契约和构建脚本为准；不得在没有明确共识时引入替代主栈的并行框架或重复基础设施。根级命令以 `package.json` 为准，优先通过 `corepack pnpm <script>` 运行；不要记录未在仓库脚本、Makefile 或 helper script 中确认过的命令。
-- 验证一律走仓库已有的 `verify:*` 脚本，不要手拼等价命令：`verify:foundation`（契约 + TS/Go/Rust 全量）、`verify:web`、`verify:control-plane`、`verify:runtime-agent`、`verify:db`、`verify:contracts`、`verify:design-system`、`verify:design-prototypes`。契约代码生成用 `generate:control-plane`。
-- 启停用 `scripts/dev-services.sh start|status|restart|stop`；默认 `all` 含 Temporal、Control Plane、Web、Runtime Agent、Feishu Connector，OpenFGA 需单独管理。联调前后先 `status` 确认实际状态，代码变更后优先定向 `restart <service>`（脚本只管理自己写入 pid 文件的进程）。`start|restart control-plane` 会先自动执行 Atlas 迁移，仅在明确需要时用 `SUPERTEAM_DEV_SKIP_MIGRATIONS=1` 跳过。
-- **在非主 checkout（worktree）里做联调必须先读 `docs/PARALLEL_DEVELOPMENT.md`**：未按其设置共享 `SUPERTEAM_DEV_PID_DIR` 时，从 worktree 执行 `restart` 是**退出码 0 的静默空操作**——服务仍跑别人的代码，会产出假的验证结论。`status` 的 `owner=` 字段显示服务实际跑的是哪个 checkout（从进程 cwd 观测，不会漂移），`stop`/`restart` 接管他人服务前会告警。另：`restart control-plane` 应用的是**当前 checkout 的**迁移目录，带迁移的分支切换前须与其他会话打招呼。
-- 数据库表设计、字段类型、UUID-first、租户/团队、索引、迁移、sqlc 与 OpenAPI 规则统一遵循 `DATABASE_DESIGN.md`。生产迁移唯一目录是 `apps/control-plane/internal/storage/migrations/`；变更后必须更新 `atlas.sum`，并用 `make -C apps/control-plane migrate-validate` 校验（默认 `--dev-url` 为本地 `superteam-migrate-validate-pg`：`postgres://postgres:postgres@127.0.0.1:55432/atlas_migrate_validate?sslmode=disable`；CI 可用 `DEV_URL=docker://postgres/16/dev` 覆盖）。
-- 平台面向中文用户且不做 i18n：前端用户可见的状态/枚举一律经 `apps/web/src/lib/status-labels.ts` 映射为中文，缺键补词表而非在组件内翻译；业务对象指称显示名称（必要时"名称 (id)"），不得裸 UUID，名称由服务端读路径批量补名。细则见 `DESIGN.md`「面向用户文本与枚举显示」，护栏测试 `status-labels.guard.test.ts`。
-- 前端页面、布局或样式变更前必须阅读 `DESIGN.md`；改设计系统或原型后跑 `verify:design-system` / `verify:design-prototypes`。Web 测试走 `corepack pnpm verify:web`（只跑测试时 `corepack pnpm --filter @superteam/web test`），禁止 `npx playwright install` 或 `npx vitest run`。Web 内部跳转必须用 TanStack Router 的 `Link` 或 `navigate`；只有外链、下载、同页锚点或明确需要整页刷新才允许原生 `<a href>` / `window.location`。
-- 多个会话/agent 可能**共享同一工作树（checkout）**并各自持有未提交改动。新工作优先按 `docs/PARALLEL_DEVELOPMENT.md` 改用「一会话一 worktree」隔离；**在完成迁移前，共享 checkout 下的下列铁律一条不得放松**：
-  - **只用显式路径 `git add <path>`，禁止 `git add -A`/`git add .`**（会连带暂存其他会话的文件）。
-  - **禁止在共享工作树切换或删除分支**（`checkout`/`switch`/`branch -D` 会移动所有会话的 HEAD，可孤立他人提交）；跨分支搬运只用 ref 手术（`git update-ref`，或独立 worktree + `cherry-pick`），切换用 `git symbolic-ref`。
-  - **提交前用 `git symbolic-ref HEAD` 复核当前分支**（并发下先前的状态快照会过期），提交后确认工作树仍保留他人未提交改动。
-  - 与他人未提交改动**交织在同一文件**（含 sqlc/OpenAPI 生成物、`CHANGELOG.md` 等）时，只暂存自己的 hunk（`git diff --no-ext-diff` 取标准 diff → 切块 → `git apply --cached`），**不得整文件提交**；无法干净切分时改用独立 worktree 隔离后再提交。注意仓库配了外部 diff 工具，不加 `--no-ext-diff` 时输出没有 `@@` 头，按 hunk 处理的脚本会静默失效。
-  - **全仓重生成命令会吸收他人在途改动**：`make -C apps/control-plane generate-sqlc`、`generate:control-plane` 等按整个 `queries/` / 契约目录重生成，会把别人尚未提交的 `.sql` / 契约改动一并写进生成物。跑完必须核对暂存内容只含自己的改动（此坑 2026-08-07 真实发生，提交前逐 hunk 核对时才拦下）。该风险与是否用 worktree 无关，长期保留。
-- 不要盲目猜测；存在无法从本地上下文确认且影响架构或业务判断的不确定点时，先与人类沟通。
+- 技术栈以当前 workspace 与 `package.json` 脚本为准；不擅自引入并行主栈。命令优先 `corepack pnpm <script>`，不发明未登记命令。
+- 验证走仓库 `verify:*` / `generate:control-plane`；启停用 `scripts/dev-services.sh`。worktree 并行联调读 `docs/PARALLEL_DEVELOPMENT.md`（共享 `SUPERTEAM_DEV_PID_DIR`；`status` 的 `owner=` 为真实 cwd）。
+- 库表与迁移遵循 `DATABASE_DESIGN.md`；生产迁移仅 `apps/control-plane/internal/storage/migrations/`，变更后校验 `atlas.sum` / `migrate-validate`。
+- 用户可见中文：状态/枚举经 `apps/web/src/lib/status-labels.ts`（含 `failure_family` 等）；业务指称用名称而非裸 UUID。前端样式/布局先读 `DESIGN.md`；站内跳转用 TanStack Router。
+- **共享 checkout 时**：只用 `git add <显式路径>`；禁止为他人切/删分支；交织文件只暂存自己的 hunk（`git diff --no-ext-diff`）；全仓生成（sqlc/openapi）会吸收他人在途改动，提交前核对暂存。优先一会话一 worktree。
+- 影响架构或业务的不确定点先问人，不猜。
 
 ## 验证与收尾
 
-- **真实端到端验证是默认完成条件**，适用于功能、修复、合并、前后端联调、Runtime/Provider 接入、数据库/迁移变更，以及任何声称“功能可用”的任务。必须让当前代码通过真实 Web、Control Plane、数据库、Runtime、Provider 路径运行；不得把 mock、组件测试、单元测试、构建通过或代码审查表述为真实链路已验证。前后端变更需确认运行中的服务已加载当前代码，并通过浏览器或 curl 走真实接口确认结果不是 mock、缓存或旧服务；Runtime/Provider 变更需至少一次真实 smoke。浏览器验证用当前会话可用的浏览器自动化工具（Playwright MCP、Chrome 插件等，以实际可用者为准）；无可用工具时标注为阻塞，不得以"代码看起来对"替代。`verify:*` 脚本是提交前的分层门禁，通过它们不等于完成了端到端验证。
-- **声称 E2E 通过时必须证明验证期内服务未被接管**：开发服务全局仅一套，任何会话 `restart` 都会顶替他人正在验证的代码，且**不会有任何报错**。做法是验证开始时记下 `control-plane` 与 `web` 的 pid，收尾前复核未变（`dev-services.sh status` 出现 `owner=` 字段即表示服务跑的是别的 checkout）。pid 变了则本轮结论作废，须重跑，不得沿用。
-- **无法验证时标记为阻塞**并说明缺失依赖（服务未启动、认证缺失、Provider 不可用、迁移未准备、环境不安全），不得以“未做真实链路验证”的状态交付，除非人类明确把范围限定为纯单层局部验证。
-- **轻量验证例外**：纯文案替换、单个低风险样式对齐、设计规范/宪法补充等不改变交互、数据提交、路由、接口、状态流、权限、持久化或运行链路的局部变更，只需 `rg` 回查、`git diff --check`，必要时跑受影响的定向测试；不重启服务、不跑全量测试、不做端到端验证。
-- **延后工作进根目录 `TODO.md`**：人类明确决定放到后面做的事，一行一条（日期+事项+参考文档），完成即删行。收尾检查不得把其中条目当作当次任务的遗漏；新的延后决定必须写入该文件并附操作文档，不能只留在对话里。
-- 任务收尾前必须走项目内收尾门禁 `superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）：Codex 会话用 skill `$superteam-completion-check` 调用；不支持该 skill 的会话（如 Claude Code）直接 `Read` 该 SKILL.md 并照其步骤执行——两种方式等效，门禁本身不可跳过。
-- 分支收尾：合并到 `main` 后，基于 `main` 当前代码完成端到端真实验证，通过后再删除分支和 worktree。验证阻塞时不得删除分支或声明完成。
+- **默认完成条件是真实端到端**：Web + Control Plane + DB + Runtime + Provider（按变更面）。mock/单测/构建通过 ≠ 真链路已验证。无法验证须标阻塞并说明依赖。
+- **声称 E2E 通过须证明验证期内服务未被接管**（记下并复核 `control-plane`/`web` 的 pid；`owner=` 异源则结论作废）。
+- **轻量例外**：纯文案/单点样式/仅改规范文且不改交互数据权限持久化链路时，可只做 diff/定向测试。
+- 人类明确延后的事项写入根目录 `TODO.md`（一行一条，完成即删）。
+- 收尾走 `superteam-completion-check`（`.codex/skills/superteam-completion-check/SKILL.md`）。
+- 合入 `main` 后须在 main 代码上再做真实验证，通过后再删分支/worktree。
