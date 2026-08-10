@@ -2003,11 +2003,34 @@ async fn codex_project_task_completion_uses_item_text_when_turn_summary_is_empty
         events[1].payload
     );
     assert_eq!(events[2].payload["event_type"], "turn_completed");
+    // 断言的本意是「摘要为空时不写 summary 键」。payload 不再是空对象——L2 信封
+    // 字段（schema_version/type/ts/seq/…）自 2026-08-10 起与业务键同层，所以这里
+    // 改为逐键断言业务字段缺席，而不是整体 is_empty。
+    let turn_completed_payload = events[2].payload["payload"]
+        .as_object()
+        .expect("turn_completed payload object");
+    for business_key in ["summary", "usage", "text", "tool_id"] {
+        assert!(
+            !turn_completed_payload.contains_key(business_key),
+            "turn_completed should not carry {business_key}: {}",
+            events[2].payload
+        );
+    }
+    // 顺带锁住信封在真实 executor 路径上确实补齐了
+    assert_eq!(
+        turn_completed_payload.get("type").and_then(|v| v.as_str()),
+        Some("turn_completed")
+    );
+    assert_eq!(
+        turn_completed_payload.get("seq").and_then(|v| v.as_u64()),
+        events[2].payload["sequence_number"].as_u64()
+    );
     assert!(
-        events[2].payload["payload"]
-            .as_object()
-            .is_some_and(|payload| payload.is_empty()),
-        "turn_completed event should have an empty payload: {}",
+        turn_completed_payload
+            .get("attempt_ref")
+            .and_then(|v| v.get("attempt_id"))
+            .is_some(),
+        "envelope attempt_ref.attempt_id missing: {}",
         events[2].payload
     );
 

@@ -1,5 +1,5 @@
 {
-  "description": "Claude result with is_error=true must yield turn_error (not turn_completed)",
+  "description": "Claude result with is_error=true must yield turn_error (not turn_completed). expected_events 写**完整实例**（不是子集），这样 verify:contracts 能拿 provider-event.schema.json 校验它；Rust golden 断言本身是子集语义，两者都通过才算对。",
   "native_lines": [
     "{\"type\":\"result\",\"is_error\":true,\"subtype\":\"error_during_execution\",\"result\":\"rate limit exceeded\"}"
   ],
@@ -8,9 +8,12 @@
       "type": "turn_error",
       "message": "rate limit exceeded",
       "error": {
+        "schema_version": "provider.error.v1",
         "code": "RATE_LIMIT",
         "family": "transient_provider",
-        "retryable": true
+        "retryable": true,
+        "message": "rate limit exceeded",
+        "provider_type": "claude-code"
       }
     }
   ]

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://superteam.local/contracts/provider/schemas/provider-event.schema.json",
   "title": "ProviderEvent",
-  "description": "L2 platform event. Wire shape uses tag type=snake_case matching Runtime ProviderEvent serde.",
+  "description": "L2 平台事件的**解析形态**：parser 从原生行产出的事件（golden 的 expected_events 就是这个形状）。信封字段（ts / seq / attempt_ref / provider_type / schema_version）在此为**可选**，因为它们由 Runtime 在写回时补齐；要求信封齐全的是 provider-event-envelope.schema.json。Wire tag 为 type=snake_case，与 Runtime ProviderEvent serde 一致。",
   "type": "object",
   "required": ["type"],
   "properties": {
@@ -24,6 +24,7 @@
     "seq": { "type": "integer" },
     "provider_type": { "type": "string" },
     "provider_session_id": { "type": "string" },
+    "attempt_ref": { "type": "object" },
     "session_id": { "type": "string" },
     "session_state": {},
     "text": { "type": "string" },

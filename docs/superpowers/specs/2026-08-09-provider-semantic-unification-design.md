@@ -196,7 +196,7 @@ contracts/provider/
 
 ### 4.1 Envelope（对外 JSON 形状）
 
-> **⚠ 本节的信封形状至今未实现**（2026-08-10 复查）：实际走的是 §4.5 过渡策略——外层 `event_type` + `sequence_number` + 扁平 `payload`，`schema_version`/`provider_type` 在 `metadata`，`ts`/`attempt_ref`/`provenance` 不存在。人类已拍板**做实**，分两批推进，且 `seq` 以外层 `sequence_number` 为唯一真相、信封内仅冗余投影；方案见 `docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md`。**批一（补齐字段、仍扁平）完成后本节仍未达成，不得据此宣布完成。**
+> **⚠ 本节的嵌套信封形状仍未达成**（2026-08-10）：**批一已实施**——`schema_version`/`type`/`ts`/`seq`/`provider_type`/`provider_session_id`/`attempt_ref` 已随每条事件写回，但**与业务键同层（扁平）**，不是本节画的 `payload` 嵌套形状；`provenance` 未做（需 parser 透出原生 type）。`seq`/`type` 是**冗余投影**，外层 `sequence_number`/`event_type` 才是真相。嵌套化与读路径迁移是批二，见 `docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md`。**不得据批一宣布本节完成。**
 
 > **命名前置条件（§13 议题 7，未拍板前不要照抄本例）**：仓库现状是 `provider_type = "claude-code"`（注册表口径，CP 也用它）与 `provider_kind = "claude"`（runtime 内部短名）并存，且现网 attestation metadata 写的是后者。本 spec **推荐统一到 `provider_type` + 注册表取值（`claude-code` / `opencode` / `codex`），`provider_kind` 退役**；下例按推荐方案书写，字段名一旦拍板需全文替换并同步 `catalog.rs` / `server.rs` 校验 / `employee/pg_repository.go` 的三写法归一。
 

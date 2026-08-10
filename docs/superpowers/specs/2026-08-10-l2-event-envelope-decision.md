@@ -1,7 +1,7 @@
 # L2 事件 envelope 做实
 
 - 日期：2026-08-10
-- 状态：**已拍板（做实），待实施**
+- 状态：**批一已实施（E2E 取证通过），批二待做**
 - 来源：`2026-08-09-provider-semantic-unification-design.md` 复查（§18-3）
 - 迁移：**零迁移**（`task_events.payload` 是 JSONB；历史行永久保持扁平，靠双读兼容）
 
@@ -40,7 +40,17 @@ spec §4.1 定义的信封（`schema_version`/`type`/`ts`/`seq`/`provider_type`/
 
 ## 3. 分两批
 
-### 批一：写入侧补齐信封字段（读路径零改动）
+### 批一：写入侧补齐信封字段（读路径零改动）—— ✅ 已实施 2026-08-10
+
+落地位置：`executor.rs` `runtime_event_writeback` 与业务键同层写入 `schema_version` / `type` / `ts` / `seq` / `provider_type` / `provider_session_id` / `attempt_ref{command_id, attempt_id}`；`ts` 由 `record.recorded_at_ms` 经 `time` crate 转 RFC3339（越界返回 None 而不是伪造时间戳）；`provider_type` 走 `canonical_provider_type` 归一（短名 `claude` → `claude-code`）。metadata 原样保留，未删任何旧键。
+
+**实施期发现的一个契约错配**（原方案没预见）：golden 的 `expected_events` 在 Rust 侧是**子集断言**（只校验列出的键），而 schema 校验是**完整实例**校验，两者口径不同。处置：
+
+- `provider-event.schema.json` 定为**解析形态**（parser 产出；信封字段可选），golden 用它校验；
+- 新增 `provider-event-envelope.schema.json` 定为**写回形态**（`allOf` 解析形态 + `required: schema_version/type/seq/ts`），fixture `event-envelope-tool-started.json` 用它校验；
+- 含 `error` 的 golden 需把期望写成完整 envelope（已改 `claude-code/02-result-is-error.json`），Rust 的子集断言不受影响。
+
+`ts` 用 `pattern` 而非 `format: date-time`——仓库的 ajv 没装 ajv-formats，`format` 只会被忽略并打警告，`pattern` 才是真会红的那一个。
 
 **保持扁平**，在 payload 同层补上缺的信封字段：
 
@@ -75,10 +85,13 @@ spec §4.1 定义的信封（`schema_version`/`type`/`ts`/`seq`/`provider_type`/
 
 ## 4. 验收
 
-- [ ] 批一：新事件带 `ts`/`attempt_ref`/`seq`，旧读路径与 Web 时间线**零改动且行为不变**（真实链路跑一次成功任务 + 一次失败任务对照）
-- [ ] 批一：改任一家 parser 的映射后，golden 校验能红（现在不能）
+- [x] 批一：新事件带 `ts`/`attempt_ref`/`seq`，旧读路径与 Web 时间线**零改动且行为不变**  
+  取证 2026-08-10：需求 `0f8a2ea9…`（真 claude，5 轮工具）任务 `已完成`；库里逐条事件的 7 个信封键齐全（`schema_version,type,ts,seq,provider_type,provider_session_id,attempt_ref`），业务键原样；浏览器复核任务弹层「已完成 / 运行与结论 / 执行尝试 1/3 / 交付物」渲染正常
+- [x] 批一：改任一家 parser 的映射后，golden 校验能红  
+  反向验证：把 `opencode/01` 的 `expected_events[0].type` 改成 `bogus_type` → `verify:contracts` 红（`data/type must be equal to one of the allowed values`）；把 envelope fixture 的 `ts` 改成非法值 → 红。两次均已还原
 - [ ] 批二：历史扁平行与新嵌套行在同一条时间线里都能正确渲染（造混合数据验证）
-- [ ] 全程：`sequence_number` 的去重与排序行为不变（重发同号不产生第二条）
+- [x] `sequence_number` 的去重与排序行为不变（本批未动外层字段；`seq` 只是同值投影，单测锁死二者相等）
+- [ ] 批二：CP/Web 读路径切嵌套后，去重与排序仍以外层 `sequence_number` 为准（重发同号不产生第二条）
 
 ## 5. 现状锚点
 

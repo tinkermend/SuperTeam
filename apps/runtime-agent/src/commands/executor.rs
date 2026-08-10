@@ -24,7 +24,7 @@ use crate::controlplane::models::{
     RuntimeCommandType, TaskResultContract,
 };
 use crate::events::{
-    attempt_stream_diagnostics, ErrorEnvelope, ProviderEvent,
+    attempt_stream_diagnostics, ErrorEnvelope, PROVIDER_EVENT_SCHEMA_VERSION, ProviderEvent,
 };
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
@@ -1810,6 +1810,13 @@ impl RuntimeCommandWritebackSink {
                     provider_session_id,
                     environment,
                     Some(self.provider_type.as_str()),
+                    Some(EventAttemptRef {
+                        command_id: self.command_id.as_str(),
+                        attempt_id: self
+                            .project_task
+                            .as_ref()
+                            .map(|context| context.attempt_id.as_str()),
+                    }),
                 ),
             )
             .await
@@ -2145,11 +2152,29 @@ fn merge_collected_artifact_refs(
     }
 }
 
+/// Who this event belongs to, for the L2 envelope's `attempt_ref`.
+#[derive(Debug, Clone, Copy)]
+struct EventAttemptRef<'a> {
+    command_id: &'a str,
+    attempt_id: Option<&'a str>,
+}
+
+/// Formats the run store's epoch-millis stamp as RFC3339 for the envelope `ts`.
+/// Out-of-range stamps yield None rather than a bogus timestamp.
+fn envelope_timestamp(recorded_at_ms: u64) -> Option<String> {
+    let nanos = i128::from(recorded_at_ms).checked_mul(1_000_000)?;
+    time::OffsetDateTime::from_unix_timestamp_nanos(nanos)
+        .ok()?
+        .format(&time::format_description::well_known::Rfc3339)
+        .ok()
+}
+
 fn runtime_event_writeback(
     record: &RunEventRecord,
     provider_session_id: Option<&str>,
     environment: &BTreeMap<String, String>,
     provider_type: Option<&str>,
+    attempt_ref: Option<EventAttemptRef<'_>>,
 ) -> RuntimeCommandEventWriteback {
     let mut provider_session_external_id = provider_session_id.map(ToString::to_string);
     let mut session_state_patch = provider_session_state_patch(provider_session_id);
@@ -2281,6 +2306,63 @@ fn runtime_event_writeback(
         }
     };
 
+    // L2 信封字段（2026-08-10 定档批一）：与业务键**同层**补齐，让一条事件脱离
+    // 请求上下文也能自解释（离线重放、导出分析）。刻意保持扁平——过渡期若同时
+    // 保留扁平键与一份嵌套副本，tool 事件的两个 4KB excerpt 会翻倍，而 task_events
+    // 是热表且走 WS 广播。嵌套形态与读路径迁移是批二。
+    //
+    // `type` / `seq` 是**冗余投影**：外层 `event_type` / `sequence_number` 才是真相
+    // （CP 用外层去重、排序、落 task_events.sequence_number 列），不一致以外层为准。
+    let mut payload = payload;
+    payload.insert(
+        "schema_version".to_string(),
+        serde_json::Value::String(PROVIDER_EVENT_SCHEMA_VERSION.to_string()),
+    );
+    payload.insert(
+        "type".to_string(),
+        serde_json::Value::String(event_type.clone()),
+    );
+    payload.insert(
+        "seq".to_string(),
+        serde_json::Value::from(record.sequence.min(i32::MAX as u64)),
+    );
+    if let Some(ts) = envelope_timestamp(record.recorded_at_ms) {
+        payload.insert("ts".to_string(), serde_json::Value::String(ts));
+    }
+    let canonical_provider_type = provider_type
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| crate::providers::catalog::canonical_provider_type(value).to_string());
+    if let Some(provider_type) = &canonical_provider_type {
+        payload.insert(
+            "provider_type".to_string(),
+            serde_json::Value::String(provider_type.clone()),
+        );
+    }
+    if let Some(session_id) = provider_session_external_id.as_deref() {
+        payload.insert(
+            "provider_session_id".to_string(),
+            serde_json::Value::String(session_id.to_string()),
+        );
+    }
+    if let Some(attempt_ref) = attempt_ref {
+        let mut reference = serde_json::Map::new();
+        reference.insert(
+            "command_id".to_string(),
+            serde_json::Value::String(attempt_ref.command_id.to_string()),
+        );
+        if let Some(attempt_id) = attempt_ref.attempt_id {
+            reference.insert(
+                "attempt_id".to_string(),
+                serde_json::Value::String(attempt_id.to_string()),
+            );
+        }
+        payload.insert(
+            "attempt_ref".to_string(),
+            serde_json::Value::Object(reference),
+        );
+    }
+
     let mut metadata = HashMap::from([
         (
             "source".to_string(),
@@ -2288,7 +2370,7 @@ fn runtime_event_writeback(
         ),
         (
             "schema_version".to_string(),
-            serde_json::Value::String("provider.event.v1".to_string()),
+            serde_json::Value::String(PROVIDER_EVENT_SCHEMA_VERSION.to_string()),
         ),
     ]);
     if let Some(provider_type) = provider_type.map(str::trim).filter(|v| !v.is_empty()) {
@@ -4788,6 +4870,64 @@ mod tests {
         );
     }
 
+    /// 批一护栏：信封字段必须与业务键同层齐全，且 `seq`/`type` 与外层一致——
+    /// 外层是唯一真相，这里锁的是"投影不许漂"。
+    #[test]
+    fn runtime_event_writeback_carries_flat_envelope_fields() {
+        let environment = BTreeMap::new();
+        let record = crate::runs::RunEventRecord {
+            sequence: 17,
+            run_id: "run-1".to_string(),
+            event: ProviderEvent::TextDelta {
+                text: "hello".to_string(),
+            },
+            // 2026-08-10T00:00:00Z
+            recorded_at_ms: 1_786_320_000_000,
+        };
+        let writeback = runtime_event_writeback(
+            &record,
+            Some("ses-1"),
+            &environment,
+            // 短名必须归一到注册表口径
+            Some("claude"),
+            Some(EventAttemptRef {
+                command_id: "cmd-1",
+                attempt_id: Some("attempt-1"),
+            }),
+        );
+
+        assert_eq!(writeback.event_type, "text_delta");
+        assert_eq!(writeback.sequence_number, 17);
+        assert_eq!(
+            writeback.payload["schema_version"],
+            serde_json::json!("provider.event.v1")
+        );
+        // 冗余投影与外层一致
+        assert_eq!(
+            writeback.payload["type"],
+            serde_json::json!(writeback.event_type)
+        );
+        assert_eq!(
+            writeback.payload["seq"],
+            serde_json::json!(writeback.sequence_number)
+        );
+        assert_eq!(
+            writeback.payload["provider_type"],
+            serde_json::json!("claude-code")
+        );
+        assert_eq!(
+            writeback.payload["provider_session_id"],
+            serde_json::json!("ses-1")
+        );
+        assert_eq!(
+            writeback.payload["attempt_ref"],
+            serde_json::json!({ "command_id": "cmd-1", "attempt_id": "attempt-1" })
+        );
+        assert_eq!(writeback.payload["ts"], serde_json::json!("2026-08-10T00:00:00Z"));
+        // 业务键不受影响
+        assert_eq!(writeback.payload["text"], serde_json::json!("hello"));
+    }
+
     #[test]
     fn runtime_event_writeback_redacts_environment_values_in_excerpts() {
         let mut environment = BTreeMap::new();
@@ -4806,7 +4946,16 @@ mod tests {
             },
             recorded_at_ms: 0,
         };
-        let writeback = runtime_event_writeback(&record, None, &environment, Some("claude-code"));
+        let writeback = runtime_event_writeback(
+            &record,
+            None,
+            &environment,
+            Some("claude-code"),
+            Some(EventAttemptRef {
+                command_id: "cmd-test",
+                attempt_id: Some("attempt-test"),
+            }),
+        );
         assert_eq!(
             writeback.payload["output_excerpt"],
             serde_json::Value::String("echo [REDACTED:env:MY_API_TOKEN]".to_string())
@@ -4824,7 +4973,16 @@ mod tests {
             },
             recorded_at_ms: 0,
         };
-        let writeback = runtime_event_writeback(&record, None, &environment, Some("claude-code"));
+        let writeback = runtime_event_writeback(
+            &record,
+            None,
+            &environment,
+            Some("claude-code"),
+            Some(EventAttemptRef {
+                command_id: "cmd-test",
+                attempt_id: Some("attempt-test"),
+            }),
+        );
         let input = writeback.payload["input_excerpt"].as_str().unwrap();
         assert!(input.contains("[REDACTED:env:MY_API_TOKEN]"));
         assert!(!input.contains("supersecretvalue123"));

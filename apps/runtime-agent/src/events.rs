@@ -72,6 +72,10 @@ pub struct ErrorEvidenceRef {
 // 已删除；`contracts/provider/schemas/provider-result.schema.json` 与其 fixtures
 // 保留为对外契约描述，是否让它真正上行见 spec §6 与后续立项。
 
+/// L2 事件信封版本。信封字段与业务键同层（批一），嵌套形态见
+/// `docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md`。
+pub const PROVIDER_EVENT_SCHEMA_VERSION: &str = "provider.event.v1";
+
 /// Stream/attempt diagnostics carried on the terminal writeback (spec §4.4 / §6.1).
 /// Always populated on terminal paths when counts are known; unmapped is
 /// counted even when L2 `native_unmapped` writeback is off.

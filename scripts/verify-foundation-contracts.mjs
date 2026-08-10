@@ -415,6 +415,7 @@ function assertProviderSemanticContracts() {
     "schemas/provider-error.schema.json",
     "schemas/provider-result.schema.json",
     "schemas/provider-event.schema.json",
+    "schemas/provider-event-envelope.schema.json",
     "schemas/provider-capability.schema.json",
     "schemas/provider-usage.schema.json",
     "schemas/failure-family.json",
@@ -467,6 +468,7 @@ function assertProviderSemanticContracts() {
 
   const fixtureSchema = {
     "error-": "schemas/provider-error.schema.json",
+    "event-envelope-": "schemas/provider-event-envelope.schema.json",
     "result-": "schemas/provider-result.schema.json",
     "start-session-": "schemas/start-session-payload.schema.json",
   };
@@ -508,6 +510,11 @@ function assertProviderSemanticContracts() {
     }
   }
 
+  // Golden 的 expected_events 是 **parser 产出形态**，用 provider-event.schema.json
+  // 校验（信封字段在该 schema 里可选，因为它们由 Runtime 写回时补齐）。
+  // 在此之前这里只检查 native_lines 非空，映射写错了门禁也不会红。
+  const GOLDEN_MIN_CASES = 5;
+  const eventValidator = ajv.compile(schemaByName.get("schemas/provider-event.schema.json"));
   const goldenRoot = resolve(providerRoot, "golden");
   for (const provider of ["claude-code", "opencode", "codex"]) {
     const dir = resolve(goldenRoot, provider);
@@ -515,13 +522,28 @@ function assertProviderSemanticContracts() {
       throw new Error(`provider golden missing: contracts/provider/golden/${provider}/`);
     }
     const cases = readdirSync(dir).filter((n) => n.endsWith(".json"));
-    if (cases.length === 0) {
-      throw new Error(`provider golden empty: contracts/provider/golden/${provider}/`);
+    if (cases.length < GOLDEN_MIN_CASES) {
+      throw new Error(
+        `provider golden too thin: contracts/provider/golden/${provider}/ has ${cases.length}, need >= ${GOLDEN_MIN_CASES}`,
+      );
     }
     for (const name of cases) {
       const body = JSON.parse(readFileSync(resolve(dir, name), "utf8"));
       if (!Array.isArray(body.native_lines) || body.native_lines.length === 0) {
         throw new Error(`golden ${provider}/${name}: native_lines required`);
+      }
+      const events = Array.isArray(body.expected_events) ? body.expected_events : [];
+      if (!body.expect_error && events.length === 0) {
+        throw new Error(
+          `golden ${provider}/${name}: expected_events required unless expect_error is set`,
+        );
+      }
+      for (const [index, event] of events.entries()) {
+        if (!eventValidator(event)) {
+          throw new Error(
+            `golden ${provider}/${name} event[${index}] failed provider-event.schema.json:\n${ajv.errorsText(eventValidator.errors)}`,
+          );
+        }
       }
     }
   }

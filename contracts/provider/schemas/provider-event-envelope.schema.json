@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superteam.local/contracts/provider/schemas/provider-event-envelope.schema.json",
+  "title": "ProviderEventEnvelope",
+  "description": "L2 事件的**写回形态**：在 provider-event.schema.json 的基础上要求信封字段齐全。与 parser 产出的事件（provider-event.schema.json）区分——信封字段由 Runtime 在写回时补齐，parser 不产出。\n\n真相归属：`type` / `seq` 是**冗余投影**，外层 writeback 的 `event_type` / `sequence_number` 才是真相（Control Plane 用外层去重、排序、落 task_events.sequence_number）；二者不一致以外层为准。\n\n号的性质：单调但**不连续**——被抑制的 native_unmapped 事件会消耗号却不上行；且 Control Plane 自己写的终态事件（run_completed / run_failed）使用保留号 2147483600+，不属于本信封语义。\n\n形态：批一保持**扁平**（信封字段与业务键同层）。嵌套 payload 与读路径迁移是批二，见 docs/superpowers/specs/2026-08-10-l2-event-envelope-decision.md。",
+  "allOf": [{ "$ref": "provider-event.schema.json" }],
+  "required": ["schema_version", "type", "seq", "ts"],
+  "properties": {
+    "schema_version": { "const": "provider.event.v1" },
+    "seq": { "type": "integer", "minimum": 1 },
+    "ts": {
+      "type": "string",
+      "description": "RFC3339 UTC，由 Runtime 主机时钟生成。用 pattern 而非 format：仓库的 ajv 没装 ajv-formats，format 只会被忽略并打警告，pattern 是真的会红的那一个。",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "attempt_ref": {
+      "type": "object",
+      "required": ["command_id"],
+      "properties": {
+        "command_id": { "type": "string", "minLength": 1 },
+        "attempt_id": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

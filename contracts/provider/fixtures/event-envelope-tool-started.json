@@ -1,0 +1,16 @@
+{
+  "schema_version": "provider.event.v1",
+  "type": "tool_started",
+  "ts": "2026-08-10T00:00:00Z",
+  "seq": 17,
+  "provider_type": "claude-code",
+  "provider_session_id": "ses-1",
+  "attempt_ref": {
+    "command_id": "cmd-1",
+    "attempt_id": "attempt-1"
+  },
+  "tool_id": "toolu_1",
+  "name": "Bash",
+  "input_excerpt": "{\"command\":\"ls -la\"}",
+  "input_truncated": false
+}
