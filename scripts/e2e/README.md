@@ -30,6 +30,17 @@ node scripts/e2e/casting-suite.mjs --stage=sod
 SUPERTEAM_ASSERT_GRAPH_REVERSE=1 node scripts/e2e/casting-suite.mjs --stage=graph-assert
 ```
 
+### Provider 语义失败分类（opt-in，不进 verify:*）
+
+假 binary rate-limit 路径核对 `error_code` / `failure_family` / envelope `provider_type`
+（claude-code + 可选 opencode）。Runtime 需挂假 provider binary。
+
+```bash
+export SUPERTEAM_E2E_DB_URL='postgres://…'   # 与 control-plane config 一致
+node scripts/e2e/provider-semantic-fail-classification.mjs
+SUPERTEAM_E2E_SKIP_OPENCODE=1 node scripts/e2e/provider-semantic-fail-classification.mjs
+```
+
 ## Stages
 
 | stage | 覆盖 | 默认跑 |

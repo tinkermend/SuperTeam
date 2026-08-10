@@ -98,12 +98,23 @@ struct ChildStreamState {
 /// Default unmapped/unparseable lines per attempt before a WARN alert is emitted.
 pub const DEFAULT_UNMAPPED_ALERT_THRESHOLD: u64 = 5;
 
+static DRIFT_ALERT_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Env `SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD` (0 disables alerting).
 pub fn unmapped_alert_threshold() -> u64 {
     match std::env::var("SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD") {
         Ok(raw) => raw.trim().parse().unwrap_or(DEFAULT_UNMAPPED_ALERT_THRESHOLD),
         Err(_) => DEFAULT_UNMAPPED_ALERT_THRESHOLD,
     }
+}
+
+/// How many times a stream/attempt crossed the unmapped alert threshold.
+pub fn drift_alert_count() -> u64 {
+    DRIFT_ALERT_COUNT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn note_drift_alert() {
+    DRIFT_ALERT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
 type SharedChild = Arc<Mutex<Child>>;
@@ -217,6 +228,7 @@ pub fn stream_child_events(
                             .unmapped_native_count
                             .saturating_add(state.unparseable_line_count);
                         if threshold > 0 && total >= threshold {
+                            note_drift_alert();
                             eprintln!(
                                 "ALERT provider_stream_drift provider={} unmapped_native={} unparseable_line={} threshold={}",
                                 state.provider_name,

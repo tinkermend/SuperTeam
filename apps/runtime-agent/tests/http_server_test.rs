@@ -110,7 +110,7 @@ printf '%s\n' '{"type":"result","result":"http done"}'
     let response = client
         .post(format!("http://{}/runs", server.addr()))
         .json(&json!({
-            "provider_kind": "claude",
+            "provider_type": "claude-code",
             "workspace_path": temp.path(),
             "prompt": "hello",
             "continue_session": false
@@ -120,6 +120,7 @@ printf '%s\n' '{"type":"result","result":"http done"}'
         .expect("post run");
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     let run: serde_json::Value = response.json().await.expect("run json");
+    assert_eq!(run["provider_type"], "claude-code");
     let run_id = run["id"].as_str().expect("run id");
 
     let mut final_run = serde_json::Value::Null;

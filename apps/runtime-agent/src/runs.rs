@@ -38,13 +38,9 @@ pub struct RuntimeCommandRunContext {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunSpec {
-    /// Registry provider type (`claude-code` / `opencode` / `codex`). Preferred
-    /// for ErrorEnvelope and platform writeback (spec §13 #7).
+    /// Registry provider type (`claude-code` / `opencode` / `codex`).
     #[serde(default)]
     pub provider_type: String,
-    /// Short runtime display/health kind (`claude` / `opencode` / `codex`).
-    /// Kept for one release for attestation/local HTTP compatibility.
-    pub provider_kind: String,
     pub workspace_path: PathBuf,
     /// Legacy alias for the employee capability cache. Do not use it as a
     /// provider auth home.
@@ -105,21 +101,17 @@ fn default_provider_auth_mode() -> String {
 }
 
 impl RunSpec {
-    /// Registry `provider_type` for envelopes / L3. Falls back to mapping from
-    /// short `provider_kind` when older callers only populated the kind field.
+    /// Canonical registry `provider_type` for envelopes / L3.
     pub fn registry_provider_type(&self) -> &str {
-        let typed = self.provider_type.trim();
-        if !typed.is_empty() {
-            return crate::providers::catalog::canonical_provider_type(typed);
-        }
-        crate::providers::catalog::canonical_provider_type(&self.provider_kind)
+        crate::providers::catalog::canonical_provider_type(&self.provider_type)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunSnapshot {
     pub id: String,
-    pub provider_kind: String,
+    /// Registry provider type (`claude-code` / `opencode` / `codex`).
+    pub provider_type: String,
     pub workspace_path: PathBuf,
     /// Legacy alias for the employee capability cache. Do not use it as a
     /// provider auth home.
@@ -194,11 +186,7 @@ impl RuntimeRunStore {
         let id = new_run_id();
         let snapshot = RunSnapshot {
             id: id.clone(),
-            provider_kind: if spec.provider_kind.is_empty() {
-                crate::providers::catalog::provider_kind(spec.registry_provider_type()).to_string()
-            } else {
-                spec.provider_kind
-            },
+            provider_type: spec.registry_provider_type().to_string(),
             workspace_path: spec.workspace_path,
             agent_home_dir: spec.agent_home_dir,
             employee_capability_dir: spec.employee_capability_dir,
@@ -413,8 +401,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = RuntimeRunStore::new(dir.path());
         let spec = RunSpec {
-            provider_type: String::new(),
-            provider_kind: "claude".to_string(),
+            provider_type: "claude-code".to_string(),
             workspace_path: dir.path().to_path_buf(),
             agent_home_dir: None,
             employee_capability_dir: None,
@@ -446,8 +433,7 @@ mod tests {
 
     fn capability_run_spec(workspace: &std::path::Path, home: Option<&str>) -> RunSpec {
         RunSpec {
-            provider_type: String::new(),
-            provider_kind: "claude".to_string(),
+            provider_type: "claude-code".to_string(),
             workspace_path: workspace.to_path_buf(),
             agent_home_dir: home.map(PathBuf::from),
             employee_capability_dir: home.map(PathBuf::from),

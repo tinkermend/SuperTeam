@@ -90,12 +90,24 @@ fn router(state: RuntimeHttpState) -> Router {
 struct HealthResponse {
     node_id: String,
     status: String,
+    /// Provider stream drift counters (unmapped/unparseable alerts).
+    provider_stream: ProviderStreamHealth,
+}
+
+#[derive(Debug, Serialize)]
+struct ProviderStreamHealth {
+    drift_alert_count: u64,
+    unmapped_alert_threshold: u64,
 }
 
 async fn health(State(state): State<RuntimeHttpState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         node_id: state.config.node_id,
         status: "ok".to_string(),
+        provider_stream: ProviderStreamHealth {
+            drift_alert_count: crate::providers::drift_alert_count(),
+            unmapped_alert_threshold: crate::providers::unmapped_alert_threshold(),
+        },
     })
 }
 
@@ -156,15 +168,13 @@ async fn create_run(
             ApiError::bad_request("provider_type (or deprecated provider_kind) is required")
         })?;
     let provider_type = crate::providers::catalog::canonical_provider_type(raw).to_string();
-    let provider_kind = crate::providers::catalog::provider_kind(&provider_type).to_string();
-    if provider_kind == "unsupported" {
+    if crate::providers::catalog::provider_kind(&provider_type) == "unsupported" {
         return Err(ApiError::bad_request(format!(
             "unsupported provider_type: {raw}"
         )));
     }
     let spec = RunSpec {
         provider_type,
-        provider_kind,
         workspace_path: request.workspace_path,
         agent_home_dir: request.agent_home_dir,
         employee_capability_dir: None,

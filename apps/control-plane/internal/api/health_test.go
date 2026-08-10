@@ -32,17 +32,27 @@ func assertHealthResponse(t *testing.T, handler http.Handler) {
 		t.Fatalf("expected status 200, got %d", response.Code)
 	}
 
-	var body map[string]string
+	var body map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("expected JSON health response: %v", err)
 	}
 
 	if body["status"] != "ok" {
-		t.Fatalf("expected status ok, got %q", body["status"])
+		t.Fatalf("expected status ok, got %#v", body["status"])
 	}
 
 	if body["service"] != "control-plane" {
-		t.Fatalf("expected service control-plane, got %q", body["service"])
+		t.Fatalf("expected service control-plane, got %#v", body["service"])
+	}
+	pc, ok := body["provider_contract"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected provider_contract object, got %#v", body["provider_contract"])
+	}
+	if _, ok := pc["schema_violation_count"]; !ok {
+		t.Fatalf("expected schema_violation_count in provider_contract: %#v", pc)
+	}
+	if engine, _ := pc["schema_engine"].(string); engine != "jsonschema" && engine != "structural" {
+		t.Fatalf("unexpected schema_engine: %#v", pc["schema_engine"])
 	}
 }
 

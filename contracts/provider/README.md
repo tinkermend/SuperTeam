@@ -42,16 +42,17 @@ The Control Plane must not depend on provider-specific request shapes. Runtime a
 
 ### Follow-ups landed (post Phase 4)
 
-- Registry `provider_type` is the write path for envelopes/events/attestation; local HTTP accepts `provider_type` (preferred) or deprecated `provider_kind`.
+- Registry `provider_type` is the sole public run identity (`RunSnapshot` / openapi); local HTTP create still accepts deprecated `provider_kind` input.
 - Golden ≥5 per provider (enforced by `provider_golden_test`).
-- S2 ingest: CP `RecordEvent` structural tag `metadata.schema_violation` (never rejects).
-- Unmapped/unparseable stream drift: `ALERT provider_stream_drift` when count ≥ `SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD` (default 5; 0 disables).
+- S2 ingest: CP `RecordEvent` tags `metadata.schema_violation` (never rejects) via **jsonschema v6** when `provider-error.schema.json` is loadable, else structural fallback.
+- Unmapped/unparseable stream drift: `ALERT provider_stream_drift` when count ≥ `SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD` (default 5; 0 disables); counters on Runtime `/health.provider_stream`.
+- CP `/health.provider_contract` exposes `schema_violation_count` + `schema_engine`.
+- Opt-in E2E: `corepack pnpm e2e:provider-semantic`.
 
 ### Still open
 
-- Complete deletion of short-kind fields from all public snapshots/API responses.
-- S2 full JSON Schema engine (current is structural subset); S3 reject mode not planned.
 - Wire transport for process events remains `contracts/control-plane/openapi.yaml` (`payload`/`metadata` opaque objects).
+- Catalog internal short `provider_kind` is only for health-probe labels / reverse map, not public run API.
 
 
 The first Rust adapter baseline supports Claude Code and OpenCode through short-lived CLI processes per turn. Session continuity is represented by `ProviderSessionRef` and translated by the adapter:

@@ -163,7 +163,7 @@ components:
       type: object
       required:
         - id
-        - provider_kind
+        - provider_type
         - workspace_path
         - prompt
         - continue_session
@@ -172,9 +172,9 @@ components:
       properties:
         id:
           type: string
-        provider_kind:
+        provider_type:
           type: string
-          description: Short display kind (derived from registry provider_type).
+          description: Registry provider type (claude-code / opencode / codex).
         workspace_path:
           type: string
         prompt:

@@ -368,7 +368,6 @@ impl RuntimeCommandExecutor {
 
         let spec = RunSpec {
             provider_type: payload.provider_type.clone(),
-            provider_kind: payload.provider_kind().to_string(),
             workspace_path: command_workspace.workspace_path,
             agent_home_dir: Some(command_workspace.agent_home_dir.clone()),
             employee_capability_dir: Some(command_workspace.employee_capability_dir),
@@ -2445,7 +2444,7 @@ fn project_task_attestation_writeback(
         provider_session_id: provider_session_id.map(ToString::to_string),
         attestation_type: attestation_type.to_string(),
         status: status.to_string(),
-        command_argv: vec![spec.provider_kind.clone()],
+        command_argv: vec![spec.registry_provider_type().to_string()],
         exit_code: None,
         duration_ms,
         log_ref: None,
@@ -3485,6 +3484,7 @@ async fn drain_provider_events(
     if unmapped_native_count > 0 {
         let threshold = crate::providers::unmapped_alert_threshold();
         if threshold > 0 && unmapped_native_count >= threshold {
+            crate::providers::note_drift_alert();
             eprintln!(
                 "ALERT provider_stream_drift run={run_id} provider={provider_type} \
                  unmapped_native={unmapped_native_count} \
@@ -4542,7 +4542,7 @@ mod tests {
         let context = project_task_writeback_context(&payload).expect("project task context");
         let spec = RunSpec {
             provider_type: "claude-code".to_string(),
-            provider_kind: "claude".to_string(),
+            provider_type: "claude-code".to_string(),
             workspace_path: PathBuf::from("/workspace/project"),
             agent_home_dir: Some(PathBuf::from("/agent/home")),
             employee_capability_dir: Some(PathBuf::from("/employee/cache")),

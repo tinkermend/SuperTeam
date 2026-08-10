@@ -14,11 +14,11 @@
 
 | 项 | 说明 |
 |---|---|
-| §13 议题 7 退役 | **主写路径已收敛到注册表 `provider_type`**；本地 HTTP 仍接受 deprecated `provider_kind`。`RunSnapshot.provider_kind` 短展示字段暂留（由 type 派生） |
-| golden 数量 | **已达 ≥5/家**（`provider_golden_test` 硬门槛） |
-| 校验强度 | **S1 + S2 结构打标**（`metadata.schema_violation`，不拒绝）；完整 JSON Schema 引擎与 overview 指标面可再增强 |
-| 漂移告警 | **`ALERT provider_stream_drift`** 阈值（默认 5，env 可调） |
-| 跨 Provider 同任务 E2E | 实跑 opencode 假 binary 失败分类（见 CHANGELOG 当次记录）；非门禁强制 |
+| §13 议题 7 退役 | **完成**：公开 Run API 仅 `provider_type`；HTTP create 仍兼容 deprecated `provider_kind` 入参 |
+| golden 数量 | **已达 ≥5/家**（硬门槛） |
+| 校验强度 | **S1 + S2 jsonschema v6**（不可用时结构回退）；`/health.provider_contract` 暴露计数与引擎 |
+| 漂移告警 | **`ALERT provider_stream_drift`** + Runtime health `provider_stream` 计数 |
+| 跨 Provider E2E | **脚本门禁化**：`pnpm e2e:provider-semantic`（opt-in，需真服务+假 binary） |
 
 ---
 

@@ -20,7 +20,8 @@
     "test:ts": "corepack pnpm -r --if-present test",
     "test:go": "go test ./apps/control-plane/... ./apps/feishu-connector/...",
     "test:rust": "cargo test --manifest-path apps/runtime-agent/Cargo.toml",
-    "typecheck": "corepack pnpm -r --if-present typecheck"
+    "typecheck": "corepack pnpm -r --if-present typecheck",
+    "e2e:provider-semantic": "node scripts/e2e/provider-semantic-fail-classification.mjs"
   },
   "devDependencies": {
     "ajv": "^8.20.0"
