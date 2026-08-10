@@ -894,6 +894,16 @@ const (
 	FailureFamilyBudgetFuse = "budget_fuse"
 )
 
+// EnvironmentNoiseFailureFamilies are CP-side dispatch/watchdog families that
+// must not overwrite a task-level root cause (spec 2026-08-10 §2.2). Keep in
+// sync with isEnvironmentNoiseFailureFamily. transient_provider is NOT noise.
+var EnvironmentNoiseFailureFamilies = []string{
+	FailureFamilyTransientRuntime,
+	FailureFamilyRuntimeLeaseLost,
+	FailureFamilyRuntimeStartTimeout,
+	FailureFamilyDispatchTransient,
+}
+
 const (
 	HumanWaitReasonMissingContext     = "missing_context"
 	HumanWaitReasonClarification      = "clarification"

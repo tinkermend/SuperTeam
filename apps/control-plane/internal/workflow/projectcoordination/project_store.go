@@ -3250,6 +3250,16 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 	if projectTaskQueuedWithoutRunBinding(task) {
 		return s.resumeQueuedProjectTaskRunStart(ctx, input, task)
 	}
+	// Defensive: task-level run ids can be stale from a prior attempt while the
+	// current attempt is still unbound. Prefer resuming the current attempt over
+	// short-circuiting as "already dispatched".
+	if task.Status == project.ProjectTaskStatusQueued && task.CurrentAttemptID != nil {
+		if attempt, err := s.repository.GetProjectTaskAttempt(ctx, input.TenantID, *task.CurrentAttemptID); err == nil {
+			if attempt.Status == project.ProjectTaskAttemptStatusQueued && attempt.DigitalEmployeeRunID == nil && attempt.RuntimeTaskID == nil {
+				return s.resumeQueuedProjectTaskRunStart(ctx, input, task)
+			}
+		}
+	}
 	if task.DigitalEmployeeRunID != nil {
 		if task.RuntimeTaskID == nil {
 			return s.recordDispatchFailure(ctx, input.TenantID, task.ProjectID, task, project.ErrInvalidProject)

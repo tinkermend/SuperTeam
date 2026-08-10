@@ -41,7 +41,7 @@ node scripts/e2e/provider-semantic-fail-classification.mjs
 SUPERTEAM_E2E_SKIP_OPENCODE=1 node scripts/e2e/provider-semantic-fail-classification.mjs
 
 # 终态路径（turn_error 标记 / attestation / 分类与路由），一次一条腿
-node scripts/e2e/provider-semantic-terminal-paths.mjs PROVIDER_NO_TERMINAL_EVENT transient_provider false
+node scripts/e2e/provider-semantic-terminal-paths.mjs PROVIDER_NO_TERMINAL_EVENT transient_provider true
 node scripts/e2e/provider-semantic-terminal-paths.mjs BUDGET_FUSE budget_fuse false --budget
 ```
 

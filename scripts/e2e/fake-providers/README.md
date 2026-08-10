@@ -5,7 +5,7 @@
 | 脚本 | 模拟 | 期望分类 |
 |---|---|---|
 | `claude-rate-limit-exit1.sh` | 打一行 system，stderr 写 rate limit，exit 1 | `RATE_LIMIT` / `transient_provider` / retryable=true |
-| `claude-no-terminal-event.sh` | 打一行 system 后 **exit 0 且无 result** | `PROVIDER_NO_TERMINAL_EVENT` / `transient_provider` / **retryable=false** |
+| `claude-no-terminal-event.sh` | 打一行 system 后 **exit 0 且无 result** | `PROVIDER_NO_TERMINAL_EVENT` / `transient_provider` / **retryable=true** |
 | `claude-sleep.sh` | 打一行 system 后长睡 | 配合把 attempt 的 `budget_wall_clock_limit_sec` 改小 → `BUDGET_FUSE` / `budget_fuse` |
 
 ## 用法

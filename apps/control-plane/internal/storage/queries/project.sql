@@ -1634,9 +1634,14 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 RETURNING *;
 
 -- name: ScheduleProjectTaskRetry :one
+-- Clear prior dispatch identity so the coordinator re-enters StartProjectTaskRun
+-- for the new attempt (see projectTaskQueuedWithoutRunBinding). Keeping the old
+-- runtime_task_id/digital_employee_run_id short-circuits Dispatch as "already dispatched".
 UPDATE project_tasks
 SET status = 'queued',
     current_attempt_id = sqlc.arg('current_attempt_id')::uuid,
+    runtime_task_id = NULL,
+    digital_employee_run_id = NULL,
     attempt_count = attempt_count + 1,
     retry_not_before = sqlc.narg('retry_not_before')::timestamptz,
     waiting_reason = NULL,

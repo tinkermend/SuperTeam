@@ -63,7 +63,7 @@ SuperTeam 是企业数字员工**控制平面**，不是聊天聚合器：
 | 契约包 | `contracts/provider/schemas/*` + golden + fixtures | ajv S1（`verify:contracts`）+ CP S2 打标 |
 | family 词表 | `failure-family.json` + CP/Runtime ⊆ 单测 + Web `failureFamilyLabel` | 跨层共享；`budget_fuse` 路由 waiting_human |
 | raw 证据轨 | 2026-07-09 已落地 | 原始流不因 parse 丢弃 |
-| 零终态兜底 | `executor.rs` `drain_provider_events` 尾部 | `PROVIDER_NO_TERMINAL_EVENT` → `transient_provider` / **不可重试**（§18-1） |
+| 零终态兜底 | `executor.rs` `drain_provider_events` 尾部 | `PROVIDER_NO_TERMINAL_EVENT` → `transient_provider` / **可重试**（§18-1 临时不可重试已随 2026-08-10 派发修复翻回） |
 
 ### 1.3 实施前的结构性缺口（历史；Phase 1–4 后状态）
 
@@ -367,7 +367,7 @@ contracts/provider/
 | `PROVIDER_EXIT_NON_ZERO` | 进程非 0 退出 | `transient_provider` 或 `non_retryable_execution`* | *见映射表 |
 | `PROVIDER_SPAWN_FAILED` | 二进制不存在/无权限 | `provider_configuration` | false |
 | `PROVIDER_PROTOCOL_ERROR` | 流协议致命错误 / codex 原生 error 行 | `non_retryable_execution` | false |
-| `PROVIDER_NO_TERMINAL_EVENT` | **exit 0 但全程无 TurnCompleted/TurnError**（输出格式漂移被解析层全量丢弃的典型形态） | `transient_provider`（保留诊断信息量） | **false**——重试在派发修好前无效且会掩盖真因，见 §13 议题 11 / §18-1 |
+| `PROVIDER_NO_TERMINAL_EVENT` | **exit 0 但全程无 TurnCompleted/TurnError**（输出格式漂移被解析层全量丢弃的典型形态） | `transient_provider`（保留诊断信息量） | **true**——派发/归因已修好（2026-08-10），恢复 §13 议题 11 原判；临时 `false` 见 §18-1 已销账 |
 | `RATE_LIMIT` | 限流 | `transient_provider` | true |
 | `AUTH_FAILED` | 鉴权/配额账号 | `provider_configuration`（CP 已有中文 lead「执行器配置有误」，比 `non_retryable_execution` 信息量高） | false |
 | `TIMEOUT` | 超时 | `timeout` | true |
@@ -773,7 +773,7 @@ ProviderAdapter
 | 8 | 加 ajv | **已落地** |
 | 9 | S1 + S2 打标 | **已落地**（S3 仍不做） |
 | 10 | `error_code` 列 | **已落地**（Phase 4） |
-| 11 | `PROVIDER_NO_TERMINAL_EVENT` → transient 可重试 | **已翻回不可重试**（2026-08-10 人类确认，见 §18-1）：真链路证伪前提——重试根本没重跑，反而把真因盖成 `runtime_recovery` |
+| 11 | `PROVIDER_NO_TERMINAL_EVENT` → transient 可重试 | **已翻回可重试**（2026-08-10 派发/归因修复落地后）：临时不可重试见 §18-1；再派发与任务级首因归因见 `2026-08-10-retry-redispatch-and-failure-attribution.md` |
 | 12 | `budget_fuse` → waiting_human + 中文 | **已落地** |
 
 ---
@@ -883,11 +883,11 @@ ProviderAdapter
 
 **门禁修复**：`a3e4d43a` 在 `RunSpec` 字段收敛时于测试块留下重复字段，main 上 `cargo test` 直接编译失败（E0062），`verify:runtime-agent` / `verify:foundation` 一直是红的（非测试构建不受影响，所以运行中的服务看不出来）。已修（`9bf01fa2`）。
 
-### 18-1 议题 11 翻转：`PROVIDER_NO_TERMINAL_EVENT` 回到不可重试
+### 18-1 议题 11 翻转：`PROVIDER_NO_TERMINAL_EVENT` 曾临时不可重试（已销账）
 
 原判据「重试耗尽后由 max_attempts 收敛到等人，比静默判死可观测」被真链路证伪：**重试根本没重跑**。实测（需求 `6665b38e`）：attempt #1 正确分类后 requeue，attempt #2/#3 从未产生 runtime 命令（`runtime_events` 在 #1 结束后再无记录），双双空转到看门狗 `lost`，12 分钟后任务落 `waiting_human` / `runtime_recovery`——**真因被最后一次尝试的族盖掉**，人类被指向运行环境而非 provider 输出漂移。同形态在另一批 8 条 `RATE_LIMIT` 任务上复现，属既有派发缺陷，被本 spec 的改判放大到必经路径。
 
-人类 2026-08-10 确认翻回 `transient_provider` / `retryable=false`：12 分钟无效重试 + 掩盖真因 → 秒级如实失败。派发修好后连同任务级归因一起翻回，见立项 `docs/superpowers/specs/2026-08-10-retry-redispatch-and-failure-attribution.md`。
+人类 2026-08-10 曾确认临时翻回 `retryable=false`。**派发再送 + 任务级首因归因**已在 `2026-08-10-retry-redispatch-and-failure-attribution.md` 落地，议题 11 现已翻回 `transient_provider` / `retryable=true`。
 
 ### 18-2 本次一并修的三项
 

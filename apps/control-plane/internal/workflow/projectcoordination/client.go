@@ -71,6 +71,13 @@ func (c *SignalClient) SignalEmployeeTaskCompleted(ctx context.Context, signal p
 	})
 }
 
+func (c *SignalClient) SignalProjectTaskRetryScheduled(ctx context.Context, signal project.ProjectTaskRetryScheduledSignal) error {
+	return c.signal(ctx, signal.TenantID, signal.WorkflowID, signal.ProjectID, SignalProjectTaskRetryScheduled, ProjectTaskRetryScheduled{
+		ProjectTaskID:  signal.ProjectTaskID,
+		RetryNotBefore: signal.RetryNotBefore,
+	})
+}
+
 func (c *SignalClient) SignalEmployeeTaskFailed(ctx context.Context, signal project.EmployeeTaskFailedSignal) error {
 	return c.signal(ctx, signal.TenantID, signal.WorkflowID, signal.ProjectID, SignalEmployeeTaskFailed, EmployeeTaskFailed{
 		ProjectTaskID:  signal.ProjectTaskID,

@@ -1,10 +1,29 @@
 # 重试再派发不通与失败归因被覆盖
 
 - 日期：2026-08-10
-- 状态：**立项（人类已批），未实施**
+- 状态：**已实施（E2E 取证通过）**
 - 来源：`2026-08-09-provider-semantic-unification-design.md` 复查期真实 E2E 实测（§18-1）
 - 优先级：**高于 provider 语义层剩余项**——它让**所有** `transient_*` 族失败都拿不到真正的重试
-- 迁移：待勘察后定
+- 迁移：无需库表迁移；`ScheduleProjectTaskRetry` SQL 清零派发身份列
+
+---
+
+## 0. 勘察结论（2026-08-10）
+
+### 实际根因（两条叠加，缺一不可）
+
+| # | 候选 | 结论 | 证据 |
+|---|---|---|---|
+| 1 | 协调线程未发派发信号 | **成立** | `FailProjectTaskAttempt` 在 `status=queued` 时直接 `return`，**不** `SignalEmployeeTaskFailed`（正确——该信号走人类恢复），也**没有**任何「再派发」信号。`scheduleDispatchRetry` 只挂在 dispatch 失败恢复路径上，attempt 级 requeue 无人唤醒 coordinator。看门狗 5 分钟后把 queued attempt 标 `lost`，循环至 max_attempts。 |
+| 2 | 派发活动静默失败 | **排除** | 既无 `DispatchProjectTask` 被调用（无信号），也就不存在 activity 失败/重试历史。Runtime Agent 侧只有 attempt #1 的命令，与「派发从未发生」一致，而非派发后 silent fail。 |
+| 3 | 幂等去重误命中 / 复用派发身份 | **成立（结构根因）** | `scheduleProjectTaskRetryWithQueries` / `resumeProjectTaskAfterHumanWaitWithQueries` 把失败 attempt 的 `DigitalEmployeeRunID`/`RuntimeTaskID`/`RuntimeNodeID` **原样拷到**新 attempt；`ScheduleProjectTaskRetry` **不清** task 行上的同名列。`DispatchProjectTask` 见 `task.DigitalEmployeeRunID != nil` 且已有 `project_task.dispatched` 事件 → 直接 `advanceDispatchedTaskDemand`，**不** `StartProjectTaskRun`。判别器：`runtime_events` 无第二条 `command_event`。 |
+
+### 修复要点
+
+1. 重试 attempt：**不**拷贝派发身份；`ScheduleProjectTaskRetry` 将 task 的 `runtime_task_id`/`digital_employee_run_id` 置 NULL（`provider_session_id` 仍由 `FindProviderSessionForTaskRoot` 在派发时续旧）。
+2. 新增信号 `ProjectTaskRetryScheduled`：attempt 级 requeue / 看门狗 requeue 后唤醒 coordinator → `DispatchProjectTask`（可带 `RetryNotBefore` 退避）。
+3. 任务级 waiting_human 卡片：首因取**首个非环境噪声** attempt 的 family/summary；环境噪声族显式清单见 `EnvironmentNoiseFailureFamilies`。
+4. `PROVIDER_NO_TERMINAL_EVENT` 翻回 `retryable=true`（provider spec §13 议题 11 / §5.2 / §18-1 销账）。
 
 ---
 
@@ -65,9 +84,11 @@ resume 的已知代价是 fail fast：会话被 LRU 清理或 attempt 落到别�
 
 ## 4. 验收（真实链路）
 
-- [ ] 造一次 `transient_provider` 失败：attempt #2 **确实产生 runtime 命令并真的重跑 provider**（`runtime_events` 有第二条 command_event）
-- [ ] 重试耗尽后 `waiting_human`，且任务级结论显示的是**首因** `error_code`，不是 `runtime_recovery`
-- [ ] 既有 watchdog 行为不回归（runtime 真的失联时仍能标 `lost`）
+- [x] 造一次 `transient_provider` 失败：attempt #2 **确实产生 runtime 命令并真的重跑 provider**（`runtime_events` 有第二条 command_event）  
+  取证 2026-08-10：任务 `6844e174…`，3 个 attempt 均 `PROVIDER_NO_TERMINAL_EVENT`，3 个 distinct `digital_employee_run_id`，3 组 `command_event`/`command_failed`（cmd-d391…/eb640…/f08b…）
+- [x] 重试耗尽后 `waiting_human`，且任务级结论显示的是**首因** `error_code`，不是 `runtime_recovery`  
+  决策卡：`执行器启动或运行失败（PROVIDER_NO_TERMINAL_EVENT）：provider exited without a terminal event`；`waiting_reason=clarification`
+- [ ] 既有 watchdog 行为不回归（runtime 真的失联时仍能标 `lost`）——本次未单独造「真失联」；逻辑未改看门狗判定，仅改 requeue 后身份与信号
 
 ## 5. 现状锚点
 
@@ -81,4 +102,7 @@ resume 的已知代价是 fail fast：会话被 LRU 清理或 attempt 落到别�
 
 ## 6. 同族观察（2026-08-10 复查期实测，未深挖）
 
-高风险预检闸的**人类批准也不释放任务**：任务 `b449a6d5…` 上有两张 `project_task_approval` 卡，一张已被浏览器真实批准（`approval_request` 有值、`approval_decisions` 记到 21:16:12），另一张仍 `pending` 且 **`approval_request_id` 是全零 UUID**，任务因此卡在 `waiting_human/approval_required`、`attempts=0`。表征与 §2.1 同族——「决策/状态已就位，但任务不动」。勘察时一并看：重复开卡的来源，以及全零 approval 引用是哪条路径写的。
+高风险预检闸的**人类批准也不释放任务**：任务 `b449a6d5…` 上有两张 `project_task_approval` 卡，一张已被浏览器真实批准（`approval_request` 有值、`approval_decisions` 记到 21:16:12），另一张仍 `pending` 且 **`approval_request_id` 是全零 UUID**，任务因此卡在 `waiting_human/approval_required`、`attempts=0`。表征与 §2.1 同族——「决策/状态已就位，但任务不动」。
+
+**浅挖（本会话）**：`createGateHumanAction` 有三条分支——(a) 已有 `gate.DecisionRequestID`、(b) 已有 `task.WaitingRequestID`、(c) `findOrCreateGateApprovalRequest` + `CreateDecisionRequest(ApprovalRequestID=approval.ID)`。只有 (c) 保证非零 `approval_request_id`；(a)(b) 复用既有 decision 时**不校验**其 `ApprovalRequestID` 是否为零。重复开卡可能来自多次 gate 评估各写一张 decision，或 orphan waiting_human 修复路径补卡时未绑 approval。  
+**未修**：与本主症正交；建议另立项「预检闸 decision 必须绑定非零 approval_request_id + 批准后只认一张卡」。

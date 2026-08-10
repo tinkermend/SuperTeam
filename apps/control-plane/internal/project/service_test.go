@@ -3668,9 +3668,17 @@ func TestFailProjectTaskAttemptWritesLedgerEvent(t *testing.T) {
 
 func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
 	repo := newMemoryRepository()
-	service, err := NewService(repo)
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
 	require.NoError(t, err)
 	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	// Prior dispatch binding must not leak onto the retry attempt.
+	oldRunID := uuid.New()
+	oldRuntimeTaskID := uuid.New()
+	repo.projectTaskAttempts[0].DigitalEmployeeRunID = &oldRunID
+	repo.projectTaskAttempts[0].RuntimeTaskID = &oldRuntimeTaskID
+	repo.tasks[0].DigitalEmployeeRunID = &oldRunID
+	repo.tasks[0].RuntimeTaskID = &oldRuntimeTaskID
 	maxAttempts := int32(3)
 	repo.tasks[0].AttemptCount = 1
 	repo.tasks[0].MaxAttempts = &maxAttempts
@@ -3688,8 +3696,68 @@ func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
 	require.NotNil(t, task.CurrentAttemptID)
 	require.NotEqual(t, fixture.attemptID, *task.CurrentAttemptID)
 	require.Equal(t, int32(2), task.AttemptCount)
+	require.Nil(t, task.DigitalEmployeeRunID, "retry must clear task-level run binding")
+	require.Nil(t, task.RuntimeTaskID, "retry must clear task-level runtime_task binding")
+	retryAttempt, err := repo.GetProjectTaskAttempt(context.Background(), fixture.tenantID, *task.CurrentAttemptID)
+	require.NoError(t, err)
+	require.Nil(t, retryAttempt.DigitalEmployeeRunID, "retry attempt must not reuse prior digital_employee_run_id")
+	require.Nil(t, retryAttempt.RuntimeTaskID, "retry attempt must not reuse prior runtime_task_id")
 	require.Len(t, repo.executionLedgerEvents, 1)
 	require.Equal(t, (*task.CurrentAttemptID).String(), repo.executionLedgerEvents[0].Metadata["retry_project_task_attempt_id"])
+	require.Equal(t, 1, coordinator.retrySignals, "requeue must wake coordinator for redispatch")
+	require.Equal(t, task.ID, coordinator.lastRetry.ProjectTaskID)
+	require.Equal(t, 0, coordinator.failedSignals, "must not open human-recovery signal on auto-retry")
+}
+
+func TestFailProjectTaskAttemptWaitingHumanUsesPrimaryNonNoiseAttribution(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	maxAttempts := int32(1)
+	repo.tasks[0].AttemptCount = 1
+	repo.tasks[0].MaxAttempts = &maxAttempts
+
+	// Prior real provider failure (attempt 0 in fixture history).
+	priorFamily := FailureFamilyTransientProvider
+	priorMsg := "provider exited without a terminal event"
+	priorCode := "PROVIDER_NO_TERMINAL_EVENT"
+	repo.projectTaskAttempts = append([]ProjectTaskAttempt{{
+		ID:             uuid.New(),
+		TenantID:       fixture.tenantID,
+		ProjectTaskID:  fixture.taskID,
+		AttemptNo:      1,
+		Status:         ProjectTaskAttemptStatusFailed,
+		FailureFamily:  &priorFamily,
+		FailureMessage: &priorMsg,
+		ErrorCode:      &priorCode,
+		LeaseToken:     "prior-lease",
+		IdempotencyKey: "prior-fail",
+		CreatedAt:      time.Now().UTC().Add(-time.Minute),
+		UpdatedAt:      time.Now().UTC().Add(-time.Minute),
+	}}, repo.projectTaskAttempts...)
+	// Current fixture attempt is #2 and is about to be marked lost by watchdog.
+	repo.projectTaskAttempts[1].AttemptNo = 2
+
+	retryable := true
+	task, err := service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("fail-noise-cover"),
+		FailureSummary:                   "Runtime did not acknowledge project task attempt start before deadline",
+		FailureFamily:                    FailureFamilyTransientRuntime,
+		Retryable:                        &retryable,
+		ErrorCode:                        "",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.Len(t, inbox.upserts, 1)
+	require.NotNil(t, inbox.upserts[0].SummarySnapshot)
+	summary := *inbox.upserts[0].SummarySnapshot
+	require.Contains(t, summary, "执行器启动或运行失败")
+	require.Contains(t, summary, "PROVIDER_NO_TERMINAL_EVENT")
+	require.Contains(t, summary, "provider exited without a terminal event")
+	require.NotContains(t, summary, "Runtime did not acknowledge")
 }
 
 func TestFailProjectTaskAttemptRetryExhaustionMovesToWaitingHuman(t *testing.T) {
@@ -15323,15 +15391,13 @@ func (r *memoryRepository) resumeProjectTaskAfterHumanWait(req ResolveProjectTas
 		if task.Status != ProjectTaskStatusWaitingHuman {
 			return ProjectTask{}, ErrProjectConflict
 		}
+		// Fresh dispatch identity on human-wait resume (same rule as automatic retry).
 		attemptReq := QueueProjectTaskRequest{
 			TenantID:                      task.TenantID,
 			ProjectID:                     task.ProjectID,
 			ProjectTaskID:                 task.ID,
 			ProjectTaskAttemptID:          &req.RetryAttemptID,
 			DigitalEmployeeID:             *task.AssignedDigitalEmployeeID,
-			DigitalEmployeeRunID:          req.CurrentAttempt.DigitalEmployeeRunID,
-			RuntimeTaskID:                 req.CurrentAttempt.RuntimeTaskID,
-			RuntimeNodeID:                 req.CurrentAttempt.RuntimeNodeID,
 			IdempotencyKey:                req.RetryIdempotencyKey,
 			LeaseToken:                    req.RetryLeaseToken,
 			ExecutionContextPacket:        req.CurrentAttempt.ExecutionContextPacket,
@@ -15343,6 +15409,8 @@ func (r *memoryRepository) resumeProjectTaskAfterHumanWait(req ResolveProjectTas
 		now := time.Now().UTC()
 		task.Status = ProjectTaskStatusQueued
 		task.CurrentAttemptID = &attempt.ID
+		task.RuntimeTaskID = nil
+		task.DigitalEmployeeRunID = nil
 		task.AttemptCount++
 		task.WaitingReason = nil
 		task.WaitingRequestID = nil
@@ -15374,15 +15442,13 @@ func (r *memoryRepository) scheduleProjectTaskRetry(req RecoverProjectTaskAttemp
 		if task.Status != ProjectTaskStatusQueued && task.Status != ProjectTaskStatusRunning && task.Status != ProjectTaskStatusWaitingHuman {
 			return ProjectTask{}, ErrProjectConflict
 		}
+		// Fresh dispatch identity on every retry (must not reuse failed attempt's run).
 		attemptReq := QueueProjectTaskRequest{
 			TenantID:                      task.TenantID,
 			ProjectID:                     task.ProjectID,
 			ProjectTaskID:                 task.ID,
 			ProjectTaskAttemptID:          &retryAttemptID,
 			DigitalEmployeeID:             req.Failure.DigitalEmployeeID,
-			DigitalEmployeeRunID:          req.Attempt.DigitalEmployeeRunID,
-			RuntimeTaskID:                 req.Attempt.RuntimeTaskID,
-			RuntimeNodeID:                 req.Attempt.RuntimeNodeID,
 			IdempotencyKey:                retryIdempotencyKey,
 			LeaseToken:                    retryLeaseToken,
 			ExecutionContextPacket:        req.Attempt.ExecutionContextPacket,
@@ -15394,6 +15460,8 @@ func (r *memoryRepository) scheduleProjectTaskRetry(req RecoverProjectTaskAttemp
 		now := time.Now().UTC()
 		task.Status = ProjectTaskStatusQueued
 		task.CurrentAttemptID = &attempt.ID
+		task.RuntimeTaskID = nil
+		task.DigitalEmployeeRunID = nil
 		task.AttemptCount++
 		task.RetryNotBefore = req.RetryNotBefore
 		task.WaitingReason = nil
@@ -16239,11 +16307,13 @@ type fakeCoordinatorSignalClient struct {
 	memberSignals      int
 	completedSignals   int
 	failedSignals      int
+	retrySignals       int
 	transferSignals    int
 	decisionSignals    int
 	terminateSignals   int
 	lastDemand         DemandSubmittedSignal
 	lastCompleted      EmployeeTaskCompletedSignal
+	lastRetry          ProjectTaskRetryScheduledSignal
 	lastDecision       HumanDecisionSubmittedSignal
 	lastTerminate      TerminateProjectCoordinatorSignal
 	demandSignalErr    error
@@ -16281,6 +16351,12 @@ func (f *fakeCoordinatorSignalClient) SignalEmployeeTaskCompleted(ctx context.Co
 
 func (f *fakeCoordinatorSignalClient) SignalEmployeeTaskFailed(ctx context.Context, signal EmployeeTaskFailedSignal) error {
 	f.failedSignals++
+	return nil
+}
+
+func (f *fakeCoordinatorSignalClient) SignalProjectTaskRetryScheduled(ctx context.Context, signal ProjectTaskRetryScheduledSignal) error {
+	f.retrySignals++
+	f.lastRetry = signal
 	return nil
 }
 

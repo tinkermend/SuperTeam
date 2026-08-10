@@ -9,7 +9,7 @@
  * 并重启 runtime-agent（务必先确认全机只有一个 agent 进程）。详见该目录 README。
  *
  * 用法:
- *   node scripts/e2e/provider-semantic-terminal-paths.mjs PROVIDER_NO_TERMINAL_EVENT transient_provider false
+ *   node scripts/e2e/provider-semantic-terminal-paths.mjs PROVIDER_NO_TERMINAL_EVENT transient_provider true
  *   node scripts/e2e/provider-semantic-terminal-paths.mjs BUDGET_FUSE budget_fuse false --budget
  *
  * 环境变量: SUPERTEAM_E2E_PROJECT_ID / SUPERTEAM_E2E_DB_URL 可覆盖默认值。

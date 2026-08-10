@@ -28,6 +28,7 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 	failedCh := workflow.GetSignalChannel(ctx, SignalEmployeeTaskFailed)
 	transferCh := workflow.GetSignalChannel(ctx, SignalEmployeeTransferRequested)
 	humanCh := workflow.GetSignalChannel(ctx, SignalHumanDecisionSubmitted)
+	retryCh := workflow.GetSignalChannel(ctx, SignalProjectTaskRetryScheduled)
 	shutdownCh := workflow.GetSignalChannel(ctx, SignalShutdown)
 	pendingReviews := map[string]pendingPlanRevisionReview{}
 	pendingFailureRecoveries := map[string]pendingTaskFailureRecovery{}
@@ -96,6 +97,11 @@ func ProjectCoordinatorWorkflow(ctx workflow.Context, input ProjectCoordinatorIn
 				return
 			}
 			workflowErr = handleHumanDecisionSubmittedFromStore(ctx, input, signal)
+		})
+		selector.AddReceive(retryCh, func(c workflow.ReceiveChannel, more bool) {
+			var signal ProjectTaskRetryScheduled
+			c.Receive(ctx, &signal)
+			workflowErr = handleProjectTaskRetryScheduled(ctx, input, signal)
 		})
 		selector.AddReceive(shutdownCh, func(c workflow.ReceiveChannel, more bool) {
 			var signal ShutdownSignal
@@ -1452,6 +1458,23 @@ func scheduleDispatchRetry(ctx workflow.Context, tenantID, projectID, taskID uui
 			workflow.GetLogger(gctx).Error("retry dispatch failed", "task_id", taskID.String(), "error", err.Error())
 		}
 	})
+}
+
+// handleProjectTaskRetryScheduled re-runs Dispatch for a task requeued after an
+// attempt-level failure. Without this signal path, FailProjectTaskAttempt only
+// wrote a new queued attempt and nothing woke the coordinator (spec 2026-08-10).
+func handleProjectTaskRetryScheduled(ctx workflow.Context, input ProjectCoordinatorInput, signal ProjectTaskRetryScheduled) error {
+	if err := appendSignalObservedEvent(ctx, input, "project task retry scheduled"); err != nil {
+		return err
+	}
+	if signal.ProjectTaskID == uuid.Nil {
+		return nil
+	}
+	if signal.RetryNotBefore != nil && signal.RetryNotBefore.After(workflow.Now(ctx)) {
+		scheduleDispatchRetry(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, *signal.RetryNotBefore)
+		return nil
+	}
+	return dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, []uuid.UUID{signal.ProjectTaskID}, project.DispatchReasonRetry)
 }
 
 // noSuitableEmployeeDiagnosis reports whether err is the terminal, non-retryable

@@ -17,6 +17,9 @@ const (
 	SignalEmployeeTaskFailed        = "EmployeeTaskFailed"
 	SignalEmployeeTransferRequested = "EmployeeTransferRequested"
 	SignalHumanDecisionSubmitted    = "HumanDecisionSubmitted"
+	// SignalProjectTaskRetryScheduled re-dispatches a task after attempt-level
+	// failure requeue (distinct from EmployeeTaskFailed → human recovery).
+	SignalProjectTaskRetryScheduled = "ProjectTaskRetryScheduled"
 	SignalShutdown                  = "Shutdown"
 )
 
@@ -56,6 +59,13 @@ type EmployeeTaskFailed struct {
 	ProjectTaskID  uuid.UUID
 	FailureSummary string
 	FailedEventID  uuid.UUID
+}
+
+// ProjectTaskRetryScheduled is emitted after an attempt failure requeues the
+// task so the coordinator actually re-runs DispatchProjectTask.
+type ProjectTaskRetryScheduled struct {
+	ProjectTaskID  uuid.UUID
+	RetryNotBefore *time.Time
 }
 
 type EmployeeTransferRequested struct {

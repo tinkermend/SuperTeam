@@ -5563,6 +5563,11 @@ func (r *PgRepository) scheduleProjectTaskRetryWithQueries(ctx context.Context, 
 	if retryIdempotencyKey == "" {
 		retryIdempotencyKey = fmt.Sprintf("project-task:%s:attempt:%d:retry", req.Task.ID, req.Task.AttemptCount+1)
 	}
+	// Retry must mint a fresh dispatch identity (run/runtime_task/node).
+	// Reusing the failed attempt's bindings makes DispatchProjectTask short-circuit
+	// on "already dispatched" and never StartProjectTaskRun (spec 2026-08-10 §2.1 #3).
+	// provider_session_id is intentionally NOT carried here — resume is resolved
+	// at dispatch time via FindProviderSessionForTaskRoot (session continuity).
 	attemptReq := QueueProjectTaskRequest{
 		TenantID:                      req.Task.TenantID,
 		ProjectID:                     req.Task.ProjectID,
@@ -5570,9 +5575,6 @@ func (r *PgRepository) scheduleProjectTaskRetryWithQueries(ctx context.Context, 
 		ProjectTaskAttemptID:          &retryAttemptID,
 		DigitalEmployeeID:             req.Failure.DigitalEmployeeID,
 		ProviderType:                  stringValue(req.Attempt.ProviderType),
-		DigitalEmployeeRunID:          req.Attempt.DigitalEmployeeRunID,
-		RuntimeTaskID:                 req.Attempt.RuntimeTaskID,
-		RuntimeNodeID:                 req.Attempt.RuntimeNodeID,
 		IdempotencyKey:                retryIdempotencyKey,
 		LeaseToken:                    retryLeaseToken,
 		ExecutionContextPacket:        req.Attempt.ExecutionContextPacket,
@@ -5743,6 +5745,8 @@ func (r *PgRepository) resumeProjectTaskAfterHumanWaitWithQueries(ctx context.Co
 			return ProjectTask{}, projectRepositoryError(err)
 		}
 	}
+	// Same rule as scheduleProjectTaskRetryWithQueries: human-wait resume is a
+	// new dispatch identity; do not reuse the parked attempt's run/runtime_task.
 	attemptReq := QueueProjectTaskRequest{
 		TenantID:                      req.Task.TenantID,
 		ProjectID:                     req.Task.ProjectID,
@@ -5750,9 +5754,6 @@ func (r *PgRepository) resumeProjectTaskAfterHumanWaitWithQueries(ctx context.Co
 		ProjectTaskAttemptID:          &req.RetryAttemptID,
 		DigitalEmployeeID:             *req.Task.AssignedDigitalEmployeeID,
 		ProviderType:                  stringValue(req.CurrentAttempt.ProviderType),
-		DigitalEmployeeRunID:          req.CurrentAttempt.DigitalEmployeeRunID,
-		RuntimeTaskID:                 req.CurrentAttempt.RuntimeTaskID,
-		RuntimeNodeID:                 req.CurrentAttempt.RuntimeNodeID,
 		IdempotencyKey:                req.RetryIdempotencyKey,
 		LeaseToken:                    req.RetryLeaseToken,
 		ExecutionContextPacket:        req.CurrentAttempt.ExecutionContextPacket,

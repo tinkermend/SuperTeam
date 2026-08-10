@@ -5384,7 +5384,15 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 		if err != nil {
 			return nil, err
 		}
-		reason := humanWaitReasonForFailureFamily(req.FailureFamily)
+		attr := s.primaryTaskFailureAttribution(ctx, task, req.FailureFamily, req.FailureSummary, req.ErrorCode)
+		reason := humanWaitReasonForFailureFamily(attr.FailureFamily)
+		// Environment-noise last attempt still parks under runtime_recovery so the
+		// human card surfaces the recovery action, but summary/error lead with the
+		// first non-noise root cause (spec 2026-08-10 §2.2).
+		if isEnvironmentNoiseFailureFamily(req.FailureFamily) && !isEnvironmentNoiseFailureFamily(attr.FailureFamily) {
+			reason = HumanWaitReasonRuntimeRecovery
+		}
+		writebackReq.WaitingReason = reason
 		writebackReq.Decision = &CreateDecisionRequestRequest{
 			TenantID:          req.TenantID,
 			ProjectID:         task.ProjectID,
@@ -5393,7 +5401,7 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 			TargetUserID:      projectRecord.HumanOwnerUserID,
 			DecisionType:      projectTaskHumanWaitDecisionType(reason),
 			TitleSnapshot:     task.Title,
-			SummarySnapshot:   humanReadableFailureSummary(req.FailureFamily, req.FailureSummary),
+			SummarySnapshot:   humanReadableFailureSummaryWithCode(attr.FailureFamily, attr.FailureSummary, attr.ErrorCode),
 			RiskLevelSnapshot: stringValue(task.RiskLevel),
 			StatusSnapshot:    "pending",
 		}
@@ -5410,6 +5418,14 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 			if err := s.inbox.UpsertProjectDecisionRequest(ctx, result.Decision); err != nil {
 				return nil, err
 			}
+		}
+		return &result.Task, nil
+	}
+	if result.Task.Status == ProjectTaskStatusQueued {
+		// Attempt-level requeue must wake the coordinator; EmployeeTaskFailed
+		// would open human recovery instead of re-dispatching.
+		if err := s.signalProjectTaskRetryScheduled(ctx, result.Task, nil); err != nil {
+			return nil, err
 		}
 		return &result.Task, nil
 	}
@@ -5443,6 +5459,13 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 // text kept as the detail after it (G8: cards must lead with a readable
 // reason, but the operator still needs the original error to act on it).
 func humanReadableFailureSummary(failureFamily, raw string) string {
+	return humanReadableFailureSummaryWithCode(failureFamily, raw, "")
+}
+
+// humanReadableFailureSummaryWithCode is the same as humanReadableFailureSummary
+// but surfaces a stable ErrorEnvelope code (e.g. PROVIDER_NO_TERMINAL_EVENT) so
+// task-level cards keep the root cause visible when later attempts are noise.
+func humanReadableFailureSummaryWithCode(failureFamily, raw, errorCode string) string {
 	var lead string
 	switch failureFamily {
 	case FailureFamilyTransientProvider, FailureFamilyProviderStart:
@@ -5459,6 +5482,10 @@ func humanReadableFailureSummary(failureFamily, raw string) string {
 		lead = "任务预算熔断"
 	default:
 		lead = "任务执行失败"
+	}
+	errorCode = strings.TrimSpace(errorCode)
+	if errorCode != "" {
+		lead = lead + "（" + errorCode + "）"
 	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -6348,6 +6375,7 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 		if err != nil {
 			return nil, err
 		}
+		attr := s.primaryTaskFailureAttribution(ctx, task, recoveryFailureFamilyForAction(req.FailureFamily), req.Summary, "")
 		writebackReq.Decision = &CreateDecisionRequestRequest{
 			TenantID:          req.TenantID,
 			ProjectID:         req.ProjectID,
@@ -6355,7 +6383,7 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 			TargetUserID:      projectRecord.HumanOwnerUserID,
 			DecisionType:      "project_task_recovery",
 			TitleSnapshot:     task.Title,
-			SummarySnapshot:   req.Summary,
+			SummarySnapshot:   humanReadableFailureSummaryWithCode(attr.FailureFamily, attr.FailureSummary, attr.ErrorCode),
 			RiskLevelSnapshot: stringValue(task.RiskLevel),
 			StatusSnapshot:    "pending",
 		}
@@ -6372,6 +6400,11 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 			if err := s.inbox.UpsertProjectDecisionRequest(ctx, result.Decision); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if result.Task.Status == ProjectTaskStatusQueued {
+		if err := s.signalProjectTaskRetryScheduled(ctx, result.Task, result.Task.RetryNotBefore); err != nil {
+			return nil, err
 		}
 	}
 	return &result.Task, nil
@@ -6528,6 +6561,108 @@ func humanWaitReasonForFailureFamily(failureFamily string) string {
 
 func projectTaskRetryIdempotencyKey(task ProjectTask, failureIdempotencyKey string) string {
 	return fmt.Sprintf("project-task:%s:attempt:%d:retry:%s", task.ID, task.AttemptCount+1, failureIdempotencyKey)
+}
+
+// Environment-noise families are produced by CP dispatch/watchdog paths, not by
+// a provider that actually ran. Explicit set — do not grow into a contains chain
+// (spec 2026-08-10 §2.2). transient_provider is intentionally excluded.
+func isEnvironmentNoiseFailureFamily(family string) bool {
+	switch strings.TrimSpace(family) {
+	case FailureFamilyTransientRuntime,
+		FailureFamilyRuntimeLeaseLost,
+		FailureFamilyRuntimeStartTimeout,
+		FailureFamilyDispatchTransient:
+		return true
+	default:
+		return false
+	}
+}
+
+type taskFailureAttribution struct {
+	FailureFamily  string
+	FailureSummary string
+	ErrorCode      string
+}
+
+// primaryTaskFailureAttribution picks the first non-environment-noise attempt
+// on the task so waiting_human cards do not advertise the last watchdog loss as
+// the root cause. Falls back to the current failure when no better attempt exists.
+func (s *Service) primaryTaskFailureAttribution(ctx context.Context, task ProjectTask, fallbackFamily, fallbackSummary, fallbackErrorCode string) taskFailureAttribution {
+	fallback := taskFailureAttribution{
+		FailureFamily:  strings.TrimSpace(fallbackFamily),
+		FailureSummary: strings.TrimSpace(fallbackSummary),
+		ErrorCode:      strings.TrimSpace(fallbackErrorCode),
+	}
+	if s == nil || s.repository == nil || task.ID == uuid.Nil {
+		return fallback
+	}
+	attempts, err := s.repository.ListProjectTaskAttemptsForExecutionTrace(ctx, task.TenantID, task.ProjectID)
+	if err != nil {
+		return fallback
+	}
+	type ranked struct {
+		attemptNo int32
+		attr      taskFailureAttribution
+	}
+	var candidates []ranked
+	for _, attempt := range attempts {
+		if attempt.ProjectTaskID != task.ID {
+			continue
+		}
+		family := strings.TrimSpace(stringValue(attempt.FailureFamily))
+		if family == "" || isEnvironmentNoiseFailureFamily(family) {
+			continue
+		}
+		candidates = append(candidates, ranked{
+			attemptNo: attempt.AttemptNo,
+			attr: taskFailureAttribution{
+				FailureFamily:  family,
+				FailureSummary: strings.TrimSpace(stringValue(attempt.FailureMessage)),
+				ErrorCode:      strings.TrimSpace(stringValue(attempt.ErrorCode)),
+			},
+		})
+	}
+	if len(candidates) == 0 {
+		// Current failure is not yet finished in DB when we are about to write it;
+		// if the fallback itself is non-noise, prefer it.
+		return fallback
+	}
+	best := candidates[0]
+	for _, c := range candidates[1:] {
+		if c.attemptNo < best.attemptNo {
+			best = c
+		}
+	}
+	if best.attr.FailureSummary == "" {
+		best.attr.FailureSummary = fallback.FailureSummary
+	}
+	if best.attr.ErrorCode == "" {
+		best.attr.ErrorCode = fallback.ErrorCode
+	}
+	return best.attr
+}
+
+func (s *Service) signalProjectTaskRetryScheduled(ctx context.Context, task ProjectTask, retryNotBefore *time.Time) error {
+	if s.coordinator == nil {
+		return nil
+	}
+	projectRecord, err := s.repository.GetProject(ctx, task.TenantID, task.ProjectID)
+	if err != nil {
+		return err
+	}
+	if err := s.coordinator.SignalProjectTaskRetryScheduled(ctx, ProjectTaskRetryScheduledSignal{
+		TenantID:       task.TenantID,
+		ProjectID:      task.ProjectID,
+		ProjectTaskID:  task.ID,
+		RetryNotBefore: retryNotBefore,
+		WorkflowID:     projectRecord.CoordinationWorkflowID,
+	}); err != nil {
+		_ = s.appendWorkflowSignalEvent(ctx, task.TenantID, task.ProjectID, "ProjectTaskRetryScheduled", "failed", err, map[string]any{
+			"project_task_id": task.ID.String(),
+		})
+		return err
+	}
+	return nil
 }
 
 func validHumanWaitReason(reason string) bool {

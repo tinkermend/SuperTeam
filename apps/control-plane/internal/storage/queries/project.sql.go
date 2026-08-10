@@ -9378,9 +9378,14 @@ func (q *Queries) ScheduleProjectTaskDispatchRetry(ctx context.Context, arg Sche
 }
 
 const ScheduleProjectTaskRetry = `-- name: ScheduleProjectTaskRetry :one
+-- Clear prior dispatch identity so the coordinator re-enters StartProjectTaskRun
+-- for the new attempt (see projectTaskQueuedWithoutRunBinding). Keeping the old
+-- runtime_task_id/digital_employee_run_id short-circuits Dispatch as "already dispatched".
 UPDATE project_tasks
 SET status = 'queued',
     current_attempt_id = $1::uuid,
+    runtime_task_id = NULL,
+    digital_employee_run_id = NULL,
     attempt_count = attempt_count + 1,
     retry_not_before = $2::timestamptz,
     waiting_reason = NULL,
