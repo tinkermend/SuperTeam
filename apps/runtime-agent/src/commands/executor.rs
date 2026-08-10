@@ -4593,7 +4593,6 @@ mod tests {
         let context = project_task_writeback_context(&payload).expect("project task context");
         let spec = RunSpec {
             provider_type: "claude-code".to_string(),
-            provider_type: "claude-code".to_string(),
             workspace_path: PathBuf::from("/workspace/project"),
             agent_home_dir: Some(PathBuf::from("/agent/home")),
             employee_capability_dir: Some(PathBuf::from("/employee/cache")),
