@@ -263,9 +263,8 @@ fn provider_exit_result(
     stderr: String,
 ) -> Option<anyhow::Result<ProviderEvent>> {
     // stream_child_events still passes a short display name ("claude") for
-    // human-readable messages; ErrorEnvelope.provider_type uses the same
-    // string until catalog registry names are threaded through (Phase 1
-    // keeps wire-compatible exit text: "claude exited with status N").
+    // human-readable exit messages ("claude exited with status N"). Envelope
+    // provider_type is canonicalized inside envelope_for_code (registry type).
     match status {
         Ok(status) if status.success() => None,
         Ok(status) => {

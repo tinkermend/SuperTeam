@@ -49,6 +49,42 @@ pub fn provider_kind(provider_type: &str) -> &'static str {
         .unwrap_or("unsupported")
 }
 
+/// Resolve a registry `provider_type` (`claude-code` / `opencode` / `codex`) from
+/// either a registry type or a short `provider_kind` (`claude` / …).
+///
+/// ErrorEnvelope and writeback metadata must use this (or an already-stored
+/// registry type), never the short kind alone (spec §13 #7).
+pub fn canonical_provider_type(name: &str) -> &str {
+    let n = name.trim();
+    if n.is_empty() {
+        return n;
+    }
+    if let Some(descriptor) = PROVIDERS.iter().find(|d| d.provider_type == n) {
+        return descriptor.provider_type;
+    }
+    if let Some(descriptor) = PROVIDERS.iter().find(|d| d.provider_kind == n) {
+        return descriptor.provider_type;
+    }
+    n
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_provider_type_maps_kind_and_type() {
+        assert_eq!(canonical_provider_type("claude"), CLAUDE_CODE_PROVIDER_TYPE);
+        assert_eq!(
+            canonical_provider_type("claude-code"),
+            CLAUDE_CODE_PROVIDER_TYPE
+        );
+        assert_eq!(canonical_provider_type("opencode"), OPENCODE_PROVIDER_TYPE);
+        assert_eq!(canonical_provider_type("codex"), CODEX_PROVIDER_TYPE);
+        assert_eq!(canonical_provider_type("unknown-x"), "unknown-x");
+    }
+}
+
 /// Static capability matrix for a registered provider (Phase 2). Values are
 /// intentional honesty flags — not product promises of feature parity.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]

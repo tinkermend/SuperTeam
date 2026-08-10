@@ -365,6 +365,7 @@ impl RuntimeCommandExecutor {
         );
 
         let spec = RunSpec {
+            provider_type: payload.provider_type.clone(),
             provider_kind: payload.provider_kind().to_string(),
             workspace_path: command_workspace.workspace_path,
             agent_home_dir: Some(command_workspace.agent_home_dir.clone()),
@@ -1329,7 +1330,7 @@ impl RuntimeCommandExecutor {
                 );
                 if !run_is_cancelled(&runs, &run_id).await {
                     let envelope =
-                        envelope_from_anyhow(&error, failure_spec.provider_kind.as_str());
+                        envelope_from_anyhow(&error, failure_spec.registry_provider_type());
                     let _ = runs
                         .finish_failed(&run_id, envelope.message.clone())
                         .await;
@@ -2343,6 +2344,11 @@ fn project_task_attestation_writeback(
         serde_json::Value::String(command_id.to_string()),
     );
     metadata.insert(
+        "provider_type".to_string(),
+        serde_json::Value::String(spec.registry_provider_type().to_string()),
+    );
+    // Keep provider_kind for one release (existing attestation readers).
+    metadata.insert(
         "provider_kind".to_string(),
         serde_json::Value::String(spec.provider_kind.clone()),
     );
@@ -3290,10 +3296,9 @@ async fn drain_provider_events(
     raw_sink: Arc<dyn crate::raw_log::RawLineSink>,
     terminal_cleanup: Option<crate::workspace_cleanup::TerminalWorkspaceCleanup>,
 ) -> anyhow::Result<()> {
-    // RunSpec still stores the short display name in `provider_kind` (e.g.
-    // "claude"); ErrorEnvelope.provider_type accepts that until Phase 1/2
-    // fully retires the dual naming (spec §13 #7).
-    let provider_type = spec.provider_kind.as_str();
+    // Prefer registry provider_type (claude-code/…); never put short kind alone
+    // into ErrorEnvelope.provider_type (spec §13 #7).
+    let provider_type = spec.registry_provider_type();
     let mut latest_provider_session_id: Option<String> = None;
     let mut terminal_writeback = ProviderTerminalWritebackState::default();
     let mut fallback_text_summary = String::new();
@@ -4502,7 +4507,8 @@ mod tests {
         let payload = project_task_session_payload("emp-1");
         let context = project_task_writeback_context(&payload).expect("project task context");
         let spec = RunSpec {
-            provider_kind: "claude-code".to_string(),
+            provider_type: "claude-code".to_string(),
+            provider_kind: "claude".to_string(),
             workspace_path: PathBuf::from("/workspace/project"),
             agent_home_dir: Some(PathBuf::from("/agent/home")),
             employee_capability_dir: Some(PathBuf::from("/employee/cache")),

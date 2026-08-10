@@ -1,0 +1,15 @@
+{
+  "schema_version": "provider.result.v1",
+  "status": "succeeded",
+  "summary": "task completed",
+  "usage": {
+    "total_tokens": 42,
+    "input_tokens": 20,
+    "output_tokens": 22
+  },
+  "artifacts": [],
+  "session": {
+    "provider_session_id": "sess-ok-1",
+    "resumable": true
+  }
+}

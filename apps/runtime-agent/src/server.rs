@@ -135,8 +135,11 @@ async fn create_run(
     State(state): State<RuntimeHttpState>,
     Json(request): Json<CreateRunRequest>,
 ) -> Result<Response, ApiError> {
+    let kind = request.provider_kind.trim().to_string();
     let spec = RunSpec {
-        provider_kind: request.provider_kind.trim().to_string(),
+        // Local HTTP accepts short kind historically; store registry type too.
+        provider_type: crate::providers::catalog::canonical_provider_type(&kind).to_string(),
+        provider_kind: kind,
         workspace_path: request.workspace_path,
         agent_home_dir: request.agent_home_dir,
         employee_capability_dir: None,

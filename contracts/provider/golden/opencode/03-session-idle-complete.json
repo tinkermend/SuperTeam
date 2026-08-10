@@ -1,0 +1,11 @@
+{
+  "description": "Legacy session.idle maps to turn_completed (compat path)",
+  "native_lines": [
+    "{\"type\":\"session.idle\",\"sessionID\":\"ses_idle_1\"}"
+  ],
+  "expected_events": [
+    {
+      "type": "turn_completed"
+    }
+  ]
+}

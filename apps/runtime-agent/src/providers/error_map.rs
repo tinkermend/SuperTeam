@@ -68,6 +68,8 @@ pub struct EnvelopeBuild {
 }
 
 /// Build a complete ErrorEnvelope; family/retryable always come from `map_code`.
+/// `provider_type` is canonicalized to the registry value (`claude-code` / …)
+/// so short kinds like `claude` never leak into L3 (spec §13 #7).
 pub fn build_envelope(build: EnvelopeBuild) -> ErrorEnvelope {
     let (family, retryable) = map_code(&build.code);
     ErrorEnvelope {
@@ -76,7 +78,8 @@ pub fn build_envelope(build: EnvelopeBuild) -> ErrorEnvelope {
         family: family.to_string(),
         retryable,
         message: build.message,
-        provider_type: build.provider_type,
+        provider_type: crate::providers::catalog::canonical_provider_type(&build.provider_type)
+            .to_string(),
         native: build.native,
         evidence_refs: if build.evidence_refs.is_empty() {
             None
@@ -280,6 +283,10 @@ mod tests {
     fn build_envelope_is_source_of_family_and_retryable() {
         let env = envelope_for_code(code::BUDGET_FUSE, "wall_clock_exceeded", "claude-code");
         assert_eq!(env.family, family::BUDGET_FUSE);
+        assert_eq!(env.provider_type, "claude-code");
+        // short kind must canonicalize
+        let short = envelope_for_code(code::RATE_LIMIT, "rate limit", "claude");
+        assert_eq!(short.provider_type, "claude-code");
         assert!(!env.retryable);
         assert_eq!(env.code, code::BUDGET_FUSE);
         assert_eq!(env.schema_version, ERROR_SCHEMA_VERSION);

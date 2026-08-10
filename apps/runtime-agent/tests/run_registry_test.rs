@@ -11,6 +11,7 @@ async fn store_records_provider_session_events_and_replays_them() {
     let run = store
         .start_run(
             RunSpec {
+                provider_type: String::new(),
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
                 agent_home_dir: None,
@@ -108,6 +109,7 @@ async fn store_preserves_runtime_command_metadata_on_snapshot() {
     let run = store
         .start_run(
             RunSpec {
+                provider_type: String::new(),
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
                 agent_home_dir: None,
@@ -146,6 +148,7 @@ async fn store_preserves_capability_and_auth_metadata_on_snapshot() {
     let run = store
         .start_run(
             RunSpec {
+                provider_type: String::new(),
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
                 agent_home_dir: Some(employee_capability_dir.clone()),
@@ -192,6 +195,7 @@ async fn store_does_not_cancel_completed_runs() {
     let run = store
         .start_run(
             RunSpec {
+                provider_type: String::new(),
                 provider_kind: "claude".to_string(),
                 workspace_path: PathBuf::from("/tmp/workspace"),
                 agent_home_dir: None,

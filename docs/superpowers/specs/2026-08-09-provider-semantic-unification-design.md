@@ -1,14 +1,24 @@
 # Provider 语义统一层（事件 / 结果 / 错误 / 能力）
 
 - 日期：2026-08-09（**2026-08-10 按代码复核修订**，见 §17 修订记录）
-- 状态：**待人类拍板（设计稿已过一轮代码复核，未实施）**——阻塞项集中在 §13
+- 状态：**Phase 1–4 已落地**（`main`：`5278718b` / `aa2c478c` / `c23391aa` + 后续 follow-up）。本文保留为架构事实源；实施细节以代码与 `contracts/provider/` 为准。
 - 系列：
   - 承接已落地：`2026-07-09-provider-transcript-tool-event-capture-design.md`（transcript / tool 事件 / raw 双轨）
-  - 承接立项未实施：`2026-07-19-runtime-provider-contract-verification.md`（本 spec **吸收并细化其 P2 Provider 侧**；P1 runtime openapi 仍可独立推进）
+  - 承接：`2026-07-19-runtime-provider-contract-verification.md`（本 spec 吸收并细化其 P2 Provider 侧；P1 runtime openapi 仍可独立推进）
   - 对齐架构约定：`AGENTS.md`「Provider 协议必须语言无关」与已知债 `contracts/provider/`
-- 交付性质：**架构与契约设计**。分 Phase 实施；**不**要求一次 PR 做完。拍板后再开实施 plan。
-- 目标读者：架构评审 / 实施会话（本文自包含；实施前对照文末「现状锚点」）
-- **迁移**：Phase 1/2 零迁移（只扩展 `additionalProperties: true` 的 writeback `payload`/`metadata` 与既有列）。**但 §15「跨 Provider 可比较与告警」需要 `error_code` 落到 `project_task_attempts` 一列**——attempt 行现有列只有 `n`(failure_family)/`retryable`/`failure_message`，`execution_context_packet` 是入参不是出参，code 只存在事件 payload 里意味着告警与统计要扫 JSON。**该列加不加是 §13 议题 10，未拍板前 §15 只兑现到「协调决策可比较」，不兑现「可告警统计」。**
+- 交付性质：原为架构设计；现 **Phase 1–4 已实施**。剩余见下方「未决 / 跟进」。
+- 目标读者：架构评审 / 实施与复盘会话
+- **迁移**：Phase 1/2 零迁移。**Phase 4 已加** `project_task_attempts.error_code`（可空，历史不回填），§15 告警统计面可对上线后新 attempt 查询。
+
+### 未决 / 跟进（实施后仍开）
+
+| 项 | 说明 |
+|---|---|
+| §13 议题 7 退役 | `provider_kind` 短名仍保留一版兼容；ErrorEnvelope / attestation 已优先写注册表 `provider_type`。全量退役短名字段另开切片 |
+| golden 数量 | 设计写「每家 ≥5」；当前以「含失败样例 + 会红门禁」为硬门槛，数量未凑满 |
+| 校验强度 | 议题 9：**S1**（fixture/ajv）；S2 ingest 打标未做 |
+| 漂移告警 | 有 unmapped/unparseable 日志，无阈值告警与 overview 指标面 |
+| 跨 Provider 同任务 E2E | 北极星项，未作为门禁强制 |
 
 ---
 

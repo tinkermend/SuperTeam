@@ -33,9 +33,16 @@ The Control Plane must not depend on provider-specific request shapes. Runtime a
 - Onboarding checklist: `contracts/provider/ONBOARDING.md`.
 - Activity labels: `turn_error` / `native_unmapped`.
 
-### Still open (later phases)
+### Phase 4 landed (error_code + ajv + start_session schema)
 
-- Phase 4: schema codegen, optional `error_code` column for alerting stats, ajv runtime validate.
+- Migration: `project_task_attempts.error_code` (nullable) + fail writeback / recovery / ledger / OpenAPI / Web attempt type.
+- Root `ajv` validates provider fixtures in `verify:contracts` (S1).
+- `start-session-payload.schema.json` + fixture; `CODEGEN.md` records **no** schema→type codegen this batch.
+- Follow-up: ErrorEnvelope / attestation prefer registry `provider_type` over short `provider_kind` (kind kept one release).
+
+### Still open
+
+- Full `provider_kind` retirement; golden count target (≥5/provider); S2 ingest tagging; unmapped threshold alerts.
 - Wire transport for process events remains `contracts/control-plane/openapi.yaml` (`payload`/`metadata` opaque objects).
 
 

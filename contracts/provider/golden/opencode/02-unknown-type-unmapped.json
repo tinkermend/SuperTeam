@@ -1,0 +1,13 @@
+{
+  "description": "Unknown opencode type must surface as native_unmapped (not silent drop)",
+  "native_lines": [
+    "{\"type\":\"metrics.sample\",\"sessionID\":\"ses_x\",\"value\":1}"
+  ],
+  "expected_events": [
+    {
+      "type": "native_unmapped",
+      "native_type": "metrics.sample",
+      "reason": "unrecognized_type"
+    }
+  ]
+}

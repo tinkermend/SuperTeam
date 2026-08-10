@@ -38,6 +38,12 @@ pub struct RuntimeCommandRunContext {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RunSpec {
+    /// Registry provider type (`claude-code` / `opencode` / `codex`). Preferred
+    /// for ErrorEnvelope and platform writeback (spec §13 #7).
+    #[serde(default)]
+    pub provider_type: String,
+    /// Short runtime display/health kind (`claude` / `opencode` / `codex`).
+    /// Kept for one release for attestation/local HTTP compatibility.
     pub provider_kind: String,
     pub workspace_path: PathBuf,
     /// Legacy alias for the employee capability cache. Do not use it as a
@@ -96,6 +102,18 @@ pub fn redacted_environment_view(
 
 fn default_provider_auth_mode() -> String {
     "host".to_string()
+}
+
+impl RunSpec {
+    /// Registry `provider_type` for envelopes / L3. Falls back to mapping from
+    /// short `provider_kind` when older callers only populated the kind field.
+    pub fn registry_provider_type(&self) -> &str {
+        let typed = self.provider_type.trim();
+        if !typed.is_empty() {
+            return crate::providers::catalog::canonical_provider_type(typed);
+        }
+        crate::providers::catalog::canonical_provider_type(&self.provider_kind)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -176,7 +194,11 @@ impl RuntimeRunStore {
         let id = new_run_id();
         let snapshot = RunSnapshot {
             id: id.clone(),
-            provider_kind: spec.provider_kind,
+            provider_kind: if spec.provider_kind.is_empty() {
+                crate::providers::catalog::provider_kind(spec.registry_provider_type()).to_string()
+            } else {
+                spec.provider_kind
+            },
             workspace_path: spec.workspace_path,
             agent_home_dir: spec.agent_home_dir,
             employee_capability_dir: spec.employee_capability_dir,
@@ -391,6 +413,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = RuntimeRunStore::new(dir.path());
         let spec = RunSpec {
+            provider_type: String::new(),
             provider_kind: "claude".to_string(),
             workspace_path: dir.path().to_path_buf(),
             agent_home_dir: None,
@@ -423,6 +446,7 @@ mod tests {
 
     fn capability_run_spec(workspace: &std::path::Path, home: Option<&str>) -> RunSpec {
         RunSpec {
+            provider_type: String::new(),
             provider_kind: "claude".to_string(),
             workspace_path: workspace.to_path_buf(),
             agent_home_dir: home.map(PathBuf::from),

@@ -1,0 +1,13 @@
+{
+  "schema_version": "provider.result.v1",
+  "status": "failed",
+  "error": {
+    "schema_version": "provider.error.v1",
+    "code": "RATE_LIMIT",
+    "family": "transient_provider",
+    "retryable": true,
+    "message": "claude exited with status 1: rate limit exceeded",
+    "provider_type": "claude-code"
+  },
+  "artifacts": []
+}
