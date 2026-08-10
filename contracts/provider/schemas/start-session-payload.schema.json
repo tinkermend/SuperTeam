@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superteam.local/contracts/provider/schemas/start-session-payload.schema.json",
+  "title": "RuntimeStartSessionPayload",
+  "description": "Language-neutral shape of the Control Plane → Runtime start_session command payload (provider semantic unification Phase 4 / 2026-07-19 P2). Not a closed enum of provider types.",
+  "type": "object",
+  "required": [
+    "command_id",
+    "digital_employee_id",
+    "execution_instance_id",
+    "provider_type",
+    "session_policy",
+    "metadata"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "command_id": { "type": "string", "minLength": 1 },
+    "tenant_id": { "type": ["string", "null"] },
+    "team_id": { "type": ["string", "null"] },
+    "digital_employee_id": { "type": "string", "minLength": 1 },
+    "execution_instance_id": { "type": "string", "minLength": 1 },
+    "runtime_node_id": { "type": ["string", "null"] },
+    "provider_type": { "type": "string", "minLength": 1 },
+    "agent_home_dir": { "type": ["string", "null"] },
+    "persona_memory_markdown": { "type": ["string", "null"] },
+    "team_constitution": { "type": ["string", "null"] },
+    "capability_bindings": { "type": "object" },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["skill_key"],
+        "additionalProperties": true,
+        "properties": {
+          "skill_key": { "type": "string" },
+          "skill_id": { "type": "string" },
+          "version": { "type": "string" },
+          "archive_url": { "type": "string" }
+        }
+      }
+    },
+    "mcp_servers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "environment": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "session_policy": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": true,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_session_id": { "type": ["string", "null"] },
+        "recoverable": { "type": "boolean" }
+      }
+    },
+    "prompt": { "type": ["string", "null"] },
+    "input": { "type": ["string", "null"] },
+    "context_refs": { "type": "array" },
+    "artifact_refs": { "type": "array" },
+    "model": { "type": ["string", "null"] },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "source": { "type": "string" },
+        "project_id": { "type": "string" },
+        "project_task_id": { "type": "string" },
+        "project_task_attempt_id": { "type": "string" },
+        "project_task_lease_token": { "type": "string" },
+        "runtime_node_id": { "type": "string" },
+        "capability_manifest_version": { "type": "string" },
+        "chat_thread_id": { "type": "string" },
+        "handoff_contract": { "type": "object" },
+        "execution_context_packet_version": { "type": "string" }
+      }
+    }
+  }
+}

@@ -3316,6 +3316,7 @@ func buildProjectExecutionTrace(projectID uuid.UUID, attempts []ProjectTaskAttem
 			StartedAt:           attempt.StartedAt,
 			FinishedAt:          attempt.FinishedAt,
 			FailureFamily:       attempt.FailureFamily,
+			ErrorCode:           attempt.ErrorCode,
 			Retryable:           attempt.Retryable,
 			Events:              []ExecutionLedgerEvent{},
 		})

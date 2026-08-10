@@ -22,5 +22,7 @@
     "test:rust": "cargo test --manifest-path apps/runtime-agent/Cargo.toml",
     "typecheck": "corepack pnpm -r --if-present typecheck"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "ajv": "^8.20.0"
+  }
 }

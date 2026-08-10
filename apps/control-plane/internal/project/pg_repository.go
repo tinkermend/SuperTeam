@@ -4484,6 +4484,7 @@ func projectTaskAttemptFailureLedgerEventRequest(req FailProjectTaskAttemptReque
 		RuntimeNodeID:        &req.RuntimeNodeID,
 		ProviderSessionID:    req.ProviderSessionID,
 		ErrorFamily:          req.FailureFamily,
+		ErrorCode:            strings.TrimSpace(req.ErrorCode),
 		ErrorMessage:         req.FailureSummary,
 		Retryable:            req.Retryable,
 		Metadata: map[string]any{
@@ -4537,6 +4538,7 @@ func recoveredProjectTaskAttemptLedgerEventRequest(req RecoverProjectTaskAttempt
 		ledgerReq.OutputSummary = req.Failure.FailureSummary
 	} else {
 		ledgerReq.ErrorFamily = req.Failure.FailureFamily
+		ledgerReq.ErrorCode = strings.TrimSpace(req.Failure.ErrorCode)
 		ledgerReq.ErrorMessage = req.Failure.FailureSummary
 		ledgerReq.Retryable = req.Failure.Retryable
 	}
@@ -5020,6 +5022,7 @@ func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req 
 				"project_task_attempt_id": req.AttemptID.String(),
 				"failure_summary":         req.FailureSummary,
 				"failure_family":          req.FailureFamily,
+				"error_code":              strings.TrimSpace(req.ErrorCode),
 			},
 		})
 		if err != nil {
@@ -5034,6 +5037,7 @@ func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req 
 			Retryable:         boolPtr(req.Retryable),
 			FailureFamily:     textOrNull(req.FailureFamily),
 			FailureMessage:    textOrNull(req.FailureSummary),
+			ErrorCode:         textOrNull(strings.TrimSpace(req.ErrorCode)),
 			TerminalEventID:   nullUUID(&event.ID),
 		}
 		applyRawLog(&finishParams, req.RawLog)
@@ -5069,6 +5073,7 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 			"project_task_attempt_id": req.Failure.AttemptID.String(),
 			"failure_summary":         req.Failure.FailureSummary,
 			"failure_family":          req.Failure.FailureFamily,
+			"error_code":              strings.TrimSpace(req.Failure.ErrorCode),
 			"recovery_status":         req.TaskTargetStatus,
 		}
 		if req.TaskTargetStatus == ProjectTaskStatusWaitingHuman {
@@ -5100,6 +5105,7 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 			Retryable:         boolPtr(req.Failure.Retryable),
 			FailureFamily:     textOrNull(req.Failure.FailureFamily),
 			FailureMessage:    textOrNull(req.Failure.FailureSummary),
+			ErrorCode:         textOrNull(strings.TrimSpace(req.Failure.ErrorCode)),
 			TerminalEventID:   nullUUID(&event.ID),
 		}
 		applyRawLog(&finishParams, req.Failure.RawLog)
@@ -7416,6 +7422,7 @@ func projectTaskAttemptFromRecord(row queries.ProjectTaskAttempt) (ProjectTaskAt
 		Retryable:                     ptrBool(row.Retryable),
 		FailureFamily:                 ptrText(row.FailureFamily),
 		FailureMessage:                ptrText(row.FailureMessage),
+		ErrorCode:                     ptrText(row.ErrorCode),
 		IdempotencyKey:                row.IdempotencyKey,
 		DispatchGateResultID:          ptrUUID(row.DispatchGateResultID),
 		CreatedEventID:                ptrUUID(row.CreatedEventID),

@@ -17,7 +17,7 @@
     },
     "summary": { "type": ["string", "null"] },
     "usage": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "total_tokens": { "type": "integer" },
         "input_tokens": { "type": "integer" },
@@ -27,17 +27,17 @@
     "error": {
       "oneOf": [
         { "type": "null" },
-        { "$ref": "provider-error.schema.json" }
+        { "$ref": "https://superteam.local/contracts/provider/schemas/provider-error.schema.json" }
       ]
     },
     "artifacts": { "type": "array" },
     "session": {
-      "type": "object",
+      "type": ["object", "null"],
       "properties": {
         "provider_session_id": { "type": ["string", "null"] },
         "resumable": { "type": "boolean" }
       }
     },
-    "diagnostics": { "type": "object" }
+    "diagnostics": { "type": ["object", "null"] }
   }
 }

@@ -3205,6 +3205,10 @@ fn project_task_fail_writeback_from_envelope(
         ),
         failure_summary: envelope.message.trim().to_string(),
         failure_family: envelope.family.clone(),
+        error_code: {
+            let code = envelope.code.trim();
+            (!code.is_empty()).then(|| code.to_string())
+        },
         retryable: envelope.retryable,
         result_contract: None,
     }

@@ -1681,6 +1681,7 @@ func (h *HTTPHandler) FailProjectTaskAttempt(w http.ResponseWriter, r *http.Requ
 		ProjectTaskAttemptRuntimeRequest: runtimeReq,
 		FailureSummary:                   body.FailureSummary,
 		FailureFamily:                    body.FailureFamily,
+		ErrorCode:                        body.ErrorCode,
 		Retryable:                        body.Retryable,
 		ResultContract:                   body.ResultContract,
 	}); err != nil {
@@ -2329,6 +2330,7 @@ type failProjectTaskAttemptBody struct {
 	ProjectTaskAttemptRuntimeBody
 	FailureSummary string              `json:"failure_summary"`
 	FailureFamily  string              `json:"failure_family"`
+	ErrorCode      string              `json:"error_code"`
 	Retryable      *bool               `json:"retryable"`
 	ResultContract *TaskResultContract `json:"result_contract"`
 }
@@ -2861,6 +2863,7 @@ type projectExecutionTraceAttemptResponse struct {
 	StartedAt            *string                                      `json:"started_at,omitempty"`
 	FinishedAt           *string                                      `json:"finished_at,omitempty"`
 	FailureFamily        *string                                      `json:"failure_family,omitempty"`
+	ErrorCode            *string                                      `json:"error_code,omitempty"`
 	Retryable            *bool                                        `json:"retryable,omitempty"`
 	Events               []executionLedgerEventResponse               `json:"events"`
 	Summary              *projectExecutionTraceAttemptSummaryResponse `json:"summary,omitempty"`
@@ -4074,6 +4077,7 @@ func executionTraceAttemptResponseFromDomain(attempt ProjectExecutionTraceAttemp
 		StartedAt:            timePtr(attempt.StartedAt),
 		FinishedAt:           timePtr(attempt.FinishedAt),
 		FailureFamily:        attempt.FailureFamily,
+		ErrorCode:            attempt.ErrorCode,
 		Retryable:            attempt.Retryable,
 		Events:               executionLedgerEventResponses(attempt.Events),
 		Summary:              executionTraceAttemptSummaryResponseFromDomain(attempt.Summary),

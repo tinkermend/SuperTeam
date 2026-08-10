@@ -1657,6 +1657,8 @@ type ProjectTaskAttempt struct {
 	LogSha256 pgtype.Text `json:"log_sha256"`
 	// Whether raw transcript segments are stored compressed
 	LogCompressed bool `json:"log_compressed"`
+	// Provider ErrorEnvelope.code（UPPER_SNAKE 稳定机器码，如 RATE_LIMIT、BUDGET_FUSE）；可选；历史行不回填
+	ErrorCode pgtype.Text `json:"error_code"`
 }
 
 type ProjectTaskAttemptContextUpdate struct {

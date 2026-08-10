@@ -397,7 +397,7 @@ WHERE tenant_id = $4::uuid
   AND id = $6::uuid
   AND $1::integer >= 0
   AND $2::integer >= 0
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code
 `
 
 type UpdateProjectTaskAttemptBudgetHeartbeatParams struct {
@@ -458,6 +458,7 @@ func (q *Queries) UpdateProjectTaskAttemptBudgetHeartbeat(ctx context.Context, a
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }

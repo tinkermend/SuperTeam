@@ -310,6 +310,9 @@ pub struct ProjectTaskFailWriteback {
     pub idempotency_key: String,
     pub failure_summary: String,
     pub failure_family: String,
+    /// Optional stable ErrorEnvelope.code (UPPER_SNAKE). Phase 4.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub error_code: Option<String>,
     pub retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub result_contract: Option<TaskResultContract>,

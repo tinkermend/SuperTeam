@@ -4608,6 +4608,8 @@ type ExecutionLedgerEvent struct {
 
 // FailProjectTaskAttemptRequest defines model for FailProjectTaskAttemptRequest.
 type FailProjectTaskAttemptRequest struct {
+	// ErrorCode Optional stable Provider ErrorEnvelope.code (UPPER_SNAKE), e.g. RATE_LIMIT / BUDGET_FUSE. Written to project_task_attempts.error_code for cross-provider query/alerts (provider semantic unification Phase 4).
+	ErrorCode         *string            `json:"error_code,omitempty"`
 	FailureFamily     string             `json:"failure_family"`
 	FailureSummary    string             `json:"failure_summary"`
 	IdempotencyKey    string             `json:"idempotency_key"`
@@ -5890,14 +5892,17 @@ type ProjectExecutionTraceAttempt struct {
 
 	// CapabilityProjection Console-safe capability projection for one project-task attempt (three-layer model P3). Extracted from start_session command receipt; never includes environment values or secrets.
 	CapabilityProjection *CapabilityProjectionSnapshot `json:"capability_projection,omitempty"`
-	Events               []ExecutionLedgerEvent        `json:"events"`
-	FailureFamily        *string                       `json:"failure_family,omitempty"`
-	FinishedAt           *time.Time                    `json:"finished_at,omitempty"`
-	ProjectTaskId        openapi_types.UUID            `json:"project_task_id"`
-	ProviderSessionId    *string                       `json:"provider_session_id,omitempty"`
-	ProviderType         *string                       `json:"provider_type,omitempty"`
-	Retryable            *bool                         `json:"retryable,omitempty"`
-	RuntimeNodeId        *openapi_types.UUID           `json:"runtime_node_id,omitempty"`
+
+	// ErrorCode Optional stable ErrorEnvelope.code when the attempt failed.
+	ErrorCode         *string                `json:"error_code,omitempty"`
+	Events            []ExecutionLedgerEvent `json:"events"`
+	FailureFamily     *string                `json:"failure_family,omitempty"`
+	FinishedAt        *time.Time             `json:"finished_at,omitempty"`
+	ProjectTaskId     openapi_types.UUID     `json:"project_task_id"`
+	ProviderSessionId *string                `json:"provider_session_id,omitempty"`
+	ProviderType      *string                `json:"provider_type,omitempty"`
+	Retryable         *bool                  `json:"retryable,omitempty"`
+	RuntimeNodeId     *openapi_types.UUID    `json:"runtime_node_id,omitempty"`
 
 	// SessionResumeLabel 执行轨迹展示用中文短标签（服务端已渲染）
 	SessionResumeLabel *string `json:"session_resume_label,omitempty"`

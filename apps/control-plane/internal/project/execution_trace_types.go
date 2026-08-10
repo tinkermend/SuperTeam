@@ -120,6 +120,7 @@ type ProjectExecutionTraceAttempt struct {
 	StartedAt           *time.Time
 	FinishedAt          *time.Time
 	FailureFamily       *string
+	ErrorCode           *string
 	Retryable           *bool
 	Events              []ExecutionLedgerEvent
 	Summary             *ProjectExecutionTraceAttemptSummary

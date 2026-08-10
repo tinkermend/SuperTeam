@@ -1,0 +1,44 @@
+{
+  "command_id": "cmd-fixture-1",
+  "tenant_id": "00000000-0000-0000-0000-000000000001",
+  "team_id": "00000000-0000-0000-0000-000000000101",
+  "digital_employee_id": "0be393bb-9dfd-48c8-b010-4b5abb114f23",
+  "execution_instance_id": "8e64dd8c-d70d-417d-b8bf-fe57a61f4205",
+  "runtime_node_id": "2e6c2d7c-8af4-4315-ad31-e0b00e66d142",
+  "provider_type": "claude-code",
+  "agent_home_dir": "/tmp/runtime-agent-fixture",
+  "capability_bindings": {},
+  "skills": [
+    {
+      "skill_key": "linux",
+      "skill_id": "skill-1",
+      "version": "1"
+    }
+  ],
+  "mcp_servers": [],
+  "environment": [],
+  "session_policy": {
+    "mode": "new",
+    "provider_session_id": null,
+    "recoverable": true
+  },
+  "prompt": "complete the task",
+  "input": null,
+  "context_refs": [],
+  "artifact_refs": [],
+  "model": null,
+  "metadata": {
+    "source": "project_task_dispatch",
+    "project_id": "44444444-4444-4444-8444-444444444444",
+    "project_task_id": "55555555-5555-4555-8555-555555555555",
+    "project_task_attempt_id": "66666666-6666-4666-8666-666666666666",
+    "project_task_lease_token": "lease-token-1",
+    "runtime_node_id": "77777777-7777-4777-8777-777777777777",
+    "capability_manifest_version": "cmv1:sha256:deadbeef",
+    "execution_context_packet_version": "v1",
+    "handoff_contract": {
+      "completion_path": "project_task_attempt_writeback",
+      "requires_runtime_attestation": true
+    }
+  }
+}

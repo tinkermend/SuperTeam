@@ -257,7 +257,7 @@ WHERE tenant_id = $7::uuid
   AND (runtime_task_id IS NULL OR runtime_task_id = $2::uuid)
   AND (runtime_node_id IS NULL OR runtime_node_id = $3::uuid)
   AND (provider_type IS NULL OR provider_type = $4::varchar)
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code
 `
 
 type BindProjectTaskAttemptRunParams struct {
@@ -324,6 +324,7 @@ func (q *Queries) BindProjectTaskAttemptRun(ctx context.Context, arg BindProject
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
@@ -2157,7 +2158,7 @@ INSERT INTO project_task_attempts (
     $15::varchar,
     $16::uuid,
     $17::uuid
-) RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+) RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code
 `
 
 type CreateProjectTaskAttemptParams struct {
@@ -2240,6 +2241,7 @@ func (q *Queries) CreateProjectTaskAttempt(ctx context.Context, arg CreateProjec
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
@@ -2874,18 +2876,19 @@ SET status = $1::varchar,
     retryable = $3::boolean,
     failure_family = $4::varchar,
     failure_message = $5::text,
-    terminal_event_id = $6::uuid,
-    log_store = COALESCE($7::varchar, log_store),
-    log_ref = COALESCE($8::text, log_ref),
-    log_bytes = COALESCE($9::bigint, log_bytes),
-    log_sha256 = COALESCE($10::varchar, log_sha256),
-    log_compressed = COALESCE($11::boolean, log_compressed),
+    error_code = COALESCE($6::varchar, error_code),
+    terminal_event_id = $7::uuid,
+    log_store = COALESCE($8::varchar, log_store),
+    log_ref = COALESCE($9::text, log_ref),
+    log_bytes = COALESCE($10::bigint, log_bytes),
+    log_sha256 = COALESCE($11::varchar, log_sha256),
+    log_compressed = COALESCE($12::boolean, log_compressed),
     updated_at = NOW()
-WHERE tenant_id = $12::uuid
-  AND id = $13::uuid
-  AND lease_token = $14::varchar
+WHERE tenant_id = $13::uuid
+  AND id = $14::uuid
+  AND lease_token = $15::varchar
   AND status IN ('queued', 'running')
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code
 `
 
 type FinishProjectTaskAttemptParams struct {
@@ -2894,6 +2897,7 @@ type FinishProjectTaskAttemptParams struct {
 	Retryable         pgtype.Bool   `json:"retryable"`
 	FailureFamily     pgtype.Text   `json:"failure_family"`
 	FailureMessage    pgtype.Text   `json:"failure_message"`
+	ErrorCode         pgtype.Text   `json:"error_code"`
 	TerminalEventID   uuid.NullUUID `json:"terminal_event_id"`
 	LogStore          pgtype.Text   `json:"log_store"`
 	LogRef            pgtype.Text   `json:"log_ref"`
@@ -2912,6 +2916,7 @@ func (q *Queries) FinishProjectTaskAttempt(ctx context.Context, arg FinishProjec
 		arg.Retryable,
 		arg.FailureFamily,
 		arg.FailureMessage,
+		arg.ErrorCode,
 		arg.TerminalEventID,
 		arg.LogStore,
 		arg.LogRef,
@@ -2962,12 +2967,13 @@ func (q *Queries) FinishProjectTaskAttempt(ctx context.Context, arg FinishProjec
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
 
 const GetCurrentProjectTaskAttempt = `-- name: GetCurrentProjectTaskAttempt :one
-SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.started_at, pta.finished_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type, pta.log_store, pta.log_ref, pta.log_bytes, pta.log_sha256, pta.log_compressed
+SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.started_at, pta.finished_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type, pta.log_store, pta.log_ref, pta.log_bytes, pta.log_sha256, pta.log_compressed, pta.error_code
 FROM project_task_attempts pta
 JOIN project_tasks pt ON pt.current_attempt_id = pta.id
 WHERE pt.tenant_id = $1::uuid
@@ -3021,6 +3027,7 @@ func (q *Queries) GetCurrentProjectTaskAttempt(ctx context.Context, arg GetCurre
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
@@ -3900,7 +3907,7 @@ func (q *Queries) GetProjectTask(ctx context.Context, arg GetProjectTaskParams) 
 }
 
 const GetProjectTaskAttempt = `-- name: GetProjectTaskAttempt :one
-SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed FROM project_task_attempts
+SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code FROM project_task_attempts
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -3952,12 +3959,13 @@ func (q *Queries) GetProjectTaskAttempt(ctx context.Context, arg GetProjectTaskA
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
 
 const GetProjectTaskAttemptByIdempotencyKey = `-- name: GetProjectTaskAttemptByIdempotencyKey :one
-SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed FROM project_task_attempts
+SELECT id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code FROM project_task_attempts
 WHERE tenant_id = $1::uuid
   AND idempotency_key = $2::varchar
 `
@@ -4009,6 +4017,7 @@ func (q *Queries) GetProjectTaskAttemptByIdempotencyKey(ctx context.Context, arg
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
@@ -5007,7 +5016,7 @@ func (q *Queries) ListDependentsOfTask(ctx context.Context, arg ListDependentsOf
 }
 
 const ListExpiredRunningProjectTaskAttempts = `-- name: ListExpiredRunningProjectTaskAttempts :many
-SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.started_at, pta.finished_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type, pta.log_store, pta.log_ref, pta.log_bytes, pta.log_sha256, pta.log_compressed
+SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.started_at, pta.finished_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type, pta.log_store, pta.log_ref, pta.log_bytes, pta.log_sha256, pta.log_compressed, pta.error_code
 FROM project_task_attempts pta
 JOIN project_tasks pt ON pt.tenant_id = pta.tenant_id AND pt.id = pta.project_task_id
 WHERE pta.tenant_id = $1::uuid
@@ -5073,6 +5082,7 @@ func (q *Queries) ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg
 			&i.LogBytes,
 			&i.LogSha256,
 			&i.LogCompressed,
+			&i.ErrorCode,
 		); err != nil {
 			return nil, err
 		}
@@ -7166,7 +7176,7 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 }
 
 const ListStaleQueuedProjectTaskAttempts = `-- name: ListStaleQueuedProjectTaskAttempts :many
-SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.started_at, pta.finished_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type, pta.log_store, pta.log_ref, pta.log_bytes, pta.log_sha256, pta.log_compressed
+SELECT pta.id, pta.tenant_id, pta.project_task_id, pta.attempt_no, pta.status, pta.digital_employee_run_id, pta.runtime_task_id, pta.runtime_node_id, pta.provider_session_id, pta.execution_context_packet, pta.execution_context_packet_version, pta.lease_token, pta.lease_expires_at, pta.renewed_at, pta.started_at, pta.finished_at, pta.retryable, pta.failure_family, pta.failure_message, pta.idempotency_key, pta.created_event_id, pta.terminal_event_id, pta.created_at, pta.updated_at, pta.dispatch_gate_result_id, pta.budget_wall_clock_limit_sec, pta.budget_last_heartbeat_at, pta.budget_consumed_wall_clock_sec, pta.budget_consumed_tokens, pta.budget_tripped_at, pta.budget_trip_reason, pta.digital_employee_id, pta.provider_type, pta.log_store, pta.log_ref, pta.log_bytes, pta.log_sha256, pta.log_compressed, pta.error_code
 FROM project_task_attempts pta
 JOIN project_tasks pt ON pt.tenant_id = pta.tenant_id AND pt.id = pta.project_task_id
 WHERE pta.tenant_id = $1::uuid
@@ -7232,6 +7242,7 @@ func (q *Queries) ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg Li
 			&i.LogBytes,
 			&i.LogSha256,
 			&i.LogCompressed,
+			&i.ErrorCode,
 		); err != nil {
 			return nil, err
 		}
@@ -8217,14 +8228,15 @@ SET status = $1::varchar,
     retryable = $2::boolean,
     failure_family = $3::varchar,
     failure_message = $4::text,
-    terminal_event_id = $5::uuid,
+    error_code = $5::varchar,
+    terminal_event_id = $6::uuid,
     updated_at = NOW()
-WHERE tenant_id = $6::uuid
-  AND project_task_id = $7::uuid
-  AND id = $8::uuid
-  AND lease_token = $9::varchar
+WHERE tenant_id = $7::uuid
+  AND project_task_id = $8::uuid
+  AND id = $9::uuid
+  AND lease_token = $10::varchar
   AND status = 'queued'
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code
 `
 
 type MarkQueuedProjectTaskAttemptDispatchStartFailedParams struct {
@@ -8232,6 +8244,7 @@ type MarkQueuedProjectTaskAttemptDispatchStartFailedParams struct {
 	Retryable       bool          `json:"retryable"`
 	FailureFamily   string        `json:"failure_family"`
 	FailureMessage  string        `json:"failure_message"`
+	ErrorCode       pgtype.Text   `json:"error_code"`
 	TerminalEventID uuid.NullUUID `json:"terminal_event_id"`
 	TenantID        uuid.UUID     `json:"tenant_id"`
 	ProjectTaskID   uuid.UUID     `json:"project_task_id"`
@@ -8245,6 +8258,7 @@ func (q *Queries) MarkQueuedProjectTaskAttemptDispatchStartFailed(ctx context.Co
 		arg.Retryable,
 		arg.FailureFamily,
 		arg.FailureMessage,
+		arg.ErrorCode,
 		arg.TerminalEventID,
 		arg.TenantID,
 		arg.ProjectTaskID,
@@ -8291,6 +8305,7 @@ func (q *Queries) MarkQueuedProjectTaskAttemptDispatchStartFailed(ctx context.Co
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
@@ -8830,7 +8845,7 @@ WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND lease_token = $4::varchar
   AND status IN ('queued', 'running')
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code
 `
 
 type RenewProjectTaskAttemptLeaseParams struct {
@@ -8887,6 +8902,7 @@ func (q *Queries) RenewProjectTaskAttemptLease(ctx context.Context, arg RenewPro
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
@@ -9594,7 +9610,7 @@ WHERE tenant_id = $2::uuid
       project_task_attempts.dispatch_gate_result_id IS NULL
       OR project_task_attempts.dispatch_gate_result_id = $1::uuid
   )
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code
 `
 
 type SetProjectTaskAttemptDispatchGateParams struct {
@@ -9653,6 +9669,7 @@ func (q *Queries) SetProjectTaskAttemptDispatchGate(ctx context.Context, arg Set
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }
@@ -9804,7 +9821,7 @@ WHERE tenant_id = $3::uuid
   AND id = $5::uuid
   AND lease_token = $6::varchar
   AND status = 'queued'
-RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed
+RETURNING id, tenant_id, project_task_id, attempt_no, status, digital_employee_run_id, runtime_task_id, runtime_node_id, provider_session_id, execution_context_packet, execution_context_packet_version, lease_token, lease_expires_at, renewed_at, started_at, finished_at, retryable, failure_family, failure_message, idempotency_key, created_event_id, terminal_event_id, created_at, updated_at, dispatch_gate_result_id, budget_wall_clock_limit_sec, budget_last_heartbeat_at, budget_consumed_wall_clock_sec, budget_consumed_tokens, budget_tripped_at, budget_trip_reason, digital_employee_id, provider_type, log_store, log_ref, log_bytes, log_sha256, log_compressed, error_code
 `
 
 type StartProjectTaskAttemptParams struct {
@@ -9869,6 +9886,7 @@ func (q *Queries) StartProjectTaskAttempt(ctx context.Context, arg StartProjectT
 		&i.LogBytes,
 		&i.LogSha256,
 		&i.LogCompressed,
+		&i.ErrorCode,
 	)
 	return i, err
 }

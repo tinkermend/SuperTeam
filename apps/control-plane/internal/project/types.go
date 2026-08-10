@@ -935,6 +935,8 @@ type ProjectTaskAttempt struct {
 	Retryable                     *bool
 	FailureFamily                 *string
 	FailureMessage                *string
+	// ErrorCode is the optional stable Provider ErrorEnvelope.code (UPPER_SNAKE).
+	ErrorCode                     *string
 	IdempotencyKey                string
 	DispatchGateResultID          *uuid.UUID
 	CreatedEventID                *uuid.UUID
@@ -1929,8 +1931,10 @@ type FailProjectTaskAttemptRequest struct {
 	DigitalEmployeeID uuid.UUID
 	FailureSummary    string
 	FailureFamily     string
-	Retryable         *bool
-	ResultContract    *TaskResultContract
+	// ErrorCode is optional stable Provider ErrorEnvelope.code (UPPER_SNAKE).
+	ErrorCode      string
+	Retryable      *bool
+	ResultContract *TaskResultContract
 }
 
 type WaitHumanProjectTaskAttemptRequest struct {

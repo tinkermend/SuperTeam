@@ -954,6 +954,8 @@ export type ProjectExecutionTraceAttempt = {
   started_at?: string;
   finished_at?: string;
   failure_family?: string;
+  /** Stable Provider ErrorEnvelope.code when present (Phase 4). */
+  error_code?: string;
   retryable?: boolean;
   events: ExecutionLedgerEvent[];
   summary?: ProjectExecutionTraceAttemptSummary;

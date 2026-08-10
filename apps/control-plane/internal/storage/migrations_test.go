@@ -867,6 +867,17 @@ func TestProjectTaskAttemptsMigration(t *testing.T) {
 			t.Fatalf("project_task_attempts block missing %q:\n%s", fragment, block)
 		}
 	}
+	// Phase 4: error_code column (nullable, historical rows not backfilled).
+	if !strings.Contains(sql, "ADD COLUMN IF NOT EXISTS error_code VARCHAR(100)") &&
+		!strings.Contains(sql, "error_code VARCHAR(100)") {
+		// Column may appear only in ALTER migration after initial create block.
+		if !strings.Contains(sql, "error_code") {
+			t.Fatalf("expected project_task_attempts.error_code migration fragment")
+		}
+	}
+	if !strings.Contains(sql, "idx_project_task_attempts_error_code") {
+		t.Fatalf("expected idx_project_task_attempts_error_code")
+	}
 }
 
 func TestProjectTaskAttemptContextUpdatesMigration(t *testing.T) {

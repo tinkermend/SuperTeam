@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
+const require = createRequire(import.meta.url);
 const root = process.cwd();
 
 const CONTROL_PLANE_OPENAPI = "contracts/control-plane/openapi.yaml";
@@ -398,10 +400,9 @@ assertProviderSemanticContracts();
 console.log("foundation contract guard passed");
 
 /**
- * Provider semantic unification (2026-08-09): schemas/fixtures/goldens must
- * exist and parse. Full JSON Schema validation (ajv) can be added later; this
- * zero-dep path fails red if the tree is incomplete or failed fixtures drop
- * required ErrorEnvelope fields. Wire transport remains control-plane openapi.
+ * Provider semantic unification: schemas/fixtures/goldens must exist, parse,
+ * and (Phase 4) validate fixtures with ajv against schemas.
+ * Wire transport remains control-plane openapi.
  */
 function assertProviderSemanticContracts() {
   const providerRoot = resolve(root, "contracts/provider");
@@ -412,13 +413,42 @@ function assertProviderSemanticContracts() {
     "schemas/provider-capability.schema.json",
     "schemas/provider-usage.schema.json",
     "schemas/failure-family.json",
+    "schemas/start-session-payload.schema.json",
   ];
+  const schemaByName = new Map();
   for (const rel of requiredSchemas) {
     const path = resolve(providerRoot, rel);
     if (!existsSync(path)) {
       throw new Error(`provider contract missing: contracts/provider/${rel}`);
     }
-    JSON.parse(readFileSync(path, "utf8"));
+    schemaByName.set(rel, JSON.parse(readFileSync(path, "utf8")));
+  }
+
+  let Ajv;
+  try {
+    Ajv = require("ajv").default || require("ajv");
+  } catch {
+    throw new Error(
+      "ajv is required for provider schema validation (devDependency). Run: corepack pnpm install",
+    );
+  }
+  // draft-2020-12: Ajv v8 default is draft-07; use 2020 if available.
+  let ajv;
+  try {
+    const Ajv2020 = require("ajv/dist/2020.js").default || require("ajv/dist/2020.js");
+    ajv = new Ajv2020({ allErrors: true, strict: false });
+  } catch {
+    ajv = new Ajv({ allErrors: true, strict: false });
+  }
+  // Register schemas by $id basename for $ref resolution.
+  for (const schema of schemaByName.values()) {
+    if (schema.$id) {
+      try {
+        ajv.addSchema(schema);
+      } catch {
+        // duplicate id on re-run — ignore
+      }
+    }
   }
 
   const fixturesDir = resolve(providerRoot, "fixtures");
@@ -429,24 +459,47 @@ function assertProviderSemanticContracts() {
   if (fixtures.length === 0) {
     throw new Error("provider fixtures empty: contracts/provider/fixtures/");
   }
-  const envelopeKeys = [
-    "schema_version",
-    "code",
-    "family",
-    "retryable",
-    "message",
-    "provider_type",
-  ];
+
+  const fixtureSchema = {
+    "error-": "schemas/provider-error.schema.json",
+    "result-": "schemas/provider-result.schema.json",
+    "start-session-": "schemas/start-session-payload.schema.json",
+  };
+
   for (const name of fixtures) {
     const body = JSON.parse(readFileSync(resolve(fixturesDir, name), "utf8"));
-    const envelope = name.startsWith("error-") ? body : body.error;
-    if (!envelope || typeof envelope !== "object") {
-      throw new Error(`fixture ${name}: expected ErrorEnvelope (top-level or .error)`);
-    }
-    for (const key of envelopeKeys) {
-      if (!(key in envelope)) {
-        throw new Error(`fixture ${name}: ErrorEnvelope missing ${key}`);
+    let schemaRel = null;
+    for (const [prefix, rel] of Object.entries(fixtureSchema)) {
+      if (name.startsWith(prefix)) {
+        schemaRel = rel;
+        break;
       }
+    }
+    if (!schemaRel) {
+      // Legacy envelope key check for unnamed fixtures.
+      const envelope = name.startsWith("error-") ? body : body.error;
+      if (envelope && typeof envelope === "object") {
+        for (const key of [
+          "schema_version",
+          "code",
+          "family",
+          "retryable",
+          "message",
+          "provider_type",
+        ]) {
+          if (!(key in envelope)) {
+            throw new Error(`fixture ${name}: ErrorEnvelope missing ${key}`);
+          }
+        }
+      }
+      continue;
+    }
+    const schema = schemaByName.get(schemaRel);
+    const validate = ajv.compile(schema);
+    if (!validate(body)) {
+      throw new Error(
+        `fixture ${name} failed schema ${schemaRel}:\n${ajv.errorsText(validate.errors)}`,
+      );
     }
   }
 
