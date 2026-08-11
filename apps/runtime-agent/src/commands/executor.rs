@@ -398,6 +398,10 @@ impl RuntimeCommandExecutor {
             skill_convergence: command_workspace.skill_convergence,
             workspace_base_ref: command_workspace.workspace_base_ref,
             prompt,
+            // dormant: 见 ProviderRequest::system_prompt。待 codex/opencode 原生
+            // system-prompt flag 落地后改为 `payload.system_prompt()`，并相应把
+            // 宪法段从 provider_prompt() 拆出（避免双注入）。
+            system_prompt: None,
             session_id: session_id.clone(),
             continue_session: matches!(
                 command.command_type,
@@ -4019,6 +4023,7 @@ async fn finalize_raw_log(
 fn provider_request(spec: &RunSpec) -> ProviderRequest {
     ProviderRequest {
         prompt: spec.prompt.clone(),
+        system_prompt: spec.system_prompt.clone(),
         workspace_path: spec.workspace_path.clone(),
         agent_home_dir: spec.agent_home_dir.clone(),
         employee_capability_dir: spec.employee_capability_dir.clone(),
@@ -5032,6 +5037,7 @@ mod tests {
                 stamp_hit: false,
             }),
             prompt: "complete task".to_string(),
+            system_prompt: None,
             session_id: None,
             continue_session: false,
             model: Some("sonnet".to_string()),

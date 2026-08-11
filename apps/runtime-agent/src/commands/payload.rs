@@ -251,6 +251,17 @@ impl RuntimeSessionCommandPayload {
         Some(sections.join("\n\n"))
     }
 
+    /// 团队宪法，作为未来 system 级注入的取值入口。
+    ///
+    /// 当前**没有任何 provider 消费它**：宪法仍由 `provider_prompt()`（见上）
+    /// 作为普通 user prompt 前置投递。二者目前**不互斥**——本访问器只是把宪法
+    /// 单独取出，供 codex/opencode 原生 system-prompt flag 落地后各
+    /// `build_command` 使用。届时需同步把宪法段从 `provider_prompt()` 移除、
+    /// 改由 `ProviderRequest.system_prompt` 投递，避免双注入。
+    pub fn system_prompt(&self) -> Option<String> {
+        trimmed_text(&self.team_constitution)
+    }
+
     pub fn project_workspace(&self) -> RuntimeProjectWorkspacePayload {
         RuntimeProjectWorkspacePayload {
             project_id: metadata_string(&self.metadata, "project_id"),
@@ -625,6 +636,33 @@ mod tests {
     fn provider_prompt_ignores_blank_constitution() {
         let payload = prompt_payload(Some("   \n  "), None, "巡检慢查询");
         assert_eq!(payload.provider_prompt().as_deref(), Some("巡检慢查询"));
+    }
+
+    /// `system_prompt()` 是未来 system 级注入的取值入口：返回宪法原文。当前
+    /// `provider_prompt()` 仍独立前置宪法（见上三例），二者暂不互斥——本访问器
+    /// 只把宪法单独取出，待 codex/opencode 原生 system flag 落地后由各
+    /// `build_command` 消费。见 `ProviderRequest::system_prompt` 的 dormant 注释。
+    #[test]
+    fn system_prompt_returns_constitution() {
+        let payload = prompt_payload(
+            Some("# 团队宪法（必须遵守）\n\n## 禁止\n- 不得直连生产库"),
+            None,
+            "巡检慢查询",
+        );
+        let system = payload.system_prompt().expect("constitution");
+        assert!(system.contains("不得直连生产库"), "constitution missing: {system}");
+    }
+
+    #[test]
+    fn system_prompt_none_when_absent() {
+        let payload = prompt_payload(None, Some("人格"), "巡检慢查询");
+        assert!(payload.system_prompt().is_none());
+    }
+
+    #[test]
+    fn system_prompt_none_when_blank() {
+        let payload = prompt_payload(Some("   \n  "), None, "巡检慢查询");
+        assert!(payload.system_prompt().is_none());
     }
 
     #[test]

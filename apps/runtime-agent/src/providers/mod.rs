@@ -30,6 +30,16 @@ pub type ProviderEventStream = BoxStream<'static, anyhow::Result<ProviderEvent>>
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderRequest {
     pub prompt: String,
+    /// 团队宪法的 system 级投递载体（dormant）。
+    ///
+    /// 当前各 provider 的 `build_command` 暂未消费此字段——宪法仍由
+    /// `RuntimeSessionCommandPayload::provider_prompt()` 作为普通 user prompt
+    /// 前置投递。待 codex/opencode 提供原生 system-prompt flag 后，三家一起接：
+    /// `provider_prompt()` 拆出宪法段、各 `build_command` 在此消费（claude 走
+    /// `--append-system-prompt`、codex/opencode 走各自 flag）。在此之前保持
+    /// `None`，以诚实反映「未发生 system 注入」并避免审计误读。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
     pub workspace_path: PathBuf,
     /// Legacy alias for the employee capability cache. Do not use it as a
     /// provider auth home.

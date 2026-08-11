@@ -22,6 +22,7 @@ fn make_script(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
 fn request(workspace_path: &Path) -> ProviderRequest {
     ProviderRequest {
         prompt: "hello".to_string(),
+        system_prompt: None,
         workspace_path: workspace_path.to_path_buf(),
         agent_home_dir: None,
         employee_capability_dir: None,

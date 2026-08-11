@@ -129,6 +129,7 @@ async fn main() -> anyhow::Result<()> {
 async fn run_provider(args: RunArgs) -> anyhow::Result<()> {
     let request = ProviderRequest {
         prompt: args.prompt,
+        system_prompt: None,
         workspace_path: args.workspace,
         agent_home_dir: None,
         employee_capability_dir: None,

@@ -9,6 +9,7 @@ use superteam_runtime_agent::providers::opencode::OpenCodeProvider;
 fn request(session_id: Option<&str>, continue_session: bool) -> ProviderRequest {
     ProviderRequest {
         prompt: "hello".to_string(),
+        system_prompt: None,
         workspace_path: PathBuf::from("/tmp/workspace"),
         agent_home_dir: None,
         employee_capability_dir: None,

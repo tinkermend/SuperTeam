@@ -67,6 +67,9 @@ pub struct RunSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_base_ref: Option<String>,
     pub prompt: String,
+    /// 团队宪法 system 级投递载体（dormant）。见 `ProviderRequest::system_prompt`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
@@ -134,6 +137,9 @@ pub struct RunSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skill_convergence: Option<crate::skills_convergence::SkillConvergenceReport>,
     pub prompt: String,
+    /// 团队宪法 system 级投递载体（dormant）。见 `ProviderRequest::system_prompt`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
     pub session_id: Option<String>,
     pub continue_session: bool,
     pub model: Option<String>,
@@ -196,6 +202,7 @@ impl RuntimeRunStore {
             skill_conflicts: spec.skill_conflicts,
             skill_convergence: spec.skill_convergence,
             prompt: spec.prompt,
+            system_prompt: spec.system_prompt,
             session_id: spec.session_id,
             continue_session: spec.continue_session,
             model: spec.model,
@@ -394,6 +401,40 @@ fn now_ms() -> u64 {
 mod tests {
     use super::*;
 
+    /// `system_prompt` 是 dormant 加法（纯加字段、serde 默认 None）。旧格式
+    /// （缺该字段）必须能反序列化成 None；新代码 system_prompt=None 序列化时
+    /// 字段应 absent，保证与旧读者字节级兼容。见 `ProviderRequest::system_prompt`。
+    #[test]
+    fn system_prompt_is_serde_backward_compatible() {
+        // 旧格式 RunSpec（无 system_prompt 字段）反序列化为 None。
+        let old_json = r#"{
+            "provider_type": "claude-code",
+            "workspace_path": "/tmp/ws",
+            "provider_auth_mode": "host",
+            "prompt": "hi",
+            "session_id": null,
+            "continue_session": false,
+            "model": null,
+            "environment": {}
+        }"#;
+        let spec: RunSpec = serde_json::from_str(old_json).expect("old RunSpec deserializes");
+        assert!(spec.system_prompt.is_none());
+
+        // 新代码 system_prompt=None 序列化时不得出现该字段。
+        let serialized = serde_json::to_string(&spec).expect("serialize");
+        assert!(
+            !serialized.contains("system_prompt"),
+            "system_prompt should be skipped when None: {serialized}"
+        );
+
+        // 显式设值后能往返。
+        let mut spec_with = spec.clone();
+        spec_with.system_prompt = Some("# 团队宪法".to_string());
+        let round = serde_json::to_string(&spec_with).expect("serialize");
+        let back: RunSpec = serde_json::from_str(&round).expect("deserialize");
+        assert_eq!(back.system_prompt.as_deref(), Some("# 团队宪法"));
+    }
+
     #[tokio::test]
     #[cfg(unix)]
     async fn local_events_log_is_owner_only() {
@@ -412,6 +453,7 @@ mod tests {
             skill_conflicts: Vec::new(),
             skill_convergence: None,
             prompt: "test".to_string(),
+            system_prompt: None,
             session_id: None,
             continue_session: false,
             model: None,
@@ -444,6 +486,7 @@ mod tests {
             skill_conflicts: Vec::new(),
             skill_convergence: None,
             prompt: "test".to_string(),
+            system_prompt: None,
             session_id: None,
             continue_session: false,
             model: None,
