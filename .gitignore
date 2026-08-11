@@ -30,6 +30,7 @@ apps/*/config/*.local.yaml
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -39,6 +40,8 @@ apps/*/config/*.local.yaml
 *.exe
 *.test
 vendor/
+*.prof
+coverage.out
 
 # Tauri / Desktop
 src-tauri/target/
@@ -78,7 +81,6 @@ logs/
 !apps/web/src/routes/**/_authenticated/logs/
 !apps/web/src/routes/_authenticated/logs/
 .superteam/
-.scratch/dev-services/
 
 # OS
 Thumbs.db
@@ -97,8 +99,10 @@ Desktop.ini
 *.tsbuildinfo
 next-env.d.ts
 
-# Vite
+# Vite / frontend tooling
 vite.config.ts.timestamp-*.mjs
+.vite/
+.eslintcache
 
 # Tauri
 src-tauri/tauri.conf.json.bak
@@ -109,13 +113,28 @@ src-tauri/tauri.conf.json.bak
 tmp/
 temp/
 .tmp/
+output/
+.direnv/
+# Root-level accidental captures only (docs/ apps/ paths unaffected)
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+
+# Agent / local tool state (project skills under .codex/skills are intentionally tracked)
 .agents/
 .claude/
 .reasonix/
 .codex/*
 !.codex/skills/
 !.codex/skills/**
+.gemini/
+.opencode/
+.playwright-mcp/
+.workbuddy/
+.superpowers/
 skills-lock.json
+
 apps/*/fix_*.py
 apps/*/scratch_*.go
 apps/control-plane/server
@@ -126,17 +145,9 @@ apps/control-plane/bin/
 # Local/private notes and sensitive documents.
 doc/
 
+# Local scratch / experimental dumps
 .scratch/
 .tests/
-
-.workbuddy
-.playwright-mcp
-.gemini
-.codex
-.opencode
-.gemini
-.curosr
-.superpowers/
 
 # 会话临时脚本：E2E 排障时现写的一次性 Playwright/curl 脚本，用完即弃，不入库。
 # 需要长期保留的验证脚本请去掉 _tmp- 前缀并放进 scripts/ 或对应包内。
