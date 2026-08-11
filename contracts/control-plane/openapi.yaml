@@ -11088,6 +11088,9 @@ components:
         - unassigned_count
         - participant_employee_count
         - completed_today_count
+        - open_decision_count
+        - evidence_pending_count
+        - waiting_human_unlinked_count
       properties:
         project_id:
           type: string
@@ -11105,9 +11108,15 @@ components:
         waiting_human_count:
           type: integer
           format: int32
+          description: 在等人的任务数（含已建决策卡的）；运行总览「待人工」用。
+        waiting_human_unlinked_count:
+          type: integer
+          format: int32
+          description: 其中无 open 决策卡挂载的 orphan 数；项目首页「等人」桶用（避免与 open_decision_count 双计）。
         failed_count:
           type: integer
           format: int32
+          description: 失败任务数；不含已清理(dismissed)任务。
         unassigned_count:
           type: integer
           format: int32
@@ -11117,6 +11126,14 @@ components:
         completed_today_count:
           type: integer
           format: int32
+        open_decision_count:
+          type: integer
+          format: int32
+          description: 项目上开放决策数（pending/waiting/requested/open）。
+        evidence_pending_count:
+          type: integer
+          format: int32
+          description: 待核证据数（verification_status 为 submitted/rejected）。
         last_activity_at:
           type: string
           format: date-time

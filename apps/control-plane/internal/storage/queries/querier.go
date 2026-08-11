@@ -618,10 +618,19 @@ type Querier interface {
 	ListProjectPlaybookCastingsByTemplate(ctx context.Context, arg ListProjectPlaybookCastingsByTemplateParams) ([]ProjectPlaybookCasting, error)
 	ListProjectReportRefs(ctx context.Context, arg ListProjectReportRefsParams) ([]ProjectReportRef, error)
 	ListProjectRouteDecisions(ctx context.Context, arg ListProjectRouteDecisionsParams) ([]ProjectRouteDecision, error)
-	// 运行总览项目运行带:跨项目一次聚合任务状态计数与今日完成运行数,避免逐项目 N+1。
+	// 运行总览项目运行带 + 项目管理首页组合计数:跨项目一次聚合,避免逐项目 N+1。
 	// 「今日」口径与员工 today token 一致(Asia/Shanghai 日窗);今日完成按 task_runs 执行完成计
 	// (执行口径,用户拍板,见 spec 2026-07-26-run-overview-display-mode §8-3)。
-	// 排序:有失败/待人工的项目优先,其次按最新任务活动时间。
+	// 2026-08-10: failed 排除 dismissed;扩 open_decision_count / evidence_pending_count
+	// (spec 2026-08-10-projects-home-portfolio-hygiene-design §7)。
+	// 2026-08-11: waiting_human / failed 状态集对齐 Web deriveProjectRiskSummary。
+	// 2026-08-11 复审修:等人拆两个字段,一个聚合不能同时服务两种展示语义——
+	//   waiting_human_count          = 所有在等人的任务(运行总览大屏「待人工」badge 与 hasActive 用);
+	//   waiting_human_unlinked_count = 其中无 open decision 挂同 project_task_id 的 orphan
+	//                                  (项目首页用:同屏另有「待决」桶,不去重会「1 待决 · 1 等人」双计,
+	//                                   与明细 deriveProjectRiskSummary 的 sister-F1 去重同源)。
+	// 曾把去重口径直接写进 waiting_human_count,实测大屏 21→2、4 个项目 hasActive 翻 false。
+	// 排序:有失败/待人工的项目优先(用宽口径),其次按最新任务活动时间。
 	ListProjectRunSummaries(ctx context.Context, arg ListProjectRunSummariesParams) ([]ListProjectRunSummariesRow, error)
 	ListProjectRuntimeNodes(ctx context.Context, arg ListProjectRuntimeNodesParams) ([]ProjectRuntimeNode, error)
 	ListProjectTaskAttemptsForExecutionTrace(ctx context.Context, arg ListProjectTaskAttemptsForExecutionTraceParams) ([]ProjectTaskAttempt, error)
@@ -817,6 +826,9 @@ type Querier interface {
 	RewireProjectTaskDependencies(ctx context.Context, arg RewireProjectTaskDependenciesParams) ([]RewireProjectTaskDependenciesRow, error)
 	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
 	ScheduleProjectTaskDispatchRetry(ctx context.Context, arg ScheduleProjectTaskDispatchRetryParams) (ProjectTask, error)
+	// Clear prior dispatch identity so the coordinator re-enters StartProjectTaskRun
+	// for the new attempt (see projectTaskQueuedWithoutRunBinding). Keeping the old
+	// runtime_task_id/digital_employee_run_id short-circuits Dispatch as "already dispatched".
 	ScheduleProjectTaskRetry(ctx context.Context, arg ScheduleProjectTaskRetryParams) (ProjectTask, error)
 	SetAutomationRuleEnabled(ctx context.Context, arg SetAutomationRuleEnabledParams) (AutomationRule, error)
 	SetAutomationRuleScheduleID(ctx context.Context, arg SetAutomationRuleScheduleIDParams) (AutomationRule, error)

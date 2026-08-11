@@ -6165,17 +6165,30 @@ type ProjectRouteDecision struct {
 
 // ProjectRunSummaryItem defines model for ProjectRunSummaryItem.
 type ProjectRunSummaryItem struct {
-	CompletedTodayCount      int32              `json:"completed_today_count"`
-	FailedCount              int32              `json:"failed_count"`
-	LastActivityAt           *time.Time         `json:"last_activity_at,omitempty"`
-	Name                     string             `json:"name"`
+	CompletedTodayCount int32 `json:"completed_today_count"`
+
+	// EvidencePendingCount 待核证据数（verification_status 为 submitted/rejected）。
+	EvidencePendingCount int32 `json:"evidence_pending_count"`
+
+	// FailedCount 失败任务数；不含已清理(dismissed)任务。
+	FailedCount    int32      `json:"failed_count"`
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	Name           string     `json:"name"`
+
+	// OpenDecisionCount 项目上开放决策数（pending/waiting/requested/open）。
+	OpenDecisionCount        int32              `json:"open_decision_count"`
 	ParticipantEmployeeCount int32              `json:"participant_employee_count"`
 	ProjectId                openapi_types.UUID `json:"project_id"`
 	QueuedCount              int32              `json:"queued_count"`
 	RunningCount             int32              `json:"running_count"`
 	Status                   ProjectStatus      `json:"status"`
 	UnassignedCount          int32              `json:"unassigned_count"`
-	WaitingHumanCount        int32              `json:"waiting_human_count"`
+
+	// WaitingHumanCount 在等人的任务数（含已建决策卡的）；运行总览「待人工」用。
+	WaitingHumanCount int32 `json:"waiting_human_count"`
+
+	// WaitingHumanUnlinkedCount 其中无 open 决策卡挂载的 orphan 数；项目首页「等人」桶用（避免与 open_decision_count 双计）。
+	WaitingHumanUnlinkedCount int32 `json:"waiting_human_unlinked_count"`
 }
 
 // ProjectRunSummaryResponse defines model for ProjectRunSummaryResponse.

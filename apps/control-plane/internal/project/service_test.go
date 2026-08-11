@@ -11778,12 +11778,17 @@ func TestListProjectRunSummariesService(t *testing.T) {
 	projectID := uuid.New()
 	lastActivity := time.Now().Add(-time.Hour)
 	repo.runSummaries = []ProjectRunSummary{{
-		ProjectID:         projectID,
-		Name:              "运行带项目",
-		Status:            ProjectStatusRunning,
-		RunningCount:      2,
-		WaitingHumanCount: 1,
-		LastActivityAt:    &lastActivity,
+		ProjectID:            projectID,
+		Name:                 "运行带项目",
+		Status:               ProjectStatusRunning,
+		RunningCount:         2,
+		WaitingHumanCount:    1,
+		FailedCount:          3,
+		OpenDecisionCount:    4,
+		EvidencePendingCount: 5,
+		// 宽口径 1 与 orphan 口径 0 故意不同：两者串错会被下面的断言抓到。
+		WaitingHumanUnlinkedCount: 0,
+		LastActivityAt:            &lastActivity,
 	}}
 	repo.completedTodayCount = 7
 
@@ -11795,11 +11800,28 @@ func TestListProjectRunSummariesService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list project run summaries: %v", err)
 	}
-	if repo.lastListRunSummariesReq.TenantID != tenantID || repo.lastListRunSummariesReq.Limit != 100 {
-		t.Fatalf("expected limit clamped to 100 with tenant passthrough, got %#v", repo.lastListRunSummariesReq)
+	if repo.lastListRunSummariesReq.TenantID != tenantID || repo.lastListRunSummariesReq.Limit != 500 {
+		t.Fatalf("expected limit 500 (run-summary max) with tenant passthrough, got %#v", repo.lastListRunSummariesReq)
+	}
+	// 超过 500 封顶
+	if _, err := service.ListProjectRunSummaries(context.Background(), ListProjectRunSummariesRequest{TenantID: tenantID, Limit: 999}); err != nil {
+		t.Fatalf("list project run summaries over max: %v", err)
+	}
+	if repo.lastListRunSummariesReq.Limit != 500 {
+		t.Fatalf("expected limit clamped to 500, got %d", repo.lastListRunSummariesReq.Limit)
 	}
 	if len(result.Items) != 1 || result.Items[0].ProjectID != projectID || result.Items[0].RunningCount != 2 {
 		t.Fatalf("expected repository summaries passthrough, got %#v", result.Items)
+	}
+	if result.Items[0].OpenDecisionCount != 4 || result.Items[0].EvidencePendingCount != 5 || result.Items[0].FailedCount != 3 {
+		t.Fatalf("expected new count columns passthrough, got open=%d evidence=%d failed=%d",
+			result.Items[0].OpenDecisionCount, result.Items[0].EvidencePendingCount, result.Items[0].FailedCount)
+	}
+	// 宽口径(大屏「待人工」)与 orphan 口径(项目首页「等人」)是两个字段，串用会让
+	// 大屏计数塌成 orphan 数。此处用不同取值锁死映射不得互换。
+	if result.Items[0].WaitingHumanCount != 1 || result.Items[0].WaitingHumanUnlinkedCount != 0 {
+		t.Fatalf("expected waiting_human wide=1 / unlinked=0 passthrough, got wide=%d unlinked=%d",
+			result.Items[0].WaitingHumanCount, result.Items[0].WaitingHumanUnlinkedCount)
 	}
 	if result.TodayCompletedRunCount != 7 {
 		t.Fatalf("expected tenant-wide today completed count 7, got %d", result.TodayCompletedRunCount)

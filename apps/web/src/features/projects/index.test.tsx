@@ -224,6 +224,15 @@ function userProjectTeamScopesResponse() {
 function usersResponse(q?: string) {
   const allUsers = [
     {
+      avatar: { provider: "dicebear", seed: "owner", style: "adventurer" },
+      avatar_asset_id: null,
+      display_name: "负责人甲",
+      email: "owner@example.com",
+      id: "human-owner-1",
+      status: "active",
+      username: "owner-a",
+    },
+    {
       avatar: { provider: "dicebear", seed: "leader", style: "adventurer" },
       avatar_asset_id: null,
       display_name: "李娜",
@@ -429,6 +438,73 @@ function createProjectFetcher(
     }
     if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
       return jsonResponse([]);
+    }
+
+    
+    if (url.pathname === "/api/v1/projects/run-summary" && method === "GET") {
+      if (options.project2RiskSignalGate) {
+        await options.project2RiskSignalGate;
+      }
+      const list = projects.filter((p) => p.status !== "archived");
+      return jsonResponse({
+        items: list.map((p) => {
+          // Mirror historical per-project mock risk shape for list counts.
+          if (p.id === "project-1") {
+            return {
+              project_id: p.id,
+              name: p.name,
+              status: p.status,
+              running_count: 0,
+              queued_count: 0,
+              // 宽口径 9 / orphan 0：项目首页必须读 unlinked，读错就会出现「9 等人」。
+              waiting_human_count: 9,
+              waiting_human_unlinked_count: 0,
+              failed_count: 0,
+              unassigned_count: 0,
+              participant_employee_count: 0,
+              completed_today_count: 0,
+              open_decision_count: 1,
+              evidence_pending_count: 0,
+              last_activity_at: "2026-06-04T02:30:00Z",
+            };
+          }
+          if (p.id === "project-2") {
+            return {
+              project_id: p.id,
+              name: p.name,
+              status: p.status,
+              running_count: 0,
+              queued_count: 0,
+              waiting_human_count: 0,
+              waiting_human_unlinked_count: 0,
+              failed_count: 1,
+              unassigned_count: 0,
+              participant_employee_count: 0,
+              completed_today_count: 0,
+              open_decision_count: 0,
+              evidence_pending_count: 0,
+              last_activity_at: "2026-06-05T02:28:13Z",
+            };
+          }
+          return {
+            project_id: p.id,
+            name: p.name,
+            status: p.status,
+            running_count: 0,
+            queued_count: 0,
+            waiting_human_count: 0,
+            waiting_human_unlinked_count: 0,
+            failed_count: 0,
+            unassigned_count: 0,
+            participant_employee_count: 0,
+            completed_today_count: 0,
+            open_decision_count: 0,
+            evidence_pending_count: 0,
+            last_activity_at: p.updated_at,
+          };
+        }),
+        today_completed_run_count: 0,
+      });
     }
 
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
@@ -1520,7 +1596,7 @@ describe("ProjectsView", () => {
       "客户接入验收",
     );
     // Portfolio truth bar (loaded-list scope), not the old page-scoped risk metric bar.
-    await expect.element(screen.getByLabelText("项目组合概览（已加载列表）")).toBeInTheDocument();
+    await expect.element(screen.getByLabelText("项目组合概览")).toBeInTheDocument();
     // 详情层按需渲染：未选中时不保留空态占位栏，队列独占全宽。
     expect(
       screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
@@ -1530,13 +1606,13 @@ describe("ProjectsView", () => {
     expect(
       screen.container.querySelector('[data-testid="project-queue-owner"]')?.textContent,
     ).toBe("负责人甲");
-    await expect.element(screen.getByText("待决决策").first()).toBeInTheDocument();
+    await expect.element(screen.getByText("项目待决").first()).toBeInTheDocument();
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
     // 处理者列表达「球权」，不是任务上粘着的 assignee（见 project-risk.test.ts 的
     // formatProjectQueueHandlerLabel 用例）：project-1 停在人工确认 → 球在负责人；
     // project-2 只剩失败的历史任务 → 无在办。已完成/停摆的执行 DE 不占该列。
     expect(queueText).toContain("等待审核 · 负责人甲");
-    expect(queueText).toContain("无在办");
+    expect(queueText).toContain("无在办执行");
     expect(queueText).not.toContain("验收执行员工");
     expect(queueText).not.toContain("运维检索员工");
     // Raw workflow/task detail no longer clutters the row; it moves to project detail.
@@ -1558,12 +1634,17 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect
-      .element(screen.getByRole("link", { name: "新建项目" }))
-      .toHaveAttribute("href", "/projects/new");
-    await expect
-      .element(screen.getByRole("link", { exact: true, name: "新建" }))
-      .not.toBeInTheDocument();
+    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    await vi.waitFor(() => {
+      const createLink = screen.container.querySelector('a[href="/projects/new"]');
+      expect(createLink).toBeTruthy();
+      expect(createLink?.textContent).toContain("新建项目");
+    });
+    expect(
+      Array.from(screen.container.querySelectorAll("a")).some(
+        (a) => a.textContent?.trim() === "新建",
+      ),
+    ).toBe(false);
   });
 
   it("renders project creation as a standalone page without project management content behind it", async () => {
@@ -1640,8 +1721,8 @@ describe("ProjectsView", () => {
     );
     expect(headers).toEqual([
       "项目",
-      "待办拆分",
-      "当前处理者",
+      "关注摘要",
+      "执行摘要",
       "最近活动",
       "操作",
     ]);
@@ -1659,9 +1740,7 @@ describe("ProjectsView", () => {
     const projectTitle = listSurface?.querySelector(
       '[data-testid="project-queue-project-title"]',
     );
-    expect(projectTitle?.className).toContain("line-clamp-2");
-    expect(projectTitle?.className).toContain("break-words");
-    expect(projectTitle?.className).toContain("max-h-10");
+    expect(projectTitle?.className).toContain("truncate");
     expect(
       listSurface?.querySelector('[data-testid="project-queue-pending"]'),
     ).toBeTruthy();
@@ -1689,28 +1768,20 @@ describe("ProjectsView", () => {
       );
       await vi.waitFor(() => {
         expect(
-          document.querySelector('[data-testid="projects-dashboard-rail"]'),
+          document.querySelector('[data-testid="projects-portfolio-perspective"]'),
         ).toBeTruthy();
       });
       const rail = document.querySelector(
-        '[data-testid="projects-dashboard-rail"]',
+        '[data-testid="projects-portfolio-perspective"]',
       ) as HTMLElement;
       await vi.waitFor(() => {
-        expect(rail.textContent).toContain("待我决策");
-        expect(rail.textContent).toContain("需要负责人确认上线计划");
-        expect(rail.textContent).toContain("生产环境发布审批");
-        expect(rail.textContent).toContain("最近运行动态");
+        expect(rail.textContent).toContain("组合透视");
+        expect(rail.textContent).toContain("状态分布");
       });
-      // 决策行深链到项目审批 Tab
-      const decisionLink = Array.from(rail.querySelectorAll("a")).find((anchor) =>
-        anchor.textContent?.includes("需要负责人确认上线计划"),
-      );
-      expect(decisionLink?.getAttribute("href")).toContain("/projects/project-1");
-      expect(decisionLink?.getAttribute("href")).toContain("tab=approval");
-      expect(decisionLink?.getAttribute("href")).toContain("focus=decision-1");
-      // KPI 带新增「待我决策」真值卡（inbox badge）
-      const kpiBand = screen.getByLabelText("项目组合概览（已加载列表）").element();
-      expect(kpiBand.textContent).toContain("待我决策");
+      // 组合摘要条（无 Inbox 卡）
+      const kpiBand = screen.getByLabelText("项目组合概览").element();
+      expect(kpiBand.textContent).not.toContain("待我决策");
+      expect(kpiBand.textContent).toContain("已加载");
       expect(
         document.querySelector('[data-testid="project-selected-context-panel"]'),
       ).toBeNull();
@@ -1745,9 +1816,9 @@ describe("ProjectsView", () => {
       );
       expect(decisionAction?.getAttribute("href")).toContain("tab=approval");
 
-      // 选中期间驾驶舱面板让位给 triage；点关闭钮返回驾驶舱右栏。
+      // 选中期间组合透视让位给 triage；点关闭钮返回驾驶舱右栏。
       expect(
-        document.querySelector('[data-testid="projects-dashboard-rail"]'),
+        document.querySelector('[data-testid="projects-portfolio-perspective"]'),
       ).toBeNull();
       await userEvent.click(
         screen.getByRole("button", { name: "关闭项目待办详情" }),
@@ -1757,7 +1828,7 @@ describe("ProjectsView", () => {
           document.querySelector('[data-testid="project-selected-context-panel"]'),
         ).toBeNull();
         expect(
-          document.querySelector('[data-testid="projects-dashboard-rail"]'),
+          document.querySelector('[data-testid="projects-portfolio-perspective"]'),
         ).toBeTruthy();
       });
     } finally {
@@ -2708,13 +2779,13 @@ describe("ProjectsView", () => {
 
     await expect.element(screen.getByText("项目队列")).toBeVisible();
     // Portfolio bar is derived from cheap loaded-list fields, so it shows immediately.
-    await expect.element(screen.getByLabelText("项目组合概览（已加载列表）")).toBeVisible();
+    await expect.element(screen.getByLabelText("项目组合概览")).toBeVisible();
 
     const pendingQueue = screen.getByTestId("project-risk-queue").element();
     const pendingRowsText = pendingQueue.querySelector("tbody")?.textContent ?? "";
-    expect(pendingQueue.textContent).toContain("正在识别风险");
+    expect(pendingQueue.textContent).toContain("加载中");
     expect(pendingRowsText).toContain("识别中");
-    expect(pendingRowsText).not.toContain("待决决策");
+    expect(pendingRowsText).not.toContain("项目待决");
     expect(pendingRowsText).not.toContain("执行失败");
 
     project2RiskGate.resolve();
@@ -2723,8 +2794,8 @@ describe("ProjectsView", () => {
       const settledQueue = screen.getByTestId("project-risk-queue").element();
       const settledRowsText = settledQueue.querySelector("tbody")?.textContent ?? "";
       expect(settledRowsText).toContain("执行失败");
-      expect(settledRowsText).toContain("待决决策");
-      expect(settledQueue.textContent).not.toContain("正在识别风险");
+      expect(settledRowsText).toContain("项目待决");
+      expect(settledQueue.textContent).not.toContain("加载中");
     });
   });
 
@@ -2757,9 +2828,10 @@ describe("ProjectsView", () => {
     const screen = await renderProjects(fetcher);
 
     await expect.element(screen.getByText("项目队列")).toBeVisible();
-    await expect
-      .element(screen.getByRole("link", { name: "进入项目 生产巡检整改" }))
-      .toHaveAttribute("href", "/projects/project-2");
+    const enterP2 = Array.from(screen.container.querySelectorAll("a")).find(
+      (a) => a.getAttribute("href") === "/projects/project-2" && a.textContent?.includes("进入项目"),
+    );
+    expect(enterP2).toBeTruthy();
     // 详情层按需渲染：未选中时页面上没有 triage 面板。
     expect(
       document.querySelector('[data-testid="project-selected-context-panel"]'),
@@ -2848,6 +2920,7 @@ describe("ProjectsView", () => {
   });
 
   it("keeps the base project list usable when one project's risk enrichment fails", async () => {
+    // 列表态计数走 run-summary；单项目 4 连发失败只影响选中 triage，不得拖垮队列。
     const fetcher = createProjectFetcher({ riskSignalFailureProjectId: "project-2" });
     const screen = await renderProjects(fetcher);
 
@@ -2855,9 +2928,23 @@ describe("ProjectsView", () => {
     await expect
       .element(screen.getByTestId("project-risk-queue").getByText("生产巡检整改"))
       .toBeVisible();
-    await expect.element(screen.getByText("风险待确认").first()).toBeVisible();
     const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
     expect(queueText).toContain("进入项目");
+    expect(queueText).toContain("执行失败");
+  });
+
+  it("reads the orphan waiting bucket, not the wide run-overview one", async () => {
+    // run-summary 的 waiting_human_count 是宽口径（含已建决策卡的），供运行总览大屏；
+    // 项目首页与「项目待决」同屏，必须读 waiting_human_unlinked_count，否则同一次
+    // 人工动作会显示成「1 项目待决 · 9 等人」。mock 里两者故意取 9 / 0。
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+
+    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
+    expect(queueText).toContain("1 项目待决");
+    expect(queueText).not.toContain("9 等人");
+    expect(queueText).not.toContain("等人");
   });
 
   it("renders the project index with the compact control surface structure", async () => {
@@ -2872,7 +2959,10 @@ describe("ProjectsView", () => {
       "compact",
     );
     expect(screen.getByTestId("project-risk-queue").element().textContent).toContain(
-      "按需要介入程度排序",
+      "已加载",
+    );
+    expect(screen.getByTestId("project-risk-queue").element().textContent).toContain(
+      "我的待办",
     );
   });
 

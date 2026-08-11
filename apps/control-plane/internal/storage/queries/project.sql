@@ -2705,10 +2705,19 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 RETURNING *;
 
 -- name: ListProjectRunSummaries :many
--- 运行总览项目运行带:跨项目一次聚合任务状态计数与今日完成运行数,避免逐项目 N+1。
+-- 运行总览项目运行带 + 项目管理首页组合计数:跨项目一次聚合,避免逐项目 N+1。
 -- 「今日」口径与员工 today token 一致(Asia/Shanghai 日窗);今日完成按 task_runs 执行完成计
 -- (执行口径,用户拍板,见 spec 2026-07-26-run-overview-display-mode §8-3)。
--- 排序:有失败/待人工的项目优先,其次按最新任务活动时间。
+-- 2026-08-10: failed 排除 dismissed;扩 open_decision_count / evidence_pending_count
+-- (spec 2026-08-10-projects-home-portfolio-hygiene-design §7)。
+-- 2026-08-11: waiting_human / failed 状态集对齐 Web deriveProjectRiskSummary。
+-- 2026-08-11 复审修:等人拆两个字段,一个聚合不能同时服务两种展示语义——
+--   waiting_human_count          = 所有在等人的任务(运行总览大屏「待人工」badge 与 hasActive 用);
+--   waiting_human_unlinked_count = 其中无 open decision 挂同 project_task_id 的 orphan
+--                                  (项目首页用:同屏另有「待决」桶,不去重会「1 待决 · 1 等人」双计,
+--                                   与明细 deriveProjectRiskSummary 的 sister-F1 去重同源)。
+-- 曾把去重口径直接写进 waiting_human_count,实测大屏 21→2、4 个项目 hasActive 翻 false。
+-- 排序:有失败/待人工的项目优先(用宽口径),其次按最新任务活动时间。
 SELECT
     p.id AS project_id,
     p.name,
@@ -2716,30 +2725,71 @@ SELECT
     COALESCE(t.running_count, 0)::integer AS running_count,
     COALESCE(t.queued_count, 0)::integer AS queued_count,
     COALESCE(t.waiting_human_count, 0)::integer AS waiting_human_count,
+    COALESCE(t.waiting_human_unlinked_count, 0)::integer AS waiting_human_unlinked_count,
     COALESCE(t.failed_count, 0)::integer AS failed_count,
     COALESCE(t.unassigned_count, 0)::integer AS unassigned_count,
     COALESCE(t.participant_employee_count, 0)::integer AS participant_employee_count,
     COALESCE(r.completed_today_count, 0)::integer AS completed_today_count,
+    COALESCE(d.open_decision_count, 0)::integer AS open_decision_count,
+    COALESCE(e.evidence_pending_count, 0)::integer AS evidence_pending_count,
     t.last_activity_at::timestamptz AS last_activity_at
 FROM projects p
 LEFT JOIN (
     SELECT
-        project_id,
-        COUNT(*) FILTER (WHERE status = 'running')::integer AS running_count,
-        COUNT(*) FILTER (WHERE status = 'queued')::integer AS queued_count,
-        COUNT(*) FILTER (WHERE status = 'waiting_human')::integer AS waiting_human_count,
-        COUNT(*) FILTER (WHERE status = 'failed')::integer AS failed_count,
+        pt.project_id,
+        COUNT(*) FILTER (WHERE pt.status = 'running')::integer AS running_count,
+        COUNT(*) FILTER (WHERE pt.status = 'queued')::integer AS queued_count,
+        -- 宽口径:与 web waitingHumanTaskStatuses + isAwaitingHumanApproval 对齐。
+        -- 不去重——大屏「待人工」问的是「有几个任务卡在人身上」,与是否已建决策卡无关。
         COUNT(*) FILTER (
-            WHERE status NOT IN ('completed', 'failed', 'cancelled')
-              AND assigned_digital_employee_id IS NULL
+            WHERE pt.status IN ('waiting_human', 'pending_human', 'pending_review', 'approval_required')
+               OR (
+                   pt.requires_human_approval
+                   AND pt.status NOT IN (
+                       'completed', 'done', 'success', 'cancelled',
+                       'failed', 'error', 'blocked'
+                   )
+               )
+        )::integer AS waiting_human_count,
+        -- orphan 口径:再排除已有 open decision 的任务(该任务已计入 open_decision_count)。
+        COUNT(*) FILTER (
+            WHERE (
+                pt.status IN ('waiting_human', 'pending_human', 'pending_review', 'approval_required')
+                OR (
+                    pt.requires_human_approval
+                    AND pt.status NOT IN (
+                        'completed', 'done', 'success', 'cancelled',
+                        'failed', 'error', 'blocked'
+                    )
+                )
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM project_decision_requests dr
+                WHERE dr.tenant_id = pt.tenant_id
+                  AND dr.project_task_id = pt.id
+                  AND lower(COALESCE(dr.status_snapshot, '')) IN (
+                      'pending', 'waiting', 'requested', 'open'
+                  )
+            )
+        )::integer AS waiting_human_unlinked_count,
+        -- 与 web failedTaskStatuses 对齐(failed / error / blocked)
+        COUNT(*) FILTER (
+            WHERE pt.status IN ('failed', 'error', 'blocked')
+        )::integer AS failed_count,
+        -- 活跃口径与 web isTerminalTaskStatus 同源(cancelled/completed/done/failed/success)。
+        COUNT(*) FILTER (
+            WHERE pt.status NOT IN ('completed', 'done', 'success', 'failed', 'cancelled')
+              AND pt.assigned_digital_employee_id IS NULL
         )::integer AS unassigned_count,
-        COUNT(DISTINCT assigned_digital_employee_id) FILTER (
-            WHERE status NOT IN ('completed', 'failed', 'cancelled')
+        COUNT(DISTINCT pt.assigned_digital_employee_id) FILTER (
+            WHERE pt.status NOT IN ('completed', 'done', 'success', 'failed', 'cancelled')
         )::integer AS participant_employee_count,
-        MAX(updated_at) AS last_activity_at
-    FROM project_tasks
-    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-    GROUP BY project_id
+        MAX(pt.updated_at) AS last_activity_at
+    FROM project_tasks pt
+    WHERE pt.tenant_id = sqlc.arg('tenant_id')::uuid
+      AND pt.dismissed_at IS NULL
+    GROUP BY pt.project_id
 ) t ON t.project_id = p.id
 LEFT JOIN (
     -- chat run 挂项目锚仅为运行时落点(节点解析/预算边界),其产出不进项目流转
@@ -2757,6 +2807,24 @@ LEFT JOIN (
       AND COALESCE(tr.finished_at, tr.updated_at, tr.created_at) < ((date_trunc('day', timezone('Asia/Shanghai', now())) + INTERVAL '1 day') AT TIME ZONE 'Asia/Shanghai')
     GROUP BY tr.project_id
 ) r ON r.project_id = p.id
+LEFT JOIN (
+    SELECT project_id,
+           COUNT(*) FILTER (
+               WHERE lower(COALESCE(status_snapshot, '')) IN ('pending', 'waiting', 'requested', 'open')
+           )::integer AS open_decision_count
+    FROM project_decision_requests
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+    GROUP BY project_id
+) d ON d.project_id = p.id
+LEFT JOIN (
+    SELECT project_id,
+           COUNT(*) FILTER (
+               WHERE verification_status IN ('submitted', 'rejected')
+           )::integer AS evidence_pending_count
+    FROM project_evidence_refs
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+    GROUP BY project_id
+) e ON e.project_id = p.id
 WHERE p.tenant_id = sqlc.arg('tenant_id')::uuid
   AND p.deleted_at IS NULL
   AND p.status != 'archived'

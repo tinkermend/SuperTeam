@@ -677,6 +677,36 @@ export function relatedRefMetaLabel(kind: RelatedRefMetaKind): string {
 // 动作视角 vs 对象视角分列；同 surface 禁止三词同义。
 // ---------------------------------------------------------------------------
 
+/**
+ * 项目组合关注摘要 / triage 的 reason 类型标签（项目侧，非 Inbox「我的待办」）。
+ * 与 `project-risk.ts` ProjectRiskReasonType 对齐。
+ */
+export type ProjectRiskReasonLabelKey =
+  | "human_decision"
+  | "waiting_human"
+  | "execution_failed"
+  | "runtime_or_coordination"
+  | "evidence_required"
+  | "sla_waiting";
+
+const PROJECT_RISK_REASON_LABELS: Record<ProjectRiskReasonLabelKey, string> = {
+  human_decision: "项目待决",
+  waiting_human: "等人任务",
+  execution_failed: "执行失败",
+  runtime_or_coordination: "协调异常",
+  evidence_required: "证据待核",
+  sla_waiting: "等待超时",
+};
+
+export function projectRiskReasonTypeLabel(
+  type: string | undefined,
+): string {
+  if (!type) return "关注信号";
+  return (
+    PROJECT_RISK_REASON_LABELS[type as ProjectRiskReasonLabelKey] ?? type
+  );
+}
+
 export type HumanWaitSurface =
   | "inbox_kpi"
   | "inbox_badge"

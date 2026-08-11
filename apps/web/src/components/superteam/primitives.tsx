@@ -633,7 +633,9 @@ function Pagination({
   pageCount,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = [10, 20, 50]
+  pageSizeOptions = [10, 20, 50],
+  /** 总数前缀，默认「共」；项目组合列表可用「已加载范围内」避免假称全库。 */
+  totalLabel = "共",
 }: {
   className?: string;
   total: number;
@@ -643,6 +645,7 @@ function Pagination({
   onPageChange: (page: number) => void;
   onPageSizeChange?: (size: number) => void;
   pageSizeOptions?: number[];
+  totalLabel?: string;
 }) {
   const windowPages = Array.from({ length: Math.min(pageCount, 5) }, (_, i) => i + 1);
   return (
@@ -654,7 +657,8 @@ function Pagination({
       )}
     >
       <span className="tabular-nums">
-        共 <b className="font-bold text-ink">{total}</b> 条
+        {totalLabel}{" "}
+        <b className="font-bold text-ink">{total}</b> 条
       </span>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1">

@@ -12,7 +12,7 @@
 | 需求流程 | `project_demands` | `status` | 业务需求闭环到哪一步 |
 | 项目任务执行 | `project_tasks` | `status` | 执行单元能否跑、是否等人、是否终态 |
 | 人类决策 | `project_decision_requests` / inbox | `status_snapshot` | 人现在要不要点一张卡 |
-| 注意力投影 | 前端 `deriveProjectRiskSummary` | reasons / 待办拆分 | 驾驶舱怎么扫读 |
+| 注意力投影 | 前端 `deriveProjectRiskSummary` / `buildProjectRiskSummaryFromCounts` | reasons / **关注摘要**（列表态计数桶） | 驾驶舱怎么扫读 |
 
 **不变量**：合法情况下，项目 / 需求 / 任务的状态字符串**不必**相同；一致性指投影链收敛，不是三字段同值。
 

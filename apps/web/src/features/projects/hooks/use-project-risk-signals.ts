@@ -60,9 +60,12 @@ export function useProjectRiskSignals({
       placeholderData: keepPreviousData,
       queryFn: async (): Promise<ProjectRiskSignalPayload> => {
         const [tasks, decisions, evidence, members] = await Promise.all([
-          listProjectTasks(apiOptions, project.id, { limit: 20 }),
-          listProjectDecisionRequests(apiOptions, project.id, { limit: 20 }),
-          listProjectEvidence(apiOptions, project.id, { limit: 10 }),
+          // limit 取服务端上限 100：这些窗口原本是为「当前页 10 项目 × 4 连发」压出来的，
+          // 现在只对选中的单个项目发，取小反而让 triage 的「可行动 · N」比队列行的
+          // run-summary 真值少（实测 18 vs 21、证据 10 vs 12）——同屏两个数字对不上。
+          listProjectTasks(apiOptions, project.id, { limit: 100 }),
+          listProjectDecisionRequests(apiOptions, project.id, { limit: 100 }),
+          listProjectEvidence(apiOptions, project.id, { limit: 100 }),
           listProjectMembers(apiOptions, project.id),
         ]);
 

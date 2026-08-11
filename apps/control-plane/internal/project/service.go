@@ -836,7 +836,9 @@ func (s *Service) ListProjectRunSummaries(ctx context.Context, req ListProjectRu
 	if req.TenantID == uuid.Nil {
 		return ProjectRunSummaryList{}, ErrInvalidProject
 	}
-	req.Limit, _ = normalizePagination(req.Limit, 0)
+	// 项目首页 join listProjects(≤50) 需要覆盖已加载全集；运行总览也受益于更宽运行带。
+	// 独立上限 500，不沿用通用列表 100 封顶（否则 ORDER BY 风险优先 + limit 50 会漏 join）。
+	req.Limit = normalizeRunSummaryLimit(req.Limit)
 	items, err := s.repository.ListProjectRunSummaries(ctx, req)
 	if err != nil {
 		return ProjectRunSummaryList{}, err
@@ -9083,6 +9085,18 @@ func normalizePagination(limit, offset int32) (int32, int32) {
 		offset = 0
 	}
 	return limit, offset
+}
+
+// normalizeRunSummaryLimit 专用于跨项目 run-summary：默认 50，上限 500。
+// 项目首页用 500 覆盖 listProjects 已加载全集；运行总览仍可传更小 limit。
+func normalizeRunSummaryLimit(limit int32) int32 {
+	if limit <= 0 {
+		return 50
+	}
+	if limit > 500 {
+		return 500
+	}
+	return limit
 }
 
 func normalizeWorkflowInstancePagination(limit, offset int32) (int32, int32) {

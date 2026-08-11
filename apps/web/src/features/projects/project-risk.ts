@@ -7,6 +7,7 @@ import type {
   ProjectPrincipalType,
   ProjectTask,
 } from "@/lib/api/projects";
+import { projectRiskReasonTypeLabel } from "@/lib/status-labels";
 import { isAwaitingHumanApproval, isTerminalTaskStatus } from "@/lib/task-status";
 
 export type ProjectRiskLevel = "none" | "info" | "warn" | "danger";
@@ -41,6 +42,16 @@ export type ProjectQueueHandlerMode =
   | "pending_dispatch" // 有在办任务但尚未落到执行者
   | "idle"; // 无在办
 
+/** 列表态 run-summary 计数桶（与 buildAttentionBreakdown 字段同源）。 */
+export type ProjectRiskCountBuckets = {
+  decisions: number;
+  waitingHuman: number;
+  executionFailed: number;
+  coordination: number;
+  evidence: number;
+  sla: number;
+};
+
 export type ProjectRiskSummary = {
   projectId: string;
   project: Project;
@@ -49,7 +60,7 @@ export type ProjectRiskSummary = {
   owner?: ProjectTaskHandler;
   /** 球权方：waiting_review 时为人类负责人；executor 时为数字员工。 */
   currentHandler?: ProjectTaskHandler;
-  /** 队列「当前处理者」展示模式。 */
+  /** 队列「执行摘要」展示模式。 */
   currentHandlerMode?: ProjectQueueHandlerMode;
   currentTask?: ProjectTask;
   reasons: ProjectRiskReason[];
@@ -57,6 +68,15 @@ export type ProjectRiskSummary = {
   requiresHuman: boolean;
   waitingSince?: string;
   updatedAt?: string;
+  /**
+   * 列表态由 run-summary 拼装的计数桶；存在时 buildAttentionBreakdown / 筛选优先用桶，
+   * 与明细路径的 reasons 聚合字段名一致。
+   */
+  countBuckets?: ProjectRiskCountBuckets;
+  /** 在办 running 任务数（多任务执行摘要用）。 */
+  runningCount?: number;
+  /** 最近活动（列表态来自 run-summary.last_activity_at）。 */
+  lastActivityAt?: string;
 };
 
 export type ProjectRiskSummaryMap = Record<string, ProjectRiskSummary>;
@@ -89,15 +109,24 @@ export type ProjectRiskCounts = Record<ProjectRiskFilter, number>;
 export const PROJECT_RISK_FILTERS: Array<{
   value: ProjectRiskFilter;
   label: string;
+  /** 默认工具条可见；false 时收入「更多」。 */
+  defaultVisible?: boolean;
+  /**
+   * 列表态是否可选。列表态计数来自 run-summary，只给计数不给等待起点时间，
+   * 因此 sla_waiting 桶恒为 0——渲染出来就是个永远筛不出东西的死 chip。
+   * 「等待超时」只在选中项目的 triage（明细路径 deriveProjectRiskSummary）出现。
+   * run-summary 若日后补 oldest_waiting_since，可去掉本标记。
+   */
+  listAvailable?: boolean;
 }> = [
-  { value: "all", label: "全部项目" },
-  { value: "blocked", label: "存在风险" },
-  { value: "human_decision", label: "待决决策" },
-  { value: "waiting_human", label: "等人任务" },
-  { value: "execution_failed", label: "执行失败" },
-  { value: "runtime_or_coordination", label: "协调异常" },
-  { value: "evidence_required", label: "证据待核" },
-  { value: "sla_waiting", label: "等待超时" },
+  { value: "all", label: "全部项目", defaultVisible: true },
+  { value: "blocked", label: "存在风险", defaultVisible: true },
+  { value: "human_decision", label: "项目待决", defaultVisible: true },
+  { value: "execution_failed", label: "执行失败", defaultVisible: true },
+  { value: "waiting_human", label: "等人任务", defaultVisible: false },
+  { value: "evidence_required", label: "证据待核", defaultVisible: false },
+  { value: "runtime_or_coordination", label: "协调异常", defaultVisible: false },
+  { value: "sla_waiting", label: "等待超时", defaultVisible: false, listAvailable: false },
 ];
 
 const activeDecisionStatuses = new Set(["pending", "waiting", "requested", "open"]);
@@ -138,14 +167,10 @@ const reasonPriority: Record<ProjectRiskReasonType, number> = {
   sla_waiting: 1,
 };
 
-const reasonLabels: Record<ProjectRiskReasonType, string> = {
-  human_decision: "待决决策",
-  waiting_human: "任务等待人工",
-  execution_failed: "执行失败",
-  runtime_or_coordination: "协调异常",
-  evidence_required: "证据待核",
-  sla_waiting: "等待超时",
-};
+/** 项目侧风险原因用户可见标签 → status-labels 单点词表。 */
+function reasonLabel(type: ProjectRiskReasonType): string {
+  return projectRiskReasonTypeLabel(type);
+}
 
 /** 需要负责人立刻行动的 reason（不含证据核验元数据、不含 SLA 附注）。 */
 const ACTIONABLE_REASON_TYPES = new Set<ProjectRiskReasonType>([
@@ -355,6 +380,126 @@ export function emptyProjectRiskSummary(
   };
 }
 
+/** run-summary 计数入口（列表态）；与 deriveProjectRiskSummary 桶名同源。 */
+export type ProjectRunSummaryCountsInput = {
+  open_decision_count: number;
+  /**
+   * 无 open 决策卡挂载的 orphan 等人数。这里**必须**用 unlinked 而非
+   * `waiting_human_count`：同屏已有「待决」桶，宽口径会把同一次人工动作
+   * 显示成「1 待决 · 1 等人」。与明细路径 sister-F1 去重同源。
+   */
+  waiting_human_unlinked_count: number;
+  failed_count: number;
+  evidence_pending_count: number;
+  running_count: number;
+  unassigned_count: number;
+  last_activity_at?: string;
+};
+
+/**
+ * 列表态：由租户级 run-summary 计数拼装摘要（无 reason 明细 / 深链 id）。
+ * triage 仍走 deriveProjectRiskSummary 拉明细。
+ */
+export function buildProjectRiskSummaryFromCounts(
+  project: Project,
+  counts: ProjectRunSummaryCountsInput,
+  options: ProjectRiskOptions & {
+    owner?: ProjectTaskHandler;
+  } = {},
+): ProjectRiskSummary {
+  if (normalize(project.status) === "archived" || project.archived_at) {
+    return {
+      ...emptyProjectRiskSummary(project, options),
+      owner: options.owner ?? selectProjectOwner(project, [], undefined),
+      currentHandlerMode: "idle",
+      lastActivityAt: project.updated_at,
+    };
+  }
+
+  const coordinationAnomaly =
+    !healthyCoordinationStatuses.has(normalize(project.coordination_status));
+  const buckets: ProjectRiskCountBuckets = {
+    decisions: Math.max(0, counts.open_decision_count),
+    waitingHuman: Math.max(0, counts.waiting_human_unlinked_count),
+    executionFailed: Math.max(0, counts.failed_count),
+    coordination: coordinationAnomaly ? 1 : 0,
+    evidence: Math.max(0, counts.evidence_pending_count),
+    sla: 0,
+  };
+
+  const reasons = syntheticReasonsFromBuckets(project, buckets);
+  const primaryReason = pickPrimaryReason(reasons);
+  const level = primaryReason?.level ?? "none";
+  const requiresHuman = buckets.decisions > 0 || buckets.waitingHuman > 0;
+  const owner = options.owner ?? selectProjectOwner(project, [], undefined);
+  const mode = resolveModeFromCounts(counts, requiresHuman);
+
+  return {
+    projectId: project.id,
+    project,
+    level,
+    state: options.state ?? "ready",
+    owner,
+    currentHandler: mode === "waiting_review" ? owner : undefined,
+    currentHandlerMode: mode,
+    currentTask: undefined,
+    reasons,
+    primaryReason,
+    requiresHuman,
+    waitingSince: undefined,
+    updatedAt: project.updated_at,
+    countBuckets: buckets,
+    runningCount: Math.max(0, counts.running_count),
+    lastActivityAt: counts.last_activity_at,
+  };
+}
+
+function syntheticReasonsFromBuckets(
+  project: Project,
+  buckets: ProjectRiskCountBuckets,
+): ProjectRiskReason[] {
+  const reasons: ProjectRiskReason[] = [];
+  const push = (
+    type: ProjectRiskReasonType,
+    level: Exclude<ProjectRiskLevel, "none">,
+    n: number,
+  ) => {
+    if (n <= 0) return;
+    // 一条合成 reason 足以驱动 level / 筛选；计数以 countBuckets 为准。
+    reasons.push({
+      id: `count:${project.id}:${type}`,
+      type,
+      level,
+      source: "project",
+      title: project.name,
+      sourceId: project.id,
+    });
+  };
+  push("human_decision", "danger", buckets.decisions);
+  push("waiting_human", "danger", buckets.waitingHuman);
+  push("execution_failed", "danger", buckets.executionFailed);
+  push("runtime_or_coordination", "danger", buckets.coordination);
+  push("evidence_required", "warn", buckets.evidence);
+  push("sla_waiting", "warn", buckets.sla);
+  return reasons;
+}
+
+function resolveModeFromCounts(
+  counts: ProjectRunSummaryCountsInput,
+  requiresHuman: boolean,
+): ProjectQueueHandlerMode {
+  if (requiresHuman) {
+    return "waiting_review";
+  }
+  if (counts.running_count > 0) {
+    return "executor";
+  }
+  if (counts.unassigned_count > 0) {
+    return "pending_dispatch";
+  }
+  return "idle";
+}
+
 export function buildRiskCounts(
   summaries: ProjectRiskSummary[],
 ): ProjectRiskCounts {
@@ -373,10 +518,13 @@ export function buildRiskCounts(
     if (summary.level === "danger" || summary.level === "warn") {
       counts.blocked += 1;
     }
-    const reasonTypes = new Set(summary.reasons.map((reason) => reason.type));
-    for (const reasonType of reasonTypes) {
-      counts[reasonType] += 1;
-    }
+    const b = buildAttentionBreakdown(summary);
+    if (b.decisions > 0) counts.human_decision += 1;
+    if (b.waitingHuman > 0) counts.waiting_human += 1;
+    if (b.executionFailed > 0) counts.execution_failed += 1;
+    if (b.coordination > 0) counts.runtime_or_coordination += 1;
+    if (b.evidence > 0) counts.evidence_required += 1;
+    if (b.sla > 0) counts.sla_waiting += 1;
   }
 
   return counts;
@@ -452,7 +600,23 @@ export function matchesProjectRiskFilter(
   if (filter === "blocked") {
     return summary.level === "danger" || summary.level === "warn";
   }
-  return summary.reasons.some((reason) => reason.type === filter);
+  const b = buildAttentionBreakdown(summary);
+  switch (filter) {
+    case "human_decision":
+      return b.decisions > 0;
+    case "waiting_human":
+      return b.waitingHuman > 0;
+    case "execution_failed":
+      return b.executionFailed > 0;
+    case "runtime_or_coordination":
+      return b.coordination > 0;
+    case "evidence_required":
+      return b.evidence > 0;
+    case "sla_waiting":
+      return b.sla > 0;
+    default:
+      return summary.reasons.some((reason) => reason.type === filter);
+  }
 }
 
 export function sortProjectsByRisk(
@@ -500,7 +664,7 @@ export function projectRiskLevelLabel(summary: ProjectRiskSummary): string {
     return "风险待确认";
   }
   if (summary.primaryReason) {
-    return reasonLabels[summary.primaryReason.type];
+    return reasonLabel(summary.primaryReason.type);
   }
   return "暂无阻塞";
 }
@@ -520,8 +684,26 @@ export type ProjectAttentionBreakdown = {
 };
 
 export function buildAttentionBreakdown(
-  summary: Pick<ProjectRiskSummary, "reasons">,
+  summary: Pick<ProjectRiskSummary, "reasons" | "countBuckets">,
 ): ProjectAttentionBreakdown {
+  if (summary.countBuckets) {
+    const b = summary.countBuckets;
+    const actionableTotal =
+      b.decisions + b.waitingHuman + b.executionFailed + b.coordination;
+    const signalTotal = b.evidence + b.sla;
+    return {
+      decisions: b.decisions,
+      waitingHuman: b.waitingHuman,
+      executionFailed: b.executionFailed,
+      coordination: b.coordination,
+      evidence: b.evidence,
+      sla: b.sla,
+      actionableTotal,
+      signalTotal,
+      allTotal: actionableTotal + signalTotal,
+    };
+  }
+
   const breakdown: ProjectAttentionBreakdown = {
     decisions: 0,
     waitingHuman: 0,
@@ -568,11 +750,11 @@ export function buildAttentionBreakdown(
 }
 
 /**
- * 队列/右栏主文案：禁止再用 reasons.length 显示「N 项待处理」。
- * 可行动项按桶拼接；仅有证据/SLA 时用中性措辞。
+ * 队列/triage 主文案：禁止再用 reasons.length 显示「N 项待处理」。
+ * 可行动项按桶拼接；空态返回空串（语义仅由「暂无阻塞」pill 承担，避免同格双文案）。
  */
 export function formatAttentionHeadline(
-  summary: Pick<ProjectRiskSummary, "reasons" | "state">,
+  summary: Pick<ProjectRiskSummary, "reasons" | "state" | "countBuckets">,
 ): { primary: string; detail?: string; hasActionable: boolean } {
   if (summary.state === "pending") {
     return { primary: "识别中", hasActionable: false };
@@ -583,7 +765,7 @@ export function formatAttentionHeadline(
 
   const b = buildAttentionBreakdown(summary);
   const parts: string[] = [];
-  if (b.decisions > 0) parts.push(`${b.decisions} 待决`);
+  if (b.decisions > 0) parts.push(`${b.decisions} 项目待决`);
   if (b.waitingHuman > 0) parts.push(`${b.waitingHuman} 等人`);
   if (b.executionFailed > 0) parts.push(`${b.executionFailed} 失败`);
   if (b.coordination > 0) parts.push(`${b.coordination} 协调异常`);
@@ -606,11 +788,11 @@ export function formatAttentionHeadline(
     return { primary: soft.join(" · "), hasActionable: false };
   }
 
-  return { primary: "无待办", hasActionable: false };
+  return { primary: "", hasActionable: false };
 }
 
 export function projectRiskReasonLabel(type: ProjectRiskReasonType): string {
-  return reasonLabels[type];
+  return reasonLabel(type);
 }
 
 export function isActionableRiskReason(type: ProjectRiskReasonType): boolean {
@@ -750,11 +932,15 @@ function resolveCurrentBall(
   return { task: undefined, handler: undefined, mode: "idle" };
 }
 
-/** 队列「当前处理者」列文案。归档只由状态 pill 表达，本列不再写「已归档」。 */
+/** 队列「执行摘要」列文案。归档只由状态 pill 表达，本列不再写「已归档」。禁止对用户说「球权」。 */
 export function formatProjectQueueHandlerLabel(
   summary: Pick<
     ProjectRiskSummary,
-    "currentHandler" | "currentHandlerMode" | "owner" | "project"
+    | "currentHandler"
+    | "currentHandlerMode"
+    | "owner"
+    | "project"
+    | "runningCount"
   >,
   project: Project = summary.project,
 ): string {
@@ -773,12 +959,20 @@ export function formatProjectQueueHandlerLabel(
     return "等待审核";
   }
   if (mode === "executor") {
-    return summary.currentHandler?.label?.trim() || "执行中";
+    const running = summary.runningCount ?? 0;
+    if (running > 1) {
+      return `执行中 · ${running} 个任务`;
+    }
+    const name = summary.currentHandler?.label?.trim();
+    if (name) {
+      return `执行中 · ${name}`;
+    }
+    return "执行中";
   }
   if (mode === "pending_dispatch") {
-    return "待调度";
+    return "待分派";
   }
-  return "无在办";
+  return "无在办执行";
 }
 
 function selectProjectOwner(

@@ -4772,17 +4772,20 @@ func nonEmptyStringPtr(value string) *string {
 }
 
 type projectRunSummaryItemResponse struct {
-	ProjectID                string        `json:"project_id"`
-	Name                     string        `json:"name"`
-	Status                   ProjectStatus `json:"status"`
-	RunningCount             int32         `json:"running_count"`
-	QueuedCount              int32         `json:"queued_count"`
-	WaitingHumanCount        int32         `json:"waiting_human_count"`
-	FailedCount              int32         `json:"failed_count"`
-	UnassignedCount          int32         `json:"unassigned_count"`
-	ParticipantEmployeeCount int32         `json:"participant_employee_count"`
-	CompletedTodayCount      int32         `json:"completed_today_count"`
-	LastActivityAt           *string       `json:"last_activity_at,omitempty"`
+	ProjectID                 string        `json:"project_id"`
+	Name                      string        `json:"name"`
+	Status                    ProjectStatus `json:"status"`
+	RunningCount              int32         `json:"running_count"`
+	QueuedCount               int32         `json:"queued_count"`
+	WaitingHumanCount         int32         `json:"waiting_human_count"`
+	FailedCount               int32         `json:"failed_count"`
+	UnassignedCount           int32         `json:"unassigned_count"`
+	ParticipantEmployeeCount  int32         `json:"participant_employee_count"`
+	CompletedTodayCount       int32         `json:"completed_today_count"`
+	OpenDecisionCount         int32         `json:"open_decision_count"`
+	EvidencePendingCount      int32         `json:"evidence_pending_count"`
+	WaitingHumanUnlinkedCount int32         `json:"waiting_human_unlinked_count"`
+	LastActivityAt            *string       `json:"last_activity_at,omitempty"`
 }
 
 type projectRunSummaryResponse struct {
@@ -4794,17 +4797,20 @@ func projectRunSummaryResponseFromDomain(list ProjectRunSummaryList) projectRunS
 	items := make([]projectRunSummaryItemResponse, 0, len(list.Items))
 	for _, item := range list.Items {
 		items = append(items, projectRunSummaryItemResponse{
-			ProjectID:                item.ProjectID.String(),
-			Name:                     item.Name,
-			Status:                   item.Status,
-			RunningCount:             item.RunningCount,
-			QueuedCount:              item.QueuedCount,
-			WaitingHumanCount:        item.WaitingHumanCount,
-			FailedCount:              item.FailedCount,
-			UnassignedCount:          item.UnassignedCount,
-			ParticipantEmployeeCount: item.ParticipantEmployeeCount,
-			CompletedTodayCount:      item.CompletedTodayCount,
-			LastActivityAt:           timePtr(item.LastActivityAt),
+			ProjectID:                 item.ProjectID.String(),
+			Name:                      item.Name,
+			Status:                    item.Status,
+			RunningCount:              item.RunningCount,
+			QueuedCount:               item.QueuedCount,
+			WaitingHumanCount:         item.WaitingHumanCount,
+			FailedCount:               item.FailedCount,
+			UnassignedCount:           item.UnassignedCount,
+			ParticipantEmployeeCount:  item.ParticipantEmployeeCount,
+			CompletedTodayCount:       item.CompletedTodayCount,
+			OpenDecisionCount:         item.OpenDecisionCount,
+			EvidencePendingCount:      item.EvidencePendingCount,
+			WaitingHumanUnlinkedCount: item.WaitingHumanUnlinkedCount,
+			LastActivityAt:            timePtr(item.LastActivityAt),
 		})
 	}
 	return projectRunSummaryResponse{Items: items, TodayCompletedRunCount: list.TodayCompletedRunCount}

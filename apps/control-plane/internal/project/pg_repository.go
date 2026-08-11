@@ -196,17 +196,20 @@ func (r *PgRepository) ListProjectRunSummaries(ctx context.Context, req ListProj
 	items := make([]ProjectRunSummary, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, ProjectRunSummary{
-			ProjectID:                row.ProjectID,
-			Name:                     row.Name,
-			Status:                   ProjectStatus(row.Status),
-			RunningCount:             row.RunningCount,
-			QueuedCount:              row.QueuedCount,
-			WaitingHumanCount:        row.WaitingHumanCount,
-			FailedCount:              row.FailedCount,
-			UnassignedCount:          row.UnassignedCount,
-			ParticipantEmployeeCount: row.ParticipantEmployeeCount,
-			CompletedTodayCount:      row.CompletedTodayCount,
-			LastActivityAt:           ptrTime(row.LastActivityAt),
+			ProjectID:                 row.ProjectID,
+			Name:                      row.Name,
+			Status:                    ProjectStatus(row.Status),
+			RunningCount:              row.RunningCount,
+			QueuedCount:               row.QueuedCount,
+			WaitingHumanCount:         row.WaitingHumanCount,
+			FailedCount:               row.FailedCount,
+			UnassignedCount:           row.UnassignedCount,
+			ParticipantEmployeeCount:  row.ParticipantEmployeeCount,
+			CompletedTodayCount:       row.CompletedTodayCount,
+			OpenDecisionCount:         row.OpenDecisionCount,
+			EvidencePendingCount:      row.EvidencePendingCount,
+			WaitingHumanUnlinkedCount: row.WaitingHumanUnlinkedCount,
+			LastActivityAt:            ptrTime(row.LastActivityAt),
 		})
 	}
 	return items, nil

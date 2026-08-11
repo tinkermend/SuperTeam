@@ -1425,7 +1425,7 @@ export function listProjects(
   return getJson<Project[]>(options, projectListPath(filters), "projects");
 }
 
-/** 运行总览项目运行带单项聚合(契约 ProjectRunSummaryItem)。 */
+/** 运行总览项目运行带 / 项目首页组合计数单项(契约 ProjectRunSummaryItem)。 */
 export type ProjectRunSummaryItem = {
   project_id: string;
   name: string;
@@ -1437,6 +1437,16 @@ export type ProjectRunSummaryItem = {
   unassigned_count: number;
   participant_employee_count: number;
   completed_today_count: number;
+  /** 项目上开放决策数（pending/waiting/requested/open）。 */
+  open_decision_count: number;
+  /** 待核证据数（submitted/rejected）。 */
+  evidence_pending_count: number;
+  /**
+   * 无 open 决策卡挂载的「等人」任务数（orphan）。
+   * 与 `open_decision_count` 并列展示时用这个，用 `waiting_human_count` 会双计；
+   * 只问「多少任务卡在人身上」（如运行总览大屏）时才用 `waiting_human_count`。
+   */
+  waiting_human_unlinked_count: number;
   last_activity_at?: string;
 };
 

@@ -71,7 +71,7 @@ import {
   listProjectTaskDispatchGates,
   listProjectTasks,
   listProjectTransferRequests,
-  listWorkflowInstances,
+  listProjectRunSummaries,
   patchProjectEvidence,
   dismissProjectTask,
   resolveProjectDecision,
@@ -84,6 +84,7 @@ import {
   type ProjectDeleteBlocker,
   type ProjectDeletePreview,
   type ProjectEvidenceVerificationStatus,
+  type ProjectRunSummaryItem,
   type ProjectExecutionTrace,
   type ProjectTask,
   type ProjectStatus,
@@ -91,7 +92,6 @@ import {
 } from "@/lib/api/projects";
 import { listDigitalEmployees } from "@/lib/api/employees";
 import { listUsers, type UserSummary } from "@/lib/api/auth";
-import { getInboxBadge, listInboxItems } from "@/lib/api/inbox";
 import { listRuntimeNodes } from "@/lib/api/runtime";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { Main } from "@/components/layout/main";
@@ -104,8 +104,8 @@ import { ProjectRuntimePlacementPanel } from "./components/project-runtime-place
 import { CreateProjectShell } from "./components/create-project";
 import { SubmitDemandDialog } from "./components/submit-demand-dialog";
 import { ProjectConfigView } from "./components/project-config-page";
-import { ProjectDashboardRail } from "./components/project-dashboard-rail";
 import {
+  ProjectPortfolioPerspectivePanel,
   ProjectPortfolioSummaryBar,
   ProjectRiskQueue,
   ProjectTriagePanel
@@ -113,7 +113,11 @@ import {
 import { useProjectRiskSignals } from "./hooks/use-project-risk-signals";
 import {
   buildProjectPortfolioCounts,
+  buildProjectRiskSummaryFromCounts,
+  buildRiskCounts,
   emptyProjectRiskSummary,
+  matchesProjectRiskFilter,
+  sortProjectsByRisk,
   type ProjectRiskFilter,
   type ProjectRiskSummaryMap
 } from "./project-risk";
@@ -317,25 +321,14 @@ export function ProjectsView({
     queryFn: () => listProjects(apiOptions, listFilters),
     placeholderData: keepPreviousData
 });
-  const workflowInstancesQuery = useQuery({
+  // limit 500：与 CP normalizeRunSummaryLimit 上限一致，覆盖 listProjects(≤50) 全集，
+  // 避免 ORDER BY 风险优先 + 双端 limit 50 时 join 漏项被当成「暂无阻塞」。
+  const runSummaryQuery = useQuery({
     enabled: !routeProjectId,
-    queryKey: ["workflow-instances", "project-home", { limit: 50, offset: 0 }],
-    queryFn: () => listWorkflowInstances(apiOptions, { limit: 50, offset: 0 }),
-    placeholderData: keepPreviousData
-});
-  const inboxDecisionsQuery = useQuery({
-    enabled: !routeProjectId,
-    queryKey: ["inbox", "project-dashboard", "decisions"],
-    queryFn: () =>
-      listInboxItems(apiOptions, { limit: 8, status: "open", view: "mine" }),
-    placeholderData: keepPreviousData
-});
-  const inboxBadgeQuery = useQuery({
-    enabled: !routeProjectId,
-    queryKey: ["inbox", "project-dashboard", "badge"],
-    queryFn: () => getInboxBadge(apiOptions),
-    placeholderData: keepPreviousData
-});
+    queryKey: ["projects", "run-summary", { limit: 500 }],
+    queryFn: () => listProjectRunSummaries(apiOptions, { limit: 500 }),
+    placeholderData: keepPreviousData,
+  });
   // 数字员工 / 用户目录：成员快照缺名时回退真实名称，避免项目列表/详情裸显负责人 UUID。
   // 列表页也要拉用户目录——风险队列负责人行依赖 principalNamesById，不能仅在进详情后启用。
   const digitalEmployeesQuery = useQuery({
@@ -374,39 +367,147 @@ export function ProjectsView({
   }, [usersQuery.data]);
   const employeeNamesById = principalNamesById;
   const projects = projectsQuery.data ?? [];
-  const projectListPageCount = Math.max(1, Math.ceil(projects.length / projectListPageSize));
+
+  const runSummaryByProjectId = useMemo(() => {
+    // 用契约类型而非就地字面量：新增计数列时自动跟随，不会漏字段。
+    const map = new Map<string, ProjectRunSummaryItem>();
+    for (const item of runSummaryQuery.data?.items ?? []) {
+      map.set(item.project_id, item);
+    }
+    return map;
+  }, [runSummaryQuery.data]);
+
+  const listRiskSummaries = useMemo<ProjectRiskSummaryMap>(() => {
+    const map: ProjectRiskSummaryMap = {};
+    const runSummaryFailed = runSummaryQuery.isError;
+    const runSummaryPending =
+      runSummaryQuery.isLoading ||
+      (runSummaryQuery.isFetching && runSummaryQuery.data === undefined);
+    for (const project of projects) {
+      const archived =
+        project.status === "archived" || Boolean(project.archived_at);
+      // 归档不在 run-summary 宇宙内（服务端 status != archived），空 ready 合法。
+      if (archived) {
+        map[project.id] = emptyProjectRiskSummary(project, { state: "ready" });
+        continue;
+      }
+      if (runSummaryFailed) {
+        map[project.id] = emptyProjectRiskSummary(project, { state: "error" });
+        continue;
+      }
+      const item = runSummaryByProjectId.get(project.id);
+      if (!item) {
+        // 成功但无行 = 截断/join 漏项，不得冒充「暂无阻塞」。
+        map[project.id] = emptyProjectRiskSummary(project, {
+          state: runSummaryPending ? "pending" : "error",
+        });
+        continue;
+      }
+      const ownerId = project.human_owner_user_id?.trim();
+      const ownerName = ownerId
+        ? employeeNamesById.get(ownerId)?.trim()
+        : undefined;
+      map[project.id] = buildProjectRiskSummaryFromCounts(
+        project,
+        {
+          open_decision_count: item.open_decision_count,
+          // 与 open_decision_count 并列展示，必须用 orphan 口径，否则同一次人工动作双计。
+          waiting_human_unlinked_count: item.waiting_human_unlinked_count,
+          failed_count: item.failed_count,
+          evidence_pending_count: item.evidence_pending_count,
+          running_count: item.running_count,
+          unassigned_count: item.unassigned_count,
+          last_activity_at: item.last_activity_at,
+        },
+        {
+          state: "ready",
+          owner: ownerId
+            ? {
+                id: ownerId,
+                label: ownerName || ownerId,
+                principalType: "human_user",
+              }
+            : undefined,
+        },
+      );
+    }
+    return map;
+  }, [
+    employeeNamesById,
+    projects,
+    runSummaryByProjectId,
+    runSummaryQuery.data,
+    runSummaryQuery.isError,
+    runSummaryQuery.isFetching,
+    runSummaryQuery.isLoading,
+  ]);
+
+  const triageDetailEnabled =
+    Boolean(selectedQueueProjectId) && !routeProjectId;
+  const triageProjects = useMemo(
+    () =>
+      triageDetailEnabled
+        ? projects.filter((project) => project.id === selectedQueueProjectId)
+        : [],
+    [projects, selectedQueueProjectId, triageDetailEnabled],
+  );
+  const triageRiskSignals = useProjectRiskSignals({
+    apiOptions,
+    enabled: triageDetailEnabled && triageProjects.length > 0,
+    principalNamesById: employeeNamesById,
+    projects: triageProjects,
+  });
+
+  const displayedRiskSummaries = useMemo<ProjectRiskSummaryMap>(() => {
+    const map: ProjectRiskSummaryMap = { ...listRiskSummaries };
+    if (
+      selectedQueueProjectId &&
+      triageRiskSignals.summaries[selectedQueueProjectId]?.state === "ready"
+    ) {
+      const detail = triageRiskSignals.summaries[selectedQueueProjectId];
+      const list = listRiskSummaries[selectedQueueProjectId];
+      // 明细 ready 后不得再挂列表 countBuckets：否则 breakdown 优先读桶，
+      // 与 reasons 去重口径（decision 覆盖 waiting_human）分叉。
+      map[selectedQueueProjectId] = {
+        ...detail,
+        lastActivityAt: list?.lastActivityAt ?? detail.lastActivityAt,
+        runningCount: list?.runningCount ?? detail.runningCount,
+      };
+    }
+    return map;
+  }, [listRiskSummaries, selectedQueueProjectId, triageRiskSignals.summaries]);
+
+  const isListRiskSettling = !routeProjectId && runSummaryQuery.isLoading;
+
+  // 关注 chip 计数 + 风险筛选：基于已加载全量（run-summary 真值），再客户端分页。
+  const loadedRiskCounts = useMemo(
+    () =>
+      buildRiskCounts(
+        projects.map(
+          (project) =>
+            listRiskSummaries[project.id] ?? emptyProjectRiskSummary(project),
+        ),
+      ),
+    [listRiskSummaries, projects],
+  );
+  const riskFilteredProjects = useMemo(
+    () =>
+      sortProjectsByRisk(projects, listRiskSummaries).filter((project) => {
+        const summary =
+          listRiskSummaries[project.id] ?? emptyProjectRiskSummary(project);
+        return matchesProjectRiskFilter(summary, filters.risk);
+      }),
+    [filters.risk, listRiskSummaries, projects],
+  );
+  const projectListPageCount = Math.max(
+    1,
+    Math.ceil(riskFilteredProjects.length / projectListPageSize),
+  );
   const activeProjectListPage = Math.min(projectListPage, projectListPageCount);
-  const pagedProjects = projects.slice(
+  const pagedProjects = riskFilteredProjects.slice(
     (activeProjectListPage - 1) * projectListPageSize,
     activeProjectListPage * projectListPageSize,
   );
-  const currentPageRiskSignals = useProjectRiskSignals({
-    apiOptions,
-    // 详情路由不渲染风险队列（riskLabel 也未接线），跳过每项目 4 个信号请求，
-    // 避免几十个并发请求把 task-graph/plan-revisions 压后数秒。
-    enabled: !routeProjectId,
-    principalNamesById: employeeNamesById,
-    projects: pagedProjects
-});
-  const isCurrentPageRiskSettling = pagedProjects.some(
-    (project) => currentPageRiskSignals.summaries[project.id]?.state === "pending",
-  );
-  const displayedRiskSummaries = useMemo<ProjectRiskSummaryMap>(() => {
-    if (!isCurrentPageRiskSettling) {
-      return currentPageRiskSignals.summaries;
-    }
-
-    return Object.fromEntries(
-      pagedProjects.map((project) => [
-        project.id,
-        emptyProjectRiskSummary(project, { state: "pending" }),
-      ]),
-    );
-  }, [
-    currentPageRiskSignals.summaries,
-    isCurrentPageRiskSettling,
-    pagedProjects,
-  ]);
 
   useEffect(() => {
     setProjectListPage(1);
@@ -416,7 +517,8 @@ export function ProjectsView({
     () => buildProjectPortfolioCounts(projects),
     [projects],
   );
-  const selectedQueueProject = pagedProjects.find(
+  // 选中项在已加载全量中查找（风险筛选/分页后仍可保留 triage）。
+  const selectedQueueProject = projects.find(
     (project) => project.id === selectedQueueProjectId,
   );
   const selectedQueueSummary = selectedQueueProject
@@ -1029,7 +1131,7 @@ export function ProjectsView({
         subtitle={
           routeProjectId
             ? undefined
-            : "围绕项目负责人、服务池、计划确认、执行进展和最终结果推进闭环"
+            : "查看项目组合状态与关注信号，进入项目推进闭环。"
         }
       />
       <Main
@@ -1076,8 +1178,8 @@ export function ProjectsView({
             >
               {!routeProjectId ? (
                 <ProjectPortfolioSummaryBar
-                  pendingDecisionCount={inboxBadgeQuery.data?.mine_open_count}
                   portfolioCounts={portfolioCounts}
+                  totalLabel="已加载"
                 />
               ) : null}
 
@@ -1087,36 +1189,50 @@ export function ProjectsView({
                   detail={
                     selectedQueueProject ? (
                       <ProjectTriagePanel
+                        detailState={
+                          triageRiskSignals.summaries[selectedQueueProject.id]
+                            ?.state ?? "pending"
+                        }
                         onClose={() => setSelectedQueueProjectId("")}
                         principalNamesById={principalNamesById}
                         project={selectedQueueProject}
                         summary={selectedQueueSummary}
                       />
                     ) : (
-                      <ProjectDashboardRail
-                        decisionItems={inboxDecisionsQuery.data?.items ?? []}
-                        decisionOpenCount={
-                          inboxDecisionsQuery.data?.summary.open_count ?? 0
+                      <ProjectPortfolioPerspectivePanel
+                        completedTodayCount={
+                          runSummaryQuery.data?.today_completed_run_count
                         }
-                        decisionsError={inboxDecisionsQuery.error?.message}
-                        decisionsLoading={inboxDecisionsQuery.isLoading}
-                        workflowInstances={workflowInstancesQuery.data ?? []}
+                        onSelectProject={setSelectedQueueProjectId}
+                        projects={projects}
+                        riskSummaries={displayedRiskSummaries}
+                        runSummaryItems={runSummaryQuery.data?.items}
                       />
                     )
                   }
-                  detailLabel="选中项目上下文"
+                  detailLabel="项目组合透视"
                   narrowDetail={selectedQueueProject ? "sheet" : "stack"}
                   onDetailDismiss={() => setSelectedQueueProjectId("")}
                   master={
                     <ProjectRiskQueue
                       activePage={activeProjectListPage}
-                      createAction={projectCreateAction}
+                      createAction={
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* 弱链：不带数字，计数唯一出口是侧栏收件箱角标。 */}
+                          <Button asChild className="h-11 px-4" variant="ghost">
+                            <Link to="/inbox">我的待办</Link>
+                          </Button>
+                          {projectCreateAction}
+                        </div>
+                      }
                       filters={filters}
                       isFetching={
                         projectsQuery.isFetching ||
-                        workflowInstancesQuery.isFetching ||
-                        isCurrentPageRiskSettling
+                        runSummaryQuery.isFetching ||
+                        isListRiskSettling
                       }
+                      listCapped={projects.length >= 50}
+                      loadedRiskCounts={loadedRiskCounts}
                       onFiltersChange={setFilters}
                       onPageChange={setProjectListPage}
                       onPageSizeChange={(size) => {
@@ -1128,10 +1244,12 @@ export function ProjectsView({
                       pageSize={projectListPageSize}
                       principalNamesById={principalNamesById}
                       projects={pagedProjects}
-                      riskSummaries={displayedRiskSummaries}
+                      // 队列恒用列表（run-summary）口径：选中项若换成明细摘要，该行会
+                      // 单独多出「等待超时」等明细专有信号，同一张表里行与行不可比。
+                      riskSummaries={listRiskSummaries}
                       selectedProjectId={selectedQueueProjectId}
                       total={projects.length}
-                      workflowInstances={workflowInstancesQuery.data ?? []}
+                      visibleTotal={riskFilteredProjects.length}
                     />
                   }
                   rail="lg"

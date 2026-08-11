@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	ErrInvalidProject       = errors.New("invalid project")
-	ErrInvalidProjectName   = errors.New("invalid project name")
+	ErrInvalidProject     = errors.New("invalid project")
+	ErrInvalidProjectName = errors.New("invalid project name")
 	// ErrProjectNameConflict:项目名(=目录名)全局唯一冲突。
 	ErrProjectNameConflict = errors.New("project name already exists")
 	// ErrProjectWorkspaceNotReady:工作区未就绪,挡派发(及进入项目目录的执行路径)。
@@ -30,21 +30,21 @@ var (
 	// ErrTeamlessProjectMember means a digital_employee member has no team
 	// affiliation. Team affiliation is a precondition for project
 	// participation; teamless (lobby) employees must be bound to a team first.
-	ErrTeamlessProjectMember        = errors.New("teamless digital employee cannot join project")
-	ErrProjectNotFound              = errors.New("project not found")
-	ErrProjectConflict              = errors.New("project conflict")
+	ErrTeamlessProjectMember = errors.New("teamless digital employee cannot join project")
+	ErrProjectNotFound       = errors.New("project not found")
+	ErrProjectConflict       = errors.New("project conflict")
 	// ErrProjectTaskNotDismissible:仅终态失败/取消且无未决决策的任务可软了结清理。
 	ErrProjectTaskNotDismissible = errors.New("仅终态失败或已取消、且无未决决策的任务可清理")
 	ErrProjectArchived           = errors.New("project archived")
-	ErrProjectTaskForbidden         = errors.New("project task forbidden")
-	ErrProjectTaskGraphPending      = errors.New("project task graph pending implementation")
-	ErrInvalidProjectEvidence       = errors.New("invalid project evidence")
-	ErrInvalidProjectAcceptance     = errors.New("invalid project acceptance")
+	ErrProjectTaskForbidden      = errors.New("project task forbidden")
+	ErrProjectTaskGraphPending   = errors.New("project task graph pending implementation")
+	ErrInvalidProjectEvidence    = errors.New("invalid project evidence")
+	ErrInvalidProjectAcceptance  = errors.New("invalid project acceptance")
 	// ErrProjectArchiveBlocked:归档硬门禁——未结任务/需求/待决决策等（详见 ProjectArchiveBlockedError.Blockers）。
 	// 文案直接中文:handler 409；结构化 blockers 见 ProjectArchiveBlockedError。
 	ErrProjectArchiveBlocked = errors.New("项目未达归档条件，无法归档")
 	// ErrProjectNotArchived:对非归档项目执行恢复时返回。
-	ErrProjectNotArchived = errors.New("项目未归档，无需恢复")
+	ErrProjectNotArchived           = errors.New("项目未归档，无需恢复")
 	ErrUnauthorizedProjectTeamScope = errors.New("unauthorized project team scope")
 	ErrProjectRuntimeNodesRequired  = errors.New("project requires at least one runtime node")
 	// ErrProjectTaskNoEligibleOnlineNode means the project's runtime node
@@ -119,15 +119,15 @@ type ProjectDeleteWarnings struct {
 }
 
 type ProjectDeleteCascadeResult struct {
-	MemberCount         int
-	TaskCount           int
-	DecisionCount       int
-	ApprovalCount       int
-	InboxCount          int
+	MemberCount          int
+	TaskCount            int
+	DecisionCount        int
+	ApprovalCount        int
+	InboxCount           int
 	AcknowledgedRunCount int
-	RuntimeNodeCount    int
-	AffinityCount       int
-	AutomationRuleCount int
+	RuntimeNodeCount     int
+	AffinityCount        int
+	AutomationRuleCount  int
 }
 
 type DeleteProjectRequest struct {
@@ -199,14 +199,14 @@ type ReviewerPreference struct {
 type ProjectEventType string
 
 const (
-	ProjectEventCreated         ProjectEventType = "project.created"
-	ProjectEventConfigChanged   ProjectEventType = "project.config.changed"
+	ProjectEventCreated                  ProjectEventType = "project.created"
+	ProjectEventConfigChanged            ProjectEventType = "project.config.changed"
 	ProjectEventCapabilityBindingChanged ProjectEventType = "project.capability_binding.changed"
-	ProjectEventArchived        ProjectEventType = "project.archived"
-	ProjectEventUnarchived      ProjectEventType = "project.unarchived"
+	ProjectEventArchived                 ProjectEventType = "project.archived"
+	ProjectEventUnarchived               ProjectEventType = "project.unarchived"
 	// ProjectEventArchiveAutoCloseDeferred:通过并结项时需求已终态但归档门禁未过，签署不回滚。
 	ProjectEventArchiveAutoCloseDeferred ProjectEventType = "project.archive.auto_close_deferred"
-	ProjectEventDemandSubmitted ProjectEventType = "demand.submitted"
+	ProjectEventDemandSubmitted          ProjectEventType = "demand.submitted"
 
 	ProjectEventRuntimePlacementUpdated          ProjectEventType = "project.runtime_placement.updated"
 	ProjectEventRuntimePlacementReleased         ProjectEventType = "project.runtime_placement.released"
@@ -231,41 +231,41 @@ const (
 	ProjectEventTaskDispatchGateReplanRequired ProjectEventType = "project_task.dispatch_gate.replan_required"
 	ProjectEventTaskDispatched                 ProjectEventType = "project_task.dispatched"
 	// ProjectEventTaskSessionContinuity 会话接续结论（spec 2026-08-07）：resumed/skipped 进卷宗。
-	ProjectEventTaskSessionContinuity          ProjectEventType = "project_task.session_continuity"
-	ProjectEventTaskDispatchFailed             ProjectEventType = "project_task.dispatch_failed"
-	ProjectEventTaskRetryScheduled             ProjectEventType = "project_task.retry_scheduled"
-	ProjectEventTaskAttemptLost                ProjectEventType = "project_task.attempt_lost"
-	ProjectEventTaskRecoveryRequested          ProjectEventType = "project_task.recovery_requested"
-	ProjectEventTaskContractMissing            ProjectEventType = "project_task.contract_missing"
-	ProjectEventTaskWaitingHuman               ProjectEventType = "project_task.waiting_human"
-	ProjectEventTaskCancelled                  ProjectEventType = "project_task.cancelled"
-	ProjectEventTaskDismissed                  ProjectEventType = "project_task.dismissed"
-	ProjectEventTaskCompleted                  ProjectEventType = "project_task.completed"
-	ProjectEventTaskFailed                     ProjectEventType = "project_task.failed"
-	ProjectEventTaskResultSubmitted            ProjectEventType = "project_task.result.submitted"
-	ProjectEventTaskResultRecorded             ProjectEventType = "project_task.result.recorded"
-	ProjectEventTaskResultAccepted             ProjectEventType = "project_task.result.accepted"
-	ProjectEventTaskResultRejected             ProjectEventType = "project_task.result.rejected"
-	ProjectEventTaskResultBlocked              ProjectEventType = "project_task.result.blocked"
-	ProjectEventTaskResultRetryableFailed      ProjectEventType = "project_task.result.retryable_failed"
-	ProjectEventTaskResultFailedRetryable      ProjectEventType = ProjectEventTaskResultRetryableFailed
-	ProjectEventTaskResultValidationFailed     ProjectEventType = "project_task.result.validation_failed"
-	ProjectEventTaskRevisionRequested          ProjectEventType = "project_task.revision.requested"
-	ProjectEventTaskRevisionCreated            ProjectEventType = "project_task.revision.created"
-	ProjectEventTaskReplanRequested            ProjectEventType = "project_task.replan.requested"
-	ProjectEventDemandSummaryCreated           ProjectEventType = "demand.summary.created"
-	ProjectEventTransferRequested              ProjectEventType = "transfer.requested"
-	ProjectEventDecisionRequested              ProjectEventType = "decision.requested"
-	ProjectEventDecisionSubmitted              ProjectEventType = "decision.submitted"
-	ProjectEventEvidenceLinked                 ProjectEventType = "project.evidence.linked"
-	ProjectEventEvidenceVerified               ProjectEventType = "project.evidence.verified"
-	ProjectEventArtifactLinked                 ProjectEventType = "project.artifact.linked"
-	ProjectEventReportLinked                   ProjectEventType = "project.report.linked"
-	ProjectEventBudgetRecorded                 ProjectEventType = "project.budget.recorded"
-	ProjectEventAcceptanceSubmitted            ProjectEventType = "project.acceptance.submitted"
-	ProjectEventArchiveSnapshotCreated         ProjectEventType = "project.archive_snapshot.created"
-	ProjectEventArchiveRetentionPending        ProjectEventType = "project.archive.retention_pending"
-	ProjectEventLendingEmployeeSkipped         ProjectEventType = "project.lending.employee_skipped"
+	ProjectEventTaskSessionContinuity      ProjectEventType = "project_task.session_continuity"
+	ProjectEventTaskDispatchFailed         ProjectEventType = "project_task.dispatch_failed"
+	ProjectEventTaskRetryScheduled         ProjectEventType = "project_task.retry_scheduled"
+	ProjectEventTaskAttemptLost            ProjectEventType = "project_task.attempt_lost"
+	ProjectEventTaskRecoveryRequested      ProjectEventType = "project_task.recovery_requested"
+	ProjectEventTaskContractMissing        ProjectEventType = "project_task.contract_missing"
+	ProjectEventTaskWaitingHuman           ProjectEventType = "project_task.waiting_human"
+	ProjectEventTaskCancelled              ProjectEventType = "project_task.cancelled"
+	ProjectEventTaskDismissed              ProjectEventType = "project_task.dismissed"
+	ProjectEventTaskCompleted              ProjectEventType = "project_task.completed"
+	ProjectEventTaskFailed                 ProjectEventType = "project_task.failed"
+	ProjectEventTaskResultSubmitted        ProjectEventType = "project_task.result.submitted"
+	ProjectEventTaskResultRecorded         ProjectEventType = "project_task.result.recorded"
+	ProjectEventTaskResultAccepted         ProjectEventType = "project_task.result.accepted"
+	ProjectEventTaskResultRejected         ProjectEventType = "project_task.result.rejected"
+	ProjectEventTaskResultBlocked          ProjectEventType = "project_task.result.blocked"
+	ProjectEventTaskResultRetryableFailed  ProjectEventType = "project_task.result.retryable_failed"
+	ProjectEventTaskResultFailedRetryable  ProjectEventType = ProjectEventTaskResultRetryableFailed
+	ProjectEventTaskResultValidationFailed ProjectEventType = "project_task.result.validation_failed"
+	ProjectEventTaskRevisionRequested      ProjectEventType = "project_task.revision.requested"
+	ProjectEventTaskRevisionCreated        ProjectEventType = "project_task.revision.created"
+	ProjectEventTaskReplanRequested        ProjectEventType = "project_task.replan.requested"
+	ProjectEventDemandSummaryCreated       ProjectEventType = "demand.summary.created"
+	ProjectEventTransferRequested          ProjectEventType = "transfer.requested"
+	ProjectEventDecisionRequested          ProjectEventType = "decision.requested"
+	ProjectEventDecisionSubmitted          ProjectEventType = "decision.submitted"
+	ProjectEventEvidenceLinked             ProjectEventType = "project.evidence.linked"
+	ProjectEventEvidenceVerified           ProjectEventType = "project.evidence.verified"
+	ProjectEventArtifactLinked             ProjectEventType = "project.artifact.linked"
+	ProjectEventReportLinked               ProjectEventType = "project.report.linked"
+	ProjectEventBudgetRecorded             ProjectEventType = "project.budget.recorded"
+	ProjectEventAcceptanceSubmitted        ProjectEventType = "project.acceptance.submitted"
+	ProjectEventArchiveSnapshotCreated     ProjectEventType = "project.archive_snapshot.created"
+	ProjectEventArchiveRetentionPending    ProjectEventType = "project.archive.retention_pending"
+	ProjectEventLendingEmployeeSkipped     ProjectEventType = "project.lending.employee_skipped"
 	// ProjectEventTeamlessEmployeeSkipped is appended when a digital employee
 	// project member is excluded from the coordinator's executor pool because
 	// it has no team affiliation (participation gate).
@@ -334,7 +334,7 @@ const (
 	// Non-terminal: a human can retry_planning (reopen) or close_demand (cancel).
 	ProjectDemandStatusPlanningFailed ProjectDemandStatus = "planning_failed"
 	ProjectDemandStatusPlanned        ProjectDemandStatus = "planned"
-	ProjectDemandStatusExecuting       ProjectDemandStatus = "executing"
+	ProjectDemandStatusExecuting      ProjectDemandStatus = "executing"
 	// ProjectDemandStatusAcceptancePending is the convergence gate's hold state:
 	// every project task under the demand has reached a terminal state and none
 	// failed, but at least one blocking acceptance criterion for the demand's
@@ -946,19 +946,19 @@ type ProjectTaskAttempt struct {
 	FailureFamily                 *string
 	FailureMessage                *string
 	// ErrorCode is the optional stable Provider ErrorEnvelope.code (UPPER_SNAKE).
-	ErrorCode                     *string
-	IdempotencyKey                string
-	DispatchGateResultID          *uuid.UUID
-	CreatedEventID                *uuid.UUID
-	TerminalEventID               *uuid.UUID
-	BudgetLastHeartbeatAt         *time.Time
-	BudgetConsumedWallClockSec    int32
-	BudgetConsumedTokens          int32
-	BudgetTrippedAt               *time.Time
-	BudgetWallClockLimitSec       *int32
-	BudgetTripReason              *string
-	CreatedAt                     time.Time
-	UpdatedAt                     time.Time
+	ErrorCode                  *string
+	IdempotencyKey             string
+	DispatchGateResultID       *uuid.UUID
+	CreatedEventID             *uuid.UUID
+	TerminalEventID            *uuid.UUID
+	BudgetLastHeartbeatAt      *time.Time
+	BudgetConsumedWallClockSec int32
+	BudgetConsumedTokens       int32
+	BudgetTrippedAt            *time.Time
+	BudgetWallClockLimitSec    *int32
+	BudgetTripReason           *string
+	CreatedAt                  time.Time
+	UpdatedAt                  time.Time
 }
 
 type RecordProjectTaskAttemptBudgetHeartbeatRequest struct {
@@ -1496,15 +1496,15 @@ func (e *ProjectArchiveBlockedError) Unwrap() error {
 }
 
 type ProjectArchivePreview struct {
-	ProjectID           uuid.UUID
-	CanArchive          bool
-	Blockers            []ProjectArchiveBlocker
-	Warnings            []ProjectArchiveWarning
-	Message             string
-	EvidenceCount       int64
-	ArtifactCount       int64
-	ReportCount         int64
-	RetentionPending    bool
+	ProjectID        uuid.UUID
+	CanArchive       bool
+	Blockers         []ProjectArchiveBlocker
+	Warnings         []ProjectArchiveWarning
+	Message          string
+	EvidenceCount    int64
+	ArtifactCount    int64
+	ReportCount      int64
+	RetentionPending bool
 	// BlockedReasons is deprecated compatibility projection of blocker/warning codes.
 	BlockedReasons      []any
 	EstimatedObjectRefs []any
@@ -1712,10 +1712,10 @@ type ProjectMemberInput struct {
 }
 
 type CreateProjectRequest struct {
-	TenantID           uuid.UUID
-	TeamID             *uuid.UUID
-	ActorUserID        uuid.UUID
-	Name               string
+	TenantID    uuid.UUID
+	TeamID      *uuid.UUID
+	ActorUserID uuid.UUID
+	Name        string
 	// DirectoryName is the Runtime workspace relative directory (ASCII).
 	// When empty: Git-bound projects derive from repo URL; otherwise if Name
 	// itself is a valid directory name it is copied (legacy single-field).
@@ -1998,20 +1998,26 @@ type ListProjectsRequest struct {
 	Offset   int32
 }
 
-// ProjectRunSummary 是运行总览项目运行带的单项目聚合:任务状态计数 + 今日完成运行数。
+// ProjectRunSummary 是运行总览项目运行带 / 项目首页组合计数的单项目聚合。
 // 今日完成按 task_runs 执行完成口径计(非验收口径)。
+// FailedCount 不含 dismissed 任务;OpenDecisionCount / EvidencePendingCount 供项目管理首页。
+// WaitingHumanCount 是宽口径(运行总览「待人工」);WaitingHumanUnlinkedCount 只数无 open
+// 决策卡挂载的 orphan,供项目首页与 OpenDecisionCount 并列展示时避免双计。两者勿互换。
 type ProjectRunSummary struct {
-	ProjectID                uuid.UUID
-	Name                     string
-	Status                   ProjectStatus
-	RunningCount             int32
-	QueuedCount              int32
-	WaitingHumanCount        int32
-	FailedCount              int32
-	UnassignedCount          int32
-	ParticipantEmployeeCount int32
-	CompletedTodayCount      int32
-	LastActivityAt           *time.Time
+	ProjectID                 uuid.UUID
+	Name                      string
+	Status                    ProjectStatus
+	RunningCount              int32
+	QueuedCount               int32
+	WaitingHumanCount         int32
+	FailedCount               int32
+	UnassignedCount           int32
+	ParticipantEmployeeCount  int32
+	CompletedTodayCount       int32
+	OpenDecisionCount         int32
+	EvidencePendingCount      int32
+	WaitingHumanUnlinkedCount int32
+	LastActivityAt            *time.Time
 }
 
 // ProjectRunSummaryList 携带租户级今日完成总数:与逐项目求和的口径差异是显式的

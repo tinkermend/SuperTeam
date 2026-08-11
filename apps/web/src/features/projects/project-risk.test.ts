@@ -7,6 +7,7 @@ import type {
 } from "@/lib/api/projects";
 import {
   buildAttentionBreakdown,
+  buildProjectRiskSummaryFromCounts,
   buildRiskCounts,
   deriveProjectRiskSummary,
   formatAttentionHeadline,
@@ -199,7 +200,7 @@ describe("project risk model", () => {
       ],
     });
     expect(summary.currentHandlerMode).toBe("executor");
-    expect(formatProjectQueueHandlerLabel(summary)).toBe("报告员小王");
+    expect(formatProjectQueueHandlerLabel(summary)).toBe("执行中 · 报告员小王");
   });
 
   it("does not treat completed-task assignees as the current handler", () => {
@@ -217,7 +218,7 @@ describe("project risk model", () => {
     });
     expect(summary.currentHandlerMode).toBe("idle");
     expect(summary.currentHandler).toBeUndefined();
-    expect(formatProjectQueueHandlerLabel(summary)).toBe("无在办");
+    expect(formatProjectQueueHandlerLabel(summary)).toBe("无在办执行");
   });
 
   it("uses pending_dispatch when an active task has no assignee", () => {
@@ -228,7 +229,7 @@ describe("project risk model", () => {
       tasks: [task("project-planned", { status: "planned" })],
     });
     expect(summary.currentHandlerMode).toBe("pending_dispatch");
-    expect(formatProjectQueueHandlerLabel(summary)).toBe("待调度");
+    expect(formatProjectQueueHandlerLabel(summary)).toBe("待分派");
   });
 
   it("shows em dash for archived projects in the handler column", () => {
@@ -596,7 +597,7 @@ describe("project risk model", () => {
     expect(breakdown.decisions).toBe(1);
     expect(breakdown.waitingHuman).toBe(0);
     expect(breakdown.actionableTotal).toBe(1);
-    expect(formatAttentionHeadline(summary).primary).toBe("1 待决");
+    expect(formatAttentionHeadline(summary).primary).toBe("1 项目待决");
   });
 
   it("keeps orphan waiting_human when no open decision is linked to the task", () => {
@@ -623,7 +624,7 @@ describe("project risk model", () => {
       "human_decision",
       "waiting_human",
     ]);
-    expect(formatAttentionHeadline(summary).primary).toContain("1 待决");
+    expect(formatAttentionHeadline(summary).primary).toContain("1 项目待决");
     expect(formatAttentionHeadline(summary).primary).toContain("1 等人");
   });
 
@@ -652,7 +653,7 @@ describe("project risk model", () => {
 
     const headline = formatAttentionHeadline(summary);
     expect(headline.hasActionable).toBe(true);
-    expect(headline.primary).toContain("1 待决");
+    expect(headline.primary).toContain("1 项目待决");
     expect(headline.primary).toContain("1 等人");
     expect(headline.primary).toContain("1 失败");
     expect(headline.detail).toContain("2 证据待核");
@@ -688,9 +689,133 @@ describe("project risk model", () => {
     expect(summary.reasons).toEqual([]);
     expect(summary.requiresHuman).toBe(false);
     expect(formatAttentionHeadline(summary)).toEqual({
-      primary: "无待办",
+      primary: "",
       hasActionable: false,
     });
+  });
+
+  it("keeps count-path and detail-path attention buckets aligned on a simple fixture", () => {
+    const p = project("p-align", { coordination_status: "active" });
+    const fromCounts = buildAttentionBreakdown(
+      buildProjectRiskSummaryFromCounts(p, {
+        open_decision_count: 2,
+        waiting_human_unlinked_count: 1,
+        failed_count: 1,
+        evidence_pending_count: 3,
+        running_count: 0,
+        unassigned_count: 0,
+      }),
+    );
+    // 明细路径：2 decision + 1 orphan waiting + 1 failed + 3 evidence（无 decision-task 重叠）
+    const detail = deriveProjectRiskSummary({
+      project: p,
+      decisions: [
+        {
+          id: "d1",
+          project_id: p.id,
+          status_snapshot: "pending",
+          title_snapshot: "A",
+          decision_type: "x",
+          created_at: "2026-08-10T00:00:00Z",
+        },
+        {
+          id: "d2",
+          project_id: p.id,
+          status_snapshot: "open",
+          title_snapshot: "B",
+          decision_type: "x",
+          created_at: "2026-08-10T00:00:00Z",
+        },
+      ] as ProjectDecisionRequest[],
+      tasks: [
+        {
+          id: "t1",
+          project_id: p.id,
+          title: "等人",
+          status: "waiting_human",
+          stage_index: 0,
+          created_at: "2026-08-10T00:00:00Z",
+          updated_at: "2026-08-10T00:00:00Z",
+        },
+        {
+          id: "t2",
+          project_id: p.id,
+          title: "失败",
+          status: "failed",
+          stage_index: 1,
+          created_at: "2026-08-10T00:00:00Z",
+          updated_at: "2026-08-10T00:00:00Z",
+        },
+      ] as ProjectTask[],
+      evidence: [
+        { id: "e1", project_id: p.id, title: "e1", verification_status: "submitted" },
+        { id: "e2", project_id: p.id, title: "e2", verification_status: "rejected" },
+        { id: "e3", project_id: p.id, title: "e3", verification_status: "submitted" },
+      ] as ProjectEvidenceRef[],
+    });
+    const fromDetail = buildAttentionBreakdown(detail);
+    expect(fromCounts.decisions).toBe(fromDetail.decisions);
+    expect(fromCounts.waitingHuman).toBe(fromDetail.waitingHuman);
+    expect(fromCounts.executionFailed).toBe(fromDetail.executionFailed);
+    expect(fromCounts.evidence).toBe(fromDetail.evidence);
+  });
+
+  it("aligns count-path with detail when waiting_human task has a linked open decision", () => {
+    const p = project("p-overlap", { coordination_status: "active" });
+    // 服务端 orphan 口径：linked waiting 不进 waiting_human_unlinked_count（仅 open_decision）;
+    // 宽口径 waiting_human_count 仍会数它，那个字段是给运行总览大屏的，勿在此路径使用。
+    const fromCounts = buildAttentionBreakdown(
+      buildProjectRiskSummaryFromCounts(p, {
+        open_decision_count: 1,
+        waiting_human_unlinked_count: 0,
+        failed_count: 0,
+        evidence_pending_count: 0,
+        running_count: 0,
+        unassigned_count: 0,
+      }),
+    );
+    const detail = deriveProjectRiskSummary({
+      project: p,
+      decisions: [
+        decision(p.id, {
+          id: "d-link",
+          project_task_id: `${p.id}-task-wait`,
+          status_snapshot: "pending",
+          title_snapshot: "放行失败任务",
+        }),
+      ],
+      tasks: [
+        task(p.id, {
+          id: `${p.id}-task-wait`,
+          status: "waiting_human",
+          title: "等人闸门",
+        }),
+      ],
+    });
+    const fromDetail = buildAttentionBreakdown(detail);
+    expect(fromDetail.decisions).toBe(1);
+    expect(fromDetail.waitingHuman).toBe(0);
+    expect(fromCounts.decisions).toBe(fromDetail.decisions);
+    expect(fromCounts.waitingHuman).toBe(fromDetail.waitingHuman);
+  });
+
+  it("detail path counts error/blocked as execution_failed (SQL parity)", () => {
+    const p = project("p-fail-status", { coordination_status: "active" });
+    const detail = deriveProjectRiskSummary({
+      project: p,
+      tasks: [
+        task(p.id, { id: "t-err", status: "error", title: "error" }),
+        task(p.id, { id: "t-blk", status: "blocked", title: "blocked" }),
+        task(p.id, {
+          id: "t-pr",
+          status: "pending_review",
+          title: "待审",
+        }),
+      ],
+    });
+    const b = buildAttentionBreakdown(detail);
+    expect(b.executionFailed).toBe(2);
+    expect(b.waitingHuman).toBe(1);
   });
 
 });
