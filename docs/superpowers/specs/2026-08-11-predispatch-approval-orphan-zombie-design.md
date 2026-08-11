@@ -269,6 +269,10 @@ gate 的 `RetryAfter` 已由 `EvaluatePreDispatchGate` 在 `retry_later` 时填�
 
 **备选修法**（若不想改 error type）：在 `dispatchProjectTasks` 的 `!dispatchFailureRecorded(err)` 分支内、`return err` 之前，对 `retry_later` 子类单独 `scheduleDispatchRetry` 而不 return。这样 `DispatchProjectTask` 本身不动。
 
+**落地选型**（已实现）：走备选——`DispatchProjectTask` 仍返回裸 `ErrProjectTaskDispatchRetryLater`；workflow 在 `!dispatchFailureRecorded` 分支用 `isProjectTaskDispatchRetryLater(err)`（识别 Temporal activity error 包装）+ `GetVersion("gate-retry-later-schedule")` 调用 `scheduleDispatchRetry`（默认退避 `defaultGateRetryLaterBackoff=2m`）。不改 activity 契约、不走完整 failure recovery。
+
+**正面 E2E（§6.1）**：持续停 runtime → 高风险闸批准 → gate `retry_later` → 约 2m 后第二次 `DispatchProjectTask` / `dispatch_blocked` 与 `WARN dispatch project task retry later`（task `0be8a912…`，WorkerID 28034）。证明真实链路上 Temporal 包装后 matcher 命中且定时唤醒生效。
+
 ---
 
 ## 5. 锚点
@@ -301,6 +305,14 @@ gate 的 `RetryAfter` 已由 `EvaluatePreDispatchGate` 在 `retry_later` 时填�
 - [x] 批准后 runtime 不可用：不得出现僵尸卡；恢复后可再派发。  
   取证：同需求在 agent 停机窗口批准后落到可派发态；agent 重启后 `attempt_count=3`（真再派发），终态 `waiting_human/plan_invalid`（诚实恢复卡，非僵尸 `project_task_approval`）。
 - [x] **`retry_later` 恢复路径**：workflow `gate-retry-later-schedule` + 存量 heal 再派发；历史样例 `a17e0214…` 在 CP 重启 heal 后 **completed**（attempts=3）。
+- [x] **`retry_later` + `scheduleDispatchRetry` 正面 E2E**（持续停 runtime，正面触发 gate `retry_later` 与 Temporal 错误包装后的定时唤醒）：  
+  取证 2026-08-11 ~15:19–15:22（WorkerID **28034**@tinkermend，验证期 runtime-agent=0）：  
+  - demand `fb8949be…` / task `0be8a912…` / 闸卡 `43e4aa01…` / approval `17c12316…`（非零）  
+  - 批准后 `snap0=planned`（非 `waiting_human|approval_required`），事件 `dispatch_gate.retry_later`×1  
+  - **第一波** `dispatch_blocked` 15:19:34–15:19:40 + CP `WARN dispatch project task retry later` @15:19:40  
+  - **第二波**（`defaultGateRetryLaterBackoff`≈2m 后）`dispatch_blocked` 15:21:41–15:21:47 + 同 WARN @15:21:47（间隔 ~2m07s）  
+  - `dispatch_blocked` 计数 **3→7**；全程 open zombie `project_task_approval`（approval=0）=0  
+  - 脚本 exit 0；收尾 `dev-services.sh start runtime-agent` 恢复 agent（pid=93776）
 - [x] orphan 对「真卡已批」：**零**新建零 approval `project_task_approval`（全局 pending 计数 0；启动日志 `repaired tasks count=3` 收敛存量）。
 - [x] 存量：`b449a6d5` / `a17e0214` / `b9ce0207` 的系统补建卡均为 `cancelled`；`a17e0214` completed。
 
@@ -309,7 +321,7 @@ gate 的 `RetryAfter` 已由 `EvaluatePreDispatchGate` 在 `retry_later` 时填�
 - [x] `ListOrphan` / service：存在 approved gate 链接卡时不补建（改为 heal 再派发）。
 - [x] `repairOrphan`：禁止 `project_task_approval` + 零 approval（降级 `project_task_clarification`）。
 - [x] `ApplyPreDispatchGateDecision`：gate 链接卡 approved 走 `applyTaskHumanWaitRelease`（`Release` 被调用）。
-- [x] **`retry_later` 恢复**：`isProjectTaskDispatchRetryLater` + workflow `GetVersion(gate-retry-later-schedule)` 分支 `scheduleDispatchRetry`。
+- [x] **`retry_later` 恢复**：`isProjectTaskDispatchRetryLater` + workflow `GetVersion(gate-retry-later-schedule)` 分支 `scheduleDispatchRetry`（匹配逻辑单测 + §6.1 正面 E2E）。
 
 ### 6.3 门禁
 

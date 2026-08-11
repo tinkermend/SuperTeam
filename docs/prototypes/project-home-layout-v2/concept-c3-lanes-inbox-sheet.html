@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>方案 C3 · 甬道主舞台 + 我的待办抽屉 · 项目管理</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    /*
+      C3：回应 C2 布局问题
+      ────────────────────────────────────────
+      C2 致命问题：
+      1) 顶部「待我决策」展开板 ≈ 第二首页，与甬道抢主舞台
+      2) 文案撞车：待我决策 / 待人决策 / 待决决策 / 9 待决 四套近义
+      3) 决策列表出现三次：顶栏网格、卡信号、triage「与我相关」
+      4) 首屏一半在读 Inbox，一半才看到项目——页职责分裂
+
+      C3 原则：
+      - 本页主对象只有「项目」（甬道）
+      - 「我的待办」是跨页能力：入口在页头，列表进右侧抽屉（按需），不常驻正文
+      - 甬道列名去「决策」字眼，避免与 Inbox 语义抢词
+      - 卡上「我的 N」= L2 挂到项目的角标；「待决/证据」= L1 项目注意力（词表分开）
+      - 侧栏收件箱 20 与页头「我的待办 20」同源，不在正文再铺一张 Inbox 表
+    */
+
+    .page-head-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .page-head-row h1 {
+      font-size: 22px;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .page-head-row .desc {
+      margin-top: 4px;
+      color: var(--ink-3);
+      font-size: 13px;
+      max-width: 560px;
+    }
+    .head-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+    }
+    .head-cta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 页头「我的待办」= 唯一的 L2 入口（不是正文第二块） */
+    .btn-inbox {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 12px;
+      border: 1px solid #f0c9c8;
+      background: #fff8f7;
+      color: var(--danger-text);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-inbox:hover { background: #ffece9; }
+    .btn-inbox .n {
+      min-width: 22px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--danger);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 750;
+      display: grid;
+      place-items: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .btn-inbox.quiet {
+      border-color: var(--line-strong);
+      background: var(--card);
+      color: var(--ink-2);
+    }
+    .btn-inbox.quiet .n {
+      background: var(--mute);
+    }
+
+    .tool-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+    .view-toggle {
+      display: inline-flex;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      overflow: hidden;
+    }
+    .view-toggle button {
+      height: 30px;
+      padding: 0 11px;
+      border: none;
+      background: var(--card);
+      font-size: 12px;
+      font-weight: 650;
+      color: var(--ink-3);
+      cursor: pointer;
+    }
+    .view-toggle button.on {
+      background: var(--brand-soft);
+      color: var(--brand-deep);
+    }
+    .truth-line {
+      font-size: 12px;
+      color: var(--ink-4);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* —— 甬道：主舞台，尽量占满 —— */
+    .board {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    .board.with-triage {
+      grid-template-columns: 1fr 300px;
+      align-items: start;
+    }
+
+    .lanes {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+      min-height: calc(100vh - 220px);
+    }
+    .lane {
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+    .lane-head {
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 18px 18px 0 0;
+    }
+    .lane-head h2 {
+      font-size: 13px;
+      font-weight: 750;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .lane-head .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .lane.need .lane-head .dot { background: var(--danger); }
+    .lane.accept .lane-head .dot { background: var(--info); }
+    .lane.ready .lane-head .dot { background: var(--ok); }
+    .lane.idle .lane-head .dot { background: var(--mute); }
+    .lane-head .cnt {
+      font-size: 12px;
+      font-weight: 750;
+      color: var(--ink-3);
+      background: var(--mute-soft);
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-variant-numeric: tabular-nums;
+    }
+    .lane-body {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+    .lane-hint {
+      font-size: 11.5px;
+      color: var(--ink-4);
+      padding: 0 2px 2px;
+      line-height: 1.4;
+    }
+
+    .p-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: border-color .12s, box-shadow .12s, opacity .12s;
+      position: relative;
+    }
+    .p-card:hover {
+      border-color: #c9d4f0;
+      box-shadow: var(--shadow);
+    }
+    .p-card.selected {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(47, 95, 255, 0.12);
+    }
+    .p-card.dim { opacity: 0.36; }
+    .p-card.pulse-mine {
+      border-color: #e8a09e;
+      box-shadow: 0 0 0 3px rgba(209, 70, 71, 0.12);
+    }
+    .mine-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: var(--danger-soft);
+      color: var(--danger-text);
+      font-size: 11px;
+      font-weight: 750;
+      border: 1px solid transparent;
+      font-variant-numeric: tabular-nums;
+    }
+    .p-card .top {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding-right: 52px;
+    }
+    .p-card .top .icon-tile {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      font-size: 13px;
+    }
+    .p-card h3 {
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .p-card .biz {
+      margin-top: 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .flow-meter {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 3px;
+    }
+    .flow-meter .seg {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--mute-soft);
+    }
+    .flow-meter .seg.on-ok { background: var(--ok); }
+    .flow-meter .seg.on-info { background: var(--info); }
+    .flow-meter .seg.on-warn { background: var(--warn); }
+    .flow-meter .seg.on-danger { background: var(--danger); }
+    .flow-labels {
+      margin-top: 4px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      font-size: 9.5px;
+      color: var(--ink-4);
+      text-align: center;
+    }
+    .signals {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .sig {
+      font-size: 11px;
+      font-weight: 650;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: var(--card-soft);
+      color: var(--ink-3);
+      border: 1px solid var(--line);
+    }
+    .sig.d { background: var(--danger-soft); color: var(--danger-text); border-color: transparent; }
+    .sig.w { background: var(--warn-soft); color: var(--warn-text); border-color: transparent; }
+    .p-card .foot {
+      margin-top: 10px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .handler {
+      font-size: 11.5px;
+      color: var(--ink-3);
+      line-height: 1.4;
+    }
+    .handler b { color: var(--ink-2); font-weight: 650; }
+
+    /* 选中 triage：窄、只谈「这个项目」 */
+    .triage {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      position: sticky;
+      top: 64px;
+    }
+    .triage-head {
+      padding: 14px 14px 12px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #f7f9ff, #fff);
+    }
+    .triage-head h3 {
+      font-size: 14px;
+      font-weight: 750;
+    }
+    .triage-head .meta {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .triage-body { padding: 12px 14px 14px; }
+    .triage-body h4 {
+      font-size: 11px;
+      font-weight: 750;
+      color: var(--ink-3);
+      margin: 12px 0 6px;
+    }
+    .triage-body h4:first-child { margin-top: 0; }
+    .fact {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px dashed var(--line);
+      font-size: 12.5px;
+    }
+    .fact .k { color: var(--ink-4); }
+    .fact .v { font-weight: 650; }
+    .triage-note {
+      font-size: 12.5px;
+      color: var(--ink-2);
+      line-height: 1.5;
+    }
+    .triage-empty {
+      padding: 32px 16px;
+      text-align: center;
+      color: var(--ink-4);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    /* 板下运行：一行紧凑，不抢戏 */
+    .run-strip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .run-strip .label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-3);
+      white-space: nowrap;
+    }
+    .run-strip .items {
+      display: flex;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      overflow: auto;
+    }
+    .run-pill {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--card-soft);
+      font-size: 12px;
+      font-weight: 550;
+      color: var(--ink-2);
+      cursor: pointer;
+      max-width: 220px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .run-pill:hover { border-color: var(--brand); color: var(--brand-deep); }
+
+    /* —— 我的待办抽屉（L2 唯一列表面） —— */
+    .sheet-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.28);
+      z-index: 80;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s;
+    }
+    .sheet-mask.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .sheet {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(400px, 92vw);
+      background: var(--card);
+      z-index: 90;
+      box-shadow: -12px 0 40px rgba(16, 24, 40, 0.12);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .2s ease;
+    }
+    .sheet.open { transform: translateX(0); }
+    .sheet-head {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .sheet-head h2 {
+      font-size: 16px;
+      font-weight: 750;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sheet-head p {
+      margin-top: 4px;
+      font-size: 12.5px;
+      color: var(--ink-4);
+      line-height: 1.45;
+      max-width: 280px;
+    }
+    .sheet-body {
+      flex: 1;
+      overflow: auto;
+      padding: 8px;
+    }
+    .sheet-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 12px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: transparent;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+    .sheet-item:hover { background: var(--card-soft); }
+    .sheet-item.on {
+      background: #fff5f4;
+      border-color: #f0c9c8;
+    }
+    .sheet-item h4 {
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1.35;
+    }
+    .sheet-item .m {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      font-size: 11.5px;
+      color: var(--ink-4);
+    }
+    .sheet-item .proj {
+      color: var(--brand-deep);
+      font-weight: 600;
+    }
+    .sheet-foot {
+      padding: 12px 16px;
+      border-top: 1px solid var(--line);
+      background: var(--card-soft);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .sheet-foot .note {
+      font-size: 11.5px;
+      color: var(--ink-4);
+      line-height: 1.4;
+    }
+
+    @media (max-width: 1280px) {
+      .board.with-triage { grid-template-columns: 1fr; }
+      .triage { position: static; }
+      .lanes { grid-template-columns: repeat(2, 1fr); min-height: 0; }
+    }
+    @media (max-width: 800px) {
+      .lanes { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">矩</span>
+        <div>炬枢平台<small>新矩网络</small></div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">工作台</div>
+        <a class="nav-item" href="#"><span class="nav-ico">▸</span>任务中枢</a>
+        <a class="nav-item" href="#"><span class="nav-ico">✉</span>收件箱<span class="badge">20</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>运行总览</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">协作对象</div>
+        <a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>数字员工</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◇</span>技能市场</a>
+        <a class="nav-item" href="#"><span class="nav-ico">👥</span>团队管理</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">流程能力</div>
+        <a class="nav-item" href="#"><span class="nav-ico">⚡</span>自动化任务</a>
+        <a class="nav-item" href="#"><span class="nav-ico">🔗</span>外部能力</a>
+        <a class="nav-item" href="#"><span class="nav-ico">⬡</span>MCP 管理</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="shell-top">
+        <div class="cmd">🔍 搜索项目、目标… <kbd>⌘K</kbd></div>
+        <div class="shell-actions">
+          <button class="btn btn-ghost btn-sm" type="button">◐</button>
+          <button class="btn btn-ghost btn-sm" type="button">🔔</button>
+          <button class="btn btn-primary btn-sm" type="button">开发管理员</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="page-head-row">
+          <div>
+            <span class="concept-tag">方案 C3 · 修正 C2 职责分裂</span>
+            <h1><span class="title-ico">▦</span>项目管理</h1>
+            <p class="desc">
+              正文只服务「项目甬道」。个人待办不进正文、不与甬道列同名；
+              点「我的待办」打开抽屉，点条目再回链高亮项目卡。
+            </p>
+          </div>
+          <div class="head-actions">
+            <div class="proto-switch">
+              <a href="concept-c2-lanes-decision-bar.html">C2 问题版</a>
+              <a class="on" href="concept-c3-lanes-inbox-sheet.html">C3 修正</a>
+              <a href="index.html">总览</a>
+            </div>
+            <div class="head-cta">
+              <!-- 唯一 L2 入口：与侧栏收件箱同源，不在下方再铺列表 -->
+              <button class="btn-inbox" type="button" id="openSheet" title="打开我的待办抽屉">
+                我的待办
+                <span class="n num">20</span>
+              </button>
+              <button class="btn btn-primary" type="button">＋ 新建项目</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-row">
+          <div class="search" style="max-width:240px">🔍 搜索项目名称或目标</div>
+          <div class="chips" id="riskChips">
+            <button class="chip on" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="blocked">存在风险 <span class="n">5</span></button>
+            <!-- 词表：项目侧「待决」≠ 页头「我的待办」 -->
+            <button class="chip" type="button" data-filter="human_decision">项目待决 <span class="n">5</span></button>
+            <button class="chip" type="button" data-filter="waiting_human">等人任务 <span class="n">1</span></button>
+            <button class="chip" type="button" data-filter="evidence_required">证据待核 <span class="n">4</span></button>
+            <button class="chip" type="button" data-filter="sla_waiting">等待超时 <span class="n">5</span></button>
+            <button class="chip" type="button" data-filter="mine">仅有我的待办</button>
+          </div>
+          <span class="grow"></span>
+          <div class="view-toggle">
+            <button class="on" type="button">甬道</button>
+            <button type="button">列表</button>
+          </div>
+          <span class="truth-line">6 个项目 · 阶段见列头</span>
+        </div>
+
+        <div class="board with-triage" id="board">
+          <div class="lanes" id="lanes">
+            <!-- 列名刻意不用「决策」，避免与「我的待办」撞车 -->
+            <section class="lane need">
+              <div class="lane-head">
+                <h2><span class="dot"></span>需介入</h2>
+                <span class="cnt">3</span>
+              </div>
+              <div class="lane-body">
+                <div class="lane-hint">球在人类侧：项目有待决/等人（项目注意力，不是收件箱列表）</div>
+
+                <article class="p-card selected" data-id="provider-semantic-e2e-p1" data-mine="4" data-signals="human_decision,waiting_human,evidence_required,sla_waiting,blocked,mine">
+                  <span class="mine-badge" title="挂到本项目的、需要我处理的 Inbox 条数">我的 4</span>
+                  <div class="top">
+                    <span class="icon-tile danger">▦</span>
+                    <div style="min-width:0;flex:1">
+                      <h3>provider-semantic-e2e-p1</h3>
+                      <div class="biz">
+                        <span class="pill pill-ok" style="height:18px;font-size:10.5px">已就绪</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flow-meter">
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-warn"></div>
+                    <div class="seg on-danger"></div>
+                  </div>
+                  <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                  <div class="signals">
+                    <span class="sig d">9 项目待决</span>
+                    <span class="sig d">2 等人</span>
+                    <span class="sig w">6 证据待核</span>
+                  </div>
+                  <div class="foot">
+                    <div class="handler">球在 <b>开发管理员</b> · 等待审核<br /><span class="time">08/10 16:43</span></div>
+                    <button class="btn btn-primary btn-xs" type="button">进入 →</button>
+                  </div>
+                </article>
+
+                <article class="p-card" data-id="batch3-h1h4" data-mine="1" data-signals="human_decision,evidence_required,sla_waiting,blocked,mine">
+                  <span class="mine-badge">我的 1</span>
+                  <div class="top">
+                    <span class="icon-tile warn">▦</span>
+                    <div style="min-width:0;flex:1">
+                      <h3>批三 H1H4 全链路 181601</h3>
+                      <div class="biz">
+                        <span class="pill pill-info" style="height:18px;font-size:10.5px">验收中</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flow-meter">
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-warn"></div>
+                    <div class="seg on-info"></div>
+                  </div>
+                  <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                  <div class="signals">
+                    <span class="sig d">4 项目待决</span>
+                    <span class="sig w">7 证据待核</span>
+                  </div>
+                  <div class="foot">
+                    <div class="handler">球在 <b>开发管理员</b> · 等待审核<br /><span class="time">08/07 11:27</span></div>
+                    <button class="btn btn-ghost btn-xs" type="button">进入 →</button>
+                  </div>
+                </article>
+
+                <article class="p-card" data-id="batch3-e2e" data-mine="1" data-signals="human_decision,sla_waiting,blocked,mine">
+                  <span class="mine-badge">我的 1</span>
+                  <div class="top">
+                    <span class="icon-tile warn">▦</span>
+                    <div style="min-width:0;flex:1">
+                      <h3>批三语义扩编 E2E</h3>
+                      <div class="biz">
+                        <span class="pill pill-ok" style="height:18px;font-size:10.5px">已就绪</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flow-meter">
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-danger"></div>
+                  </div>
+                  <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                  <div class="signals">
+                    <span class="sig d">1 项目待决</span>
+                    <span class="sig w">等待超时</span>
+                  </div>
+                  <div class="foot">
+                    <div class="handler">球在 <b>开发管理员</b> · 等待审核<br /><span class="time">08/10 09:43</span></div>
+                    <button class="btn btn-ghost btn-xs" type="button">进入 →</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="lane accept">
+              <div class="lane-head">
+                <h2><span class="dot"></span>验收中</h2>
+                <span class="cnt">2</span>
+              </div>
+              <div class="lane-body">
+                <div class="lane-hint">业务状态在验收闸口 · 仍可叠加「我的 N」角标</div>
+
+                <article class="p-card" data-id="batch2-p1" data-mine="1" data-signals="human_decision,evidence_required,sla_waiting,blocked,mine">
+                  <span class="mine-badge">我的 1</span>
+                  <div class="top">
+                    <span class="icon-tile info">▦</span>
+                    <div style="min-width:0;flex:1">
+                      <h3>批二基线项目 P1</h3>
+                      <div class="biz">
+                        <span class="pill pill-info" style="height:18px;font-size:10.5px">验收中</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flow-meter">
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-warn"></div>
+                    <div class="seg on-info"></div>
+                  </div>
+                  <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                  <div class="signals">
+                    <span class="sig d">2 项目待决</span>
+                    <span class="sig w">8 证据待核</span>
+                    <span class="sig w">超时</span>
+                  </div>
+                  <div class="foot">
+                    <div class="handler">球在 <b>开发管理员</b> · 等待审核<br /><span class="time">08/10 09:43</span></div>
+                    <button class="btn btn-ghost btn-xs" type="button">进入 →</button>
+                  </div>
+                </article>
+
+                <article class="p-card" data-id="s10-git" data-mine="1" data-signals="human_decision,evidence_required,sla_waiting,blocked,mine">
+                  <span class="mine-badge">我的 1</span>
+                  <div class="top">
+                    <span class="icon-tile info">▦</span>
+                    <div style="min-width:0;flex:1">
+                      <h3>S10 Git 屏蔽验收</h3>
+                      <div class="biz">
+                        <span class="pill pill-info" style="height:18px;font-size:10.5px">验收中</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flow-meter">
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-ok"></div>
+                    <div class="seg on-warn"></div>
+                    <div class="seg on-info"></div>
+                  </div>
+                  <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                  <div class="signals">
+                    <span class="sig d">4 项目待决</span>
+                    <span class="sig w">7 证据待核</span>
+                  </div>
+                  <div class="foot">
+                    <div class="handler">球在 <b>开发管理员</b> · 等待审核<br /><span class="time">08/08 00:39</span></div>
+                    <button class="btn btn-ghost btn-xs" type="button">进入 →</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+
+            <section class="lane ready">
+              <div class="lane-head">
+                <h2><span class="dot"></span>可推进</h2>
+                <span class="cnt">0</span>
+              </div>
+              <div class="lane-body">
+                <div class="lane-hint">无人类阻塞 · 可发需求 / 继续跑</div>
+                <div class="empty-quiet" style="padding:40px 12px">
+                  当前页无纯「可推进」项目<br />
+                  <span style="font-size:12px">有阻塞的已归入左侧</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="lane idle">
+              <div class="lane-head">
+                <h2><span class="dot"></span>空闲</h2>
+                <span class="cnt">1</span>
+              </div>
+              <div class="lane-body">
+                <div class="lane-hint">暂无在办 · 无阻塞信号</div>
+                <article class="p-card" data-id="ops-smoke" data-mine="0" data-signals="">
+                  <div class="top">
+                    <span class="icon-tile ok">▦</span>
+                    <div style="min-width:0;flex:1">
+                      <h3>运营补充归档冒烟-216301</h3>
+                      <div class="biz">
+                        <span class="pill pill-ok" style="height:18px;font-size:10.5px">已就绪</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flow-meter">
+                    <div class="seg"></div>
+                    <div class="seg"></div>
+                    <div class="seg"></div>
+                    <div class="seg"></div>
+                  </div>
+                  <div class="flow-labels"><span>需求</span><span>执行</span><span>证据</span><span>验收</span></div>
+                  <div class="signals">
+                    <span class="sig">暂无阻塞</span>
+                  </div>
+                  <div class="foot">
+                    <div class="handler">无在办<br /><span class="time muted">暂无运行记录</span></div>
+                    <button class="btn btn-ghost btn-xs" type="button">进入 →</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <!-- 选中 triage：只解释「这个项目」，不铺跨项目 Inbox -->
+          <aside class="triage" id="triage" aria-label="项目上下文">
+            <div class="triage-head">
+              <h3>provider-semantic-e2e-p1</h3>
+              <div class="meta">
+                <span class="pill pill-ok">已就绪</span>
+                <span class="pill pill-danger" style="height:20px">我的待办 4</span>
+              </div>
+            </div>
+            <div class="triage-body">
+              <h4>项目注意力（L1）</h4>
+              <div class="fact"><span class="k">项目待决</span><span class="v">9</span></div>
+              <div class="fact"><span class="k">等人任务</span><span class="v">2</span></div>
+              <div class="fact"><span class="k">证据待核</span><span class="v">6</span></div>
+              <h4>球权</h4>
+              <p class="triage-note">等待审核 · 开发管理员</p>
+              <h4>下一步</h4>
+              <p class="triage-note">
+                本页不处理审批。要批与你相关的条目 → 用页头「我的待办」；
+                要看完整闭环 → 进入项目。
+              </p>
+              <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+                <button class="btn btn-primary btn-sm" type="button">进入项目</button>
+                <button class="btn btn-ghost btn-sm" type="button" id="openSheetFromTriage">打开我的待办（本项目 4）</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="run-strip" aria-label="最近运行动态">
+          <span class="label">最近运行</span>
+          <div class="items">
+            <button class="run-pill" type="button" data-project="provider-semantic-e2e-p1">provider-semantic-e2e-p1 · 待人工确认 · 3 分钟前</button>
+            <button class="run-pill" type="button" data-project="batch2-p1">批二基线项目 P1 · 验收中 · 09:43</button>
+            <button class="run-pill" type="button" data-project="batch3-e2e">批三语义扩编 E2E · 已就绪 · 09:43</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- L2 唯一列表：抽屉，不占甬道上方 -->
+  <div class="sheet-mask" id="sheetMask"></div>
+  <aside class="sheet" id="sheet" aria-label="我的待办" aria-hidden="true">
+    <div class="sheet-head">
+      <div>
+        <h2>我的待办 <span class="pill pill-danger" style="height:22px">20</span></h2>
+        <p>跨项目 Inbox 切片。点条目高亮甬道上的项目卡；处理动作请去收件箱或项目审批 Tab。</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" type="button" id="closeSheet">关闭</button>
+    </div>
+    <div class="sheet-body">
+      <button class="sheet-item on" type="button" data-project="provider-semantic-e2e-p1">
+        <h4>创建跨提供商端到端测试文件</h4>
+        <div class="m">
+          <span class="pill pill-danger" style="height:18px;font-size:10.5px">高危</span>
+          <span class="time">1 小时前</span>
+          <span class="proj">→ provider-semantic-e2e-p1</span>
+        </div>
+      </button>
+      <button class="sheet-item" type="button" data-project="batch2-p1">
+        <h4>需求验收：F1 判别验证-浅出口</h4>
+        <div class="m">
+          <span class="pill pill-danger" style="height:18px;font-size:10.5px">高危</span>
+          <span class="time">2 天前</span>
+          <span class="proj">→ 批二基线项目 P1</span>
+        </div>
+      </button>
+      <button class="sheet-item" type="button" data-project="batch3-e2e">
+        <h4>高风险动作需要确认</h4>
+        <div class="m">
+          <span class="pill pill-danger" style="height:18px;font-size:10.5px">高危</span>
+          <span class="time">4 天前</span>
+          <span class="proj">→ 批三语义扩编 E2E</span>
+        </div>
+      </button>
+      <button class="sheet-item" type="button" data-project="batch3-h1h4">
+        <h4>需求验收：B3 H4 judge 10:18:33</h4>
+        <div class="m">
+          <span class="pill pill-danger" style="height:18px;font-size:10.5px">高危</span>
+          <span class="time">4 天前</span>
+          <span class="proj">→ 批三 H1H4 全链路</span>
+        </div>
+      </button>
+      <button class="sheet-item" type="button" data-project="s10-git">
+        <h4>扩编请求</h4>
+        <div class="m">
+          <span class="pill pill-brand" style="height:18px;font-size:10.5px">扩编</span>
+          <span class="time">4 天前</span>
+          <span class="proj">→ S10 Git 屏蔽验收</span>
+        </div>
+      </button>
+      <button class="sheet-item" type="button" data-project="provider-semantic-e2e-p1">
+        <h4>创建 provider-semantic-e2e.txt</h4>
+        <div class="m">
+          <span class="pill pill-mute" style="height:18px;font-size:10.5px">文件</span>
+          <span class="time">3 分钟前</span>
+          <span class="proj">→ provider-semantic-e2e-p1</span>
+        </div>
+      </button>
+      <button class="sheet-item" type="button" data-project="provider-semantic-e2e-p1">
+        <h4>创建文件 cross-provider-e2e.txt</h4>
+        <div class="m">
+          <span class="pill pill-mute" style="height:18px;font-size:10.5px">文件</span>
+          <span class="time">1 小时前</span>
+          <span class="proj">→ provider-semantic-e2e-p1</span>
+        </div>
+      </button>
+    </div>
+    <div class="sheet-foot">
+      <span class="note">数据：getInboxBadge + listInboxItems(mine, open)。与侧栏收件箱角标同源。项目管理页不提交审批。</span>
+      <a class="btn btn-primary btn-sm" href="#" style="text-decoration:none;text-align:center">前往收件箱处理全部 →</a>
+    </div>
+  </aside>
+
+  <script>
+    (function () {
+      const sheet = document.getElementById("sheet");
+      const mask = document.getElementById("sheetMask");
+      const openers = [document.getElementById("openSheet"), document.getElementById("openSheetFromTriage")];
+      const closeBtn = document.getElementById("closeSheet");
+
+      function openSheet() {
+        sheet.classList.add("open");
+        mask.classList.add("open");
+        sheet.setAttribute("aria-hidden", "false");
+      }
+      function closeSheet() {
+        sheet.classList.remove("open");
+        mask.classList.remove("open");
+        sheet.setAttribute("aria-hidden", "true");
+      }
+      openers.forEach((el) => el && el.addEventListener("click", openSheet));
+      closeBtn.addEventListener("click", closeSheet);
+      mask.addEventListener("click", closeSheet);
+
+      function clearPulse() {
+        document.querySelectorAll(".p-card").forEach((c) => c.classList.remove("pulse-mine"));
+        document.querySelectorAll(".sheet-item").forEach((i) => i.classList.remove("on"));
+      }
+
+      function pulseProject(id) {
+        clearPulse();
+        if (!id) return;
+        document.querySelectorAll('.p-card[data-id="' + id + '"]').forEach((c) => {
+          c.classList.add("pulse-mine");
+          c.classList.add("selected");
+          c.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        });
+        document.querySelectorAll('.sheet-item[data-project="' + id + '"]').forEach((i) => {
+          i.classList.add("on");
+        });
+        document.querySelectorAll(".p-card").forEach((c) => {
+          if (c.getAttribute("data-id") !== id) c.classList.remove("selected");
+        });
+      }
+
+      document.querySelectorAll(".sheet-item").forEach((item) => {
+        item.addEventListener("click", () => {
+          pulseProject(item.getAttribute("data-project"));
+        });
+      });
+
+      document.querySelectorAll(".p-card").forEach((card) => {
+        card.addEventListener("click", (e) => {
+          if (e.target.closest("button")) return;
+          document.querySelectorAll(".p-card").forEach((c) => c.classList.remove("selected"));
+          card.classList.add("selected");
+        });
+      });
+
+      document.querySelectorAll(".run-pill").forEach((el) => {
+        el.addEventListener("click", () => pulseProject(el.getAttribute("data-project")));
+      });
+
+      document.querySelectorAll("#riskChips .chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          document.querySelectorAll("#riskChips .chip").forEach((c) => c.classList.remove("on"));
+          chip.classList.add("on");
+          const f = chip.getAttribute("data-filter");
+          document.querySelectorAll(".p-card").forEach((card) => {
+            const signals = (card.getAttribute("data-signals") || "").split(",").filter(Boolean);
+            const match =
+              f === "all" ||
+              (f === "blocked" && signals.includes("blocked")) ||
+              (f === "mine" && signals.includes("mine")) ||
+              signals.includes(f);
+            card.classList.toggle("dim", !match);
+          });
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

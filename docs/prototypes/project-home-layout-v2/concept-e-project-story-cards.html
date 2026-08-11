@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>方案 E · 项目叙事卡片 · 项目管理</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    /*
+      方案 E：回应 D 的三个问题
+      1) 去掉「球权」等黑话
+      2) 不假装「当前任务状态」——多任务下首页只给项目层叙事
+      3) 不做信号 chip 大杂烩；主视觉 = 闭环进度 + 一句人话摘要
+      4) UI 更大胆：canvas 卡片网格，不是又一张运营表
+    */
+
+    .page-head-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .page-head-row h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .page-head-row .desc {
+      margin-top: 6px;
+      color: var(--ink-3);
+      font-size: 14px;
+      max-width: 560px;
+      line-height: 1.55;
+    }
+    .head-cta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .link-inbox {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 40px;
+      padding: 0 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line-strong);
+      background: var(--card);
+      color: var(--ink-2);
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .link-inbox .n {
+      min-width: 20px;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--danger);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 750;
+      display: grid;
+      place-items: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .ctrl {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+    .view-seg {
+      display: inline-flex;
+      padding: 3px;
+      border-radius: 12px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      gap: 2px;
+    }
+    .view-seg button {
+      height: 32px;
+      padding: 0 14px;
+      border: none;
+      border-radius: 9px;
+      background: transparent;
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--ink-3);
+      cursor: pointer;
+    }
+    .view-seg button.on {
+      background: var(--brand);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(47, 95, 255, 0.25);
+    }
+
+    /* —— 大胆：大卡片网格 —— */
+    .story-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    @media (max-width: 1280px) {
+      .story-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 800px) {
+      .story-grid { grid-template-columns: 1fr; }
+    }
+
+    .story-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 280px;
+      padding: 20px;
+      border-radius: 24px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s, border-color .15s;
+      overflow: hidden;
+    }
+    .story-card::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--mute-soft);
+    }
+    .story-card.friction::before { background: var(--warn); }
+    .story-card.blocked::before { background: var(--danger); }
+    .story-card.calm::before { background: var(--ok); }
+    .story-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 18px 48px rgba(16, 24, 40, 0.1);
+      border-color: #c9d4f0;
+    }
+    .story-card.selected {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(47, 95, 255, 0.14), var(--shadow);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .card-top .mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      flex-shrink: 0;
+    }
+    .story-card.blocked .mark {
+      background: var(--danger-soft);
+      color: var(--danger-text);
+    }
+    .story-card.friction .mark {
+      background: var(--warn-soft);
+      color: var(--warn-text);
+    }
+    .story-card.calm .mark {
+      background: var(--ok-soft);
+      color: var(--ok-text);
+    }
+    .card-top h2 {
+      flex: 1;
+      min-width: 0;
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .layer-tags {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .layer-tags .lab {
+      font-size: 11px;
+      font-weight: 650;
+      color: var(--ink-4);
+      margin-right: 2px;
+    }
+
+    /* 闭环主视觉 */
+    .loop {
+      margin-top: 18px;
+      padding: 14px 14px 12px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #f7f9fc, #fbfcfe);
+      border: 1px solid var(--line);
+    }
+    .loop-title {
+      font-size: 11px;
+      font-weight: 750;
+      color: var(--ink-4);
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+    }
+    .loop-track {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      position: relative;
+    }
+    .loop-step {
+      text-align: center;
+    }
+    .loop-step .bar {
+      height: 6px;
+      border-radius: 999px;
+      background: var(--mute-soft);
+      margin-bottom: 6px;
+    }
+    .loop-step.done .bar { background: var(--ok); }
+    .loop-step.now .bar {
+      background: var(--brand);
+      box-shadow: 0 0 0 3px rgba(47, 95, 255, 0.18);
+    }
+    .loop-step.risk .bar { background: var(--danger); }
+    .loop-step.wait .bar { background: var(--warn); }
+    .loop-step .nm {
+      font-size: 11px;
+      font-weight: 650;
+      color: var(--ink-3);
+    }
+    .loop-step.now .nm { color: var(--brand-deep); font-weight: 750; }
+    .loop-step.risk .nm { color: var(--danger-text); }
+
+    /* 一句人话：项目层摘要，不是某个任务 status */
+    .headline {
+      margin-top: 16px;
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.45;
+      color: var(--ink);
+      min-height: 2.9em;
+    }
+    .headline .tone-blocked { color: var(--danger-text); }
+    .headline .tone-friction { color: var(--warn-text); }
+    .headline .tone-calm { color: var(--ok-text); }
+
+    .counts {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      font-size: 12px;
+      color: var(--ink-4);
+      font-variant-numeric: tabular-nums;
+    }
+    .counts b {
+      color: var(--ink-2);
+      font-weight: 700;
+    }
+
+    .card-foot {
+      margin-top: auto;
+      padding-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-top: 1px solid var(--line);
+    }
+    .people {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .avatars {
+      display: flex;
+    }
+    .avatars span {
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #7c9cff, #2f5fff);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 750;
+      display: grid;
+      place-items: center;
+      border: 2px solid #fff;
+      margin-left: -6px;
+    }
+    .avatars span:first-child { margin-left: 0; }
+    .people .who {
+      font-size: 12px;
+      color: var(--ink-3);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .people .who b {
+      color: var(--ink-2);
+      font-weight: 650;
+    }
+    .time-line {
+      font-size: 11.5px;
+      color: var(--ink-4);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    /* 选中：右侧故事板（项目层，不是 Inbox） */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    .layout.with-panel {
+      grid-template-columns: 1fr minmax(300px, 340px);
+      align-items: start;
+    }
+    .story-panel {
+      position: sticky;
+      top: 72px;
+      border-radius: 22px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .story-panel .ph {
+      padding: 18px 18px 14px;
+      background: linear-gradient(160deg, #eef3ff, #fff 60%);
+      border-bottom: 1px solid var(--line);
+    }
+    .story-panel .ph h3 {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .story-panel .pb { padding: 16px 18px 18px; }
+    .story-panel h4 {
+      font-size: 11px;
+      font-weight: 750;
+      color: var(--ink-4);
+      letter-spacing: 0.04em;
+      margin: 14px 0 8px;
+    }
+    .story-panel h4:first-child { margin-top: 0; }
+    .explain {
+      font-size: 13px;
+      color: var(--ink-2);
+      line-height: 1.55;
+    }
+    .layer-box {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--card-soft);
+      border: 1px solid var(--line);
+      margin-bottom: 8px;
+    }
+    .layer-box .k {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--ink-4);
+    }
+    .layer-box .v {
+      margin-top: 4px;
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--ink);
+    }
+    .layer-box .hint {
+      margin-top: 4px;
+      font-size: 11.5px;
+      color: var(--ink-4);
+      line-height: 1.4;
+    }
+    .task-snapshot {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .task-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: var(--card-soft);
+      font-size: 12px;
+    }
+    .task-row .t {
+      flex: 1;
+      min-width: 0;
+      font-weight: 550;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .note-callout {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f7f9ff;
+      border: 1px solid #dce6ff;
+      font-size: 12px;
+      color: var(--ink-3);
+      line-height: 1.5;
+    }
+
+    .principle {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .principle div {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      font-size: 12.5px;
+      color: var(--ink-3);
+      line-height: 1.45;
+    }
+    .principle strong {
+      display: block;
+      color: var(--ink);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    @media (max-width: 900px) {
+      .principle { grid-template-columns: 1fr; }
+      .layout.with-panel { grid-template-columns: 1fr; }
+      .story-panel { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">矩</span>
+        <div>炬枢平台<small>新矩网络</small></div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">工作台</div>
+        <a class="nav-item" href="#"><span class="nav-ico">▸</span>任务中枢</a>
+        <a class="nav-item" href="#"><span class="nav-ico">✉</span>收件箱<span class="badge">20</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>运行总览</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">协作对象</div>
+        <a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>数字员工</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◇</span>技能市场</a>
+        <a class="nav-item" href="#"><span class="nav-ico">👥</span>团队管理</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="shell-top">
+        <div class="cmd">🔍 搜索项目名称或目标… <kbd>⌘K</kbd></div>
+        <div class="shell-actions">
+          <button class="btn btn-ghost btn-sm" type="button">◐</button>
+          <button class="btn btn-primary btn-sm" type="button">开发管理员</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="page-head-row">
+          <div>
+            <span class="concept-tag">方案 E · 项目叙事卡片（大胆 UI）</span>
+            <h1><span class="title-ico">▦</span>项目管理</h1>
+            <p class="desc">
+              每一张卡讲<strong>一个项目的故事</strong>：闭环走到哪、一句人话说明现在怎样。
+              不假装「当前某一个任务的状态」，也不把多任务信号搅成 chip 粥。
+            </p>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:10px">
+            <div class="proto-switch">
+              <a href="concept-d-project-portfolio.html">D 表</a>
+              <a class="on" href="concept-e-project-story-cards.html">E 叙事卡</a>
+              <a href="index.html">总览</a>
+            </div>
+            <div class="head-cta">
+              <a class="link-inbox" href="#">我的待办 <span class="n">20</span></a>
+              <button class="btn btn-primary" type="button" style="height:40px">＋ 新建项目</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ctrl">
+          <div class="search" style="max-width:260px;height:36px">🔍 搜索项目</div>
+          <div class="chips">
+            <button class="chip on" type="button">全部 6</button>
+            <button class="chip" type="button">我负责的</button>
+            <button class="chip" type="button">需要关注</button>
+            <button class="chip" type="button">验收中</button>
+            <button class="chip" type="button">运转平稳</button>
+          </div>
+          <span class="grow"></span>
+          <div class="view-seg">
+            <button class="on" type="button">叙事卡</button>
+            <button type="button">紧凑列表</button>
+          </div>
+        </div>
+
+        <div class="principle">
+          <div>
+            <strong>首页只承诺项目层</strong>
+            项目生命周期状态 + 闭环进度。任务细节进项目后再看。
+          </div>
+          <div>
+            <strong>多任务怎么表达</strong>
+            用「在办任务数 / 开放需求数」和一句摘要，不用「当前任务状态」冒充全局。
+          </div>
+          <div>
+            <strong>和收件箱的分界</strong>
+            卡上不列审批标题。要批东西 → 我的待办 / 收件箱。
+          </div>
+        </div>
+
+        <div class="layout with-panel">
+          <div class="story-grid" id="grid">
+            <!-- Card 1 -->
+            <article class="story-card blocked selected" data-id="p1">
+              <div class="card-top">
+                <span class="mark">▦</span>
+                <h2>provider-semantic-e2e-p1</h2>
+              </div>
+              <div class="layer-tags">
+                <span class="lab">项目</span>
+                <span class="pill pill-ok">已就绪</span>
+                <span class="lab">关注</span>
+                <span class="pill pill-danger">需要关注</span>
+              </div>
+              <div class="loop">
+                <div class="loop-title">业务闭环进度（项目层投影）</div>
+                <div class="loop-track">
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">需求</div></div>
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">执行</div></div>
+                  <div class="loop-step wait"><div class="bar"></div><div class="nm">证据</div></div>
+                  <div class="loop-step risk"><div class="bar"></div><div class="nm">验收</div></div>
+                </div>
+              </div>
+              <p class="headline">
+                <span class="tone-blocked">卡在验收前：仍有多人确认与证据未核完。</span>
+                不是「某一个任务失败」的单一状态，而是项目整体尚未收口。
+              </p>
+              <div class="counts">
+                <span>开放需求 <b>1</b></span>
+                <span>在办任务 <b>6</b></span>
+                <span>开放决策 <b>9</b></span>
+              </div>
+              <div class="card-foot">
+                <div class="people">
+                  <div class="avatars"><span>开</span><span>管</span></div>
+                  <div class="who">负责人 <b>开发管理员</b></div>
+                </div>
+                <div>
+                  <div class="time-line">活动 08/10 16:43</div>
+                  <button class="btn btn-primary btn-xs" type="button" style="margin-top:6px">进入项目</button>
+                </div>
+              </div>
+            </article>
+
+            <!-- Card 2 -->
+            <article class="story-card friction" data-id="p2">
+              <div class="card-top">
+                <span class="mark">▦</span>
+                <h2>批二基线项目 P1</h2>
+              </div>
+              <div class="layer-tags">
+                <span class="lab">项目</span>
+                <span class="pill pill-info">验收中</span>
+                <span class="lab">关注</span>
+                <span class="pill pill-warn">需要关注</span>
+              </div>
+              <div class="loop">
+                <div class="loop-title">业务闭环进度（项目层投影）</div>
+                <div class="loop-track">
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">需求</div></div>
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">执行</div></div>
+                  <div class="loop-step wait"><div class="bar"></div><div class="nm">证据</div></div>
+                  <div class="loop-step now"><div class="bar"></div><div class="nm">验收</div></div>
+                </div>
+              </div>
+              <p class="headline">
+                <span class="tone-friction">项目已进入验收阶段，</span>
+                证据核验与负责人确认尚未完成。具体任务列表在项目内查看。
+              </p>
+              <div class="counts">
+                <span>开放需求 <b>1</b></span>
+                <span>在办任务 <b>4</b></span>
+                <span>开放决策 <b>2</b></span>
+              </div>
+              <div class="card-foot">
+                <div class="people">
+                  <div class="avatars"><span>开</span></div>
+                  <div class="who">负责人 <b>开发管理员</b></div>
+                </div>
+                <div>
+                  <div class="time-line">活动 08/10 09:43</div>
+                  <button class="btn btn-ghost btn-xs" type="button" style="margin-top:6px">进入项目</button>
+                </div>
+              </div>
+            </article>
+
+            <!-- Card 3 -->
+            <article class="story-card friction" data-id="p3">
+              <div class="card-top">
+                <span class="mark">▦</span>
+                <h2>批三语义扩编 E2E</h2>
+              </div>
+              <div class="layer-tags">
+                <span class="lab">项目</span>
+                <span class="pill pill-ok">已就绪</span>
+                <span class="lab">关注</span>
+                <span class="pill pill-warn">需要关注</span>
+              </div>
+              <div class="loop">
+                <div class="loop-title">业务闭环进度（项目层投影）</div>
+                <div class="loop-track">
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">需求</div></div>
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">执行</div></div>
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">证据</div></div>
+                  <div class="loop-step risk"><div class="bar"></div><div class="nm">验收</div></div>
+                </div>
+              </div>
+              <p class="headline">
+                <span class="tone-friction">接近收口，但仍有 1 项开放决策；</span>
+                等待已超过常规阈值。
+              </p>
+              <div class="counts">
+                <span>开放需求 <b>1</b></span>
+                <span>在办任务 <b>2</b></span>
+                <span>开放决策 <b>1</b></span>
+              </div>
+              <div class="card-foot">
+                <div class="people">
+                  <div class="avatars"><span>开</span></div>
+                  <div class="who">负责人 <b>开发管理员</b></div>
+                </div>
+                <div>
+                  <div class="time-line">活动 08/10 09:43</div>
+                  <button class="btn btn-ghost btn-xs" type="button" style="margin-top:6px">进入项目</button>
+                </div>
+              </div>
+            </article>
+
+            <!-- Card 4 -->
+            <article class="story-card blocked" data-id="p4">
+              <div class="card-top">
+                <span class="mark">▦</span>
+                <h2>批三 H1H4 全链路 181601</h2>
+              </div>
+              <div class="layer-tags">
+                <span class="lab">项目</span>
+                <span class="pill pill-info">验收中</span>
+                <span class="lab">关注</span>
+                <span class="pill pill-danger">需要关注</span>
+              </div>
+              <div class="loop">
+                <div class="loop-title">业务闭环进度（项目层投影）</div>
+                <div class="loop-track">
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">需求</div></div>
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">执行</div></div>
+                  <div class="loop-step wait"><div class="bar"></div><div class="nm">证据</div></div>
+                  <div class="loop-step now"><div class="bar"></div><div class="nm">验收</div></div>
+                </div>
+              </div>
+              <p class="headline">
+                <span class="tone-blocked">验收中且多项决策未决，</span>
+                证据链仍有缺口。进入项目查看任务与决策明细。
+              </p>
+              <div class="counts">
+                <span>开放需求 <b>1</b></span>
+                <span>在办任务 <b>5</b></span>
+                <span>开放决策 <b>4</b></span>
+              </div>
+              <div class="card-foot">
+                <div class="people">
+                  <div class="avatars"><span>开</span></div>
+                  <div class="who">负责人 <b>开发管理员</b></div>
+                </div>
+                <div>
+                  <div class="time-line">活动 08/07 11:27</div>
+                  <button class="btn btn-ghost btn-xs" type="button" style="margin-top:6px">进入项目</button>
+                </div>
+              </div>
+            </article>
+
+            <!-- Card 5 -->
+            <article class="story-card friction" data-id="p5">
+              <div class="card-top">
+                <span class="mark">▦</span>
+                <h2>S10 Git 屏蔽验收</h2>
+              </div>
+              <div class="layer-tags">
+                <span class="lab">项目</span>
+                <span class="pill pill-info">验收中</span>
+                <span class="lab">关注</span>
+                <span class="pill pill-warn">需要关注</span>
+              </div>
+              <div class="loop">
+                <div class="loop-title">业务闭环进度（项目层投影）</div>
+                <div class="loop-track">
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">需求</div></div>
+                  <div class="loop-step done"><div class="bar"></div><div class="nm">执行</div></div>
+                  <div class="loop-step wait"><div class="bar"></div><div class="nm">证据</div></div>
+                  <div class="loop-step now"><div class="bar"></div><div class="nm">验收</div></div>
+                </div>
+              </div>
+              <p class="headline">
+                <span class="tone-friction">处于验收闸口，</span>
+                仍有决策与证据待处理。首页不展开任务清单。
+              </p>
+              <div class="counts">
+                <span>开放需求 <b>1</b></span>
+                <span>在办任务 <b>3</b></span>
+                <span>开放决策 <b>4</b></span>
+              </div>
+              <div class="card-foot">
+                <div class="people">
+                  <div class="avatars"><span>开</span></div>
+                  <div class="who">负责人 <b>开发管理员</b></div>
+                </div>
+                <div>
+                  <div class="time-line">活动 08/08 00:39</div>
+                  <button class="btn btn-ghost btn-xs" type="button" style="margin-top:6px">进入项目</button>
+                </div>
+              </div>
+            </article>
+
+            <!-- Card 6 calm -->
+            <article class="story-card calm" data-id="p6">
+              <div class="card-top">
+                <span class="mark">▦</span>
+                <h2>运营补充归档冒烟-216301</h2>
+              </div>
+              <div class="layer-tags">
+                <span class="lab">项目</span>
+                <span class="pill pill-ok">已就绪</span>
+                <span class="lab">关注</span>
+                <span class="pill pill-mute">运转平稳</span>
+              </div>
+              <div class="loop">
+                <div class="loop-title">业务闭环进度（项目层投影）</div>
+                <div class="loop-track">
+                  <div class="loop-step"><div class="bar"></div><div class="nm">需求</div></div>
+                  <div class="loop-step"><div class="bar"></div><div class="nm">执行</div></div>
+                  <div class="loop-step"><div class="bar"></div><div class="nm">证据</div></div>
+                  <div class="loop-step"><div class="bar"></div><div class="nm">验收</div></div>
+                </div>
+              </div>
+              <p class="headline">
+                <span class="tone-calm">当前无在办闭环。</span>
+                可进入项目提交新需求，或保持空闲。
+              </p>
+              <div class="counts">
+                <span>开放需求 <b>0</b></span>
+                <span>在办任务 <b>0</b></span>
+                <span>开放决策 <b>0</b></span>
+              </div>
+              <div class="card-foot">
+                <div class="people">
+                  <div class="avatars"><span>开</span></div>
+                  <div class="who">负责人 <b>开发管理员</b></div>
+                </div>
+                <div>
+                  <div class="time-line">暂无运行记录</div>
+                  <button class="btn btn-ghost btn-xs" type="button" style="margin-top:6px">进入项目</button>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <aside class="story-panel" id="panel">
+            <div class="ph">
+              <span class="concept-tag" style="margin-bottom:8px">选中项目 · 分层说明</span>
+              <h3>provider-semantic-e2e-p1</h3>
+              <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+                <span class="pill pill-ok">项目 · 已就绪</span>
+                <span class="pill pill-danger">需要关注</span>
+              </div>
+            </div>
+            <div class="pb">
+              <h4>状态分层（避免「一个状态代表一切」）</h4>
+              <div class="layer-box">
+                <div class="k">① 项目生命周期</div>
+                <div class="v">已就绪</div>
+                <div class="hint">容器是否可调度 / 是否在验收 / 是否归档。不是任务状态。</div>
+              </div>
+              <div class="layer-box">
+                <div class="k">② 业务闭环（摘要）</div>
+                <div class="v">证据待补齐 · 验收未完成</div>
+                <div class="hint">由需求/证据/验收投影，首页只给阶段条，不声称「当前任务 = X」。</div>
+              </div>
+              <div class="layer-box">
+                <div class="k">③ 规模（多任务诚实表达）</div>
+                <div class="v">在办任务 6 · 开放决策 9</div>
+                <div class="hint">多任务并存时只报数量；明细进项目详情。</div>
+              </div>
+
+              <h4>在办任务快照（示意，非完整列表）</h4>
+              <div class="task-snapshot">
+                <div class="task-row"><span class="t">端到端语义校验</span><span class="pill pill-warn" style="height:18px;font-size:10px">等人</span></div>
+                <div class="task-row"><span class="t">跨 provider 文件生成</span><span class="pill pill-info" style="height:18px;font-size:10px">执行中</span></div>
+                <div class="task-row"><span class="t">… 另有 4 个在办</span><span class="muted">进入后查看</span></div>
+              </div>
+
+              <div class="note-callout">
+                首页<strong>不会</strong>用「当前处理者 / 球权」假装只有一个活跃任务。
+                要处理你的审批条目 → 右上「我的待办」去收件箱。
+              </div>
+
+              <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+                <button class="btn btn-primary" type="button">进入项目</button>
+                <button class="btn btn-ghost btn-sm" type="button">提交需求</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.querySelectorAll(".story-card").forEach((card) => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest("button")) return;
+        document.querySelectorAll(".story-card").forEach((c) => c.classList.remove("selected"));
+        card.classList.add("selected");
+      });
+    });
+  </script>
+</body>
+</html>

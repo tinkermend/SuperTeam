@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>方案 D · 项目组合首页 · 项目管理</title>
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    /*
+      方案 D：项目组合首页（纠偏 C 线「像收件箱」）
+      ────────────────────────────────────────
+      本页主问题：有哪些项目？谁负责？业务状态？信号摘要？从哪进入？
+      本页不回答：我下一条该批哪条（→ 收件箱）
+
+      主对象：Project 行
+      信号：项目属性（L1 投影），不是待办列表
+      我的待办：页头弱链 + 数字，点进 /inbox，正文不铺 Inbox
+    */
+
+    .page-head-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .page-head-row h1 {
+      font-size: 22px;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .page-head-row .desc {
+      margin-top: 4px;
+      color: var(--ink-3);
+      font-size: 13px;
+      max-width: 620px;
+      line-height: 1.5;
+    }
+    .head-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+    }
+    .head-cta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 弱导流：不是第二主列表 */
+    .link-inbox {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line-strong);
+      background: var(--card);
+      color: var(--ink-2);
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .link-inbox:hover {
+      border-color: var(--brand);
+      color: var(--brand-deep);
+    }
+    .link-inbox .n {
+      min-width: 20px;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--danger);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 750;
+      display: grid;
+      place-items: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .link-inbox.zero .n {
+      background: var(--mute);
+    }
+
+    /* 组合真值：一行弱摘要，不是 5 张 KPI 墙 */
+    .portfolio-truth {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 14px;
+      padding: 10px 14px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow-sm);
+      font-size: 12.5px;
+      color: var(--ink-3);
+    }
+    .portfolio-truth b {
+      color: var(--ink);
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      font-size: 14px;
+    }
+    .portfolio-truth .sep {
+      width: 1px;
+      height: 14px;
+      background: var(--line-strong);
+    }
+    .portfolio-truth .warn b { color: var(--warn-text); }
+    .portfolio-truth .mute b { color: var(--ink-4); }
+
+    .queue-shell {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 260px);
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card-soft);
+    }
+
+    table.portfolio {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    table.portfolio th {
+      text-align: left;
+      font-size: 11.5px;
+      font-weight: 650;
+      color: var(--ink-3);
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card-soft);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    table.portfolio td {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+      font-size: 13px;
+    }
+    table.portfolio tr:last-child td { border-bottom: none; }
+    table.portfolio tr:hover td { background: #fafbfd; }
+    table.portfolio tr.selected td { background: #f3f6ff; }
+    table.portfolio tr.tone-warn td:first-child {
+      box-shadow: inset 3px 0 0 var(--warn);
+    }
+    table.portfolio tr.tone-danger td:first-child {
+      box-shadow: inset 3px 0 0 var(--danger);
+    }
+
+    .proj-cell {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      min-width: 0;
+    }
+    .proj-cell .icon-tile {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+    .proj-cell .name {
+      font-weight: 700;
+      font-size: 13.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .proj-cell .owner {
+      margin-top: 3px;
+      font-size: 12px;
+      color: var(--ink-4);
+    }
+
+    .signals {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .sig {
+      font-size: 11px;
+      font-weight: 650;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: var(--card-soft);
+      color: var(--ink-3);
+      border: 1px solid var(--line);
+    }
+    .sig.d {
+      background: var(--danger-soft);
+      color: var(--danger-text);
+      border-color: transparent;
+    }
+    .sig.w {
+      background: var(--warn-soft);
+      color: var(--warn-text);
+      border-color: transparent;
+    }
+    .sig.quiet {
+      color: var(--ink-4);
+      font-weight: 550;
+      border: none;
+      background: transparent;
+      padding: 0;
+    }
+
+    .handler {
+      font-size: 12.5px;
+      color: var(--ink-2);
+      font-weight: 550;
+    }
+    .handler .role {
+      display: block;
+      margin-top: 2px;
+      font-size: 11.5px;
+      color: var(--ink-4);
+      font-weight: 500;
+    }
+
+    .boundary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .boundary-card {
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+    }
+    .boundary-card h3 {
+      font-size: 12px;
+      font-weight: 750;
+      color: var(--ink-3);
+      margin-bottom: 8px;
+      letter-spacing: 0.02em;
+    }
+    .boundary-card ul {
+      margin: 0;
+      padding-left: 16px;
+      color: var(--ink-2);
+      font-size: 12.5px;
+      line-height: 1.55;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .boundary-card.pm {
+      border-color: #c9d4f0;
+      background: linear-gradient(180deg, #f7f9ff, #fff);
+    }
+    .boundary-card.inbox {
+      border-color: #f0d8d6;
+      background: linear-gradient(180deg, #fff9f8, #fff);
+    }
+    .boundary-card h3.pm-t { color: var(--brand-deep); }
+    .boundary-card h3.inbox-t { color: var(--danger-text); }
+
+    .foot-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-top: 1px solid var(--line);
+      background: var(--card-soft);
+      font-size: 11.5px;
+      color: var(--ink-4);
+    }
+
+    .density-toggle {
+      display: inline-flex;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      overflow: hidden;
+    }
+    .density-toggle button {
+      height: 30px;
+      padding: 0 10px;
+      border: none;
+      background: var(--card);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-3);
+      cursor: pointer;
+    }
+    .density-toggle button.on {
+      background: var(--brand-soft);
+      color: var(--brand-deep);
+    }
+
+    @media (max-width: 900px) {
+      .boundary { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">矩</span>
+        <div>炬枢平台<small>新矩网络</small></div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">工作台</div>
+        <a class="nav-item" href="#"><span class="nav-ico">▸</span>任务中枢</a>
+        <a class="nav-item" href="#"><span class="nav-ico">✉</span>收件箱<span class="badge">20</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>运行总览</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">协作对象</div>
+        <a class="nav-item active" href="#"><span class="nav-ico">▦</span>项目管理</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◎</span>数字员工</a>
+        <a class="nav-item" href="#"><span class="nav-ico">◇</span>技能市场</a>
+        <a class="nav-item" href="#"><span class="nav-ico">👥</span>团队管理</a>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">流程能力</div>
+        <a class="nav-item" href="#"><span class="nav-ico">⚡</span>自动化任务</a>
+        <a class="nav-item" href="#"><span class="nav-ico">🔗</span>外部能力</a>
+        <a class="nav-item" href="#"><span class="nav-ico">⬡</span>MCP 管理</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="shell-top">
+        <div class="cmd">🔍 搜索项目名称或目标… <kbd>⌘K</kbd></div>
+        <div class="shell-actions">
+          <button class="btn btn-ghost btn-sm" type="button">◐</button>
+          <button class="btn btn-ghost btn-sm" type="button">🔔</button>
+          <button class="btn btn-primary btn-sm" type="button">开发管理员</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="page-head-row">
+          <div>
+            <span class="concept-tag">方案 D · 项目组合（纠偏：不像收件箱）</span>
+            <h1><span class="title-ico">▦</span>项目管理</h1>
+            <p class="desc">
+              以<strong>项目</strong>为唯一主对象：组合扫读、状态与信号摘要、进入项目。
+              「我有哪些待批」留给收件箱——本页只保留弱链，不铺待办列表、不做泳道分桶。
+            </p>
+          </div>
+          <div class="head-actions">
+            <div class="proto-switch">
+              <a href="concept-c3-lanes-inbox-sheet.html">C3 泳道</a>
+              <a class="on" href="concept-d-project-portfolio.html">D 组合</a>
+              <a href="index.html">总览</a>
+            </div>
+            <div class="head-cta">
+              <!-- 弱导流：跳转收件箱，不是本页第二列表 -->
+              <a class="link-inbox" href="#" title="前往收件箱处理个人待办">
+                我的待办
+                <span class="n num">20</span>
+              </a>
+              <button class="btn btn-primary" type="button">＋ 新建项目</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 组合真值：一行，非 KPI 墙；数字是项目/组合口径 -->
+        <div class="portfolio-truth" aria-label="组合摘要">
+          <span>已加载 <b class="num">6</b></span>
+          <span class="sep"></span>
+          <span>验收中 <b class="num">3</b></span>
+          <span class="sep"></span>
+          <span>已就绪 <b class="num">3</b></span>
+          <span class="sep"></span>
+          <span class="warn">当前页有风险信号 <b class="num">5</b></span>
+          <span class="sep"></span>
+          <span class="mute">协调异常 <b class="num">0</b></span>
+          <span class="grow"></span>
+          <span class="mute" style="font-size:12px">信号基于当前页补强 · 与收件箱条目数无关</span>
+        </div>
+
+        <section class="work-surface queue-shell">
+          <div class="toolbar">
+            <div class="search" style="max-width:280px">🔍 搜索项目名称或目标</div>
+            <select class="select">
+              <option>全部业务状态</option>
+              <option>验收中</option>
+              <option>已就绪</option>
+              <option>已归档</option>
+            </select>
+            <div class="density-toggle">
+              <button class="on" type="button">紧凑</button>
+              <button type="button">舒适</button>
+            </div>
+            <span class="grow"></span>
+            <span class="muted" style="font-size:12px">按最近活动 · 风险可筛</span>
+          </div>
+          <div class="filter-row chips">
+            <button class="chip on" type="button">全部项目 <span class="n">6</span></button>
+            <button class="chip" type="button">我负责的</button>
+            <button class="chip" type="button">存在风险 <span class="n">5</span></button>
+            <button class="chip" type="button">验收中 <span class="n">3</span></button>
+            <button class="chip" type="button">已就绪 <span class="n">3</span></button>
+            <!-- 筛的是「项目有待决信号」，不是「打开我的 Inbox」 -->
+            <button class="chip" type="button">有项目待决 <span class="n">5</span></button>
+          </div>
+
+          <table class="portfolio">
+            <colgroup>
+              <col style="width:26%" />
+              <col style="width:12%" />
+              <col style="width:22%" />
+              <col style="width:16%" />
+              <col style="width:12%" />
+              <col style="width:12%" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>项目</th>
+                <th>业务状态</th>
+                <th>运行信号 <span style="font-weight:500;color:var(--ink-4)">（项目属性）</span></th>
+                <th>当前球权</th>
+                <th>最近活动</th>
+                <th style="text-align:right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="tone-danger selected">
+                <td>
+                  <div class="proj-cell">
+                    <span class="icon-tile danger">▦</span>
+                    <div style="min-width:0">
+                      <div class="name">provider-semantic-e2e-p1</div>
+                      <div class="owner">负责人 · 开发管理员</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="pill pill-ok">已就绪</span></td>
+                <td>
+                  <div class="signals">
+                    <span class="sig d">9 项目待决</span>
+                    <span class="sig d">2 等人</span>
+                    <span class="sig w">6 证据待核</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="handler">开发管理员<span class="role">等待审核</span></div>
+                </td>
+                <td class="time">08/10 16:43</td>
+                <td style="text-align:right">
+                  <button class="btn btn-primary btn-xs" type="button">进入项目 →</button>
+                </td>
+              </tr>
+              <tr class="tone-warn">
+                <td>
+                  <div class="proj-cell">
+                    <span class="icon-tile warn">▦</span>
+                    <div style="min-width:0">
+                      <div class="name">批二基线项目 P1</div>
+                      <div class="owner">负责人 · 开发管理员</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="pill pill-info">验收中</span></td>
+                <td>
+                  <div class="signals">
+                    <span class="sig d">2 项目待决</span>
+                    <span class="sig w">8 证据待核</span>
+                    <span class="sig w">超时</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="handler">开发管理员<span class="role">等待审核</span></div>
+                </td>
+                <td class="time">08/10 09:43</td>
+                <td style="text-align:right">
+                  <button class="btn btn-ghost btn-xs" type="button">进入项目 →</button>
+                </td>
+              </tr>
+              <tr class="tone-warn">
+                <td>
+                  <div class="proj-cell">
+                    <span class="icon-tile warn">▦</span>
+                    <div style="min-width:0">
+                      <div class="name">批三语义扩编 E2E</div>
+                      <div class="owner">负责人 · 开发管理员</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="pill pill-ok">已就绪</span></td>
+                <td>
+                  <div class="signals">
+                    <span class="sig d">1 项目待决</span>
+                    <span class="sig w">等待超时</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="handler">开发管理员<span class="role">等待审核</span></div>
+                </td>
+                <td class="time">08/10 09:43</td>
+                <td style="text-align:right">
+                  <button class="btn btn-ghost btn-xs" type="button">进入项目 →</button>
+                </td>
+              </tr>
+              <tr class="tone-danger">
+                <td>
+                  <div class="proj-cell">
+                    <span class="icon-tile danger">▦</span>
+                    <div style="min-width:0">
+                      <div class="name">批三 H1H4 全链路 181601</div>
+                      <div class="owner">负责人 · 开发管理员</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="pill pill-info">验收中</span></td>
+                <td>
+                  <div class="signals">
+                    <span class="sig d">4 项目待决</span>
+                    <span class="sig w">7 证据待核</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="handler">开发管理员<span class="role">等待审核</span></div>
+                </td>
+                <td class="time">08/07 11:27</td>
+                <td style="text-align:right">
+                  <button class="btn btn-ghost btn-xs" type="button">进入项目 →</button>
+                </td>
+              </tr>
+              <tr class="tone-warn">
+                <td>
+                  <div class="proj-cell">
+                    <span class="icon-tile warn">▦</span>
+                    <div style="min-width:0">
+                      <div class="name">S10 Git 屏蔽验收</div>
+                      <div class="owner">负责人 · 开发管理员</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="pill pill-info">验收中</span></td>
+                <td>
+                  <div class="signals">
+                    <span class="sig d">4 项目待决</span>
+                    <span class="sig w">7 证据待核</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="handler">开发管理员<span class="role">等待审核</span></div>
+                </td>
+                <td class="time">08/08 00:39</td>
+                <td style="text-align:right">
+                  <button class="btn btn-ghost btn-xs" type="button">进入项目 →</button>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="proj-cell">
+                    <span class="icon-tile ok">▦</span>
+                    <div style="min-width:0">
+                      <div class="name">运营补充归档冒烟-216301</div>
+                      <div class="owner">负责人 · 开发管理员</div>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="pill pill-ok">已就绪</span></td>
+                <td>
+                  <div class="signals">
+                    <span class="sig quiet">暂无阻塞信号</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="handler muted">无在办<span class="role">—</span></div>
+                </td>
+                <td class="time muted">暂无运行记录</td>
+                <td style="text-align:right">
+                  <button class="btn btn-ghost btn-xs" type="button">进入项目 →</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="foot-bar">
+            <span>主操作 = 进入项目 · 首页不提交审批 · 列表分页对应完整项目集</span>
+            <span class="num">第 1 页 · 每页 10 条</span>
+          </div>
+        </section>
+
+        <!-- 职责对照：写在页脚给评审看，落地可不做 -->
+        <div class="boundary">
+          <div class="boundary-card pm">
+            <h3 class="pm-t">本页 · 项目管理</h3>
+            <ul>
+              <li>主对象：项目行</li>
+              <li>主问题：组合里有什么、状态与信号、进哪</li>
+              <li>数据：listProjects + 当前页风险补强</li>
+              <li>主 CTA：新建项目 / 进入项目</li>
+            </ul>
+          </div>
+          <div class="boundary-card inbox">
+            <h3 class="inbox-t">收件箱 · 不在本页展开</h3>
+            <ul>
+              <li>主对象：待办条目（审批 / 决策 / 确认）</li>
+              <li>主问题：我今天要处理哪几条</li>
+              <li>数据：listInboxItems + badge</li>
+              <li>本页仅：页头「我的待办 20 →」弱链</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
