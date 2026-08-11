@@ -69,7 +69,9 @@ BUCKET_CORS_ORIGINS='http://127.0.0.1:3100,http://localhost:3100' \
 默认 origins：`http://127.0.0.1:3100`、`http://localhost:3100`（与 Vite `DEV_SERVER_PORT` 一致）。  
 规则：`GET`/`HEAD`，`AllowedHeaders=*`，`ExposeHeaders=ETag,Content-Type,Content-Length`，`MaxAge=3600`。
 
-### 2.3 真实链路冒烟（技能上传 → 本地桶）
+### 2.3 真实链路冒烟
+
+**A. 技能上传（CP 直写对象存储）**
 
 ```bash
 # 前置：rustfs up、CP 已指向本地 objectStore 并重启
@@ -78,6 +80,22 @@ node scripts/ops/smoke-local-object-store.mjs
 
 期望输出含 `SMOKE_OK`，且 `archive_object_ref` 形如  
 `s3://superteam-artifacts/skills/<tenant>/...zip`。
+
+**B. Runtime 真任务工件（CP presign → Runtime 直传桶）**
+
+```bash
+# 会临时把 runtime claude binary 指到 fake provider，跑完自动还原
+node scripts/ops/smoke-runtime-artifact-rustfs.mjs
+```
+
+期望：
+
+- 任务 `completed`
+- `project_artifact_refs` 出现 `declared` / `execution_output` / `execution_transcript`，`object_ref` 形如 `artifacts/<tenant>/sha256/...`
+- `mc cat` 可从本地桶读回内容（脚本用 `podman`/`docker` 拉 `minio/mc`）
+
+假 Provider：`scripts/e2e/fake-providers/claude-success-with-artifacts.sh`  
+（写 `deliverables/` + 按 `.scratch/e2e/fake-produces.json` / `fake-acceptance.json` 填 result_contract）。
 
 ### 2.4 与现有 MinIO dev 的冲突
 

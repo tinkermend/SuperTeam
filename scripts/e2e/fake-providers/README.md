@@ -7,6 +7,7 @@
 | `claude-rate-limit-exit1.sh` | 打一行 system，stderr 写 rate limit，exit 1 | `RATE_LIMIT` / `transient_provider` / retryable=true |
 | `claude-no-terminal-event.sh` | 打一行 system 后 **exit 0 且无 result** | `PROVIDER_NO_TERMINAL_EVENT` / `transient_provider` / **retryable=true** |
 | `claude-sleep.sh` | 打一行 system 后长睡 | 配合把 attempt 的 `budget_wall_clock_limit_sec` 改小 → `BUDGET_FUSE` / `budget_fuse` |
+| `claude-success-with-artifacts.sh` | 成功 result + 写 `deliverables/`（可选读 `.scratch/e2e/fake-produces.json` / `fake-acceptance.json`） | 任务 completed；工件经 CP presign 上本地对象存储（见 `scripts/ops/smoke-runtime-artifact-rustfs.mjs`） |
 
 ## 用法
 
