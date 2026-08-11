@@ -25,17 +25,21 @@ redis:
   url: "redis://:xxxx@115.190.247.9:6379/0"
 
 objectStore:
-  # Local MinIO/localstack uses path-style addressing.
-  # Volcengine TOS S3 example:
-  # endpoint: "https://tos-s3-cn-beijing.volces.com"
-  # region: "cn-beijing"
+  # 本地开发默认：RustFS（docker-compose.rustfs.dev.yml / docs/ops/local-rustfs.md）。
+  # 本地 S3 兼容实现通常需要 path-style。
+  endpoint: "http://127.0.0.1:9000"
+  region: "us-east-1"
+  bucket: "superteam-artifacts"
+  accessKeyId: "rustfsadmin"
+  secretAccessKey: "rustfsadmin"
+  forcePathStyle: true
+  # Volcengine TOS S3 example (cloud):
+  # endpoint: "https://tos-s3-cn-guangzhou.volces.com"
+  # region: "cn-guangzhou"
+  # bucket: "superteam"
+  # accessKeyId: "xxx"
+  # secretAccessKey: "xxxx"
   # forcePathStyle: false
-  endpoint: "https://tos-s3-cn-guangzhou.volces.com"
-  region: "cn-guangzhou"
-  bucket: "superteam"
-  accessKeyId: "xxx"
-  secretAccessKey: "xxxx"
-  forcePathStyle: false
 
 employeeEnv:
   # Digital-employee environment-variable encryption. Comma-separated

@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | 日期 | 2026-08-11 |
-| 状态 | 本机已用 Docker/Podman 拉起，健康检查通过 |
+| 状态 | 本机已用 Docker/Podman 拉起；**Control Plane `objectStore` 已切到本机 RustFS**（见 `config.yaml`，gitignore） |
 | 上游文档 | [RustFS README_ZH](https://github.com/rustfs/rustfs/blob/main/README_ZH.md) |
 | Compose | 仓库根目录 `docker-compose.rustfs.dev.yml` |
 
