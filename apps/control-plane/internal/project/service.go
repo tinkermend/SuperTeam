@@ -6055,11 +6055,15 @@ type StuckOrphanProjectTaskLister interface {
 // that lack an actionable open decision card (or an unlinked open card).
 type OrphanWaitingHumanProjectTaskRepairer interface {
 	ListOrphanWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error)
+	ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error)
 	GetOpenProjectDecisionRequestByTask(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (DecisionRequest, error)
 	BindProjectTaskWaitingRequest(ctx context.Context, tenantID, projectTaskID, decisionRequestID uuid.UUID, waitingReason *string, eventID *uuid.UUID) (ProjectTask, error)
 	CreateDecisionRequest(ctx context.Context, req CreateDecisionRequestRequest) (DecisionRequest, error)
 	AppendProjectEvent(ctx context.Context, req AppendProjectEventRequest) (ProjectEvent, error)
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)
+	ListDemandLaunchDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID, limit int32) ([]DecisionRequest, error)
+	ResolveDecisionRequest(ctx context.Context, req ResolveDecisionRequestRepositoryRequest) (DecisionRequest, error)
+	ReleaseProjectTaskHumanWaitForRedispatch(ctx context.Context, req ReleaseProjectTaskHumanWaitRequest) (ReleaseProjectTaskHumanWaitResult, error)
 }
 
 // SweepStuckOrphanProjectTasks reaps project tasks stuck in running/in_progress
@@ -6150,6 +6154,7 @@ const orphanWaitingHumanRepairSummary = "系统补建人工决策卡：任务已
 // SweepOrphanWaitingHumanProjectTasks repairs waiting_human tasks with missing
 // or stale waiting_request_id links. Prefer re-binding an existing open decision
 // on the task; otherwise create a clarification/recovery card and bind it.
+// Also heals zombie gate-approval cards (spec 2026-08-11 §4.4).
 func (s *Service) SweepOrphanWaitingHumanProjectTasks(ctx context.Context, limit int32) (int, error) {
 	repairer, ok := s.repository.(OrphanWaitingHumanProjectTaskRepairer)
 	if !ok {
@@ -6158,11 +6163,25 @@ func (s *Service) SweepOrphanWaitingHumanProjectTasks(ctx context.Context, limit
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	tasks, err := repairer.ListOrphanWaitingHumanProjectTasks(ctx, limit)
+	repaired := 0
+	zombieTasks, err := repairer.ListZombieGateApprovalWaitingHumanProjectTasks(ctx, limit)
 	if err != nil {
 		return 0, err
 	}
-	repaired := 0
+	for _, task := range zombieTasks {
+		if err := s.healZombieGateApprovalWaitingHuman(ctx, repairer, task); err != nil {
+			if errors.Is(err, ErrProjectNotFound) || errors.Is(err, ErrProjectConflict) {
+				continue
+			}
+			slog.Default().Warn("orphan waiting_human reconciler: zombie heal failed", "project_task_id", task.ID, "error", err)
+			continue
+		}
+		repaired++
+	}
+	tasks, err := repairer.ListOrphanWaitingHumanProjectTasks(ctx, limit)
+	if err != nil {
+		return repaired, err
+	}
 	for _, task := range tasks {
 		if err := s.repairOrphanWaitingHumanProjectTask(ctx, repairer, task); err != nil {
 			if errors.Is(err, ErrProjectNotFound) || errors.Is(err, ErrProjectConflict) {
@@ -6183,6 +6202,11 @@ func (s *Service) repairOrphanWaitingHumanProjectTask(ctx context.Context, repai
 	if task.Status != ProjectTaskStatusWaitingHuman {
 		return nil
 	}
+	// Durable grant already present: never mint a second approval-shaped card
+	// (spec 2026-08-11 §4.2). Heal into redispatch instead.
+	if approved, ok := s.findApprovedGateLinkedProjectTaskApproval(ctx, repairer, task); ok {
+		return s.healWaitingHumanWithApprovedGateDecision(ctx, repairer, task, approved)
+	}
 	// Prefer an existing open decision already scoped to this task.
 	if existing, err := repairer.GetOpenProjectDecisionRequestByTask(ctx, task.TenantID, task.ProjectID, task.ID); err == nil {
 		if task.WaitingRequestID != nil && *task.WaitingRequestID == existing.ID {
@@ -6202,11 +6226,19 @@ func (s *Service) repairOrphanWaitingHumanProjectTask(ctx context.Context, repai
 	if task.WaitingReason != nil && strings.TrimSpace(*task.WaitingReason) != "" {
 		reason = strings.TrimSpace(*task.WaitingReason)
 	}
+	// Hard constraint: never create project_task_approval with nil approval id.
+	// Downgrade to clarification so the card type stays honest (spec §4.2 / §10.3).
+	decisionType := projectTaskHumanWaitDecisionType(reason)
 	summary := orphanWaitingHumanRepairSummary
 	if task.WaitingReason != nil && strings.TrimSpace(*task.WaitingReason) != "" {
 		if label := humanWaitReasonLabel(strings.TrimSpace(*task.WaitingReason)); label != "" {
 			summary = summary + "（原因：" + label + "）"
 		}
+	}
+	if decisionType == "project_task_approval" {
+		decisionType = "project_task_clarification"
+		reason = HumanWaitReasonClarification
+		summary = orphanWaitingHumanRepairSummary + "（系统无法重建审批对象，请从任务详情处理）"
 	}
 	event, err := repairer.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:     task.TenantID,
@@ -6221,6 +6253,7 @@ func (s *Service) repairOrphanWaitingHumanProjectTask(ctx context.Context, repai
 			"project_task_id": task.ID.String(),
 			"repair":          "orphan_waiting_human",
 			"waiting_reason":  reason,
+			"decision_type":   decisionType,
 		},
 	})
 	if err != nil {
@@ -6233,7 +6266,7 @@ func (s *Service) repairOrphanWaitingHumanProjectTask(ctx context.Context, repai
 		CoordinationJobID: task.CoordinationJobID,
 		ProjectTaskID:     &task.ID,
 		TargetUserID:      projectRecord.HumanOwnerUserID,
-		DecisionType:      projectTaskHumanWaitDecisionType(reason),
+		DecisionType:      decisionType,
 		TitleSnapshot:     task.Title,
 		SummarySnapshot:   summary,
 		RiskLevelSnapshot: stringValue(task.RiskLevel),
@@ -6252,6 +6285,99 @@ func (s *Service) repairOrphanWaitingHumanProjectTask(ctx context.Context, repai
 		}
 	}
 	return nil
+}
+
+func (s *Service) findApprovedGateLinkedProjectTaskApproval(ctx context.Context, repairer OrphanWaitingHumanProjectTaskRepairer, task ProjectTask) (DecisionRequest, bool) {
+	decisions, err := repairer.ListDemandLaunchDecisionRequests(ctx, task.TenantID, task.ProjectID, nil, []uuid.UUID{task.ID}, 100)
+	if err != nil {
+		return DecisionRequest{}, false
+	}
+	for _, d := range decisions {
+		if d.DecisionType != "project_task_approval" {
+			continue
+		}
+		if !strings.EqualFold(d.StatusSnapshot, "approved") {
+			continue
+		}
+		if d.DispatchGateResultID == nil || *d.DispatchGateResultID == uuid.Nil {
+			continue
+		}
+		if d.ProjectTaskID == nil || *d.ProjectTaskID != task.ID {
+			continue
+		}
+		return d, true
+	}
+	return DecisionRequest{}, false
+}
+
+func isSystemRepairedZombieApprovalCard(d DecisionRequest) bool {
+	if d.DecisionType != "project_task_approval" {
+		return false
+	}
+	if d.ApprovalRequestID != uuid.Nil {
+		return false
+	}
+	summary := strings.TrimSpace(stringValue(d.SummarySnapshot))
+	return strings.HasPrefix(summary, orphanWaitingHumanRepairSummary)
+}
+
+// healZombieGateApprovalWaitingHuman cancels the system-repaired zombie card,
+// releases waiting_human → planned, and signals redispatch (spec 2026-08-11 §4.4).
+func (s *Service) healZombieGateApprovalWaitingHuman(ctx context.Context, repairer OrphanWaitingHumanProjectTaskRepairer, task ProjectTask) error {
+	approved, ok := s.findApprovedGateLinkedProjectTaskApproval(ctx, repairer, task)
+	if !ok {
+		return nil
+	}
+	return s.healWaitingHumanWithApprovedGateDecision(ctx, repairer, task, approved)
+}
+
+func (s *Service) healWaitingHumanWithApprovedGateDecision(ctx context.Context, repairer OrphanWaitingHumanProjectTaskRepairer, task ProjectTask, approved DecisionRequest) error {
+	// Cancel any open system-repaired zombie approval cards on this task.
+	if decisions, err := repairer.ListDemandLaunchDecisionRequests(ctx, task.TenantID, task.ProjectID, nil, []uuid.UUID{task.ID}, 100); err == nil {
+		for _, d := range decisions {
+			if !isSystemRepairedZombieApprovalCard(d) {
+				continue
+			}
+			if !strings.EqualFold(d.StatusSnapshot, "pending") &&
+				!strings.EqualFold(d.StatusSnapshot, "waiting") &&
+				!strings.EqualFold(d.StatusSnapshot, "requested") &&
+				!strings.EqualFold(d.StatusSnapshot, "open") {
+				continue
+			}
+			if _, err := repairer.ResolveDecisionRequest(ctx, ResolveDecisionRequestRepositoryRequest{
+				TenantID:          task.TenantID,
+				ProjectID:         task.ProjectID,
+				ID:                d.ID,
+				StatusSnapshot:    "cancelled",
+				ResolutionComment: "系统收敛：同任务已有预检闸批准卡，作废补建僵尸审批卡",
+			}); err != nil {
+				return err
+			}
+			if s.inbox != nil {
+				d.StatusSnapshot = "cancelled"
+				_ = s.inbox.ResolveProjectDecisionRequest(ctx, d)
+			}
+		}
+	}
+	if task.Status == ProjectTaskStatusWaitingHuman {
+		releaseID := approved.ID
+		if task.WaitingRequestID != nil {
+			releaseID = *task.WaitingRequestID
+		}
+		if _, err := repairer.ReleaseProjectTaskHumanWaitForRedispatch(ctx, ReleaseProjectTaskHumanWaitRequest{
+			TenantID:          task.TenantID,
+			ProjectID:         task.ProjectID,
+			ProjectTaskID:     task.ID,
+			DecisionRequestID: releaseID,
+			MarkFailed:        false,
+		}); err != nil && !errors.Is(err, ErrProjectConflict) {
+			return err
+		}
+	}
+	task.Status = ProjectTaskStatusPlanned
+	task.WaitingRequestID = nil
+	task.WaitingReason = nil
+	return s.signalProjectTaskRetryScheduled(ctx, task, nil)
 }
 
 // RecoverableProjectTaskAttemptTenantLister is the optional repository capability

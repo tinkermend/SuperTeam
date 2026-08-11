@@ -1885,8 +1885,14 @@ func (s *ProjectStore) applyTaskHumanWaitRelease(ctx context.Context, input Appl
 	}
 	// The stuck-attempt watchdog parks tasks without linking waiting_request_id;
 	// a linked wait must match the resolved decision, an unlinked one is claimable.
+	// Exception (spec 2026-08-11 §4.3): gate-linked project_task_approval may
+	// release even when orphan repair re-pointed waiting_request_id at a zombie.
 	if task.WaitingRequestID != nil && *task.WaitingRequestID != decision.ID {
-		return ApplyPreDispatchGateDecisionResult{}, nil
+		gateLinkedApproval := decision.DecisionType == "project_task_approval" &&
+			decision.DispatchGateResultID != nil && *decision.DispatchGateResultID != uuid.Nil
+		if !gateLinkedApproval {
+			return ApplyPreDispatchGateDecisionResult{}, nil
+		}
 	}
 	releaseRepository, ok := s.repository.(project.ProjectTaskHumanWaitReleaseRepository)
 	if !ok {

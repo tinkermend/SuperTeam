@@ -15587,6 +15587,9 @@ func (r *memoryRepository) ListOrphanWaitingHumanProjectTasks(ctx context.Contex
 		if task.Status != ProjectTaskStatusWaitingHuman || task.DismissedAt != nil {
 			continue
 		}
+		if memoryTaskHasApprovedGateLinkedApproval(r, task) {
+			continue
+		}
 		linkedOpen := false
 		if task.WaitingRequestID != nil {
 			for _, d := range r.decisionRequests {
@@ -15606,6 +15609,73 @@ func (r *memoryRepository) ListOrphanWaitingHumanProjectTasks(ctx context.Contex
 		}
 	}
 	return out, nil
+}
+
+func memoryTaskHasApprovedGateLinkedApproval(r *memoryRepository, task ProjectTask) bool {
+	for _, d := range r.decisionRequests {
+		if d.TenantID != task.TenantID || d.ProjectID != task.ProjectID {
+			continue
+		}
+		if d.ProjectTaskID == nil || *d.ProjectTaskID != task.ID {
+			continue
+		}
+		if d.DecisionType != "project_task_approval" || !strings.EqualFold(d.StatusSnapshot, "approved") {
+			continue
+		}
+		if d.DispatchGateResultID != nil && *d.DispatchGateResultID != uuid.Nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *memoryRepository) ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
+	out := make([]ProjectTask, 0)
+	for _, task := range r.tasks {
+		if task.Status != ProjectTaskStatusWaitingHuman || task.DismissedAt != nil {
+			continue
+		}
+		if !memoryTaskHasApprovedGateLinkedApproval(r, task) {
+			continue
+		}
+		out = append(out, task)
+		if limit > 0 && int32(len(out)) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) ReleaseProjectTaskHumanWaitForRedispatch(ctx context.Context, req ReleaseProjectTaskHumanWaitRequest) (ReleaseProjectTaskHumanWaitResult, error) {
+	for i, task := range r.tasks {
+		if task.TenantID != req.TenantID || task.ID != req.ProjectTaskID || task.ProjectID != req.ProjectID {
+			continue
+		}
+		if task.Status != ProjectTaskStatusWaitingHuman {
+			return ReleaseProjectTaskHumanWaitResult{}, ErrProjectConflict
+		}
+		now := time.Now().UTC()
+		if req.MarkFailed {
+			task.Status = ProjectTaskStatusFailed
+			task.WaitingRequestID = nil
+			task.WaitingReason = nil
+			task.StatusChangedAt = now
+			task.UpdatedAt = now
+			r.tasks[i] = task
+			return ReleaseProjectTaskHumanWaitResult{Task: task}, nil
+		}
+		task.Status = ProjectTaskStatusPlanned
+		task.WaitingRequestID = nil
+		task.WaitingReason = nil
+		task.RuntimeTaskID = nil
+		task.DigitalEmployeeRunID = nil
+		task.CurrentAttemptID = nil
+		task.StatusChangedAt = now
+		task.UpdatedAt = now
+		r.tasks[i] = task
+		return ReleaseProjectTaskHumanWaitResult{Task: task, ReadyForDispatch: true}, nil
+	}
+	return ReleaseProjectTaskHumanWaitResult{}, ErrProjectNotFound
 }
 
 func (r *memoryRepository) GetOpenProjectDecisionRequestByTask(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (DecisionRequest, error) {

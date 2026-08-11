@@ -309,10 +309,12 @@ func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input A
 	// histories already carry such signals) to the old dead-end path until
 	// continue-as-new. Activity executions are never replayed, so live signals
 	// gain the release immediately. project_task_acceptance is NOT released
-	// here — Service.resolveProjectTaskWaitDecision completes it. Gate-linked
-	// project_task_approval approved keeps the original gate re-dispatch below;
-	// rejected/cancelled must MarkFailed via applyTaskHumanWaitRelease or the
-	// task stays forever in waiting_human after the decision card is consumed.
+	// here — Service.resolveProjectTaskWaitDecision completes it.
+	//
+	// Gate-linked project_task_approval approved also releases waiting_human
+	// first (spec 2026-08-11 §4.1): leaving the pointer on the approved card
+	// made orphan repair mint a zero-approval zombie. Rejected/cancelled still
+	// MarkFailed via applyTaskHumanWaitRelease.
 	switch decision.DecisionType {
 	case "project_task_recovery", "project_task_runtime_recovery",
 		"project_task_clarification", "project_task_missing_context",
@@ -326,21 +328,31 @@ func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input A
 		if !strings.EqualFold(strings.TrimSpace(input.Decision), "approved") {
 			return s.applyTaskHumanWaitRelease(ctx, input, decision)
 		}
+		// Gate-linked approved: release → planned, then redispatch.
+		releaseResult, err := s.applyTaskHumanWaitRelease(ctx, input, decision)
+		if err != nil {
+			return ApplyPreDispatchGateDecisionResult{}, err
+		}
+		if len(releaseResult.ReadyTaskIDs) > 0 {
+			return releaseResult, nil
+		}
+		// Idempotent: task already left waiting_human (e.g. prior release).
+		if decision.ProjectTaskID == nil {
+			return ApplyPreDispatchGateDecisionResult{}, nil
+		}
+		task, err := s.repository.GetProjectTask(ctx, input.TenantID, *decision.ProjectTaskID)
+		if err != nil {
+			return ApplyPreDispatchGateDecisionResult{}, err
+		}
+		if task.ProjectID != input.ProjectID {
+			return ApplyPreDispatchGateDecisionResult{}, project.ErrProjectNotFound
+		}
+		if !projectTaskDispatchAllowed(task.Status) {
+			return ApplyPreDispatchGateDecisionResult{}, nil
+		}
+		return ApplyPreDispatchGateDecisionResult{ReadyTaskIDs: []uuid.UUID{task.ID}}, nil
 	}
-	if !preDispatchGateDecisionResolvedForDispatch(decision, input.Decision) {
-		return ApplyPreDispatchGateDecisionResult{}, nil
-	}
-	task, err := s.repository.GetProjectTask(ctx, input.TenantID, *decision.ProjectTaskID)
-	if err != nil {
-		return ApplyPreDispatchGateDecisionResult{}, err
-	}
-	if task.ProjectID != input.ProjectID {
-		return ApplyPreDispatchGateDecisionResult{}, project.ErrProjectNotFound
-	}
-	if !projectTaskDispatchAllowed(task.Status) {
-		return ApplyPreDispatchGateDecisionResult{}, nil
-	}
-	return ApplyPreDispatchGateDecisionResult{ReadyTaskIDs: []uuid.UUID{task.ID}}, nil
+	return ApplyPreDispatchGateDecisionResult{}, nil
 }
 
 // gateRiskApprovalScanLimit bounds the durable-grant scan below. A looping task

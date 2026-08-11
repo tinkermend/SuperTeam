@@ -1408,6 +1408,16 @@ func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, t
 			TaskID:         taskID,
 			DispatchReason: dispatchReason,
 		}).Get(ctx, nil); err != nil {
+			// Gate retry_later is a bare sentinel (not *ProjectTaskDispatchError), so
+			// dispatchFailureRecorded is false and RecoverTaskDispatchFailure never
+			// ran — tasks sat silent in planned. Schedule a backoff redispatch
+			// instead of returning the error (spec 2026-08-11 §4.5, option b).
+			if isProjectTaskDispatchRetryLater(err) &&
+				workflow.GetVersion(ctx, "gate-retry-later-schedule", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+				workflow.GetLogger(ctx).Warn("dispatch project task retry later", "task_id", taskID.String(), "error", err.Error())
+				scheduleDispatchRetry(ctx, tenantID, projectID, taskID, workflow.Now(ctx).Add(defaultGateRetryLaterBackoff))
+				continue
+			}
 			if !dispatchFailureRecorded(err) {
 				// 终态拒绝只应废掉这一个任务。旧行为是整批返回,同批兄弟任务从此
 				// 无人派发也无信号唤醒(扩编 replan 后最容易踩到)。
@@ -1438,6 +1448,26 @@ func dispatchProjectTasks(ctx workflow.Context, tenantID, projectID uuid.UUID, t
 		}
 	}
 	return nil
+}
+
+// defaultGateRetryLaterBackoff matches CP defaultDispatchRecoveryBackoff (2m)
+// when gate RetryAfter is not plumbed through the activity error.
+const defaultGateRetryLaterBackoff = 2 * time.Minute
+
+func isProjectTaskDispatchRetryLater(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrProjectTaskDispatchRetryLater) {
+		return true
+	}
+	// Temporal may wrap the activity error as ApplicationError whose message
+	// is the sentinel string; still match for the schedule branch.
+	var appErr *temporal.ApplicationError
+	if errors.As(err, &appErr) && strings.Contains(appErr.Error(), ErrProjectTaskDispatchRetryLater.Error()) {
+		return true
+	}
+	return false
 }
 
 // scheduleDispatchRetry re-dispatches one task after its retry backoff.

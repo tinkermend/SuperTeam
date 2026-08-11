@@ -5255,6 +5255,17 @@ func (r *PgRepository) ListOrphanWaitingHumanProjectTasks(ctx context.Context, l
 	return tasksFromRecords(rows)
 }
 
+func (r *PgRepository) ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.q.ListZombieGateApprovalWaitingHumanProjectTasks(ctx, limit)
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	return tasksFromRecords(rows)
+}
+
 func (r *PgRepository) GetOpenProjectDecisionRequestByTask(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (DecisionRequest, error) {
 	row, err := r.q.GetOpenProjectDecisionRequestByTask(ctx, queries.GetOpenProjectDecisionRequestByTaskParams{
 		TenantID:      tenantID,

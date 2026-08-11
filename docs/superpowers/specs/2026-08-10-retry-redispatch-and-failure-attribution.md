@@ -100,9 +100,52 @@ resume 的已知代价是 fail fast：会话被 LRU 清理或 attempt 落到别�
 | 协调线程 | `apps/control-plane/internal/workflow/projectcoordination/` |
 | 观测入口 | `runtime_events` 表（有无第二条 command_event 即判别器） |
 
-## 6. 同族观察（2026-08-10 复查期实测，未深挖）
+## 6. 同族观察 → 已深挖（2026-08-11）：**已单独立项**
 
-高风险预检闸的**人类批准也不释放任务**：任务 `b449a6d5…` 上有两张 `project_task_approval` 卡，一张已被浏览器真实批准（`approval_request` 有值、`approval_decisions` 记到 21:16:12），另一张仍 `pending` 且 **`approval_request_id` 是全零 UUID**，任务因此卡在 `waiting_human/approval_required`、`attempts=0`。表征与 §2.1 同族——「决策/状态已就位，但任务不动」。
+> **正式规格**：`docs/superpowers/specs/2026-08-11-predispatch-approval-orphan-zombie-design.md`  
+> 下文保留勘察结论摘要；实施与验收以独立 spec 为准。
 
-**浅挖（本会话）**：`createGateHumanAction` 有三条分支——(a) 已有 `gate.DecisionRequestID`、(b) 已有 `task.WaitingRequestID`、(c) `findOrCreateGateApprovalRequest` + `CreateDecisionRequest(ApprovalRequestID=approval.ID)`。只有 (c) 保证非零 `approval_request_id`；(a)(b) 复用既有 decision 时**不校验**其 `ApprovalRequestID` 是否为零。重复开卡可能来自多次 gate 评估各写一张 decision，或 orphan waiting_human 修复路径补卡时未绑 approval。  
-**未修**：与本主症正交；建议另立项「预检闸 decision 必须绑定非零 approval_request_id + 批准后只认一张卡」。
+### 6.1 现象（仍成立）
+
+高风险预检闸批准后任务不走：任务 `b449a6d5…` 等上有两张 `project_task_approval`——一张真闸卡（有 `approval_request_id` + `dispatch_gate_result_id`、已 `approved`），一张 **`approval_request_id` 全零、无 gate 链接、仍 `pending`**；`waiting_request_id` 指僵尸卡，任务卡在 `waiting_human/approval_required`、`attempts=0`。
+
+同形现网不止一条（2026-08-11 抽样）：`b449a6d5` / `a17e0214` / `b9ce0207` 均为「真闸卡已批 + 系统补建僵尸卡 pending + gate=`retry_later`/`runtime.provider_unavailable`」。
+
+### 6.2 全零 UUID **不是** gate 开卡写的
+
+库内全部 `project_task_approval` 且 `approval_request_id=0000…` 的摘要一致：
+
+> `系统补建人工决策卡：任务已停在待人工确认，但缺少可处理的决策（原因：需要人工审批）`
+
+唯一生产者：`Service.repairOrphanWaitingHumanProjectTask`（`SweepOrphanWaitingHumanProjectTasks`）——硬编码 `ApprovalRequestID: uuid.Nil`，`DecisionType` 由 `waiting_reason` 映射；当 reason=`approval_required` 时就是 `project_task_approval`，**不**创建 `approval_requests` 行，**不**绑 `dispatch_gate_result_id`。
+
+### 6.3 因果链（以 `b449a6d5` 时间线钉死）
+
+| 时间 | 事实 |
+|---|---|
+| 21:12:29 | gate 判高风险 → 真卡 `19f46fdc`（approval=`01f97a9c`，gate=`31d11b21`） |
+| 21:16:12 | 人类批准真 approval；21:16:13 真卡 → `approved` |
+| 21:16:15 | gate 重评 → **`retry_later`**，blocker=`runtime.provider_unavailable`（会话/执行器暂不可用）；事件 `dispatch_gate.retry_later` + 多次 `dispatch_blocked` |
+| 21:16:39 | orphan 看门狗补建僵尸卡 `483f806a`（全零 approval、无 gate），并 **改挂** `waiting_request_id` |
+
+**上游缺陷 A（门闸批准后状态机）**：`ApplyPreDispatchGateDecision` 对**已绑定 gate 的** `project_task_approval`+`approved` 只返回 `ReadyTaskIDs` 去再派发，**不** `ReleaseProjectTaskHumanWait` 清掉 `waiting_human`。`projectTaskDispatchAllowed` 允许在 `waiting_human` 上继续 Dispatch。若随后 gate 变成 `retry_later`（仅写事件 + 返回 `ErrProjectTaskDispatchRetryLater`），任务**继续停在 `waiting_human`，且 `waiting_request_id` 仍指向已 approved 的真卡**。
+
+**中游缺陷 B（orphan 误诊）**：`ListOrphanWaitingHumanProjectTasks` 条件是  
+`waiting_human AND (waiting_request_id IS NULL OR 指向的决策非 open)`。  
+「真卡已批、任务仍 waiting_human」被当成孤儿 → 补建。
+
+**下游缺陷 C（补建卡不可用）**：补建对 `approval_required` 也走零 approval / 无 gate 的 clarification 式卡。人类若只在审批中心看到已批真卡、或再批真卡：`applyTaskHumanWaitRelease` 在 `waiting_request_id != decision.ID` 时 **直接 no-op**（已改挂到僵尸）。人类批僵尸卡理论上可走 release→再派发，但 (1) 文案像系统噪音、易被忽略；(2) 再派发仍可能 `provider_unavailable`→`retry_later`，若再次落回 waiting_human 且指针又成非 open，会循环补建。
+
+### 6.4 与 §2.1 的关系
+
+| | 重试再派发 (§2.1) | 僵尸审批 (§6) |
+|---|---|---|
+| 层 | attempt 失败 requeue | pre-dispatch 高风险闸 + orphan 看门狗 |
+| 已修复？ | **是**（本 spec） | **否** |
+| 是否同一补丁？ | 否——改动面与验收路径都不重叠 | |
+
+表征同族（「状态已就位但任务不动」），**根因不同，应单独立项**，不要塞进本 spec 的 follow-up 清单里 silently 修。
+
+### 6.5 立项
+
+已成文：`2026-08-11-predispatch-approval-orphan-zombie-design.md`（状态：立项未实施）。实施顺序建议：先止血 orphan → 再修批准后状态机 → 存量收敛 → E2E。

@@ -571,6 +571,7 @@ type Querier interface {
 	// waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
 	// 看门狗：若任务上另有 open decision 则只补绑指针；否则补建决策卡。
 	ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
+	ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]TenantTeam, error)
 	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	// 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。

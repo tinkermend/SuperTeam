@@ -1756,6 +1756,9 @@ LIMIT sqlc.arg('batch_limit')::integer;
 -- name: ListOrphanWaitingHumanProjectTasks :many
 -- waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
 -- 看门狗：若任务上另有 open decision 则只补绑指针；否则补建决策卡。
+-- 例外（spec 2026-08-11）：同 task 已有 approved + gate 链接的 project_task_approval
+-- 时，waiting 指针挂在已批真卡是批准后中间态 / 待 heal，不得当「缺卡」进补建列表；
+-- heal 由 service 层对「指针指僵尸补建卡」的单独扫描处理。
 SELECT t.*
 FROM project_tasks t
 WHERE t.status = 'waiting_human'
@@ -1769,6 +1772,36 @@ WHERE t.status = 'waiting_human'
         AND d.id = t.waiting_request_id
         AND lower(d.status_snapshot) IN ('pending', 'waiting', 'requested', 'open')
     )
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM project_decision_requests g
+    WHERE g.tenant_id = t.tenant_id
+      AND g.project_id = t.project_id
+      AND g.project_task_id = t.id
+      AND g.decision_type = 'project_task_approval'
+      AND lower(g.status_snapshot) = 'approved'
+      AND g.dispatch_gate_result_id IS NOT NULL
+  )
+ORDER BY t.updated_at ASC
+LIMIT sqlc.arg('batch_limit')::integer;
+
+-- name: ListZombieGateApprovalWaitingHumanProjectTasks :many
+-- waiting_human 且同 task 已有 approved gate 链接真卡（spec 2026-08-11 §4.2/§4.4）：
+-- 含「指针挂僵尸补建卡」与「指针挂已批真卡/空指针」中间态，统一 heal→planned+再派发。
+SELECT t.*
+FROM project_tasks t
+WHERE t.status = 'waiting_human'
+  AND t.dismissed_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM project_decision_requests g
+    WHERE g.tenant_id = t.tenant_id
+      AND g.project_id = t.project_id
+      AND g.project_task_id = t.id
+      AND g.decision_type = 'project_task_approval'
+      AND lower(g.status_snapshot) = 'approved'
+      AND g.dispatch_gate_result_id IS NOT NULL
   )
 ORDER BY t.updated_at ASC
 LIMIT sqlc.arg('batch_limit')::integer;

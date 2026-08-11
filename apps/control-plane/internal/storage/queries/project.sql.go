@@ -5095,6 +5095,8 @@ func (q *Queries) ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg
 }
 
 const ListOrphanWaitingHumanProjectTasks = `-- name: ListOrphanWaitingHumanProjectTasks :many
+-- waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
+-- 例外：同 task 已有 approved + gate 链接的 project_task_approval 时不进补建列表。
 SELECT t.id, t.tenant_id, t.project_id, t.demand_id, t.title, t.summary, t.status, t.assigned_digital_employee_id, t.runtime_task_id, t.digital_employee_run_id, t.risk_level, t.requires_human_approval, t.latest_event_id, t.created_at, t.updated_at, t.coordination_job_id, t.route_decision_id, t.planned_task_key, t.task_kind, t.stage_index, t.expected_outputs, t.input_requirements, t.handoff_contract, t.planner_metadata, t.current_attempt_id, t.accepted_plan_revision_id, t.decomposition_claim_key, t.attempt_count, t.max_attempts, t.retry_not_before, t.waiting_reason, t.waiting_request_id, t.terminal_event_id, t.status_changed_at, t.latest_dispatch_gate_result_id, t.revision_of_task_id, t.latest_task_result_id, t.plan_iteration, t.dismissed_at, t.dismissed_by
 FROM project_tasks t
 WHERE t.status = 'waiting_human'
@@ -5109,6 +5111,35 @@ WHERE t.status = 'waiting_human'
         AND lower(d.status_snapshot) IN ('pending', 'waiting', 'requested', 'open')
     )
   )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM project_decision_requests g
+    WHERE g.tenant_id = t.tenant_id
+      AND g.project_id = t.project_id
+      AND g.project_task_id = t.id
+      AND g.decision_type = 'project_task_approval'
+      AND lower(g.status_snapshot) = 'approved'
+      AND g.dispatch_gate_result_id IS NOT NULL
+  )
+ORDER BY t.updated_at ASC
+LIMIT $1::integer
+`
+
+const ListZombieGateApprovalWaitingHumanProjectTasks = `-- name: ListZombieGateApprovalWaitingHumanProjectTasks :many
+SELECT t.id, t.tenant_id, t.project_id, t.demand_id, t.title, t.summary, t.status, t.assigned_digital_employee_id, t.runtime_task_id, t.digital_employee_run_id, t.risk_level, t.requires_human_approval, t.latest_event_id, t.created_at, t.updated_at, t.coordination_job_id, t.route_decision_id, t.planned_task_key, t.task_kind, t.stage_index, t.expected_outputs, t.input_requirements, t.handoff_contract, t.planner_metadata, t.current_attempt_id, t.accepted_plan_revision_id, t.decomposition_claim_key, t.attempt_count, t.max_attempts, t.retry_not_before, t.waiting_reason, t.waiting_request_id, t.terminal_event_id, t.status_changed_at, t.latest_dispatch_gate_result_id, t.revision_of_task_id, t.latest_task_result_id, t.plan_iteration, t.dismissed_at, t.dismissed_by
+FROM project_tasks t
+WHERE t.status = 'waiting_human'
+  AND t.dismissed_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM project_decision_requests g
+    WHERE g.tenant_id = t.tenant_id
+      AND g.project_id = t.project_id
+      AND g.project_task_id = t.id
+      AND g.decision_type = 'project_task_approval'
+      AND lower(g.status_snapshot) = 'approved'
+      AND g.dispatch_gate_result_id IS NOT NULL
+  )
 ORDER BY t.updated_at ASC
 LIMIT $1::integer
 `
@@ -5117,6 +5148,70 @@ LIMIT $1::integer
 // 看门狗：若任务上另有 open decision 则只补绑指针；否则补建决策卡。
 func (q *Queries) ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error) {
 	rows, err := q.db.Query(ctx, ListOrphanWaitingHumanProjectTasks, batchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTask{}
+	for rows.Next() {
+		var i ProjectTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.Title,
+			&i.Summary,
+			&i.Status,
+			&i.AssignedDigitalEmployeeID,
+			&i.RuntimeTaskID,
+			&i.DigitalEmployeeRunID,
+			&i.RiskLevel,
+			&i.RequiresHumanApproval,
+			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationJobID,
+			&i.RouteDecisionID,
+			&i.PlannedTaskKey,
+			&i.TaskKind,
+			&i.StageIndex,
+			&i.ExpectedOutputs,
+			&i.InputRequirements,
+			&i.HandoffContract,
+			&i.PlannerMetadata,
+			&i.CurrentAttemptID,
+			&i.AcceptedPlanRevisionID,
+			&i.DecompositionClaimKey,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.RetryNotBefore,
+			&i.WaitingReason,
+			&i.WaitingRequestID,
+			&i.TerminalEventID,
+			&i.StatusChangedAt,
+			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
+			&i.PlanIteration,
+			&i.DismissedAt,
+			&i.DismissedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+// ListZombieGateApprovalWaitingHumanProjectTasks returns waiting_human tasks
+// whose waiting_request_id points at a system-repaired zero-approval zombie
+// while a real approved gate-linked project_task_approval already exists.
+func (q *Queries) ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error) {
+	rows, err := q.db.Query(ctx, ListZombieGateApprovalWaitingHumanProjectTasks, batchLimit)
 	if err != nil {
 		return nil, err
 	}

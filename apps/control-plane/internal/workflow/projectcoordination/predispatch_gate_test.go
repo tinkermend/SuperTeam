@@ -619,9 +619,10 @@ func TestProjectStoreApplyPreDispatchGateDecisionFailsGateLinkedApprovalOnReject
 	require.Equal(t, decisionID, repo.recoveryReleaseReq.DecisionRequestID)
 	require.True(t, repo.recoveryReleaseReq.MarkFailed, "gate-linked reject must MarkFailed like other wait families")
 
-	// approved still falls through to ready-for-dispatch (no MarkFailed release)
+	// approved releases waiting_human then returns ready-for-dispatch (spec 2026-08-11 §4.1)
 	repo.decisionRequests[0].StatusSnapshot = "approved"
 	repo.recoveryReleaseReq = nil
+	repo.recoveryReleaseResult = project.ReleaseProjectTaskHumanWaitResult{ReadyForDispatch: true}
 	result, err = store.ApplyPreDispatchGateDecision(context.Background(), ApplyPreDispatchGateDecisionInput{
 		TenantID:          tenantID,
 		ProjectID:         projectID,
@@ -630,7 +631,9 @@ func TestProjectStoreApplyPreDispatchGateDecisionFailsGateLinkedApprovalOnReject
 	})
 	require.NoError(t, err)
 	require.Equal(t, []uuid.UUID{taskID}, result.ReadyTaskIDs)
-	require.Nil(t, repo.recoveryReleaseReq)
+	require.NotNil(t, repo.recoveryReleaseReq)
+	require.Equal(t, decisionID, repo.recoveryReleaseReq.DecisionRequestID)
+	require.False(t, repo.recoveryReleaseReq.MarkFailed)
 }
 
 func TestProjectStoreApplyPreDispatchGateDecisionReleasesRecoveryWait(t *testing.T) {
