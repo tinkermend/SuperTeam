@@ -6465,8 +6465,15 @@ func projectTaskWaitIsGateApprovalShaped(ctx context.Context, repairer OrphanWai
 }
 
 func (s *Service) healWaitingHumanWithApprovedGateDecision(ctx context.Context, repairer OrphanWaitingHumanProjectTaskRepairer, task ProjectTask, approved DecisionRequest) error {
-	// Cancel any open system-repaired zombie approval cards on this task.
-	if decisions, err := repairer.ListDemandLaunchDecisionRequests(ctx, task.TenantID, task.ProjectID, nil, []uuid.UUID{task.ID}, 100); err == nil {
+	// Cancel any open system-repaired zombie approval cards on this task. A read
+	// failure here only costs this tick's cancellation (the next sweep retries),
+	// so it must not abort the release below — but it is logged rather than
+	// swallowed, or a persistently failing read looks identical to "no zombies".
+	decisions, listErr := repairer.ListDemandLaunchDecisionRequests(ctx, task.TenantID, task.ProjectID, nil, []uuid.UUID{task.ID}, 100)
+	if listErr != nil {
+		slog.Default().Warn("orphan waiting_human reconciler: zombie card scan failed; releasing without cancelling",
+			"project_task_id", task.ID, "error", listErr)
+	} else {
 		for _, d := range decisions {
 			if !isSystemRepairedZombieApprovalCard(d) {
 				continue
@@ -6493,15 +6500,15 @@ func (s *Service) healWaitingHumanWithApprovedGateDecision(ctx context.Context, 
 		}
 	}
 	if task.Status == ProjectTaskStatusWaitingHuman {
-		releaseID := approved.ID
-		if task.WaitingRequestID != nil {
-			releaseID = *task.WaitingRequestID
-		}
+		// Attribute the release to the human's real approval, not to whatever the
+		// pointer currently holds — after orphan repair stole it, that is a system
+		// -minted zombie, and naming it in the release audit event misattributes
+		// the decision. The release itself does not match on this id.
 		if _, err := repairer.ReleaseProjectTaskHumanWaitForRedispatch(ctx, ReleaseProjectTaskHumanWaitRequest{
 			TenantID:          task.TenantID,
 			ProjectID:         task.ProjectID,
 			ProjectTaskID:     task.ID,
-			DecisionRequestID: releaseID,
+			DecisionRequestID: approved.ID,
 			MarkFailed:        false,
 		}); err != nil && !errors.Is(err, ErrProjectConflict) {
 			return err
