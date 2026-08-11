@@ -1,0 +1,47 @@
+# SuperTeam 本地开发用 RustFS（S3 兼容对象存储）
+#
+# 用途：替代云上 TOS/MinIO，给 Control Plane objectStore 指本地 endpoint。
+# 开发环境不挂载宿主机数据/日志目录——数据在容器可写层内，容器删除即丢失，够用即可。
+#
+# 启动：
+#   docker compose -f docker-compose.rustfs.dev.yml up -d
+# 停止：
+#   docker compose -f docker-compose.rustfs.dev.yml down
+#
+# 说明：
+# - 与 docker-compose.dev.yml 里的 minio 默认都占用 9000/9001，二者不要同时 up。
+# - 默认密钥仅限本机开发，禁止用于生产。
+# - 详细连接信息见 docs/ops/local-rustfs.md
+
+services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: superteam-rustfs-dev
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web Console
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_ADDRESS: "0.0.0.0:9000"
+      RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: "*"
+      RUSTFS_VOLUMES: /data
+      RUSTFS_OBS_LOGGER_LEVEL: info
+      # 单盘本地开发：放宽磁盘拓扑检查
+      RUSTFS_UNSAFE_BYPASS_DISK_CHECK: "true"
+    # 故意不挂载 data/logs 到宿主机；重启保留取决于容器是否被 rm
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh",
+          "-ec",
+          "curl -fsS http://127.0.0.1:9000/health && curl -fsS http://127.0.0.1:9001/rustfs/console/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
