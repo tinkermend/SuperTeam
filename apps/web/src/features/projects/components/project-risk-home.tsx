@@ -17,6 +17,7 @@ import {
   StatusPill,
   IconButton,
   Button,
+  type Tone,
 } from "@/components/superteam";
 import type {
   Project,
@@ -484,26 +485,6 @@ function ProjectTriageReasonRow({
   );
 }
 
-function riskFilterCount(
-  filter: ProjectRiskFilter,
-  counts: ProjectRiskCounts,
-) {
-  return counts[filter];
-}
-
-const PROJECT_STATUS_FILTER_OPTIONS: Array<{
-  label: string;
-  value: "all" | ProjectStatus;
-}> = [
-  { label: "全部状态", value: "all" },
-  { label: projectStatusLabel("running"), value: "running" },
-  { label: projectStatusLabel("configuring"), value: "configuring" },
-  { label: projectStatusLabel("draft"), value: "draft" },
-  { label: projectStatusLabel("paused"), value: "paused" },
-  { label: projectStatusLabel("acceptance"), value: "acceptance" },
-  { label: projectStatusLabel("archived"), value: "archived" },
-];
-
 function projectStatusTone(status: ProjectStatus | string): Tone {
   if (status === "running") return "ok";
   if (status === "archived") return "mute";
@@ -511,22 +492,6 @@ function projectStatusTone(status: ProjectStatus | string): Tone {
   if (status === "paused") return "mute";
   if (status === "configuring" || status === "draft") return "info";
   return "mute";
-}
-
-
-
-function formatRunTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "2-digit"
-}).format(date);
 }
 
 

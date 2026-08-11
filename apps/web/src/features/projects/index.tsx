@@ -79,7 +79,6 @@ import {
   type CreateProjectArchiveSnapshotInput,
   type CreateProjectEvidenceInput,
   type CreateProjectInput,
-  type ListProjectsFilters,
   type ProjectDeleteBlockedErrorResponse,
   type ProjectDeleteBlocker,
   type ProjectDeletePreview,
@@ -1340,7 +1339,6 @@ export function ProjectsView({
                       }
                     />
                   }
-                  rail="lg"
                 />
               ) : (
                 <div

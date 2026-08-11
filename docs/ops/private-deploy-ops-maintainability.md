@@ -443,3 +443,4 @@ Phase C（规模化）
 |---|---|
 | 2026-08-11 | 初版：私有化部署/平台/运维差距分析与 P0–P2；分支 `docs/private-deploy-ops-analysis` |
 | 2026-08-11 | 本地 RustFS 开发实例已拉起：见 `docs/ops/local-rustfs.md` 与 `docker-compose.rustfs.dev.yml`（无宿主机 data/logs 挂载） |
+| 2026-08-11 | P0-1 进展：`apps/control-plane/Dockerfile` + `apps/web/Dockerfile` + `scripts/build-images.sh` + `docs/ops/docker-images.md` |

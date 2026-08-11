@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-08-11 生产镜像（Control Plane + Web）：`apps/control-plane/Dockerfile`、`apps/web/Dockerfile`、`deploy/docker/web-nginx.conf`、`scripts/build-images.sh`、`docs/ops/docker-images.md`；根 `.dockerignore`。顺手修 web projects 若干 `tsc` 错误（portfolio Pagination `page`、risk tone 入参、重复 `rail`、死代码）以放行镜像内 `pnpm build`。验证：`podman build` 两镜像成功；`superteam-web` `:13100` HTTP 200；`superteam-control-plane` 挂载 config（temporal 关）→ `GET /health` ok，镜像内 `/migrations` 126 个文件。
+
 - 2026-08-11 Runtime→本地 RustFS 真任务工件链路：假 Provider `claude-success-with-artifacts.sh` + 冒烟 `scripts/ops/smoke-runtime-artifact-rustfs.mjs`（登录→建 demand→批 plan→Runtime 执行→presign 上传）。验证：任务 `completed`；`project_artifact_refs` 含 `declared`/`execution_output`/`execution_transcript`，`object_ref=artifacts/.../sha256/...`；`mc cat` 从本机 rustfs 读回 raw/transcript。配置自动还原 claude binary。
 
 - 2026-08-11 本地对象存储切到 RustFS + 桶 CORS 工具：① 开发默认 `objectStore` 指向 `http://127.0.0.1:9000`（`config.example.yaml` / 本机 `config.yaml`，见 `docs/ops/local-rustfs.md`）；② 新增 `apps/control-plane/cmd/bucket-cors`（复用 CP S3 配置，`--check` / `BUCKET_CORS_ORIGINS`，幂等 PutBucketCors）；③ 冒烟脚本 `scripts/ops/smoke-local-object-store.mjs`（登录→上传 skill zip→断言 `archive_object_ref` 落本地桶）。验证：bucket-cors unit 绿；Put/Get/CORS preflight 对本地桶 200；真实 skill 上传 `s3://superteam-artifacts/skills/...` + 清理删除。

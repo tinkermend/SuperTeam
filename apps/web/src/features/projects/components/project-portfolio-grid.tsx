@@ -406,14 +406,14 @@ function healthDisplay(
   }
   const level = riskSummary.level;
   if (level === "danger" || level === "warn") {
-    return { label: "需关注", tone: projectRiskLevelTone(riskSummary) };
+    return { label: "需关注", tone: projectRiskLevelTone(level) };
   }
   // 细粒度文案：暂无阻塞 → 正常（原型用语）
   const raw = projectRiskLevelLabel(riskSummary);
   if (raw === "暂无阻塞" || raw === "正常") {
     return { label: "正常", tone: "ok" };
   }
-  return { label: raw, tone: projectRiskLevelTone(riskSummary) };
+  return { label: raw, tone: projectRiskLevelTone(level) };
 }
 
 export function ProjectPortfolioCard({
@@ -674,7 +674,7 @@ export function ProjectPortfolioGrid({
         {!empty && paginationTotal > 0 ? (
           <div className="border-t border-line px-3 py-2">
             <Pagination
-              activePage={activePage}
+              page={activePage}
               onPageChange={onPageChange}
               onPageSizeChange={onPageSizeChange}
               pageCount={pageCount}
