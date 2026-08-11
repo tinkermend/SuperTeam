@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
@@ -17,16 +17,6 @@ import {
   StatusPill,
   IconButton,
   Button,
-  Chip,
-  EmptyState,
-  Pagination,
-  DataTable,
-  Td,
-  Th,
-  ToolbarSearch,
-  Tr,
-  WorkSurface,
-  type Tone
 } from "@/components/superteam";
 import type {
   Project,
@@ -36,429 +26,184 @@ import { projectStatusLabel } from "@/lib/status-labels";
 import {
   buildAttentionBreakdown,
   buildProjectPortfolioCounts,
-  buildRiskCounts,
   emptyProjectRiskSummary,
   formatAttentionHeadline,
-  formatProjectQueueHandlerLabel,
   isActionableRiskReason,
-  PROJECT_RISK_FILTERS,
   projectRiskLevelLabel,
   projectRiskLevelTone,
   projectRiskReasonLabel,
   resolveProjectOwnerLabel,
   sortProjectsByRisk,
   type ProjectPortfolioCounts,
-  type ProjectRiskCounts,
-  type ProjectRiskFilter,
   type ProjectRiskReason,
   type ProjectRiskReasonType,
   type ProjectRiskSummary,
   type ProjectRiskSummaryMap
 } from "../project-risk";
+import { TaskCompositionBar } from "./project-portfolio-grid";
 
-export type ProjectRiskQueueFilters = {
-  q: string;
-  risk: ProjectRiskFilter;
-  status: "all" | ProjectStatus;
-};
+/** 项目层环图色（与生命周期叙事对齐，CSS conic-gradient）。 */
+const PROJECT_LAYER_COLORS: Array<{ key: string; label: string; color: string }> = [
+  { key: "running", label: projectStatusLabel("running"), color: "var(--brand)" },
+  { key: "acceptance", label: "验收中", color: "var(--info)" },
+  { key: "paused", label: projectStatusLabel("paused"), color: "var(--ink-4)" },
+  { key: "configuring", label: projectStatusLabel("configuring"), color: "var(--warn)" },
+  { key: "draft", label: projectStatusLabel("draft"), color: "#94a3b8" },
+  { key: "archived", label: "已归档", color: "#cbd5e1" },
+];
 
-export type ProjectRiskQueueProps = {
-  activePage: number;
-  /** Optional action slot rendered right-aligned in the queue header (e.g. 新建项目). */
-  createAction?: React.ReactNode;
-  filters: ProjectRiskQueueFilters;
-  isFetching: boolean;
-  /** 命中 listProjects limit 上限时显示截断提示。 */
-  listCapped?: boolean;
-  /**
-   * 已加载全量上的关注 chip 计数（run-summary 真值）。
-   * 未传时回退为当前 `projects` 页内计数。
-   */
-  loadedRiskCounts?: ProjectRiskCounts;
-  onFiltersChange: (filters: ProjectRiskQueueFilters) => void;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: number) => void;
-  onSelectProject: (projectId: string) => void;
-  pageCount: number;
-  pageSize: number;
-  /** principal_id → 展示名；成员快照缺失时负责人行回退用。 */
-  principalNamesById?: ReadonlyMap<string, string>;
-  /**
-   * 当前页行（父层已按风险筛选 + 排序 + 切片）。
-   * chip 计数请用 `loadedRiskCounts`，勿再对本页二次统计冒充全量。
-   */
-  projects: Project[];
-  riskSummaries: ProjectRiskSummaryMap;
-  selectedProjectId?: string;
-  /** 已加载项目数（截断提示与「已加载 N」pill）。 */
-  total: number;
-  /** 风险筛选后的可见条数（分页 total；默认 = projects 长度）。 */
-  visibleTotal?: number;
-};
-
-/** KPI 卡语义映射：icon 圆底色 / 数字色 / 顶部装饰条实色。 */
 /**
- * 项目组合紧凑真值条（S1）：单行弱样式，无 Inbox 卡。
- * 数字默认来自已加载列表廉价字段；可选 totalLabel 改「全部」。
+ * 项目组合双层摘要：左项目层环图 + 右任务层构成条（portfolio summary 数据）。
+ * 兼容旧 `portfolioCounts` 入参。
  */
 export function ProjectPortfolioSummaryBar({
+  activeTaskCounts,
+  mineOnly = false,
   portfolioCounts,
-  totalLabel = "已加载",
+  projectStatusCounts,
+  totalLabel,
+  totalProjects,
 }: {
-  portfolioCounts: ProjectPortfolioCounts;
-  /** 总数标签：截断场景用「已加载」，全量 run-summary 场景可用「全部」。 */
+  /** 非归档项目任务互斥桶（portfolio summary.active_project_task_counts）。 */
+  activeTaskCounts?: {
+    total: number;
+    pending: number;
+    queued: number;
+    running: number;
+    waiting_human: number;
+    blocked: number;
+    failed: number;
+    completed: number;
+    cancelled: number;
+    other: number;
+  };
+  mineOnly?: boolean;
+  /** 旧路径：从已加载项目列表推导。 */
+  portfolioCounts?: ProjectPortfolioCounts;
+  projectStatusCounts?: Record<string, number>;
   totalLabel?: string;
+  totalProjects?: number;
 }) {
-  const parts: Array<{ label: string; value: number; tone?: "warn" | "danger" }> = [
-    { label: totalLabel, value: portfolioCounts.total },
-    { label: projectStatusLabel("running"), value: portfolioCounts.running },
-    { label: "验收中", value: portfolioCounts.acceptance },
-    {
-      label: "协调异常",
-      value: portfolioCounts.coordinationAnomaly,
-      tone: portfolioCounts.coordinationAnomaly > 0 ? "danger" : undefined,
-    },
-  ];
+  const projectTotal =
+    totalProjects ?? portfolioCounts?.total ?? 0;
+  const projectLabel =
+    totalLabel ?? (mineOnly ? "我参与的项目" : "全部项目");
+  const status = projectStatusCounts ?? {
+    running: portfolioCounts?.running ?? 0,
+    acceptance: portfolioCounts?.acceptance ?? 0,
+    paused: portfolioCounts?.paused ?? 0,
+    configuring: portfolioCounts?.configuring ?? 0,
+    archived: portfolioCounts?.archived ?? 0,
+    draft: 0,
+  };
+
+  const layerRows = PROJECT_LAYER_COLORS.map((row) => ({
+    ...row,
+    value: status[row.key] ?? 0,
+  })).filter((row) => row.value > 0 || ["running", "acceptance", "archived"].includes(row.key));
+
+  // conic-gradient segments
+  let acc = 0;
+  const stops: string[] = [];
+  if (projectTotal > 0) {
+    for (const row of layerRows) {
+      if (row.value <= 0) continue;
+      const start = (acc / projectTotal) * 360;
+      acc += row.value;
+      const end = (acc / projectTotal) * 360;
+      stops.push(`${row.color} ${start}deg ${end}deg`);
+    }
+  }
+  const donutBg =
+    stops.length > 0
+      ? `conic-gradient(${stops.join(", ")})`
+      : "conic-gradient(var(--line) 0deg 360deg)";
+
+  const taskCounts = activeTaskCounts
+    ? {
+        total: activeTaskCounts.total,
+        pending: activeTaskCounts.pending,
+        queued: activeTaskCounts.queued,
+        running: activeTaskCounts.running,
+        waiting_human: activeTaskCounts.waiting_human,
+        blocked: activeTaskCounts.blocked,
+        failed: activeTaskCounts.failed,
+        completed: activeTaskCounts.completed,
+        cancelled: activeTaskCounts.cancelled,
+        other: activeTaskCounts.other,
+      }
+    : null;
 
   return (
     <div
       aria-label="项目组合概览"
-      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[14px] border border-line bg-card px-3.5 py-2.5 text-[12.5px] text-ink-3 shadow-sm"
+      className="grid min-w-0 gap-3 lg:grid-cols-2"
       data-testid="project-portfolio-summary-bar"
     >
-      {parts.map((part, index) => (
-        <span key={part.label} className="inline-flex items-center gap-1.5">
-          {index > 0 ? (
-            <span aria-hidden className="mr-1.5 text-line-strong">
-              ·
+      {/* 项目层 */}
+      <div className="flex min-w-0 items-center gap-4 rounded-[14px] border border-line bg-card px-4 py-3.5 shadow-sm">
+        <div className="relative size-[88px] shrink-0">
+          <div
+            aria-hidden
+            className="size-full rounded-full"
+            style={{ background: donutBg }}
+          />
+          <div className="absolute inset-[18%] flex flex-col items-center justify-center rounded-full bg-card text-center">
+            <span className="text-xl font-extrabold tabular-nums leading-none text-ink">
+              {projectTotal}
             </span>
-          ) : null}
-          <span>{part.label}</span>
-          <span
-            className={cn(
-              "font-extrabold tabular-nums text-ink",
-              part.tone === "danger" && "text-danger-text",
-              part.tone === "warn" && "text-warn-text",
-            )}
-          >
-            {part.value}
-          </span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-export function ProjectRiskQueue(props: ProjectRiskQueueProps) {
-  const [showMoreFilters, setShowMoreFilters] = useState(false);
-  // 父层已做风险筛选+排序+分页；本组件只渲染当前页行。
-  const sortedProjects = props.projects;
-  const riskCounts =
-    props.loadedRiskCounts ??
-    buildRiskCounts(
-      props.projects.map(
-        (project) =>
-          props.riskSummaries[project.id] ?? emptyProjectRiskSummary(project),
-      ),
-    );
-  const paginationTotal = props.visibleTotal ?? props.projects.length;
-
-  return (
-    <section
-      aria-label="项目队列"
-      className="min-w-0"
-      data-density="compact"
-      data-testid="project-risk-queue"
-    >
-      <WorkSurface className="min-w-0 rounded-[14px] shadow-sm">
-        <div className="flex min-w-0 flex-col gap-2 border-b border-line bg-card px-3 py-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-base font-extrabold text-ink">项目队列</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <StatusPill tone={props.isFetching ? "info" : "mute"}>
-                {props.isFetching ? "加载中" : `已加载 ${props.total} 个项目`}
-              </StatusPill>
-              <StatusPill tone={riskCounts.blocked > 0 ? "danger" : "mute"}>
-                {riskCounts.blocked} 个有关注信号
-              </StatusPill>
-            </div>
-            {props.listCapped ? (
-              <p className="mt-1 text-[11px] leading-5 text-warn-text" data-testid="project-list-capped-hint">
-                已加载前 50 个项目，请用搜索或状态筛选缩小范围
-              </p>
-            ) : null}
+            <span className="mt-0.5 text-[10px] font-medium text-ink-3">
+              项目总数
+            </span>
           </div>
-          {props.createAction ? (
-            <div className="shrink-0 lg:pt-0.5">{props.createAction}</div>
-          ) : null}
         </div>
-
-        <div className="flex min-w-0 flex-col gap-2 border-b border-line bg-card-soft/45 px-3 py-3">
-          <div className="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center">
-            <ToolbarSearch
-              aria-label="搜索项目"
-              className="min-w-0 lg:max-w-md"
-              onChange={(event) =>
-                props.onFiltersChange({
-                  ...props.filters,
-                  q: event.target.value
-})
-              }
-              placeholder="搜索项目名称或目标"
-              value={props.filters.q}
-            />
-            <select
-              aria-label="项目状态筛选"
-              className="h-8 rounded-[8px] border border-line bg-card px-2.5 text-[12px] text-ink outline-none transition-colors hover:bg-card-soft focus:border-brand focus:ring-2 focus:ring-brand/25"
-              onChange={(event) =>
-                props.onFiltersChange({
-                  ...props.filters,
-                  status: event.target
-                    .value as ProjectRiskQueueProps["filters"]["status"]
-})
-              }
-              value={props.filters.status}
-            >
-              {PROJECT_STATUS_FILTER_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {PROJECT_RISK_FILTERS.filter(
-              (filter) =>
-                // 列表态不可用的桶（如 sla_waiting：run-summary 无等待起点，恒 0）不渲染，
-                // 否则是个点了必空的死 chip。
-                filter.listAvailable !== false &&
-                (filter.defaultVisible !== false || showMoreFilters || props.filters.risk === filter.value),
-            ).map((filter) => (
-              <Chip
-                active={props.filters.risk === filter.value}
-                className="rounded-[8px] px-2.5 py-1.5 text-[12px]"
-                count={riskFilterCount(filter.value, riskCounts)}
-                key={filter.value}
-                onClick={() =>
-                  props.onFiltersChange({
-                    ...props.filters,
-                    risk: filter.value,
-                  })
-                }
-                type="button"
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-extrabold text-ink">项目层</div>
+          <p className="mt-0.5 text-[11px] text-ink-4">{projectLabel}</p>
+          <ul className="mt-2 flex flex-col gap-1">
+            {layerRows.map((row) => (
+              <li
+                key={row.key}
+                className="flex items-center justify-between gap-2 text-[12px] text-ink-3"
               >
-                {filter.label}
-              </Chip>
-            ))}
-            <button
-              className="rounded-[8px] px-2.5 py-1.5 text-[12px] font-semibold text-brand hover:opacity-75"
-              onClick={() => setShowMoreFilters((v) => !v)}
-              type="button"
-            >
-              {showMoreFilters ? "收起筛选" : "更多筛选"}
-            </button>
-          </div>
-        </div>
-
-        <DataTable className="min-w-[46rem] table-fixed text-[12px]">
-          <colgroup>
-            <col className="w-[34%]" data-column="project" />
-            <col className="w-[20%]" data-column="pending" />
-            <col className="w-[20%]" data-column="handler" />
-            <col className="w-[13%]" data-column="last-run" />
-            <col className="w-[13%]" data-column="action" />
-          </colgroup>
-          <thead>
-            <tr>
-              <Th className="px-3 py-2">项目</Th>
-              <Th className="px-3 py-2">关注摘要</Th>
-              <Th className="px-3 py-2">执行摘要</Th>
-              <Th className="px-3 py-2">最近活动</Th>
-              <Th className="px-3 py-2 text-right">操作</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedProjects.map((project) => (
-              <ProjectRiskQueueRow
-                isSelected={props.selectedProjectId === project.id}
-                key={project.id}
-                onSelect={props.onSelectProject}
-                principalNamesById={props.principalNamesById}
-                project={project}
-                riskSummary={props.riskSummaries[project.id]}
-              />
-            ))}
-            {sortedProjects.length === 0 ? (
-              <tr>
-                <Td className="px-3 py-3" colSpan={5}>
-                  <EmptyState
-                    description="调整风险筛选、搜索关键词或项目状态后重试。"
-                    icon={<FolderKanban />}
-                    title="没有符合筛选条件的项目"
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="size-2 shrink-0 rounded-full"
+                    style={{ background: row.color }}
                   />
-                </Td>
-              </tr>
-            ) : null}
-          </tbody>
-        </DataTable>
-
-        <Pagination
-          onPageChange={props.onPageChange}
-          onPageSizeChange={props.onPageSizeChange}
-          page={props.activePage}
-          pageCount={props.pageCount}
-          pageSize={props.pageSize}
-          pageSizeOptions={[10, 20]}
-          total={paginationTotal}
-          totalLabel="已加载范围内"
-        />
-      </WorkSurface>
-    </section>
-  );
-}
-
-function ProjectRiskQueueRow({
-  isSelected,
-  onSelect,
-  principalNamesById,
-  project,
-  riskSummary,
-}: {
-  isSelected: boolean;
-  onSelect: (projectId: string) => void;
-  principalNamesById?: ReadonlyMap<string, string>;
-  project: Project;
-  riskSummary?: ProjectRiskSummary;
-}) {
-  const summary = riskSummary ?? emptyProjectRiskSummary(project);
-  const attention = formatAttentionHeadline(summary);
-  const ownerLabel = resolveProjectOwnerLabel(
-    project,
-    summary.owner,
-    principalNamesById,
-  );
-  const activityAt = summary.lastActivityAt ?? project.updated_at;
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
-    if (event.target !== event.currentTarget) {
-      return;
-    }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(project.id);
-    }
-  };
-
-  return (
-    <Tr
-      aria-selected={isSelected}
-      className={[
-        "cursor-pointer",
-        isSelected ? "bg-brand-soft/85" : "hover:bg-card-soft/60",
-        summary.level === "danger"
-          ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--danger)]"
-          : summary.level === "warn"
-            ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--warn)]"
-            : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      data-selected={isSelected}
-      onClick={() => onSelect(project.id)}
-      onKeyDown={handleKeyDown}
-      tabIndex={0}
-    >
-      <Td className="whitespace-normal px-3 py-2">
-        <div className="flex min-w-0 items-start gap-2.5">
-          <IconTile tone={projectStatusTone(project.status)} size="sm">
-            <FolderKanban />
-          </IconTile>
-          <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <span
-                className="min-w-0 max-w-full truncate font-bold leading-5 text-ink"
-                data-testid="project-queue-project-title"
-                title={project.name}
-              >
-                {project.name}
-              </span>
-              <StatusPill tone={projectStatusTone(project.status)}>
-                {projectStatusLabel(project.status)}
-              </StatusPill>
-            </span>
-            <span className="mt-1 flex min-w-0 max-w-full items-center gap-1 truncate text-[12px] text-ink-3">
-              <UserRound aria-hidden className="size-3 shrink-0" />
-              <span className="truncate" data-testid="project-queue-owner">
-                {ownerLabel}
-              </span>
-            </span>
-          </span>
-        </div>
-      </Td>
-      <Td className="whitespace-normal px-3 py-2">
-        <div
-          className="flex min-w-0 flex-col items-start gap-1"
-          data-testid="project-queue-pending"
-        >
-          {summary.level === "none" && !attention.primary ? (
-            <StatusPill tone="mute">暂无阻塞</StatusPill>
-          ) : (
-            <StatusPill tone={projectRiskLevelTone(summary.level)}>
-              {projectRiskLevelLabel(summary)}
-            </StatusPill>
-          )}
-          {attention.primary ? (
-            <span
-              className="block min-w-0 max-w-full text-[12px] text-ink-3"
-              data-testid="project-queue-attention-headline"
-              title={
-                attention.detail
-                  ? `${attention.primary}；${attention.detail}`
-                  : attention.primary
-              }
-            >
-              {attention.primary}
-              {attention.detail ? (
-                <span className="mt-0.5 block truncate text-[11px] text-ink-3/80">
-                  {attention.detail}
+                  {row.label}
                 </span>
-              ) : null}
-            </span>
-          ) : null}
+                <span className="font-extrabold tabular-nums text-ink">
+                  {row.value}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
-      </Td>
-      <Td className="whitespace-normal px-3 py-2">
-        <span
-          className="block min-w-0 max-h-10 max-w-full line-clamp-2 break-words text-[12px] font-semibold leading-5 text-ink"
-          data-testid="project-queue-current-handler"
-          title="多任务时为摘要，非全部任务状态"
-        >
-          {formatProjectQueueHandlerLabel(summary, project)}
-        </span>
-      </Td>
-      <Td className="whitespace-nowrap px-3 py-2">
-        <span className="block min-w-0 max-w-full truncate font-mono text-[12px] text-ink-2">
-          {activityAt ? formatRunTime(activityAt) : "暂无运行记录"}
-        </span>
-      </Td>
-      <Td className="whitespace-nowrap px-3 py-2 text-right">
-        <div
-          className="flex min-w-0 flex-col items-stretch justify-end gap-1.5"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <Button asChild className="max-w-full justify-center" size="sm">
-            <Link
-              aria-label={`进入项目 ${project.name}`}
-              params={{ projectId: project.id }}
-              to="/projects/$projectId"
-            >
-              进入项目
-              <ArrowRight data-icon="inline-end" />
-            </Link>
-          </Button>
-        </div>
-      </Td>
-    </Tr>
+      </div>
+
+      {/* 任务层 */}
+      <div
+        className="flex min-w-0 flex-col justify-center rounded-[14px] border border-line bg-card px-4 py-3.5 shadow-sm"
+        data-testid="project-portfolio-task-summary"
+      >
+        <div className="text-[12px] font-extrabold text-ink">任务层</div>
+        <p className="mt-0.5 text-[11px] text-ink-4">非归档项目任务</p>
+        {taskCounts ? (
+          <div className="mt-2.5">
+            <TaskCompositionBar
+              counts={taskCounts}
+              legendMode="primary"
+              showTitle
+              size="summary"
+            />
+          </div>
+        ) : (
+          <p className="mt-3 text-[12px] text-ink-3">暂无任务统计</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -862,6 +607,39 @@ export function ProjectPortfolioPerspectivePanel({
     completedTodayCount ??
     todayByProject.reduce((acc, item) => acc + item.completed_today_count, 0);
 
+  const statusRows: Array<{
+    label: string;
+    value: number;
+    dot: string;
+    valueClass?: string;
+  }> = [
+    {
+      label: projectStatusLabel("running"),
+      value: portfolio.running,
+      dot: "bg-brand",
+      valueClass: portfolio.running > 0 ? "text-brand-deep" : undefined,
+    },
+    {
+      label: "验收中",
+      value: portfolio.acceptance,
+      dot: "bg-info",
+      valueClass: portfolio.acceptance > 0 ? "text-info-text" : undefined,
+    },
+    {
+      label: "协调异常",
+      value: portfolio.coordinationAnomaly,
+      dot: portfolio.coordinationAnomaly > 0 ? "bg-danger" : "bg-ink-4",
+      valueClass:
+        portfolio.coordinationAnomaly > 0 ? "text-danger-text" : "text-ink-3",
+    },
+    {
+      label: "已归档",
+      value: portfolio.archived,
+      dot: "bg-ink-4",
+      valueClass: "text-ink-3",
+    },
+  ];
+
   return (
     <aside
       aria-label="项目组合透视"
@@ -875,49 +653,67 @@ export function ProjectPortfolioPerspectivePanel({
         </p>
       </div>
 
-      <div className="rounded-[10px] bg-card-soft/60 p-3">
+      {/* 状态分布：色点与顶栏项目层同源 */}
+      <div className="rounded-[10px] border border-line/70 bg-card-soft/50 p-3">
         <div className="text-[11px] font-semibold text-ink-3">状态分布</div>
         <div className="mt-2 flex flex-col gap-1.5 text-[12px] text-ink-2">
-          <div className="flex justify-between gap-2">
-            <span>{projectStatusLabel("running")}</span>
-            <span className="font-bold tabular-nums">{portfolio.running}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span>验收中</span>
-            <span className="font-bold tabular-nums">{portfolio.acceptance}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span>协调异常</span>
-            <span
-              className={cn(
-                "font-bold tabular-nums",
-                portfolio.coordinationAnomaly > 0 && "text-danger-text",
-              )}
-            >
-              {portfolio.coordinationAnomaly}
-            </span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span>已归档</span>
-            <span className="font-bold tabular-nums text-ink-3">{portfolio.archived}</span>
-          </div>
+          {statusRows.map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  aria-hidden
+                  className={cn("size-2 shrink-0 rounded-full", row.dot)}
+                />
+                {row.label}
+              </span>
+              <span
+                className={cn(
+                  "font-extrabold tabular-nums text-ink",
+                  row.valueClass,
+                )}
+              >
+                {row.value}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="rounded-[10px] bg-card-soft/60 p-3">
-        <div className="text-[11px] font-semibold text-ink-3">
-          需要关注 · {needAttention.length}
+      {/* 需关注：中性区块底（贴合冷紫主调），语义只落在左边条 / 标题点 / 副文案 */}
+      <div className="rounded-[10px] border border-line/70 bg-card-soft/50 p-3">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-3">
+          {needAttention.length > 0 ? (
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-danger" />
+          ) : null}
+          需要关注
+          <span
+            className={cn(
+              "tabular-nums",
+              needAttention.length > 0 ? "font-extrabold text-danger-text" : "",
+            )}
+          >
+            · {needAttention.length}
+          </span>
         </div>
         {needAttention.length === 0 ? (
-          <p className="mt-1.5 text-[12px] text-ink-3">当前列表没有高关注信号项目。</p>
+          <p className="mt-1.5 text-[12px] text-ink-3">
+            当前列表没有高关注信号项目。
+          </p>
         ) : (
           <ul className="mt-2 flex flex-col gap-1.5">
             {needAttention.map(({ project, summary }) => {
               const headline = formatAttentionHeadline(summary);
+              const isDanger = summary.level === "danger";
               return (
                 <li key={project.id}>
                   <button
-                    className="w-full rounded-[8px] bg-card px-2.5 py-2 text-left hover:bg-brand-soft/40"
+                    className={cn(
+                      "w-full rounded-[8px] border border-line/60 bg-card px-2.5 py-2 text-left transition-colors",
+                      "hover:border-brand/30 hover:bg-brand-soft/25",
+                      isDanger
+                        ? "border-l-[3px] border-l-danger"
+                        : "border-l-[3px] border-l-warn",
+                    )}
                     onClick={() => onSelectProject(project.id)}
                     type="button"
                   >
@@ -937,18 +733,32 @@ export function ProjectPortfolioPerspectivePanel({
         )}
       </div>
 
-      <div className="rounded-[10px] bg-card-soft/60 p-3">
-        <div className="text-[11px] font-semibold text-ink-3">
-          协调异常 · {coordinationAnomalies.length}
+      {/* 协调异常：同样中性底，计数/名单用 danger 字色 */}
+      <div className="rounded-[10px] border border-line/70 bg-card-soft/50 p-3">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-3">
+          {coordinationAnomalies.length > 0 ? (
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-danger" />
+          ) : null}
+          协调异常
+          <span
+            className={cn(
+              "tabular-nums",
+              coordinationAnomalies.length > 0
+                ? "font-extrabold text-danger-text"
+                : "",
+            )}
+          >
+            · {coordinationAnomalies.length}
+          </span>
         </div>
         {coordinationAnomalies.length === 0 ? (
           <p className="mt-1.5 text-[12px] text-ink-3">无协调异常项目。</p>
         ) : (
-          <ul className="mt-2 flex flex-col gap-1 text-[12px] text-ink-2">
+          <ul className="mt-2 flex flex-col gap-1 text-[12px]">
             {coordinationAnomalies.map((project) => (
               <li key={project.id}>
                 <button
-                  className="w-full truncate text-left font-medium text-danger-text hover:opacity-80"
+                  className="w-full truncate text-left font-medium text-ink-2 hover:text-danger-text"
                   onClick={() => onSelectProject(project.id)}
                   type="button"
                 >
@@ -960,10 +770,18 @@ export function ProjectPortfolioPerspectivePanel({
         )}
       </div>
 
-      <div className="rounded-[10px] bg-card-soft/60 p-3">
+      {/* 今日完成：中性底，有数时数字用 ok */}
+      <div className="rounded-[10px] border border-line/70 bg-card-soft/50 p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="text-[11px] font-semibold text-ink-3">今日完成运行</div>
-          <span className="font-extrabold tabular-nums text-ink">{todayTotal}</span>
+          <span
+            className={cn(
+              "font-extrabold tabular-nums",
+              todayTotal > 0 ? "text-ok-text" : "text-ink",
+            )}
+          >
+            {todayTotal}
+          </span>
         </div>
         {todayByProject.length === 0 ? (
           <p className="mt-1.5 text-[12px] text-ink-3">今日暂无项目侧完成运行。</p>
@@ -983,7 +801,7 @@ export function ProjectPortfolioPerspectivePanel({
                   >
                     {name}
                   </button>
-                  <span className="shrink-0 tabular-nums font-semibold">
+                  <span className="shrink-0 font-semibold tabular-nums text-ok-text">
                     {item.completed_today_count}
                   </span>
                 </li>
@@ -993,8 +811,14 @@ export function ProjectPortfolioPerspectivePanel({
         )}
       </div>
 
-      <div className="rounded-[10px] bg-card-soft/60 p-3">
-        <div className="text-[11px] font-semibold text-ink-3">长期无活动（约 7 日+）</div>
+      {/* 长期静默：中性底 */}
+      <div className="rounded-[10px] border border-line/70 bg-card-soft/50 p-3">
+        <div className="text-[11px] font-semibold text-ink-3">
+          长期无活动（约 7 日+）
+          {stale.length > 0 ? (
+            <span className="tabular-nums text-ink-2"> · {stale.length}</span>
+          ) : null}
+        </div>
         {stale.length === 0 ? (
           <p className="mt-1.5 text-[12px] text-ink-3">暂无长期静默项目。</p>
         ) : (

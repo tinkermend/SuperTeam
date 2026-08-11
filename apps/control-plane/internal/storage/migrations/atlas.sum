@@ -1,4 +1,4 @@
-h1:Nv4U56wuUR0MTazP5GYMZIYfzF2txFi7beSapOm8QS8=
+h1:cVtBfwT9YCgYFyiM28rUjw1a4JBXWX2WJOBpp6jLd3c=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -122,3 +122,4 @@ h1:Nv4U56wuUR0MTazP5GYMZIYfzF2txFi7beSapOm8QS8=
 20260806170000_project_capability_bindings.sql h1:JoO/2th1sMFpB5EFkHTfhEMaATKW5V7+1FjhVTazwLY=
 20260810120000_project_task_attempts_error_code.sql h1:y275V1PahP+j4sJB7hsr4YjB/rv4tZ2LXynliC/lzVI=
 20260810160000_provider_native_config.sql h1:ZB64FkjT9ahiWLHhRGiF0V0fyNCqwdHfT1PoYNNUX7s=
+20260811180000_project_task_portfolio_bucket.sql h1:SBQggoPTMZtAfJ3qf1w6tDV1tWV3nnuNOnaKqzrrD+w=

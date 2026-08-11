@@ -3183,6 +3183,66 @@ func (e ListPermissionApprovalsParamsStatus) Valid() bool {
 	}
 }
 
+// Defines values for GetProjectPortfolioParamsTaskState.
+const (
+	Blocked      GetProjectPortfolioParamsTaskState = "blocked"
+	Cancelled    GetProjectPortfolioParamsTaskState = "cancelled"
+	Completed    GetProjectPortfolioParamsTaskState = "completed"
+	Failed       GetProjectPortfolioParamsTaskState = "failed"
+	Other        GetProjectPortfolioParamsTaskState = "other"
+	Pending      GetProjectPortfolioParamsTaskState = "pending"
+	Queued       GetProjectPortfolioParamsTaskState = "queued"
+	Running      GetProjectPortfolioParamsTaskState = "running"
+	WaitingHuman GetProjectPortfolioParamsTaskState = "waiting_human"
+)
+
+// Valid indicates whether the value is a known member of the GetProjectPortfolioParamsTaskState enum.
+func (e GetProjectPortfolioParamsTaskState) Valid() bool {
+	switch e {
+	case Blocked:
+		return true
+	case Cancelled:
+		return true
+	case Completed:
+		return true
+	case Failed:
+		return true
+	case Other:
+		return true
+	case Pending:
+		return true
+	case Queued:
+		return true
+	case Running:
+		return true
+	case WaitingHuman:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetProjectPortfolioParamsSort.
+const (
+	Attention GetProjectPortfolioParamsSort = "attention"
+	Created   GetProjectPortfolioParamsSort = "created"
+	Recent    GetProjectPortfolioParamsSort = "recent"
+)
+
+// Valid indicates whether the value is a known member of the GetProjectPortfolioParamsSort enum.
+func (e GetProjectPortfolioParamsSort) Valid() bool {
+	switch e {
+	case Attention:
+		return true
+	case Created:
+		return true
+	case Recent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListTeamsParamsStatus.
 const (
 	ListTeamsParamsStatusActive   ListTeamsParamsStatus = "active"
@@ -6050,7 +6110,7 @@ type ProjectOverview struct {
 	RecentEvents         []ProjectEvent              `json:"recent_events"`
 	StatusSummary        ProjectStatusSummary        `json:"status_summary"`
 
-	// TaskSummary 项目**全量**任务计数（排除 dismissed）。注意与 ProjectOverview.active_tasks 区分：后者是分页任务列表，本对象才是权威计数。 total_tasks = active_tasks + completed_tasks + failed_tasks + cancelled_tasks。
+	// TaskSummary 项目**全量**任务计数（排除 dismissed）。注意与 ProjectOverview.active_tasks 区分：后者是分页任务列表，本对象才是权威计数。 ActiveTasks 闸门口径冻结为 status NOT IN (completed/done/success/failed/cancelled)； 展示桶（pending/queued/running/waiting_human/blocked/failed/completed/cancelled/other） 互斥且之和等于 total_tasks。ActiveTasks 与展示桶并列、互不派生（§5.2.1）。
 	TaskSummary ProjectTaskSummary `json:"task_summary"`
 }
 
@@ -6097,6 +6157,68 @@ type ProjectPlaybookCasting struct {
 	ScenarioTemplateKey string             `json:"scenario_template_key"`
 	TenantId            openapi_types.UUID `json:"tenant_id"`
 	UpdatedAt           time.Time          `json:"updated_at"`
+}
+
+// ProjectPortfolioItem defines model for ProjectPortfolioItem.
+type ProjectPortfolioItem struct {
+	Attention struct {
+		CoordinationAnomaly  bool  `json:"coordination_anomaly"`
+		EvidencePendingCount int32 `json:"evidence_pending_count"`
+		OpenDecisionCount    int32 `json:"open_decision_count"`
+		UnassignedCount      int32 `json:"unassigned_count"`
+
+		// WaitingHumanUnlinkedCount orphan 等人；健康度唯一可读的等人字段。
+		WaitingHumanUnlinkedCount int32 `json:"waiting_human_unlinked_count"`
+	} `json:"attention"`
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	Owner          *struct {
+		DisplayName string             `json:"display_name"`
+		Id          openapi_types.UUID `json:"id"`
+	} `json:"owner,omitempty"`
+	Participants struct {
+		// ActiveDigitalEmployeeCount 活跃任务上 assigned_digital_employee_id 的 COUNT(DISTINCT)。
+		ActiveDigitalEmployeeCount int32 `json:"active_digital_employee_count"`
+	} `json:"participants"`
+	Project struct {
+		CoordinationStatus string               `json:"coordination_status"`
+		Goal               string               `json:"goal"`
+		HumanOwnerUserId   openapi_types.UUID   `json:"human_owner_user_id"`
+		HumanOwnerUserIds  []openapi_types.UUID `json:"human_owner_user_ids"`
+		Id                 openapi_types.UUID   `json:"id"`
+		Name               string               `json:"name"`
+		Status             ProjectStatus        `json:"status"`
+		UpdatedAt          time.Time            `json:"updated_at"`
+	} `json:"project"`
+
+	// TaskCounts 互斥任务状态桶。total = pending+queued+running+waiting_human+blocked+failed+completed+cancelled+other。 waiting_human 为宽口径（任务构成条用）；健康度须另读 attention.waiting_human_unlinked_count。
+	TaskCounts ProjectTaskPortfolioCounts `json:"task_counts"`
+}
+
+// ProjectPortfolioPagination defines model for ProjectPortfolioPagination.
+type ProjectPortfolioPagination struct {
+	HasMore bool  `json:"has_more"`
+	Limit   int32 `json:"limit"`
+	Offset  int32 `json:"offset"`
+	Total   int32 `json:"total"`
+}
+
+// ProjectPortfolioResponse defines model for ProjectPortfolioResponse.
+type ProjectPortfolioResponse struct {
+	// CountsDegraded 桶和不变量失败时为 true；服务端已将 total 修正为各桶之和。
+	CountsDegraded bool                       `json:"counts_degraded"`
+	Items          []ProjectPortfolioItem     `json:"items"`
+	Pagination     ProjectPortfolioPagination `json:"pagination"`
+	Summary        ProjectPortfolioSummary    `json:"summary"`
+}
+
+// ProjectPortfolioSummary defines model for ProjectPortfolioSummary.
+type ProjectPortfolioSummary struct {
+	// ActiveProjectTaskCounts 非归档项目中未 dismissed 任务的互斥桶合计。
+	ActiveProjectTaskCounts ProjectTaskPortfolioCounts `json:"active_project_task_counts"`
+
+	// ProjectStatusCounts 项目生命周期分布（含归档）；键为 draft/configuring/running/paused/acceptance/archived。
+	ProjectStatusCounts map[string]int32 `json:"project_status_counts"`
+	TotalProjects       int32            `json:"total_projects"`
 }
 
 // ProjectPrincipalType defines model for ProjectPrincipalType.
@@ -6532,18 +6654,40 @@ type ProjectTaskLivenessNextAction struct {
 	Source string `json:"source"`
 }
 
-// ProjectTaskSummary 项目**全量**任务计数（排除 dismissed）。注意与 ProjectOverview.active_tasks 区分：后者是分页任务列表，本对象才是权威计数。 total_tasks = active_tasks + completed_tasks + failed_tasks + cancelled_tasks。
+// ProjectTaskPortfolioCounts 互斥任务状态桶。total = pending+queued+running+waiting_human+blocked+failed+completed+cancelled+other。 waiting_human 为宽口径（任务构成条用）；健康度须另读 attention.waiting_human_unlinked_count。
+type ProjectTaskPortfolioCounts struct {
+	Blocked      int32 `json:"blocked"`
+	Cancelled    int32 `json:"cancelled"`
+	Completed    int32 `json:"completed"`
+	Failed       int32 `json:"failed"`
+	Other        int32 `json:"other"`
+	Pending      int32 `json:"pending"`
+	Queued       int32 `json:"queued"`
+	Running      int32 `json:"running"`
+	Total        int32 `json:"total"`
+	WaitingHuman int32 `json:"waiting_human"`
+}
+
+// ProjectTaskSummary 项目**全量**任务计数（排除 dismissed）。注意与 ProjectOverview.active_tasks 区分：后者是分页任务列表，本对象才是权威计数。 ActiveTasks 闸门口径冻结为 status NOT IN (completed/done/success/failed/cancelled)； 展示桶（pending/queued/running/waiting_human/blocked/failed/completed/cancelled/other） 互斥且之和等于 total_tasks。ActiveTasks 与展示桶并列、互不派生（§5.2.1）。
 type ProjectTaskSummary struct {
-	// ActiveTasks 非终态任务数（不含 completed/failed/cancelled）。
+	// ActiveTasks 归档闸门用非终态任务数（不含 completed/done/success/failed/cancelled）。 blocked 与 error 算活跃。不得用展示桶之和重写。
 	ActiveTasks    int32 `json:"active_tasks"`
+	BlockedTasks   int32 `json:"blocked_tasks"`
 	CancelledTasks int32 `json:"cancelled_tasks"`
 	CompletedTasks int32 `json:"completed_tasks"`
-	FailedTasks    int32 `json:"failed_tasks"`
 
-	// PendingHumanTasks waiting_human 任务数（属 active_tasks 子集）。
+	// FailedTasks 互斥展示桶 failed（仅 failed/error，不含 blocked）。
+	FailedTasks int32 `json:"failed_tasks"`
+
+	// OtherTasks 未登记防御状态；>0 须告警，不得静默丢弃。
+	OtherTasks int32 `json:"other_tasks"`
+
+	// PendingHumanTasks 互斥展示桶 waiting_human（宽口径，含 requires_human_approval 提升）。
 	PendingHumanTasks int32 `json:"pending_human_tasks"`
+	PendingTasks      int32 `json:"pending_tasks"`
+	QueuedTasks       int32 `json:"queued_tasks"`
 
-	// RunningTasks running 任务数（属 active_tasks 子集）。
+	// RunningTasks 互斥展示桶 running（running/in_progress）。
 	RunningTasks int32 `json:"running_tasks"`
 	TotalTasks   int32 `json:"total_tasks"`
 }
@@ -8310,6 +8454,34 @@ type ListProjectsParams struct {
 	Q      *string        `form:"q,omitempty" json:"q,omitempty"`
 }
 
+// GetProjectPortfolioParams defines parameters for GetProjectPortfolio.
+type GetProjectPortfolioParams struct {
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// ProjectStatus 项目生命周期筛选，可重复传参
+	ProjectStatus *[]ProjectStatus    `form:"project_status,omitempty" json:"project_status,omitempty"`
+	OwnerUserId   *openapi_types.UUID `form:"owner_user_id,omitempty" json:"owner_user_id,omitempty"`
+
+	// TaskState 返回至少含一个该互斥任务桶的项目
+	TaskState *GetProjectPortfolioParamsTaskState `form:"task_state,omitempty" json:"task_state,omitempty"`
+
+	// MineOnly 仅返回我负责或参与的项目；谓词与 ListWorkflowInstances 同源。 同时收窄 summary 与 items。
+	MineOnly *bool `form:"mine_only,omitempty" json:"mine_only,omitempty"`
+
+	// Sort attention（默认，关注优先）| recent | created
+	Sort *GetProjectPortfolioParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Limit 1–50，默认 12
+	Limit  *int32 `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int32 `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// GetProjectPortfolioParamsTaskState defines parameters for GetProjectPortfolio.
+type GetProjectPortfolioParamsTaskState string
+
+// GetProjectPortfolioParamsSort defines parameters for GetProjectPortfolio.
+type GetProjectPortfolioParamsSort string
+
 // ListProjectRunSummariesParams defines parameters for ListProjectRunSummaries.
 type ListProjectRunSummariesParams struct {
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
@@ -9856,6 +10028,9 @@ type ServerInterface interface {
 	// Create a project
 	// (POST /api/v1/projects)
 	CreateProject(w http.ResponseWriter, r *http.Request)
+	// Project home portfolio read model (layered project + task status)
+	// (GET /api/v1/projects/portfolio)
+	GetProjectPortfolio(w http.ResponseWriter, r *http.Request, params GetProjectPortfolioParams)
 	// List cross-project run summaries (run overview project band)
 	// (GET /api/v1/projects/run-summary)
 	ListProjectRunSummaries(w http.ResponseWriter, r *http.Request, params ListProjectRunSummariesParams)
@@ -10915,6 +11090,12 @@ func (_ Unimplemented) ListProjects(w http.ResponseWriter, r *http.Request, para
 // Create a project
 // (POST /api/v1/projects)
 func (_ Unimplemented) CreateProject(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Project home portfolio read model (layered project + task status)
+// (GET /api/v1/projects/portfolio)
+func (_ Unimplemented) GetProjectPortfolio(w http.ResponseWriter, r *http.Request, params GetProjectPortfolioParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -15068,6 +15249,130 @@ func (siw *ServerInterfaceWrapper) CreateProject(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateProject(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectPortfolio operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectPortfolio(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetProjectPortfolioParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project_status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project_status", r.URL.Query(), &params.ProjectStatus, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project_status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project_status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "owner_user_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "owner_user_id", r.URL.Query(), &params.OwnerUserId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "owner_user_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner_user_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "task_state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "task_state", r.URL.Query(), &params.TaskState, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "task_state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "task_state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "mine_only" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "mine_only", r.URL.Query(), &params.MineOnly, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mine_only"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mine_only", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: "int32"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectPortfolio(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -21094,6 +21399,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects", wrapper.CreateProject)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/portfolio", wrapper.GetProjectPortfolio)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/run-summary", wrapper.ListProjectRunSummaries)

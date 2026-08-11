@@ -31,6 +31,17 @@ v1 的领域分层结论保留，落地部分按下列结论重写。每条都�
 
 ---
 
+### v2.1 实施勘误（2026-08-11 晚）
+
+| # | 项 | 处置 |
+|---:|---|---|
+| A | §5.1「先 candidate 再聚合」与 §4.2 `sort=attention` 互斥 | **改规范**：attention 排序必须先对 filtered 全集算 attention 再 `LIMIT`；禁令改为「禁止在应用层 N+1 / 禁止把全租户任务明细拉回 Go 循环」。SQL 注释已同步。 |
+| B | 展示桶 CASE 多处复制 | **已修**：迁移 `project_task_portfolio_bucket()` + 查询统一调用。 |
+| C | 形态门禁 6/49 | **已补**：50/500 事务夹具 EXPLAIN 报告。 |
+| D | mine_only URL | **已修**：TanStack Router `validateSearch`。 |
+| E | ProjectRiskQueue 死代码 | **已删**。 |
+
+
 ## 1. 背景与问题
 
 ### 1.1 领域问题

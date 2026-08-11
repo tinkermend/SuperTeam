@@ -8,6 +8,7 @@ import type {
 import {
   buildAttentionBreakdown,
   buildProjectRiskSummaryFromCounts,
+  buildProjectRiskSummaryFromPortfolioItem,
   buildRiskCounts,
   deriveProjectRiskSummary,
   formatAttentionHeadline,
@@ -818,4 +819,53 @@ describe("project risk model", () => {
     expect(b.waitingHuman).toBe(1);
   });
 
+});
+
+describe("buildProjectRiskSummaryFromPortfolioItem", () => {
+  it("merges failed+blocked for health and only reads unlinked waiting", () => {
+    const project = {
+      id: "p-blocked",
+      name: "only blocked",
+      status: "running",
+      coordination_status: "running",
+      updated_at: "2026-06-05T00:00:00Z",
+    } as any;
+    const summary = buildProjectRiskSummaryFromPortfolioItem(project, {
+      attention: {
+        open_decision_count: 0,
+        waiting_human_unlinked_count: 2,
+        evidence_pending_count: 0,
+        unassigned_count: 0,
+        coordination_anomaly: false,
+      },
+      task_counts: { failed: 0, blocked: 1, running: 0 },
+      last_activity_at: "2026-06-05T00:00:00Z",
+    });
+    expect(summary.countBuckets?.executionFailed).toBe(1);
+    expect(summary.countBuckets?.waitingHuman).toBe(2);
+    expect(summary.level).not.toBe("none");
+  });
+
+  it("does not use wide waiting_human for health when unlinked is 0", () => {
+    const project = {
+      id: "p-dual",
+      name: "dual",
+      status: "running",
+      coordination_status: "running",
+      updated_at: "2026-06-05T00:00:00Z",
+    } as any;
+    // Even if composition bar would show waiting_human=19, health reads unlinked=0.
+    const summary = buildProjectRiskSummaryFromPortfolioItem(project, {
+      attention: {
+        open_decision_count: 18,
+        waiting_human_unlinked_count: 0,
+        evidence_pending_count: 0,
+        unassigned_count: 0,
+        coordination_anomaly: false,
+      },
+      task_counts: { failed: 0, blocked: 0, running: 0 },
+    });
+    expect(summary.countBuckets?.waitingHuman).toBe(0);
+    expect(summary.countBuckets?.decisions).toBe(18);
+  });
 });

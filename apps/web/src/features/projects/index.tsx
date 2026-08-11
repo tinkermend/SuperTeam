@@ -71,7 +71,7 @@ import {
   listProjectTaskDispatchGates,
   listProjectTasks,
   listProjectTransferRequests,
-  listProjectRunSummaries,
+  getProjectPortfolio,
   patchProjectEvidence,
   dismissProjectTask,
   resolveProjectDecision,
@@ -84,8 +84,9 @@ import {
   type ProjectDeleteBlocker,
   type ProjectDeletePreview,
   type ProjectEvidenceVerificationStatus,
-  type ProjectRunSummaryItem,
   type ProjectExecutionTrace,
+  type ProjectPortfolioFilters,
+  type ProjectPortfolioItem,
   type ProjectTask,
   type ProjectStatus,
   type SubmitProjectDemandInput
@@ -107,39 +108,104 @@ import { ProjectConfigView } from "./components/project-config-page";
 import {
   ProjectPortfolioPerspectivePanel,
   ProjectPortfolioSummaryBar,
-  ProjectRiskQueue,
   ProjectTriagePanel
 } from "./components/project-risk-home";
+import {
+  ProjectPortfolioGrid,
+  type ProjectPortfolioToolbarFilters,
+} from "./components/project-portfolio-grid";
 import { useProjectRiskSignals } from "./hooks/use-project-risk-signals";
 import {
-  buildProjectPortfolioCounts,
-  buildProjectRiskSummaryFromCounts,
+  buildProjectRiskSummaryFromPortfolioItem,
   buildRiskCounts,
   emptyProjectRiskSummary,
   matchesProjectRiskFilter,
-  sortProjectsByRisk,
   type ProjectRiskFilter,
   type ProjectRiskSummaryMap
 } from "./project-risk";
 
+/** 列表态 URL 筛选（与 routes/_authenticated/projects/index.tsx 对齐）。 */
+export type ProjectsListSearch = {
+  q?: string;
+  status?: ProjectStatus;
+  risk?: ProjectRiskFilter;
+  task_state?: import("@/lib/status-labels").ProjectTaskPortfolioBucketKey;
+  sort?: import("@/lib/api/projects").ProjectPortfolioSort;
+  mine_only?: boolean;
+  page?: number;
+  page_size?: number;
+};
+
 type ProjectsPageProps = {
   fetcher?: typeof fetch;
+  listSearch?: ProjectsListSearch;
+  onListSearchChange?: (next: ProjectsListSearch) => void;
 };
 
 type ProjectsViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
   routeProjectId?: string;
+  listSearch?: ProjectsListSearch;
+  onListSearchChange?: (next: ProjectsListSearch) => void;
 };
 
-type UiProjectListFilters = {
-  q: string;
-  risk: ProjectRiskFilter;
-  status: "all" | ProjectStatus;
-};
+function portfolioItemToProject(item: ProjectPortfolioItem) {
+  return {
+    id: item.project.id,
+    name: item.project.name,
+    goal: item.project.goal,
+    status: item.project.status,
+    human_owner_user_id: item.project.human_owner_user_id,
+    human_owner_user_ids: item.project.human_owner_user_ids,
+    coordination_status: item.project.coordination_status,
+    updated_at: item.project.updated_at,
+  } as import("@/lib/api/projects").Project;
+}
 
-export function ProjectsPage({ fetcher }: ProjectsPageProps = {}) {
-  return <ProjectsView apiBaseUrl={resolveControlPlaneUrl()} fetcher={fetcher} />;
+function filtersFromListSearch(
+  search: ProjectsListSearch | undefined,
+): ProjectPortfolioToolbarFilters {
+  return {
+    q: search?.q ?? "",
+    risk: search?.risk ?? "all",
+    status: search?.status ?? "all",
+    taskState: search?.task_state ?? "",
+    sort: search?.sort ?? "attention",
+    mineOnly: Boolean(search?.mine_only),
+  };
+}
+
+function listSearchFromFilters(
+  filters: ProjectPortfolioToolbarFilters,
+  page: number,
+  pageSize: number,
+): ProjectsListSearch {
+  const next: ProjectsListSearch = {};
+  if (filters.q.trim()) next.q = filters.q.trim();
+  if (filters.status !== "all") next.status = filters.status as ProjectStatus;
+  if (filters.risk !== "all") next.risk = filters.risk;
+  if (filters.taskState) next.task_state = filters.taskState;
+  if (filters.sort !== "attention") next.sort = filters.sort;
+  if (filters.mineOnly) next.mine_only = true;
+  if (page !== 1) next.page = page;
+  if (pageSize !== 12) next.page_size = pageSize;
+  return next;
+}
+
+export function ProjectsPage({
+  fetcher,
+  listSearch,
+  onListSearchChange,
+}: ProjectsPageProps = {}) {
+  return (
+    <ProjectsView
+      apiBaseUrl={resolveControlPlaneUrl()}
+      fetcher={fetcher}
+      listSearch={listSearch}
+      onListSearchChange={onListSearchChange}
+    />
+  );
 }
 
 export function ProjectDetailPage({
@@ -268,7 +334,9 @@ export function CreateProjectView({
 export function ProjectsView({
   apiBaseUrl,
   fetcher,
-  routeProjectId
+  routeProjectId,
+  listSearch,
+  onListSearchChange,
 }: ProjectsViewProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -286,11 +354,40 @@ export function ProjectsView({
     () => ({ baseUrl: apiBaseUrl, fetcher }),
     [apiBaseUrl, fetcher],
   );
-  const [filters, setFilters] = useState<UiProjectListFilters>({
-    q: "",
-    risk: "all",
-    status: "all"
-});
+  // 列表筛选：优先 URL（listSearch）；测试/无 route 时回落本地 state。
+  const [localFilters, setLocalFilters] = useState<ProjectPortfolioToolbarFilters>(
+    () => filtersFromListSearch(listSearch),
+  );
+  const [localPage, setLocalPage] = useState(listSearch?.page ?? 1);
+  const [localPageSize, setLocalPageSize] = useState(listSearch?.page_size ?? 12);
+  const filters = listSearch ? filtersFromListSearch(listSearch) : localFilters;
+  const projectListPage = listSearch?.page ?? localPage;
+  const projectListPageSize = listSearch?.page_size ?? localPageSize;
+
+  const setFilters = (next: ProjectPortfolioToolbarFilters) => {
+    if (onListSearchChange) {
+      onListSearchChange(listSearchFromFilters(next, 1, projectListPageSize));
+    } else {
+      setLocalFilters(next);
+      setLocalPage(1);
+    }
+  };
+  const setProjectListPage = (page: number) => {
+    if (onListSearchChange) {
+      onListSearchChange(listSearchFromFilters(filters, page, projectListPageSize));
+    } else {
+      setLocalPage(page);
+    }
+  };
+  const setProjectListPageSize = (size: number) => {
+    if (onListSearchChange) {
+      onListSearchChange(listSearchFromFilters(filters, 1, size));
+    } else {
+      setLocalPageSize(size);
+      setLocalPage(1);
+    }
+  };
+
   const [selectedRuntimeNodeId, setSelectedRuntimeNodeId] = useState("");
   const [selectedQueueProjectId, setSelectedQueueProjectId] = useState("");
   const [demandOpen, setDemandOpen] = useState(false);
@@ -300,37 +397,42 @@ export function ProjectsView({
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteBlocked, setDeleteBlocked] =
     useState<ProjectDeleteBlockedErrorResponse | undefined>(undefined);
-  const [projectListPage, setProjectListPage] = useState(1);
-  // 默认每页 10 条：与分页器选项一致（此前默认 5 不在 [10,20] 选项内，
-  // 分页器显示 10 实际渲染 5），也让队列在常规桌面高度下填满首屏。
-  const [projectListPageSize, setProjectListPageSize] = useState(10);
 
-  const listFilters = useMemo<ListProjectsFilters>(() => {
-    const request: ListProjectsFilters = { limit: 50, offset: 0 };
+  const portfolioRequest = useMemo<ProjectPortfolioFilters>(() => {
+    const request: ProjectPortfolioFilters = {
+      limit: projectListPageSize,
+      offset: (projectListPage - 1) * projectListPageSize,
+      sort: filters.sort,
+      mine_only: filters.mineOnly || undefined,
+    };
     if (filters.q.trim()) {
       request.q = filters.q.trim();
     }
     if (filters.status !== "all") {
-      request.status = filters.status as ProjectStatus;
+      request.project_status = [filters.status as ProjectStatus];
+    }
+    if (filters.taskState) {
+      request.task_state = filters.taskState;
     }
     return request;
-  }, [filters.q, filters.status]);
+  }, [filters, projectListPage, projectListPageSize]);
 
-  const projectsQuery = useQuery({
-    queryKey: ["projects", listFilters],
-    queryFn: () => listProjects(apiOptions, listFilters),
-    placeholderData: keepPreviousData
-});
-  // limit 500：与 CP normalizeRunSummaryLimit 上限一致，覆盖 listProjects(≤50) 全集，
-  // 避免 ORDER BY 风险优先 + 双端 limit 50 时 join 漏项被当成「暂无阻塞」。
-  const runSummaryQuery = useQuery({
+  // 列表态：portfolio 取代 listProjects + run-summary（§6.1）。
+  // 详情态仍用 listProjects 作列表缓存回退，避免详情路由无项目实体。
+  const portfolioQuery = useQuery({
     enabled: !routeProjectId,
-    queryKey: ["projects", "run-summary", { limit: 500 }],
-    queryFn: () => listProjectRunSummaries(apiOptions, { limit: 500 }),
+    queryKey: ["projects", "portfolio", portfolioRequest],
+    queryFn: () => getProjectPortfolio(apiOptions, portfolioRequest),
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  });
+  const projectsQuery = useQuery({
+    enabled: Boolean(routeProjectId),
+    queryKey: ["projects", { limit: 50, offset: 0 }],
+    queryFn: () => listProjects(apiOptions, { limit: 50, offset: 0 }),
     placeholderData: keepPreviousData,
   });
-  // 数字员工 / 用户目录：成员快照缺名时回退真实名称，避免项目列表/详情裸显负责人 UUID。
-  // 列表页也要拉用户目录——风险队列负责人行依赖 principalNamesById，不能仅在进详情后启用。
+  // 数字员工 / 用户目录：名称目录，staleTime 60s，与 portfolio 正交（§6.1）。
   const digitalEmployeesQuery = useQuery({
     queryKey: ["digital-employees", "project-name-map"],
     queryFn: () => listDigitalEmployees(apiOptions),
@@ -366,59 +468,45 @@ export function ProjectsView({
     return map;
   }, [usersQuery.data]);
   const employeeNamesById = principalNamesById;
-  const projects = projectsQuery.data ?? [];
 
-  const runSummaryByProjectId = useMemo(() => {
-    // 用契约类型而非就地字面量：新增计数列时自动跟随，不会漏字段。
-    const map = new Map<string, ProjectRunSummaryItem>();
-    for (const item of runSummaryQuery.data?.items ?? []) {
-      map.set(item.project_id, item);
-    }
-    return map;
-  }, [runSummaryQuery.data]);
+  const portfolioItems = portfolioQuery.data?.items ?? [];
+  const portfolioProjects = useMemo(
+    () => portfolioItems.map(portfolioItemToProject),
+    [portfolioItems],
+  );
+  // 详情态：listProjects；列表态：portfolio 投影为 Project 实体。
+  const projects = routeProjectId
+    ? (projectsQuery.data ?? [])
+    : portfolioProjects;
 
   const listRiskSummaries = useMemo<ProjectRiskSummaryMap>(() => {
     const map: ProjectRiskSummaryMap = {};
-    const runSummaryFailed = runSummaryQuery.isError;
-    const runSummaryPending =
-      runSummaryQuery.isLoading ||
-      (runSummaryQuery.isFetching && runSummaryQuery.data === undefined);
-    for (const project of projects) {
-      const archived =
-        project.status === "archived" || Boolean(project.archived_at);
-      // 归档不在 run-summary 宇宙内（服务端 status != archived），空 ready 合法。
+    const portfolioFailed = portfolioQuery.isError;
+    const portfolioPending =
+      portfolioQuery.isLoading ||
+      (portfolioQuery.isFetching && portfolioQuery.data === undefined);
+    for (const item of portfolioItems) {
+      const project = portfolioItemToProject(item);
+      const archived = project.status === "archived";
       if (archived) {
         map[project.id] = emptyProjectRiskSummary(project, { state: "ready" });
         continue;
       }
-      if (runSummaryFailed) {
+      if (portfolioFailed) {
         map[project.id] = emptyProjectRiskSummary(project, { state: "error" });
         continue;
       }
-      const item = runSummaryByProjectId.get(project.id);
-      if (!item) {
-        // 成功但无行 = 截断/join 漏项，不得冒充「暂无阻塞」。
-        map[project.id] = emptyProjectRiskSummary(project, {
-          state: runSummaryPending ? "pending" : "error",
-        });
+      if (portfolioPending && !portfolioQuery.data) {
+        map[project.id] = emptyProjectRiskSummary(project, { state: "pending" });
         continue;
       }
       const ownerId = project.human_owner_user_id?.trim();
-      const ownerName = ownerId
-        ? employeeNamesById.get(ownerId)?.trim()
-        : undefined;
-      map[project.id] = buildProjectRiskSummaryFromCounts(
+      const ownerName =
+        item.owner?.display_name?.trim() ||
+        (ownerId ? employeeNamesById.get(ownerId)?.trim() : undefined);
+      map[project.id] = buildProjectRiskSummaryFromPortfolioItem(
         project,
-        {
-          open_decision_count: item.open_decision_count,
-          // 与 open_decision_count 并列展示，必须用 orphan 口径，否则同一次人工动作双计。
-          waiting_human_unlinked_count: item.waiting_human_unlinked_count,
-          failed_count: item.failed_count,
-          evidence_pending_count: item.evidence_pending_count,
-          running_count: item.running_count,
-          unassigned_count: item.unassigned_count,
-          last_activity_at: item.last_activity_at,
-        },
+        item,
         {
           state: "ready",
           owner: ownerId
@@ -434,12 +522,11 @@ export function ProjectsView({
     return map;
   }, [
     employeeNamesById,
-    projects,
-    runSummaryByProjectId,
-    runSummaryQuery.data,
-    runSummaryQuery.isError,
-    runSummaryQuery.isFetching,
-    runSummaryQuery.isLoading,
+    portfolioItems,
+    portfolioQuery.data,
+    portfolioQuery.isError,
+    portfolioQuery.isFetching,
+    portfolioQuery.isLoading,
   ]);
 
   const triageDetailEnabled =
@@ -477,47 +564,41 @@ export function ProjectsView({
     return map;
   }, [listRiskSummaries, selectedQueueProjectId, triageRiskSignals.summaries]);
 
-  const isListRiskSettling = !routeProjectId && runSummaryQuery.isLoading;
+  const isListRiskSettling = !routeProjectId && portfolioQuery.isLoading;
 
-  // 关注 chip 计数 + 风险筛选：基于已加载全量（run-summary 真值），再客户端分页。
+  // 风险筛选在客户端对当前页 items 再过滤（关注 chip）；服务端已做状态/关键词/任务状态分页。
+  const riskFilteredItems = useMemo(
+    () =>
+      portfolioItems.filter((item) => {
+        const summary =
+          listRiskSummaries[item.project.id] ??
+          emptyProjectRiskSummary(portfolioItemToProject(item));
+        return matchesProjectRiskFilter(summary, filters.risk);
+      }),
+    [filters.risk, listRiskSummaries, portfolioItems],
+  );
   const loadedRiskCounts = useMemo(
     () =>
       buildRiskCounts(
-        projects.map(
-          (project) =>
-            listRiskSummaries[project.id] ?? emptyProjectRiskSummary(project),
+        riskFilteredItems.map(
+          (item) =>
+            listRiskSummaries[item.project.id] ??
+            emptyProjectRiskSummary(portfolioItemToProject(item)),
         ),
       ),
-    [listRiskSummaries, projects],
+    [listRiskSummaries, riskFilteredItems],
   );
-  const riskFilteredProjects = useMemo(
-    () =>
-      sortProjectsByRisk(projects, listRiskSummaries).filter((project) => {
-        const summary =
-          listRiskSummaries[project.id] ?? emptyProjectRiskSummary(project);
-        return matchesProjectRiskFilter(summary, filters.risk);
-      }),
-    [filters.risk, listRiskSummaries, projects],
-  );
+
+  const paginationTotal = portfolioQuery.data?.pagination.total ?? 0;
   const projectListPageCount = Math.max(
     1,
-    Math.ceil(riskFilteredProjects.length / projectListPageSize),
+    Math.ceil(paginationTotal / projectListPageSize) || 1,
   );
   const activeProjectListPage = Math.min(projectListPage, projectListPageCount);
-  const pagedProjects = riskFilteredProjects.slice(
-    (activeProjectListPage - 1) * projectListPageSize,
-    activeProjectListPage * projectListPageSize,
-  );
 
-  useEffect(() => {
-    setProjectListPage(1);
-  }, [filters.q, filters.risk, filters.status]);
+  // 筛选变更时 page 已在 setFilters / setProjectListPageSize 重置为 1（并写 URL）。
 
-  const portfolioCounts = useMemo(
-    () => buildProjectPortfolioCounts(projects),
-    [projects],
-  );
-  // 选中项在已加载全量中查找（风险筛选/分页后仍可保留 triage）。
+  // 选中项在当前页 + 已加载 items 中查找。
   const selectedQueueProject = projects.find(
     (project) => project.id === selectedQueueProjectId,
   );
@@ -526,10 +607,13 @@ export function ProjectsView({
     : undefined;
   const isProjectPortfolioEmpty =
     !routeProjectId &&
-    projects.length === 0 &&
+    paginationTotal === 0 &&
+    !portfolioQuery.isLoading &&
     filters.q.trim() === "" &&
     filters.status === "all" &&
-    filters.risk === "all";
+    filters.risk === "all" &&
+    !filters.mineOnly &&
+    !filters.taskState;
 
   const effectiveProjectId = routeProjectId;
   const selectedProjectFromList = effectiveProjectId
@@ -1178,8 +1262,17 @@ export function ProjectsView({
             >
               {!routeProjectId ? (
                 <ProjectPortfolioSummaryBar
-                  portfolioCounts={portfolioCounts}
-                  totalLabel="已加载"
+                  activeTaskCounts={
+                    portfolioQuery.data?.summary.active_project_task_counts
+                  }
+                  mineOnly={filters.mineOnly}
+                  projectStatusCounts={
+                    portfolioQuery.data?.summary.project_status_counts
+                  }
+                  totalLabel={filters.mineOnly ? "我参与的项目" : "全部项目"}
+                  totalProjects={
+                    portfolioQuery.data?.summary.total_projects ?? 0
+                  }
                 />
               ) : null}
 
@@ -1199,22 +1292,20 @@ export function ProjectsView({
                         summary={selectedQueueSummary}
                       />
                     ) : (
+                      // 未选中：收窄右栏（md），主网格更接近原型全宽卡墙
                       <ProjectPortfolioPerspectivePanel
-                        completedTodayCount={
-                          runSummaryQuery.data?.today_completed_run_count
-                        }
                         onSelectProject={setSelectedQueueProjectId}
                         projects={projects}
                         riskSummaries={displayedRiskSummaries}
-                        runSummaryItems={runSummaryQuery.data?.items}
                       />
                     )
                   }
                   detailLabel="项目组合透视"
                   narrowDetail={selectedQueueProject ? "sheet" : "stack"}
                   onDetailDismiss={() => setSelectedQueueProjectId("")}
+                  rail={selectedQueueProject ? "lg" : "md"}
                   master={
-                    <ProjectRiskQueue
+                    <ProjectPortfolioGrid
                       activePage={activeProjectListPage}
                       createAction={
                         <div className="flex flex-wrap items-center gap-2">
@@ -1225,31 +1316,28 @@ export function ProjectsView({
                           {projectCreateAction}
                         </div>
                       }
+                      empty={isProjectPortfolioEmpty}
+                      error={portfolioQuery.isError}
                       filters={filters}
                       isFetching={
-                        projectsQuery.isFetching ||
-                        runSummaryQuery.isFetching ||
-                        isListRiskSettling
+                        portfolioQuery.isFetching || isListRiskSettling
                       }
-                      listCapped={projects.length >= 50}
+                      items={riskFilteredItems}
                       loadedRiskCounts={loadedRiskCounts}
                       onFiltersChange={setFilters}
                       onPageChange={setProjectListPage}
-                      onPageSizeChange={(size) => {
-                        setProjectListPageSize(size);
-                        setProjectListPage(1);
-                      }}
+                      onPageSizeChange={setProjectListPageSize}
                       onSelectProject={setSelectedQueueProjectId}
                       pageCount={projectListPageCount}
                       pageSize={projectListPageSize}
+                      paginationTotal={paginationTotal}
+                      portfolio={portfolioQuery.data}
                       principalNamesById={principalNamesById}
-                      projects={pagedProjects}
-                      // 队列恒用列表（run-summary）口径：选中项若换成明细摘要，该行会
-                      // 单独多出「等待超时」等明细专有信号，同一张表里行与行不可比。
                       riskSummaries={listRiskSummaries}
                       selectedProjectId={selectedQueueProjectId}
-                      total={projects.length}
-                      visibleTotal={riskFilteredProjects.length}
+                      totalLabel={
+                        filters.mineOnly ? "筛选结果" : "筛选结果"
+                      }
                     />
                   }
                   rail="lg"

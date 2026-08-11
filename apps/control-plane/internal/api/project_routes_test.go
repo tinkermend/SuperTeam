@@ -200,6 +200,56 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 		t.Fatalf("expected run-summary response body to carry summary payload, got %s", runSummaryResp.Body.String())
 	}
 
+	// portfolio: 不得被 /projects/{projectId} 吞掉；query 参数完整下推 service。
+	ownerFilter := uuid.New()
+	portfolioReq := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/projects/portfolio?limit=12&offset=12&q=巡检&project_status=running&project_status=acceptance"+
+			"&owner_user_id="+ownerFilter.String()+"&task_state=waiting_human&mine_only=true&sort=attention",
+		nil,
+	)
+	portfolioReq.AddCookie(cookie)
+	portfolioResp := httptest.NewRecorder()
+	server.ServeHTTP(portfolioResp, portfolioReq)
+	if portfolioResp.Code != http.StatusOK {
+		t.Fatalf("expected portfolio to succeed, got %d: %s", portfolioResp.Code, portfolioResp.Body.String())
+	}
+	if service.portfolioReq.TenantID != expectedTenantID || service.portfolioReq.ActorUserID != user.ID {
+		t.Fatalf("expected portfolio tenant/actor from console auth, got %#v", service.portfolioReq)
+	}
+	if service.portfolioReq.Limit != 12 || service.portfolioReq.Offset != 12 || service.portfolioReq.Query != "巡检" {
+		t.Fatalf("expected portfolio limit/offset/q, got %#v", service.portfolioReq)
+	}
+	if !service.portfolioReq.MineOnly || service.portfolioReq.Sort != project.ProjectPortfolioSortAttention {
+		t.Fatalf("expected mine_only+attention sort, got %#v", service.portfolioReq)
+	}
+	if service.portfolioReq.TaskState != "waiting_human" {
+		t.Fatalf("expected task_state waiting_human, got %q", service.portfolioReq.TaskState)
+	}
+	if service.portfolioReq.OwnerUserID == nil || *service.portfolioReq.OwnerUserID != ownerFilter {
+		t.Fatalf("expected owner_user_id filter, got %#v", service.portfolioReq.OwnerUserID)
+	}
+	if len(service.portfolioReq.ProjectStatuses) != 2 {
+		t.Fatalf("expected repeated project_status, got %#v", service.portfolioReq.ProjectStatuses)
+	}
+	if !strings.Contains(portfolioResp.Body.String(), "counts_degraded") || !strings.Contains(portfolioResp.Body.String(), "active_project_task_counts") {
+		t.Fatalf("expected portfolio response envelope, got %s", portfolioResp.Body.String())
+	}
+
+	// limit 超上限与非法 mine_only → 400
+	for _, path := range []string{
+		"/api/v1/projects/portfolio?limit=99",
+		"/api/v1/projects/portfolio?mine_only=maybe",
+	} {
+		badReq := httptest.NewRequest(http.MethodGet, path, nil)
+		badReq.AddCookie(cookie)
+		badResp := httptest.NewRecorder()
+		server.ServeHTTP(badResp, badReq)
+		if badResp.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for %s, got %d: %s", path, badResp.Code, badResp.Body.String())
+		}
+	}
+
 	workflowReq := httptest.NewRequest(http.MethodGet, "/api/v1/workflow-instances?status=running&limit=9&q=支付", nil)
 	workflowReq.AddCookie(cookie)
 	workflowResp := httptest.NewRecorder()
@@ -1351,6 +1401,7 @@ type routeProjectService struct {
 	createReq                         project.CreateProjectRequest
 	listReq                           project.ListProjectsRequest
 	listRunSummariesReq               project.ListProjectRunSummariesRequest
+	portfolioReq                      project.GetProjectPortfolioRequest
 	workflowInstancesReq              project.ListWorkflowInstancesRequest
 	overviewTenantID                  uuid.UUID
 	overviewProjectID                 uuid.UUID
@@ -1460,6 +1511,23 @@ func (s *routeProjectService) GetProjectRuntimeReadiness(ctx context.Context, te
 func (s *routeProjectService) ListProjects(ctx context.Context, req project.ListProjectsRequest) ([]project.Project, error) {
 	s.listReq = req
 	return []project.Project{routeProject(req.TenantID, s.ensureProjectID(), uuid.New())}, nil
+}
+
+func (s *routeProjectService) GetProjectPortfolio(ctx context.Context, req project.GetProjectPortfolioRequest) (project.ProjectPortfolioResponse, error) {
+	s.portfolioReq = req
+	return project.ProjectPortfolioResponse{
+		Items: []project.ProjectPortfolioItem{},
+		Summary: project.ProjectPortfolioSummary{
+			TotalProjects: 0,
+			ProjectStatusCounts: map[string]int{
+				"draft": 0, "configuring": 0, "running": 0,
+				"paused": 0, "acceptance": 0, "archived": 0,
+			},
+		},
+		Pagination: project.ProjectPortfolioPagination{
+			Limit: req.Limit, Offset: req.Offset, Total: 0, HasMore: false,
+		},
+	}, nil
 }
 
 func (s *routeProjectService) ListProjectRunSummaries(ctx context.Context, req project.ListProjectRunSummariesRequest) (project.ProjectRunSummaryList, error) {

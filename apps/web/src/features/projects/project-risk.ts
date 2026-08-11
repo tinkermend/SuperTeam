@@ -389,12 +389,17 @@ export type ProjectRunSummaryCountsInput = {
    * 显示成「1 待决 · 1 等人」。与明细路径 sister-F1 去重同源。
    */
   waiting_human_unlinked_count: number;
+  /**
+   * 运行总览宽失败（failed/error/blocked）。
+   * portfolio 路径请用 `buildProjectRiskSummaryFromPortfolioItem`（failed+blocked 合并）。
+   */
   failed_count: number;
   evidence_pending_count: number;
   running_count: number;
   unassigned_count: number;
   last_activity_at?: string;
 };
+
 
 /**
  * 列表态：由租户级 run-summary 计数拼装摘要（无 reason 明细 / 深链 id）。
@@ -421,6 +426,7 @@ export function buildProjectRiskSummaryFromCounts(
   const buckets: ProjectRiskCountBuckets = {
     decisions: Math.max(0, counts.open_decision_count),
     waitingHuman: Math.max(0, counts.waiting_human_unlinked_count),
+    // run-summary.failed_count 仍为宽失败（含 blocked）。
     executionFailed: Math.max(0, counts.failed_count),
     coordination: coordinationAnomaly ? 1 : 0,
     evidence: Math.max(0, counts.evidence_pending_count),
@@ -451,6 +457,84 @@ export function buildProjectRiskSummaryFromCounts(
     countBuckets: buckets,
     runningCount: Math.max(0, counts.running_count),
     lastActivityAt: counts.last_activity_at,
+  };
+}
+
+/**
+ * 用 portfolio attention + task_counts 拼装摘要，并尊重服务端 coordination_anomaly。
+ */
+export function buildProjectRiskSummaryFromPortfolioItem(
+  project: Project,
+  item: {
+    attention: {
+      open_decision_count: number;
+      waiting_human_unlinked_count: number;
+      evidence_pending_count: number;
+      unassigned_count: number;
+      coordination_anomaly: boolean;
+    };
+    task_counts: {
+      failed: number;
+      blocked: number;
+      running: number;
+    };
+    last_activity_at?: string;
+  },
+  options: ProjectRiskOptions & { owner?: ProjectTaskHandler } = {},
+): ProjectRiskSummary {
+  if (normalize(project.status) === "archived" || project.archived_at) {
+    return {
+      ...emptyProjectRiskSummary(project, options),
+      owner: options.owner ?? selectProjectOwner(project, [], undefined),
+      currentHandlerMode: "idle",
+      lastActivityAt: project.updated_at,
+    };
+  }
+
+  const buckets: ProjectRiskCountBuckets = {
+    decisions: Math.max(0, item.attention.open_decision_count),
+    waitingHuman: Math.max(0, item.attention.waiting_human_unlinked_count),
+    executionFailed:
+      Math.max(0, item.task_counts.failed) + Math.max(0, item.task_counts.blocked),
+    coordination: item.attention.coordination_anomaly ? 1 : 0,
+    evidence: Math.max(0, item.attention.evidence_pending_count),
+    sla: 0,
+  };
+
+  const reasons = syntheticReasonsFromBuckets(project, buckets);
+  const primaryReason = pickPrimaryReason(reasons);
+  const level = primaryReason?.level ?? "none";
+  const requiresHuman = buckets.decisions > 0 || buckets.waitingHuman > 0;
+  const owner = options.owner ?? selectProjectOwner(project, [], undefined);
+  const mode = resolveModeFromCounts(
+    {
+      open_decision_count: item.attention.open_decision_count,
+      waiting_human_unlinked_count: item.attention.waiting_human_unlinked_count,
+      failed_count: buckets.executionFailed,
+      evidence_pending_count: item.attention.evidence_pending_count,
+      running_count: item.task_counts.running,
+      unassigned_count: item.attention.unassigned_count,
+    },
+    requiresHuman,
+  );
+
+  return {
+    projectId: project.id,
+    project,
+    level,
+    state: options.state ?? "ready",
+    owner,
+    currentHandler: mode === "waiting_review" ? owner : undefined,
+    currentHandlerMode: mode,
+    currentTask: undefined,
+    reasons,
+    primaryReason,
+    requiresHuman,
+    waitingSince: undefined,
+    updatedAt: project.updated_at,
+    countBuckets: buckets,
+    runningCount: Math.max(0, item.task_counts.running),
+    lastActivityAt: item.last_activity_at,
   };
 }
 

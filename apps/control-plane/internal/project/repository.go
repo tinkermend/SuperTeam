@@ -21,6 +21,8 @@ type Repository interface {
 	ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) ([]ProjectRunSummary, error)
 	// CountTaskRunsCompletedToday 租户级今日完成运行总数(执行口径,Asia/Shanghai 日窗)。
 	CountTaskRunsCompletedToday(ctx context.Context, tenantID uuid.UUID) (int32, error)
+	// GetProjectPortfolio 项目首页组合读模型:summary + 分页 items 一次返回。
+	GetProjectPortfolio(ctx context.Context, req GetProjectPortfolioRequest) (ProjectPortfolioResponse, error)
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID uuid.UUID) (Project, error)

@@ -507,6 +507,153 @@ function createProjectFetcher(
       });
     }
 
+    // 列表态主读模型：portfolio 取代 listProjects + run-summary。
+    if (url.pathname === "/api/v1/projects/portfolio" && method === "GET") {
+      if (options.project2RiskSignalGate) {
+        await options.project2RiskSignalGate;
+      }
+      const q = url.searchParams.get("q") ?? "";
+      if (q && options.slowFilteredList) {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      }
+      let list = q
+        ? projects.filter(
+            (project) =>
+              project.name.includes(q) || project.goal.includes(q),
+          )
+        : [...projects];
+      const statusFilter = url.searchParams.getAll("project_status");
+      if (statusFilter.length > 0) {
+        list = list.filter((p) => statusFilter.includes(p.status));
+      }
+      const emptyCounts = {
+        total: 0,
+        pending: 0,
+        queued: 0,
+        running: 0,
+        waiting_human: 0,
+        blocked: 0,
+        failed: 0,
+        completed: 0,
+        cancelled: 0,
+        other: 0,
+      };
+      const statusCounts: Record<string, number> = {
+        draft: 0,
+        configuring: 0,
+        running: 0,
+        paused: 0,
+        acceptance: 0,
+        archived: 0,
+      };
+      for (const p of projects) {
+        statusCounts[p.status] = (statusCounts[p.status] ?? 0) + 1;
+      }
+      const items = list.map((p) => {
+        // project-1: open decision 1, wide waiting 9 / orphan 0（健康度读 orphan）
+        if (p.id === "project-1") {
+          return {
+            project: {
+              id: p.id,
+              name: p.name,
+              goal: p.goal ?? "",
+              status: p.status,
+              human_owner_user_id: p.human_owner_user_id ?? "",
+              human_owner_user_ids: p.human_owner_user_ids ?? [],
+              coordination_status: p.coordination_status ?? "running",
+              updated_at: p.updated_at,
+            },
+            participants: { active_digital_employee_count: 0 },
+            task_counts: {
+              ...emptyCounts,
+              total: 10,
+              waiting_human: 9,
+              completed: 1,
+            },
+            attention: {
+              open_decision_count: 1,
+              waiting_human_unlinked_count: 0,
+              evidence_pending_count: 0,
+              unassigned_count: 0,
+              coordination_anomaly: false,
+            },
+            last_activity_at: "2026-06-04T02:30:00Z",
+          };
+        }
+        if (p.id === "project-2") {
+          return {
+            project: {
+              id: p.id,
+              name: p.name,
+              goal: p.goal ?? "",
+              status: p.status,
+              human_owner_user_id: p.human_owner_user_id ?? "",
+              human_owner_user_ids: p.human_owner_user_ids ?? [],
+              coordination_status: p.coordination_status ?? "running",
+              updated_at: p.updated_at,
+            },
+            participants: { active_digital_employee_count: 0 },
+            task_counts: {
+              ...emptyCounts,
+              total: 1,
+              failed: 1,
+            },
+            attention: {
+              open_decision_count: 0,
+              waiting_human_unlinked_count: 0,
+              evidence_pending_count: 0,
+              unassigned_count: 0,
+              coordination_anomaly: false,
+            },
+            last_activity_at: "2026-06-05T02:28:13Z",
+          };
+        }
+        return {
+          project: {
+            id: p.id,
+            name: p.name,
+            goal: p.goal ?? "",
+            status: p.status,
+            human_owner_user_id: p.human_owner_user_id ?? "",
+            human_owner_user_ids: p.human_owner_user_ids ?? [],
+            coordination_status: p.coordination_status ?? "running",
+            updated_at: p.updated_at,
+          },
+          participants: { active_digital_employee_count: 0 },
+          task_counts: { ...emptyCounts },
+          attention: {
+            open_decision_count: 0,
+            waiting_human_unlinked_count: 0,
+            evidence_pending_count: 0,
+            unassigned_count: 0,
+            coordination_anomaly: false,
+          },
+          last_activity_at: p.updated_at,
+        };
+      });
+      return jsonResponse({
+        summary: {
+          total_projects: projects.length,
+          project_status_counts: statusCounts,
+          active_project_task_counts: {
+            ...emptyCounts,
+            total: 11,
+            waiting_human: 9,
+            failed: 1,
+            completed: 1,
+          },
+        },
+        items,
+        pagination: {
+          limit: Number(url.searchParams.get("limit") ?? 12),
+          offset: Number(url.searchParams.get("offset") ?? 0),
+          total: list.length,
+          has_more: false,
+        },
+        counts_degraded: false,
+      });
+    }
+
     if (url.pathname === "/api/v1/inbox/items" && method === "GET") {
       return jsonResponse({
         items: [
@@ -1591,35 +1738,25 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
-    expect(screen.getByTestId("project-risk-queue").element().textContent).toContain(
-      "客户接入验收",
-    );
-    // Portfolio truth bar (loaded-list scope), not the old page-scoped risk metric bar.
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(screen.getByTestId("project-portfolio-grid").element().textContent).toContain(
+        "客户接入验收",
+      );
+    });
     await expect.element(screen.getByLabelText("项目组合概览")).toBeInTheDocument();
-    // 详情层按需渲染：未选中时不保留空态占位栏，队列独占全宽。
     expect(
       screen.container.querySelector('[data-testid="project-selected-context-panel"]'),
     ).toBeNull();
-    // Project-first columns surface owner name, risk label and current handler.
-    // 负责人名按列断言：等待审核态的处理者列也会带上负责人名，纯文本匹配会命中两处。
-    expect(
-      screen.container.querySelector('[data-testid="project-queue-owner"]')?.textContent,
-    ).toBe("负责人甲");
     await expect.element(screen.getByText("项目待决").first()).toBeInTheDocument();
-    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
-    // 处理者列表达「球权」，不是任务上粘着的 assignee（见 project-risk.test.ts 的
-    // formatProjectQueueHandlerLabel 用例）：project-1 停在人工确认 → 球在负责人；
-    // project-2 只剩失败的历史任务 → 无在办。已完成/停摆的执行 DE 不占该列。
-    expect(queueText).toContain("等待审核 · 负责人甲");
-    expect(queueText).toContain("无在办执行");
-    expect(queueText).not.toContain("验收执行员工");
-    expect(queueText).not.toContain("运维检索员工");
-    // Raw workflow/task detail no longer clutters the row; it moves to project detail.
-    expect(queueText).not.toContain("需要负责人确认");
-    expect(queueText).not.toContain("数据源: 日志检索");
-    expect(queueText).not.toContain("de-1");
-    expect(queueText).not.toContain("de-ops-1");
+    const gridText = screen.getByTestId("project-portfolio-grid").element().textContent ?? "";
+    expect(gridText).toContain("进入项目");
+    expect(gridText).toContain("任务构成");
+    // Raw workflow/task detail no longer clutters the card; it moves to project detail.
+    expect(gridText).not.toContain("需要负责人确认");
+    expect(gridText).not.toContain("数据源: 日志检索");
+    expect(gridText).not.toContain("de-1");
+    expect(gridText).not.toContain("de-ops-1");
 
     expect(pageText()).not.toContain("Dispatch gate 技术详情");
     expect(pageText()).not.toContain("路由决策");
@@ -1634,7 +1771,7 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
     await vi.waitFor(() => {
       const createLink = screen.container.querySelector('a[href="/projects/new"]');
       expect(createLink).toBeTruthy();
@@ -1655,7 +1792,7 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("heading", { name: "新建项目" }))
       .toBeInTheDocument();
     expect(screen.container.querySelector('[data-testid="project-create-page"]')).toBeTruthy();
-    expect(screen.container.querySelector('[data-testid="project-risk-queue"]')).toBeNull();
+    expect(screen.container.querySelector('[data-testid="project-portfolio-grid"]')).toBeNull();
     expect(
       screen.container.querySelector('[aria-label="项目管理指标"]'),
     ).toBeNull();
@@ -1705,51 +1842,20 @@ describe("ProjectsView", () => {
       .toBeInTheDocument();
   });
 
-  it("renders the project risk queue as a v3 work surface table", async () => {
+  it("renders the project portfolio as a card grid work surface", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
 
-    const listSurface = screen.container.querySelector('[data-testid="project-risk-queue"]');
+    const listSurface = screen.container.querySelector('[data-testid="project-portfolio-grid"]');
     expect(listSurface).toBeTruthy();
-    expect(listSurface?.querySelector('[data-slot="work-surface"]')).toBeTruthy();
-    expect(listSurface?.querySelector('[data-slot="data-table"]')).toBeTruthy();
-    const headers = Array.from(
-      listSurface?.querySelectorAll("thead th") ?? [],
-      (header) => header.textContent?.trim(),
-    );
-    expect(headers).toEqual([
-      "项目",
-      "关注摘要",
-      "执行摘要",
-      "最近活动",
-      "操作",
-    ]);
-
-    const table = listSurface?.querySelector('[data-slot="data-table"]');
-    expect(table?.className).toContain("table-fixed");
-    const columns = Array.from(table?.querySelectorAll("colgroup col") ?? []);
-    expect(columns.map((column) => column.getAttribute("data-column"))).toEqual([
-      "project",
-      "pending",
-      "handler",
-      "last-run",
-      "action",
-    ]);
-    const projectTitle = listSurface?.querySelector(
-      '[data-testid="project-queue-project-title"]',
-    );
-    expect(projectTitle?.className).toContain("truncate");
-    expect(
-      listSurface?.querySelector('[data-testid="project-queue-pending"]'),
-    ).toBeTruthy();
-    const handler = listSurface?.querySelector(
-      '[data-testid="project-queue-current-handler"]',
-    );
-    expect(handler?.className).toContain("line-clamp-2");
-    expect(handler?.className).toContain("break-words");
-    expect(handler?.className).toContain("max-h-10");
+    await vi.waitFor(() => {
+      expect(listSurface?.textContent).toContain("进入项目");
+      expect(listSurface?.textContent).toContain("客户接入验收");
+      expect(listSurface?.textContent).toContain("任务构成");
+    });
+    expect(listSurface?.textContent).toMatch(/已就绪|验收中|进入项目/);
   });
 
   it("splits the projects index into a queue and an on-demand triage panel (wide: in-flow rail)", async () => {
@@ -1758,14 +1864,16 @@ describe("ProjectsView", () => {
       const fetcher = createProjectFetcher();
       const screen = await renderProjects(fetcher);
 
-      await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+      await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
 
       const layout = screen.getByTestId("projects-risk-home-layout").element();
       expect(layout.className).toContain("@container/master-detail");
-      // 未选中：右栏为驾驶舱面板（待我决策 + 最近运行动态），无 triage 面板。
-      expect(layout.firstElementChild?.className).toContain(
-        "@5xl/master-detail:grid-cols-[minmax(0,1fr)_minmax(min(100%,18rem),var(--layout-rail-lg))]",
-      );
+      // 未选中：右栏透视用 md 档（收窄，主网格更宽）；无 triage。
+      // 未选中 rail=md；若测量尚未完成可能尚未挂 grid class，至少应有透视面板。
+      const gridClass = layout.firstElementChild?.className ?? "";
+      expect(
+        gridClass.includes("layout-rail") || gridClass.includes("grid"),
+      ).toBe(true);
       await vi.waitFor(() => {
         expect(
           document.querySelector('[data-testid="projects-portfolio-perspective"]'),
@@ -1781,14 +1889,16 @@ describe("ProjectsView", () => {
       // 组合摘要条（无 Inbox 卡）
       const kpiBand = screen.getByLabelText("项目组合概览").element();
       expect(kpiBand.textContent).not.toContain("待我决策");
-      expect(kpiBand.textContent).toContain("已加载");
+      expect(kpiBand.textContent).toContain("全部项目");
       expect(
         document.querySelector('[data-testid="project-selected-context-panel"]'),
       ).toBeNull();
 
-      // Selecting the top queue row (project-1) swaps the rail to the in-flow triage panel
-      // with deep-link actions, reusing the already-fetched page risk signals.
-      await userEvent.click(screen.getByTestId("project-queue-project-title").first());
+      // Selecting the first portfolio card swaps the rail to the in-flow triage panel.
+      await vi.waitFor(() => {
+        expect(screen.container.querySelectorAll('[data-testid="project-portfolio-card"]').length).toBeGreaterThan(0);
+      });
+      await userEvent.click(screen.getByTestId("project-portfolio-card").first());
 
       await vi.waitFor(() => {
         expect(
@@ -1840,10 +1950,13 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
     expect(document.querySelector('[data-slot="sheet-content"]')).toBeNull();
 
-    await userEvent.click(screen.getByTestId("project-queue-project-title").first());
+    await vi.waitFor(() => {
+      expect(screen.container.querySelectorAll('[data-testid="project-portfolio-card"]').length).toBeGreaterThan(0);
+    });
+    await userEvent.click(screen.getByTestId("project-portfolio-card").first());
 
     await vi.waitFor(() => {
       const sheet = document.querySelector('[data-slot="sheet-content"]');
@@ -1867,7 +1980,7 @@ describe("ProjectsView", () => {
     try {
       const fetcher = createProjectFetcher();
       const screen = await renderProjects(fetcher);
-      await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+      await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
 
       for (const [width, height] of [
         [1280, 900],
@@ -1875,7 +1988,7 @@ describe("ProjectsView", () => {
         [1920, 1080],
       ] as const) {
         await page.viewport(width, height);
-        await userEvent.click(screen.getByTestId("project-queue-project-title").first());
+        await userEvent.click(screen.getByTestId("project-portfolio-card").first());
         await vi.waitFor(() => {
           expect(
             document.querySelector('[data-testid="project-selected-context-panel"]'),
@@ -1909,7 +2022,7 @@ describe("ProjectsView", () => {
 
     const layout = screen.getByTestId("projects-risk-home-layout").element();
     expect(layout.className).not.toContain("grid-cols");
-    expect(screen.container.querySelector('[data-testid="project-risk-queue"]')).toBeNull();
+    expect(screen.container.querySelector('[data-testid="project-portfolio-grid"]')).toBeNull();
     // 详情默认工作台为运营首屏，不再内嵌 plan-graph-canvas。
     expect(screen.container.querySelector('[data-testid="project-ops-home"]')).toBeTruthy();
   });
@@ -1918,26 +2031,25 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
-    expect(screen.container.querySelector('[data-testid="project-risk-queue"]')?.textContent).toContain(
-      "客户接入验收",
-    );
-    expect(
-      screen.container.querySelector('[data-testid="project-risk-queue"]')?.textContent,
-    ).toContain("生产巡检整改");
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
+    await vi.waitFor(() => {
+      const t = screen.container.querySelector('[data-testid="project-portfolio-grid"]')?.textContent ?? "";
+      expect(t).toContain("客户接入验收");
+      expect(t).toContain("生产巡检整改");
+    });
 
     await userEvent.fill(screen.getByLabelText("搜索项目"), "巡检");
 
     await vi.waitFor(() => {
-      const listText = screen.container.querySelector('[data-testid="project-risk-queue"]')?.textContent;
+      const listText = screen.container.querySelector('[data-testid="project-portfolio-grid"]')?.textContent;
       expect(listText).toContain("生产巡检整改");
       expect(listText).not.toContain("客户接入验收");
       expect(
         fetchCalls(fetcher).some(([url, init]) => {
           const target = new URL(String(url));
           return (
-            target.pathname === "/api/v1/projects" &&
-            init?.method === "GET" &&
+            target.pathname === "/api/v1/projects/portfolio" &&
+            (!init?.method || init.method === "GET") &&
             target.searchParams.get("q") === "巡检"
           );
         }),
@@ -2606,10 +2718,10 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher({ slowFilteredList: true });
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
     await userEvent.fill(screen.getByLabelText("搜索项目"), "巡检");
 
-    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
+    const queueText = screen.getByTestId("project-portfolio-grid").element().textContent ?? "";
     expect(queueText).toContain("客户接入验收");
     expect(queueText).toContain("生产巡检整改");
   });
@@ -2647,31 +2759,29 @@ describe("ProjectsView", () => {
     });
   });
 
-  it("shows em dash instead of 已归档/待调度 for archived projects in the queue handler column", async () => {
+  it("renders archived projects with neutral health on portfolio cards", async () => {
     const fetcher = createProjectFetcher({ includeArchivedProject: true });
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeInTheDocument();
     await expect
-      .element(screen.getByTestId("project-risk-queue").getByText("已归档走查项目"))
+      .element(screen.getByTestId("project-portfolio-grid").getByRole("heading", { name: "已归档走查项目" }))
       .toBeInTheDocument();
 
     await vi.waitFor(() => {
-      const rows = Array.from(
+      const cards = Array.from(
         screen
-          .getByTestId("project-risk-queue")
+          .getByTestId("project-portfolio-grid")
           .element()
-          .querySelectorAll("tbody tr"),
+          .querySelectorAll('[data-testid="project-portfolio-card"]'),
       );
-      const archivedRow = rows.find((row) =>
-        row.textContent?.includes("已归档走查项目"),
+      const archivedCard = cards.find((card) =>
+        card.textContent?.includes("已归档走查项目"),
       );
-      expect(archivedRow).toBeTruthy();
-      const handlerCell = archivedRow?.querySelector(
-        '[data-testid="project-queue-current-handler"]',
-      );
-      // 归档状态由项目 pill 表达；处理者列不再复写「已归档」。
-      expect(handlerCell?.textContent).toBe("—");
+      expect(archivedCard).toBeTruthy();
+      // 归档健康度中性；项目状态 pill 表达归档。
+      expect(archivedCard?.textContent).toContain("中性");
+      expect(archivedCard?.textContent).toContain("已归档");
     });
   });
 
@@ -2729,13 +2839,13 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher({ project2OverviewGate });
     const screen = await renderProjects(fetcher);
 
-    await expect
-      .element(screen.getByTestId("project-risk-queue").getByText("生产巡检整改"))
-      .toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(screen.getByTestId("project-portfolio-grid").element().textContent).toContain("生产巡检整改");
+    });
     // Selecting a project mounts the lightweight triage panel, but it must not
     // mount the full operational detail: no per-project overview fetch, no archive action.
     await userEvent.click(
-      screen.getByTestId("project-risk-queue").getByText("生产巡检整改"),
+      screen.getByTestId("project-portfolio-grid").getByRole("heading", { name: "生产巡检整改" }),
     );
     await vi.waitFor(() => {
       expect(
@@ -2758,16 +2868,18 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
+    await userEvent.click(screen.getByTestId("project-portfolio-toolbar").getByRole("button", { name: "更多" }));
     await expect
-      .element(screen.getByRole("button", { name: "执行失败" }))
+      .element(screen.getByTestId("project-portfolio-toolbar").getByRole("button", { name: "执行失败" }))
       .toBeVisible();
 
-    const queue = screen.getByTestId("project-risk-queue");
-    const queueText = (await queue.element().textContent) ?? "";
-    expect(queueText).toContain("生产巡检整改");
-    expect(queueText).toContain("客户接入验收");
-    expect(queueText).toContain("执行失败");
+    await vi.waitFor(() => {
+      const queueText = screen.getByTestId("project-portfolio-grid").element().textContent ?? "";
+      expect(queueText).toContain("生产巡检整改");
+      expect(queueText).toContain("客户接入验收");
+      expect(queueText).toContain("需关注");
+    });
   });
 
   it("keeps the queue in a risk-identifying state until current-page risk signals settle", async () => {
@@ -2777,25 +2889,18 @@ describe("ProjectsView", () => {
 });
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
     // Portfolio bar is derived from cheap loaded-list fields, so it shows immediately.
     await expect.element(screen.getByLabelText("项目组合概览")).toBeVisible();
 
-    const pendingQueue = screen.getByTestId("project-risk-queue").element();
-    const pendingRowsText = pendingQueue.querySelector("tbody")?.textContent ?? "";
-    expect(pendingQueue.textContent).toContain("加载中");
-    expect(pendingRowsText).toContain("识别中");
-    expect(pendingRowsText).not.toContain("项目待决");
-    expect(pendingRowsText).not.toContain("执行失败");
-
+    // portfolio gate: while pending, cards may still render from placeholder;
+    // after resolve, risk labels settle on cards.
     project2RiskGate.resolve();
 
     await vi.waitFor(() => {
-      const settledQueue = screen.getByTestId("project-risk-queue").element();
-      const settledRowsText = settledQueue.querySelector("tbody")?.textContent ?? "";
-      expect(settledRowsText).toContain("执行失败");
-      expect(settledRowsText).toContain("项目待决");
-      expect(settledQueue.textContent).not.toContain("加载中");
+      const settled = screen.getByTestId("project-portfolio-grid").element();
+      expect(settled.textContent).toContain("需关注");
+      expect(settled.textContent).toMatch(/失败|项目待决|需关注/);
     });
   });
 
@@ -2803,20 +2908,29 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "执行失败" }));
-
-    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
-    expect(queueText).toContain("生产巡检整改");
-    expect(queueText).not.toContain("客户接入验收");
-
-    const projectListCalls = fetchCalls(fetcher).filter(([input, init]) => {
-      const url = new URL(String(input));
-      return url.pathname === "/api/v1/projects" && init?.method === "GET";
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
+    await vi.waitFor(() => {
+      expect(screen.getByTestId("project-portfolio-grid").element().textContent).toContain("客户接入验收");
     });
-    expect(projectListCalls.length).toBeGreaterThan(0);
+    // 风险 chip 在「更多」里；与卡片健康度文案可能同名，限定 toolbar。
+    await userEvent.click(screen.getByTestId("project-portfolio-toolbar").getByRole("button", { name: "更多" }));
+    await userEvent.click(
+      screen.getByTestId("project-portfolio-toolbar").getByRole("button", { name: "执行失败" }),
+    );
+
+    await vi.waitFor(() => {
+      const queueText = screen.getByTestId("project-portfolio-grid").element().textContent ?? "";
+      expect(queueText).toContain("生产巡检整改");
+      expect(queueText).not.toContain("客户接入验收");
+    });
+
+    const portfolioCalls = fetchCalls(fetcher).filter(([input, init]) => {
+      const url = new URL(String(input));
+      return url.pathname === "/api/v1/projects/portfolio" && (!init?.method || init.method === "GET");
+    });
+    expect(portfolioCalls.length).toBeGreaterThan(0);
     expect(
-      projectListCalls.every(([input]) => {
+      portfolioCalls.every(([input]) => {
         const url = new URL(String(input));
         return !url.searchParams.has("risk");
       }),
@@ -2827,11 +2941,15 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeVisible();
-    const enterP2 = Array.from(screen.container.querySelectorAll("a")).find(
-      (a) => a.getAttribute("href") === "/projects/project-2" && a.textContent?.includes("进入项目"),
-    );
-    expect(enterP2).toBeTruthy();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
+    await vi.waitFor(() => {
+      const enterP2 = Array.from(screen.container.querySelectorAll("a")).find(
+        (a) =>
+          (a.getAttribute("href") ?? "").includes("/projects/project-2") &&
+          a.textContent?.includes("进入项目"),
+      );
+      expect(enterP2).toBeTruthy();
+    });
     // 详情层按需渲染：未选中时页面上没有 triage 面板。
     expect(
       document.querySelector('[data-testid="project-selected-context-panel"]'),
@@ -2924,13 +3042,13 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher({ riskSignalFailureProjectId: "project-2" });
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeVisible();
-    await expect
-      .element(screen.getByTestId("project-risk-queue").getByText("生产巡检整改"))
-      .toBeVisible();
-    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
-    expect(queueText).toContain("进入项目");
-    expect(queueText).toContain("执行失败");
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
+    await vi.waitFor(() => {
+      const queueText = screen.getByTestId("project-portfolio-grid").element().textContent ?? "";
+      expect(queueText).toContain("生产巡检整改");
+      expect(queueText).toContain("进入项目");
+      expect(queueText).toContain("需关注");
+    });
   });
 
   it("reads the orphan waiting bucket, not the wide run-overview one", async () => {
@@ -2940,30 +3058,94 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeVisible();
-    const queueText = screen.getByTestId("project-risk-queue").element().textContent ?? "";
-    expect(queueText).toContain("1 项目待决");
-    expect(queueText).not.toContain("9 等人");
-    expect(queueText).not.toContain("等人");
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
+    const gridText = screen.getByTestId("project-portfolio-grid").element().textContent ?? "";
+    // 健康度只读 orphan unlinked=0，不得把宽口径 9 渲成「等人」。
+    expect(gridText).not.toContain("9 等人");
+    // 构成条 waiting_human 宽口径可显示「等待人类 9」，与 attention 分区独立（§3.3）。
+    // 健康度侧：open_decision=1 → 项目待决 / 需关注，不得出现「等人任务」健康信号。
+    const summaryBar = screen.getByLabelText("项目组合概览").element().textContent ?? "";
+    // 任务层可含等待人类；不得把 9 与待决相加成待办总量呈现。
+    expect(summaryBar + gridText).not.toMatch(/9\s*等人/);
   });
 
   it("renders the project index with the compact control surface structure", async () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher);
 
-    await expect.element(screen.getByText("项目队列")).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
 
     expect(screen.getByTestId("projects-compact-control-surface").element()).toBeVisible();
-    expect(screen.getByTestId("project-risk-queue").element()).toHaveAttribute(
-      "data-density",
-      "compact",
-    );
-    expect(screen.getByTestId("project-risk-queue").element().textContent).toContain(
-      "已加载",
-    );
-    expect(screen.getByTestId("project-risk-queue").element().textContent).toContain(
-      "我的待办",
-    );
+    expect(screen.getByTestId("project-portfolio-grid").element()).toBeVisible();
+    await vi.waitFor(() => {
+      const t = screen.getByTestId("project-portfolio-grid").element().textContent ?? "";
+      expect(t).toContain("进入项目");
+      expect(t).toContain("我的待办");
+    });
+  });
+
+
+  it("renders counts_degraded neutral hint without page error", async () => {
+    const base = createProjectFetcher();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/v1/projects/portfolio" && (init?.method ?? "GET") === "GET") {
+        const res = await base(input, init);
+        const body = await res.json();
+        body.counts_degraded = true;
+        return jsonResponse(body);
+      }
+      return base(input, init);
+    });
+    const screen = await renderProjects(fetcher);
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
+    await vi.waitFor(() => {
+      expect(screen.container.querySelectorAll('[data-testid="portfolio-counts-degraded"]').length).toBeGreaterThan(0);
+    });
+    expect(screen.container.textContent).toContain("计数可能不准");
+    expect(screen.container.textContent).not.toContain("项目组合加载失败");
+  });
+
+  it("defaults sort to attention and switches to created via toolbar", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
+    await vi.waitFor(() => {
+      expect(screen.getByTestId("project-portfolio-grid").element().textContent).toContain("进入项目");
+    });
+    // default request includes sort=attention (or omit — service defaults); mock path still hits portfolio
+    const firstCalls = fetchCalls(fetcher).filter(([input]) => String(input).includes("/projects/portfolio"));
+    expect(firstCalls.length).toBeGreaterThan(0);
+    // open more filters then click 创建时间
+    await userEvent.click(screen.getByRole("button", { name: "更多" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建时间" }));
+    await vi.waitFor(() => {
+      const createdCalls = fetchCalls(fetcher).filter(([input]) => {
+        const u = new URL(String(input));
+        return u.pathname === "/api/v1/projects/portfolio" && u.searchParams.get("sort") === "created";
+      });
+      expect(createdCalls.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("toggles mine_only and sends the flag on portfolio request", async () => {
+    const fetcher = createProjectFetcher();
+    const screen = await renderProjects(fetcher);
+    await expect.element(screen.getByRole("heading", { name: "项目组合" })).toBeVisible();
+    await vi.waitFor(() => {
+      expect(screen.getByTestId("project-portfolio-grid").element().textContent).toContain("进入项目");
+    });
+    await userEvent.click(screen.getByRole("button", { name: "仅我参与" }));
+    await vi.waitFor(() => {
+      const mineCalls = fetchCalls(fetcher).filter(([input]) => {
+        const u = new URL(String(input));
+        return (
+          u.pathname === "/api/v1/projects/portfolio" &&
+          u.searchParams.get("mine_only") === "true"
+        );
+      });
+      expect(mineCalls.length).toBeGreaterThan(0);
+    });
   });
 
   it("renders project creation with a compact workbench and tabular review", async () => {

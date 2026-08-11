@@ -748,7 +748,169 @@ func (r *PgRepository) GetProjectTaskStatusCounts(ctx context.Context, tenantID,
 		RunningTasks:      int(row.RunningTasks),
 		CancelledTasks:    int(row.CancelledTasks),
 		TotalTasks:        int(row.TotalTasks),
+		PendingTasks:      int(row.PendingTasks),
+		QueuedTasks:       int(row.QueuedTasks),
+		BlockedTasks:      int(row.BlockedTasks),
+		OtherTasks:        int(row.OtherTasks),
 	}, nil
+}
+
+func (r *PgRepository) GetProjectPortfolio(ctx context.Context, req GetProjectPortfolioRequest) (ProjectPortfolioResponse, error) {
+	statuses := req.ProjectStatuses
+	if statuses == nil {
+		statuses = []string{}
+	}
+	sortKey := string(req.Sort)
+	if sortKey == "" {
+		sortKey = string(ProjectPortfolioSortAttention)
+	}
+
+	summaryRow, err := r.q.GetProjectPortfolioSummary(ctx, queries.GetProjectPortfolioSummaryParams{
+		TenantID:    req.TenantID,
+		MineOnly:    req.MineOnly,
+		ActorUserID: req.ActorUserID,
+	})
+	if err != nil {
+		return ProjectPortfolioResponse{}, err
+	}
+
+	total, err := r.q.CountProjectPortfolioItems(ctx, queries.CountProjectPortfolioItemsParams{
+		TenantID:        req.TenantID,
+		MineOnly:        req.MineOnly,
+		ActorUserID:     req.ActorUserID,
+		Q:               textOrNull(req.Query),
+		ProjectStatuses: statuses,
+		OwnerUserID:     nullUUID(req.OwnerUserID),
+		TaskState:       textOrNull(req.TaskState),
+	})
+	if err != nil {
+		return ProjectPortfolioResponse{}, err
+	}
+
+	rows, err := r.q.ListProjectPortfolioItems(ctx, queries.ListProjectPortfolioItemsParams{
+		Sort:            sortKey,
+		TenantID:        req.TenantID,
+		MineOnly:        req.MineOnly,
+		ActorUserID:     req.ActorUserID,
+		Q:               textOrNull(req.Query),
+		ProjectStatuses: statuses,
+		OwnerUserID:     nullUUID(req.OwnerUserID),
+		TaskState:       textOrNull(req.TaskState),
+		Offset:          req.Offset,
+		Limit:           req.Limit,
+	})
+	if err != nil {
+		return ProjectPortfolioResponse{}, err
+	}
+
+	activeCounts := ProjectTaskPortfolioCounts{
+		Total:        int(summaryRow.TaskTotal),
+		Pending:      int(summaryRow.TaskPending),
+		Queued:       int(summaryRow.TaskQueued),
+		Running:      int(summaryRow.TaskRunning),
+		WaitingHuman: int(summaryRow.TaskWaitingHuman),
+		Blocked:      int(summaryRow.TaskBlocked),
+		Failed:       int(summaryRow.TaskFailed),
+		Completed:    int(summaryRow.TaskCompleted),
+		Cancelled:    int(summaryRow.TaskCancelled),
+		Other:        int(summaryRow.TaskOther),
+	}
+
+	items := make([]ProjectPortfolioItem, 0, len(rows))
+	for _, row := range rows {
+		taskCounts := ProjectTaskPortfolioCounts{
+			Total:        int(row.TaskTotal),
+			Pending:      int(row.TaskPending),
+			Queued:       int(row.TaskQueued),
+			Running:      int(row.TaskRunning),
+			WaitingHuman: int(row.TaskWaitingHuman),
+			Blocked:      int(row.TaskBlocked),
+			Failed:       int(row.TaskFailed),
+			Completed:    int(row.TaskCompleted),
+			Cancelled:    int(row.TaskCancelled),
+			Other:        int(row.TaskOther),
+		}
+		ownerIDs := row.HumanOwnerUserIds
+		if ownerIDs == nil {
+			ownerIDs = []uuid.UUID{}
+		}
+		item := ProjectPortfolioItem{
+			Project: ProjectPortfolioProject{
+				ID:                 row.ProjectID,
+				Name:               row.Name,
+				Goal:               row.Goal,
+				Status:             ProjectStatus(row.Status),
+				HumanOwnerUserID:   row.HumanOwnerUserID,
+				HumanOwnerUserIDs:  ownerIDs,
+				CoordinationStatus: row.CoordinationStatus,
+				UpdatedAt:          row.UpdatedAt.Time,
+			},
+			Participants: ProjectPortfolioParticipants{
+				ActiveDigitalEmployeeCount: int(row.ActiveDigitalEmployeeCount),
+			},
+			TaskCounts: taskCounts,
+			Attention: ProjectPortfolioAttention{
+				OpenDecisionCount:         int(row.OpenDecisionCount),
+				WaitingHumanUnlinkedCount: int(row.WaitingHumanUnlinkedCount),
+				EvidencePendingCount:      int(row.EvidencePendingCount),
+				UnassignedCount:           int(row.UnassignedCount),
+				CoordinationAnomaly: coordinationAnomaly(
+					ProjectStatus(row.Status),
+					row.CoordinationStatus,
+					row.ArchivedAt.Valid,
+				),
+			},
+			LastActivity: ptrTime(row.EffectiveLastActivityAt),
+		}
+		if row.HumanOwnerUserID != uuid.Nil {
+			item.Owner = &ProjectPortfolioOwner{
+				ID:          row.HumanOwnerUserID,
+				DisplayName: row.OwnerDisplayName,
+			}
+		}
+		items = append(items, item)
+	}
+
+	return ProjectPortfolioResponse{
+		Summary: ProjectPortfolioSummary{
+			TotalProjects: int(summaryRow.TotalProjects),
+			ProjectStatusCounts: map[string]int{
+				"draft":       int(summaryRow.StatusDraft),
+				"configuring": int(summaryRow.StatusConfiguring),
+				"running":     int(summaryRow.StatusRunning),
+				"paused":      int(summaryRow.StatusPaused),
+				"acceptance":  int(summaryRow.StatusAcceptance),
+				"archived":    int(summaryRow.StatusArchived),
+			},
+			ActiveTaskCounts: activeCounts,
+		},
+		Items: items,
+		Pagination: ProjectPortfolioPagination{
+			Limit:   req.Limit,
+			Offset:  req.Offset,
+			Total:   total,
+			HasMore: int64(req.Offset)+int64(len(items)) < int64(total),
+		},
+	}, nil
+}
+
+// healthyCoordinationStatuses mirrors apps/web project-risk.ts.
+var healthyCoordinationStatuses = map[string]struct{}{
+	"":           {},
+	"active":     {},
+	"idle":       {},
+	"ready":      {},
+	"registered": {},
+	"running":    {},
+	"started":    {},
+}
+
+func coordinationAnomaly(status ProjectStatus, coordinationStatus string, archived bool) bool {
+	if archived || status == ProjectStatusArchived {
+		return false
+	}
+	_, ok := healthyCoordinationStatuses[strings.ToLower(strings.TrimSpace(coordinationStatus))]
+	return !ok
 }
 
 func (r *PgRepository) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (ProjectTask, error) {

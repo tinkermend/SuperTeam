@@ -2438,6 +2438,10 @@ func (s *handlerTestService) ListProjectRunSummaries(ctx context.Context, req Li
 	return ProjectRunSummaryList{}, nil
 }
 
+func (s *handlerTestService) GetProjectPortfolio(ctx context.Context, req GetProjectPortfolioRequest) (ProjectPortfolioResponse, error) {
+	return ProjectPortfolioResponse{Items: []ProjectPortfolioItem{}}, nil
+}
+
 func (s *handlerTestService) ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error) {
 	s.workflowInstancesReq = req
 	return s.workflowInstances, nil

@@ -2042,10 +2042,15 @@ type ProjectStatusSummary struct {
 }
 
 // ProjectTaskSummary 是项目概览的**全项目**任务计数。口径见
-// GetProjectTaskStatusCounts：排除 dismissed；ActiveTasks 为非终态（不含 cancelled）；
-// TotalTasks = Active + Completed + Failed + Cancelled。
-// 概览不再返回任务列表（原 active_tasks 字段名不副实且与 ListProjectTasks 完全重复，
-// 已退役）；需要任务明细走 GET /projects/{id}/tasks。
+// GetProjectTaskStatusCounts：排除 dismissed。
+//
+// ActiveTasks 是归档闸门输入，口径冻结为
+// status NOT IN (completed/done/success/failed/cancelled)（§5.2.1）；
+// blocked 与 error 算活跃。不得用展示桶之和重写。
+//
+// 展示字段（Pending/Queued/Running/PendingHuman/Blocked/Failed/Completed/Cancelled/Other）
+// 为互斥 portfolio 桶；TotalTasks = 各展示桶之和。ActiveTasks 与展示桶并列、互不派生。
+// 概览不再返回任务列表；需要任务明细走 GET /projects/{id}/tasks。
 type ProjectTaskSummary struct {
 	ActiveTasks       int `json:"active_tasks"`
 	PendingHumanTasks int `json:"pending_human_tasks"`
@@ -2054,6 +2059,107 @@ type ProjectTaskSummary struct {
 	RunningTasks      int `json:"running_tasks"`
 	CancelledTasks    int `json:"cancelled_tasks"`
 	TotalTasks        int `json:"total_tasks"`
+	// Portfolio display buckets (exclusive). Added 2026-08-11.
+	PendingTasks int `json:"pending_tasks"`
+	QueuedTasks  int `json:"queued_tasks"`
+	BlockedTasks int `json:"blocked_tasks"`
+	OtherTasks   int `json:"other_tasks"`
+}
+
+// PortfolioDisplayCounts projects the exclusive task buckets from a summary.
+func (s ProjectTaskSummary) PortfolioDisplayCounts() ProjectTaskPortfolioCounts {
+	return ProjectTaskPortfolioCounts{
+		Total:        s.TotalTasks,
+		Pending:      s.PendingTasks,
+		Queued:       s.QueuedTasks,
+		Running:      s.RunningTasks,
+		WaitingHuman: s.PendingHumanTasks,
+		Blocked:      s.BlockedTasks,
+		Failed:       s.FailedTasks,
+		Completed:    s.CompletedTasks,
+		Cancelled:    s.CancelledTasks,
+		Other:        s.OtherTasks,
+	}
+}
+
+// Project portfolio home read model (GET /api/v1/projects/portfolio).
+
+type ProjectPortfolioSort string
+
+const (
+	ProjectPortfolioSortAttention ProjectPortfolioSort = "attention"
+	ProjectPortfolioSortRecent    ProjectPortfolioSort = "recent"
+	ProjectPortfolioSortCreated   ProjectPortfolioSort = "created"
+)
+
+type GetProjectPortfolioRequest struct {
+	TenantID        uuid.UUID
+	ActorUserID     uuid.UUID
+	Query           string
+	ProjectStatuses []string
+	OwnerUserID     *uuid.UUID
+	TaskState       string // exclusive portfolio bucket filter; empty = all
+	MineOnly        bool
+	Sort            ProjectPortfolioSort
+	Limit           int32
+	Offset          int32
+}
+
+type ProjectPortfolioSummary struct {
+	TotalProjects       int                        `json:"total_projects"`
+	ProjectStatusCounts map[string]int             `json:"project_status_counts"`
+	ActiveTaskCounts    ProjectTaskPortfolioCounts `json:"active_project_task_counts"`
+}
+
+type ProjectPortfolioAttention struct {
+	OpenDecisionCount         int  `json:"open_decision_count"`
+	WaitingHumanUnlinkedCount int  `json:"waiting_human_unlinked_count"`
+	EvidencePendingCount      int  `json:"evidence_pending_count"`
+	UnassignedCount           int  `json:"unassigned_count"`
+	CoordinationAnomaly       bool `json:"coordination_anomaly"`
+}
+
+type ProjectPortfolioOwner struct {
+	ID          uuid.UUID `json:"id"`
+	DisplayName string    `json:"display_name"`
+}
+
+type ProjectPortfolioParticipants struct {
+	ActiveDigitalEmployeeCount int `json:"active_digital_employee_count"`
+}
+
+type ProjectPortfolioProject struct {
+	ID                 uuid.UUID     `json:"id"`
+	Name               string        `json:"name"`
+	Goal               string        `json:"goal"`
+	Status             ProjectStatus `json:"status"`
+	HumanOwnerUserID   uuid.UUID     `json:"human_owner_user_id"`
+	HumanOwnerUserIDs  []uuid.UUID   `json:"human_owner_user_ids"`
+	CoordinationStatus string        `json:"coordination_status"`
+	UpdatedAt          time.Time     `json:"updated_at"`
+}
+
+type ProjectPortfolioItem struct {
+	Project      ProjectPortfolioProject      `json:"project"`
+	Owner        *ProjectPortfolioOwner       `json:"owner,omitempty"`
+	Participants ProjectPortfolioParticipants `json:"participants"`
+	TaskCounts   ProjectTaskPortfolioCounts   `json:"task_counts"`
+	Attention    ProjectPortfolioAttention    `json:"attention"`
+	LastActivity *time.Time                   `json:"last_activity_at,omitempty"`
+}
+
+type ProjectPortfolioPagination struct {
+	Limit   int32 `json:"limit"`
+	Offset  int32 `json:"offset"`
+	Total   int32 `json:"total"`
+	HasMore bool  `json:"has_more"`
+}
+
+type ProjectPortfolioResponse struct {
+	Summary         ProjectPortfolioSummary    `json:"summary"`
+	Items           []ProjectPortfolioItem     `json:"items"`
+	Pagination      ProjectPortfolioPagination `json:"pagination"`
+	CountsDegraded  bool                       `json:"counts_degraded"`
 }
 
 type ProjectCoordinationWorkflow struct {

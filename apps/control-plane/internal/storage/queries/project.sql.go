@@ -903,6 +903,87 @@ func (q *Queries) CountProjectDemandsByTerminality(ctx context.Context, arg Coun
 	return i, err
 }
 
+const CountProjectPortfolioItems = `-- name: CountProjectPortfolioItems :one
+WITH visible_projects AS (
+  SELECT p.id, p.tenant_id, p.team_id, p.name, p.description, p.goal, p.status, p.human_owner_user_id, p.coordination_workflow_id, p.coordination_status, p.coordination_policy, p.archived_at, p.created_at, p.updated_at, p.repo_url, p.repo_default_branch, p.repo_git_credential_ref, p.repo_scope, p.repo_binding_status, p.deleted_at, p.scenario_template_key, p.human_owner_user_ids, p.workspace_ready_status, p.primary_runtime_node_id, p.workspace_ready_error, p.workspace_ready_at, p.directory_name, p.budget_token_limit
+  FROM projects p
+  WHERE p.tenant_id = $1::uuid
+    AND p.deleted_at IS NULL
+    AND (
+      NOT $2::bool
+      OR $3::uuid = ANY(p.human_owner_user_ids)
+      OR EXISTS (
+        SELECT 1
+        FROM project_members pm
+        WHERE pm.tenant_id = p.tenant_id
+          AND pm.project_id = p.id
+          AND pm.principal_type = 'human_user'
+          AND pm.principal_id = $3::uuid
+          AND pm.status = 'active'
+      )
+    )
+),
+filtered_projects AS (
+  SELECT vp.id
+  FROM visible_projects vp
+  WHERE (
+      $4::text IS NULL
+      OR vp.name ILIKE '%' || $4::text || '%'
+      OR vp.directory_name ILIKE '%' || $4::text || '%'
+      OR COALESCE(vp.goal, '') ILIKE '%' || $4::text || '%'
+    )
+    AND (
+      cardinality($5::text[]) = 0
+      OR vp.status = ANY($5::text[])
+    )
+    AND (
+      $6::uuid IS NULL
+      OR $6::uuid = ANY(vp.human_owner_user_ids)
+      OR vp.human_owner_user_id = $6::uuid
+    )
+    AND (
+      $7::text IS NULL
+      OR EXISTS (
+        SELECT 1
+        FROM project_tasks pt
+        WHERE pt.tenant_id = $1::uuid
+          AND pt.project_id = vp.id
+          AND pt.dismissed_at IS NULL
+          AND (
+            project_task_portfolio_bucket(pt.status, pt.requires_human_approval)
+          ) = $7::text
+      )
+    )
+)
+SELECT COUNT(*)::integer AS total
+FROM filtered_projects
+`
+
+type CountProjectPortfolioItemsParams struct {
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	MineOnly        bool          `json:"mine_only"`
+	ActorUserID     uuid.UUID     `json:"actor_user_id"`
+	Q               pgtype.Text   `json:"q"`
+	ProjectStatuses []string      `json:"project_statuses"`
+	OwnerUserID     uuid.NullUUID `json:"owner_user_id"`
+	TaskState       pgtype.Text   `json:"task_state"`
+}
+
+func (q *Queries) CountProjectPortfolioItems(ctx context.Context, arg CountProjectPortfolioItemsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, CountProjectPortfolioItems,
+		arg.TenantID,
+		arg.MineOnly,
+		arg.ActorUserID,
+		arg.Q,
+		arg.ProjectStatuses,
+		arg.OwnerUserID,
+		arg.TaskState,
+	)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const CountProjectTaskDispatchFailureEvents = `-- name: CountProjectTaskDispatchFailureEvents :one
 SELECT COUNT(*)
 FROM project_events
@@ -3781,6 +3862,116 @@ func (q *Queries) GetProjectPlanRevisionByFingerprint(ctx context.Context, arg G
 	return i, err
 }
 
+const GetProjectPortfolioSummary = `-- name: GetProjectPortfolioSummary :one
+
+WITH visible_projects AS (
+  SELECT p.id, p.status
+  FROM projects p
+  WHERE p.tenant_id = $1::uuid
+    AND p.deleted_at IS NULL
+    AND (
+      NOT $2::bool
+      OR $3::uuid = ANY(p.human_owner_user_ids)
+      OR EXISTS (
+        SELECT 1
+        FROM project_members pm
+        WHERE pm.tenant_id = p.tenant_id
+          AND pm.project_id = p.id
+          AND pm.principal_type = 'human_user'
+          AND pm.principal_id = $3::uuid
+          AND pm.status = 'active'
+      )
+    )
+),
+task_buckets AS (
+  SELECT
+    project_task_portfolio_bucket(pt.status, pt.requires_human_approval) AS portfolio_bucket
+  FROM project_tasks pt
+  JOIN visible_projects vp ON vp.id = pt.project_id
+  WHERE pt.tenant_id = $1::uuid
+    AND pt.dismissed_at IS NULL
+    AND vp.status <> 'archived'
+)
+SELECT
+  (SELECT COUNT(*)::integer FROM visible_projects) AS total_projects,
+  (SELECT COUNT(*) FILTER (WHERE status = 'draft')::integer FROM visible_projects) AS status_draft,
+  (SELECT COUNT(*) FILTER (WHERE status = 'configuring')::integer FROM visible_projects) AS status_configuring,
+  (SELECT COUNT(*) FILTER (WHERE status = 'running')::integer FROM visible_projects) AS status_running,
+  (SELECT COUNT(*) FILTER (WHERE status = 'paused')::integer FROM visible_projects) AS status_paused,
+  (SELECT COUNT(*) FILTER (WHERE status = 'acceptance')::integer FROM visible_projects) AS status_acceptance,
+  (SELECT COUNT(*) FILTER (WHERE status = 'archived')::integer FROM visible_projects) AS status_archived,
+  (SELECT COUNT(*)::integer FROM task_buckets) AS task_total,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'pending')::integer FROM task_buckets) AS task_pending,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'queued')::integer FROM task_buckets) AS task_queued,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'running')::integer FROM task_buckets) AS task_running,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'waiting_human')::integer FROM task_buckets) AS task_waiting_human,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'blocked')::integer FROM task_buckets) AS task_blocked,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'failed')::integer FROM task_buckets) AS task_failed,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'completed')::integer FROM task_buckets) AS task_completed,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'cancelled')::integer FROM task_buckets) AS task_cancelled,
+  (SELECT COUNT(*) FILTER (WHERE portfolio_bucket = 'other')::integer FROM task_buckets) AS task_other
+`
+
+type GetProjectPortfolioSummaryParams struct {
+	TenantID    uuid.UUID `json:"tenant_id"`
+	MineOnly    bool      `json:"mine_only"`
+	ActorUserID uuid.UUID `json:"actor_user_id"`
+}
+
+type GetProjectPortfolioSummaryRow struct {
+	TotalProjects     int32 `json:"total_projects"`
+	StatusDraft       int32 `json:"status_draft"`
+	StatusConfiguring int32 `json:"status_configuring"`
+	StatusRunning     int32 `json:"status_running"`
+	StatusPaused      int32 `json:"status_paused"`
+	StatusAcceptance  int32 `json:"status_acceptance"`
+	StatusArchived    int32 `json:"status_archived"`
+	TaskTotal         int32 `json:"task_total"`
+	TaskPending       int32 `json:"task_pending"`
+	TaskQueued        int32 `json:"task_queued"`
+	TaskRunning       int32 `json:"task_running"`
+	TaskWaitingHuman  int32 `json:"task_waiting_human"`
+	TaskBlocked       int32 `json:"task_blocked"`
+	TaskFailed        int32 `json:"task_failed"`
+	TaskCompleted     int32 `json:"task_completed"`
+	TaskCancelled     int32 `json:"task_cancelled"`
+	TaskOther         int32 `json:"task_other"`
+}
+
+// ---------------------------------------------------------------------------
+// Project portfolio home (spec 2026-08-11-project-portfolio-layered-status)
+// ---------------------------------------------------------------------------
+// mine_only 谓词与 ListWorkflowInstances 同源（owner ∪ active human member）。
+// summary 仅受 mine_only 收窄；q/project_status/owner/task_state 只影响 items+total。
+// 展示桶：project_task_portfolio_bucket() 单一事实源（与 Go 同源）。
+// 注意 sort=attention 必须先对 filtered 全集算 attention 再 LIMIT，故 task_agg 挂
+// filtered_projects 而非 candidate 页（§4.2 与「先 LIMIT 再聚合」互斥；spec 已勘误）。
+// summary 任务层按定义扫可见集合非归档项目（全量聚合，非逐卡扇出）。
+func (q *Queries) GetProjectPortfolioSummary(ctx context.Context, arg GetProjectPortfolioSummaryParams) (GetProjectPortfolioSummaryRow, error) {
+	row := q.db.QueryRow(ctx, GetProjectPortfolioSummary, arg.TenantID, arg.MineOnly, arg.ActorUserID)
+	var i GetProjectPortfolioSummaryRow
+	err := row.Scan(
+		&i.TotalProjects,
+		&i.StatusDraft,
+		&i.StatusConfiguring,
+		&i.StatusRunning,
+		&i.StatusPaused,
+		&i.StatusAcceptance,
+		&i.StatusArchived,
+		&i.TaskTotal,
+		&i.TaskPending,
+		&i.TaskQueued,
+		&i.TaskRunning,
+		&i.TaskWaitingHuman,
+		&i.TaskBlocked,
+		&i.TaskFailed,
+		&i.TaskCompleted,
+		&i.TaskCancelled,
+		&i.TaskOther,
+	)
+	return i, err
+}
+
 const GetProjectRouteDecision = `-- name: GetProjectRouteDecision :one
 SELECT id, tenant_id, project_id, coordination_job_id, demand_id, candidate_digital_employee_ids, selected_digital_employee_ids, reason, input_requirements, expected_outputs, budget_estimate, requires_human_review, created_event_id, created_at FROM project_route_decisions
 WHERE tenant_id = $1::uuid
@@ -4240,20 +4431,31 @@ func (q *Queries) GetProjectTaskSessionLineage(ctx context.Context, arg GetProje
 }
 
 const GetProjectTaskStatusCounts = `-- name: GetProjectTaskStatusCounts :one
+WITH task_rows AS (
+  SELECT
+    status,
+    project_task_portfolio_bucket(status, requires_human_approval) AS portfolio_bucket
+  FROM project_tasks
+  WHERE tenant_id = $1::uuid
+    AND project_id = $2::uuid
+    AND dismissed_at IS NULL
+)
 SELECT
     COUNT(*)::integer AS total_tasks,
+    -- GATE (frozen): do not rewrite as non-terminal display-bucket sum.
     COUNT(*) FILTER (
         WHERE status NOT IN ('completed', 'done', 'success', 'failed', 'cancelled')
     )::integer AS active_tasks,
-    COUNT(*) FILTER (WHERE status = 'running')::integer AS running_tasks,
-    COUNT(*) FILTER (WHERE status = 'waiting_human')::integer AS pending_human_tasks,
-    COUNT(*) FILTER (WHERE status IN ('completed', 'done', 'success'))::integer AS completed_tasks,
-    COUNT(*) FILTER (WHERE status = 'failed')::integer AS failed_tasks,
-    COUNT(*) FILTER (WHERE status = 'cancelled')::integer AS cancelled_tasks
-FROM project_tasks
-WHERE tenant_id = $1::uuid
-  AND project_id = $2::uuid
-  AND dismissed_at IS NULL
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'pending')::integer AS pending_tasks,
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'queued')::integer AS queued_tasks,
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'running')::integer AS running_tasks,
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'waiting_human')::integer AS pending_human_tasks,
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'blocked')::integer AS blocked_tasks,
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'failed')::integer AS failed_tasks,
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'completed')::integer AS completed_tasks,
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'cancelled')::integer AS cancelled_tasks,
+    COUNT(*) FILTER (WHERE portfolio_bucket = 'other')::integer AS other_tasks
+FROM task_rows
 `
 
 type GetProjectTaskStatusCountsParams struct {
@@ -4264,30 +4466,46 @@ type GetProjectTaskStatusCountsParams struct {
 type GetProjectTaskStatusCountsRow struct {
 	TotalTasks        int32 `json:"total_tasks"`
 	ActiveTasks       int32 `json:"active_tasks"`
+	PendingTasks      int32 `json:"pending_tasks"`
+	QueuedTasks       int32 `json:"queued_tasks"`
 	RunningTasks      int32 `json:"running_tasks"`
 	PendingHumanTasks int32 `json:"pending_human_tasks"`
-	CompletedTasks    int32 `json:"completed_tasks"`
+	BlockedTasks      int32 `json:"blocked_tasks"`
 	FailedTasks       int32 `json:"failed_tasks"`
+	CompletedTasks    int32 `json:"completed_tasks"`
 	CancelledTasks    int32 `json:"cancelled_tasks"`
+	OtherTasks        int32 `json:"other_tasks"`
 }
 
 // 项目概览任务计数：必须走全表聚合，不能在 ListProjectTasks 的分页片上循环统计
 // （原实现在"最近更新的 20 条"上数数，任务超过 20 条即漏计，且窗口随更新漂移会让
-// 计数非单调抖动）。分桶口径与 ListProjectRunSummaries 保持一致；dismissed 任务
-// 与 ListProjectTasks 默认窗口同样排除，两者数字才对得上。
-// active 口径 = 非终态，终态集与 project.sql 各处 F5 判据同源（cancelled 属终态，
-// 旧实现把它算进 active 是错的）。
+// 计数非单调抖动）。dismissed 任务与 ListProjectTasks 默认窗口同样排除。
+//
+// ActiveTasks 闸门口径冻结（spec 2026-08-11 portfolio §5.2.1）：
+//
+//	status NOT IN ('completed','done','success','failed','cancelled')
+//
+// blocked 与 error 在此定义下算活跃——这是归档闸门既有行为，不得改成展示桶之和。
+//
+// 展示桶与 ActiveTasks 并列、互不派生。
+// 展示桶单一事实源：project_task_portfolio_bucket()（迁移 20260811180000）
+// 与 Go ClassifyProjectTaskPortfolioBucket 同源。展示 failed 仅 failed/error；
+// ListProjectRunSummaries.failed_count 仍含 blocked（运行总览宽失败）。
 func (q *Queries) GetProjectTaskStatusCounts(ctx context.Context, arg GetProjectTaskStatusCountsParams) (GetProjectTaskStatusCountsRow, error) {
 	row := q.db.QueryRow(ctx, GetProjectTaskStatusCounts, arg.TenantID, arg.ProjectID)
 	var i GetProjectTaskStatusCountsRow
 	err := row.Scan(
 		&i.TotalTasks,
 		&i.ActiveTasks,
+		&i.PendingTasks,
+		&i.QueuedTasks,
 		&i.RunningTasks,
 		&i.PendingHumanTasks,
-		&i.CompletedTasks,
+		&i.BlockedTasks,
 		&i.FailedTasks,
+		&i.CompletedTasks,
 		&i.CancelledTasks,
+		&i.OtherTasks,
 	)
 	return i, err
 }
@@ -5095,8 +5313,6 @@ func (q *Queries) ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg
 }
 
 const ListOrphanWaitingHumanProjectTasks = `-- name: ListOrphanWaitingHumanProjectTasks :many
--- waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
--- 例外：同 task 已有 approved + gate 链接的 project_task_approval 时不进补建列表。
 SELECT t.id, t.tenant_id, t.project_id, t.demand_id, t.title, t.summary, t.status, t.assigned_digital_employee_id, t.runtime_task_id, t.digital_employee_run_id, t.risk_level, t.requires_human_approval, t.latest_event_id, t.created_at, t.updated_at, t.coordination_job_id, t.route_decision_id, t.planned_task_key, t.task_kind, t.stage_index, t.expected_outputs, t.input_requirements, t.handoff_contract, t.planner_metadata, t.current_attempt_id, t.accepted_plan_revision_id, t.decomposition_claim_key, t.attempt_count, t.max_attempts, t.retry_not_before, t.waiting_reason, t.waiting_request_id, t.terminal_event_id, t.status_changed_at, t.latest_dispatch_gate_result_id, t.revision_of_task_id, t.latest_task_result_id, t.plan_iteration, t.dismissed_at, t.dismissed_by
 FROM project_tasks t
 WHERE t.status = 'waiting_human'
@@ -5111,34 +5327,27 @@ WHERE t.status = 'waiting_human'
         AND lower(d.status_snapshot) IN ('pending', 'waiting', 'requested', 'open')
     )
   )
-  AND NOT EXISTS (
-    SELECT 1
-    FROM project_decision_requests g
-    WHERE g.tenant_id = t.tenant_id
-      AND g.project_id = t.project_id
-      AND g.project_task_id = t.id
-      AND g.decision_type = 'project_task_approval'
-      AND lower(g.status_snapshot) = 'approved'
-      AND g.dispatch_gate_result_id IS NOT NULL
-  )
-ORDER BY t.updated_at ASC
-LIMIT $1::integer
-`
-
-const ListZombieGateApprovalWaitingHumanProjectTasks = `-- name: ListZombieGateApprovalWaitingHumanProjectTasks :many
-SELECT t.id, t.tenant_id, t.project_id, t.demand_id, t.title, t.summary, t.status, t.assigned_digital_employee_id, t.runtime_task_id, t.digital_employee_run_id, t.risk_level, t.requires_human_approval, t.latest_event_id, t.created_at, t.updated_at, t.coordination_job_id, t.route_decision_id, t.planned_task_key, t.task_kind, t.stage_index, t.expected_outputs, t.input_requirements, t.handoff_contract, t.planner_metadata, t.current_attempt_id, t.accepted_plan_revision_id, t.decomposition_claim_key, t.attempt_count, t.max_attempts, t.retry_not_before, t.waiting_reason, t.waiting_request_id, t.terminal_event_id, t.status_changed_at, t.latest_dispatch_gate_result_id, t.revision_of_task_id, t.latest_task_result_id, t.plan_iteration, t.dismissed_at, t.dismissed_by
-FROM project_tasks t
-WHERE t.status = 'waiting_human'
-  AND t.dismissed_at IS NULL
-  AND EXISTS (
-    SELECT 1
-    FROM project_decision_requests g
-    WHERE g.tenant_id = t.tenant_id
-      AND g.project_id = t.project_id
-      AND g.project_task_id = t.id
-      AND g.decision_type = 'project_task_approval'
-      AND lower(g.status_snapshot) = 'approved'
-      AND g.dispatch_gate_result_id IS NOT NULL
+  AND NOT (
+    EXISTS (
+      SELECT 1
+      FROM project_decision_requests g
+      WHERE g.tenant_id = t.tenant_id
+        AND g.project_id = t.project_id
+        AND g.project_task_id = t.id
+        AND g.decision_type = 'project_task_approval'
+        AND lower(g.status_snapshot) = 'approved'
+        AND g.dispatch_gate_result_id IS NOT NULL
+    )
+    AND (
+      (t.waiting_request_id IS NULL AND t.waiting_reason = 'approval_required')
+      OR EXISTS (
+        SELECT 1
+        FROM project_decision_requests w
+        WHERE w.tenant_id = t.tenant_id
+          AND w.id = t.waiting_request_id
+          AND w.decision_type = 'project_task_approval'
+      )
+    )
   )
 ORDER BY t.updated_at ASC
 LIMIT $1::integer
@@ -5146,72 +5355,10 @@ LIMIT $1::integer
 
 // waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
 // 看门狗：若任务上另有 open decision 则只补绑指针；否则补建决策卡。
+// 例外（spec 2026-08-11）：仍处「预检闸审批形态」的任务交给下面的 zombie 扫描 heal，
+// 不得当「缺卡」进补建列表。两个列表的条件严格互补，任务不会两边都落空。
 func (q *Queries) ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error) {
 	rows, err := q.db.Query(ctx, ListOrphanWaitingHumanProjectTasks, batchLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ProjectTask{}
-	for rows.Next() {
-		var i ProjectTask
-		if err := rows.Scan(
-			&i.ID,
-			&i.TenantID,
-			&i.ProjectID,
-			&i.DemandID,
-			&i.Title,
-			&i.Summary,
-			&i.Status,
-			&i.AssignedDigitalEmployeeID,
-			&i.RuntimeTaskID,
-			&i.DigitalEmployeeRunID,
-			&i.RiskLevel,
-			&i.RequiresHumanApproval,
-			&i.LatestEventID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.CoordinationJobID,
-			&i.RouteDecisionID,
-			&i.PlannedTaskKey,
-			&i.TaskKind,
-			&i.StageIndex,
-			&i.ExpectedOutputs,
-			&i.InputRequirements,
-			&i.HandoffContract,
-			&i.PlannerMetadata,
-			&i.CurrentAttemptID,
-			&i.AcceptedPlanRevisionID,
-			&i.DecompositionClaimKey,
-			&i.AttemptCount,
-			&i.MaxAttempts,
-			&i.RetryNotBefore,
-			&i.WaitingReason,
-			&i.WaitingRequestID,
-			&i.TerminalEventID,
-			&i.StatusChangedAt,
-			&i.LatestDispatchGateResultID,
-			&i.RevisionOfTaskID,
-			&i.LatestTaskResultID,
-			&i.PlanIteration,
-			&i.DismissedAt,
-			&i.DismissedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-// ListZombieGateApprovalWaitingHumanProjectTasks returns waiting_human tasks
-// whose waiting_request_id points at a system-repaired zero-approval zombie
-// while a real approved gate-linked project_task_approval already exists.
-func (q *Queries) ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error) {
-	rows, err := q.db.Query(ctx, ListZombieGateApprovalWaitingHumanProjectTasks, batchLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -6162,6 +6309,321 @@ func (q *Queries) ListProjectPlanRevisionsForDemand(ctx context.Context, arg Lis
 			&i.UpdatedAt,
 			&i.CreatedEventID,
 			&i.CoordinationMode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectPortfolioItems = `-- name: ListProjectPortfolioItems :many
+WITH visible_projects AS (
+  SELECT p.id, p.tenant_id, p.team_id, p.name, p.description, p.goal, p.status, p.human_owner_user_id, p.coordination_workflow_id, p.coordination_status, p.coordination_policy, p.archived_at, p.created_at, p.updated_at, p.repo_url, p.repo_default_branch, p.repo_git_credential_ref, p.repo_scope, p.repo_binding_status, p.deleted_at, p.scenario_template_key, p.human_owner_user_ids, p.workspace_ready_status, p.primary_runtime_node_id, p.workspace_ready_error, p.workspace_ready_at, p.directory_name, p.budget_token_limit
+  FROM projects p
+  WHERE p.tenant_id = $2::uuid
+    AND p.deleted_at IS NULL
+    AND (
+      NOT $3::bool
+      OR $4::uuid = ANY(p.human_owner_user_ids)
+      OR EXISTS (
+        SELECT 1
+        FROM project_members pm
+        WHERE pm.tenant_id = p.tenant_id
+          AND pm.project_id = p.id
+          AND pm.principal_type = 'human_user'
+          AND pm.principal_id = $4::uuid
+          AND pm.status = 'active'
+      )
+    )
+),
+filtered_projects AS (
+  SELECT vp.id, vp.tenant_id, vp.team_id, vp.name, vp.description, vp.goal, vp.status, vp.human_owner_user_id, vp.coordination_workflow_id, vp.coordination_status, vp.coordination_policy, vp.archived_at, vp.created_at, vp.updated_at, vp.repo_url, vp.repo_default_branch, vp.repo_git_credential_ref, vp.repo_scope, vp.repo_binding_status, vp.deleted_at, vp.scenario_template_key, vp.human_owner_user_ids, vp.workspace_ready_status, vp.primary_runtime_node_id, vp.workspace_ready_error, vp.workspace_ready_at, vp.directory_name, vp.budget_token_limit
+  FROM visible_projects vp
+  WHERE (
+      $5::text IS NULL
+      OR vp.name ILIKE '%' || $5::text || '%'
+      OR vp.directory_name ILIKE '%' || $5::text || '%'
+      OR COALESCE(vp.goal, '') ILIKE '%' || $5::text || '%'
+    )
+    AND (
+      cardinality($6::text[]) = 0
+      OR vp.status = ANY($6::text[])
+    )
+    AND (
+      $7::uuid IS NULL
+      OR $7::uuid = ANY(vp.human_owner_user_ids)
+      OR vp.human_owner_user_id = $7::uuid
+    )
+    AND (
+      $8::text IS NULL
+      OR EXISTS (
+        SELECT 1
+        FROM project_tasks pt
+        WHERE pt.tenant_id = $2::uuid
+          AND pt.project_id = vp.id
+          AND pt.dismissed_at IS NULL
+          AND (
+            project_task_portfolio_bucket(pt.status, pt.requires_human_approval)
+          ) = $8::text
+      )
+    )
+),
+task_agg AS (
+  SELECT
+    pt.project_id,
+    COUNT(*)::integer AS task_total,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'pending')::integer AS task_pending,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'queued')::integer AS task_queued,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'running')::integer AS task_running,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'waiting_human')::integer AS task_waiting_human,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'blocked')::integer AS task_blocked,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'failed')::integer AS task_failed,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'completed')::integer AS task_completed,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'cancelled')::integer AS task_cancelled,
+    COUNT(*) FILTER (WHERE b.portfolio_bucket = 'other')::integer AS task_other,
+    -- orphan 等人：宽口径 waiting_human 再排除已有 open decision（§3.3）
+    COUNT(*) FILTER (
+      WHERE b.portfolio_bucket = 'waiting_human'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM project_decision_requests dr
+          WHERE dr.tenant_id = pt.tenant_id
+            AND dr.project_task_id = pt.id
+            AND lower(COALESCE(dr.status_snapshot, '')) IN (
+                'pending', 'waiting', 'requested', 'open'
+            )
+        )
+    )::integer AS waiting_human_unlinked_count,
+    COUNT(*) FILTER (
+      WHERE pt.status NOT IN ('completed', 'done', 'success', 'failed', 'cancelled')
+        AND pt.assigned_digital_employee_id IS NULL
+    )::integer AS unassigned_count,
+    COUNT(DISTINCT pt.assigned_digital_employee_id) FILTER (
+      WHERE pt.status NOT IN ('completed', 'done', 'success', 'failed', 'cancelled')
+        AND pt.assigned_digital_employee_id IS NOT NULL
+    )::integer AS active_digital_employee_count,
+    MAX(pt.updated_at) AS last_activity_at
+  FROM project_tasks pt
+  JOIN filtered_projects fp ON fp.id = pt.project_id
+  CROSS JOIN LATERAL (
+    SELECT project_task_portfolio_bucket(pt.status, pt.requires_human_approval) AS portfolio_bucket
+  ) b
+  WHERE pt.tenant_id = $2::uuid
+    AND pt.dismissed_at IS NULL
+  GROUP BY pt.project_id
+),
+decision_agg AS (
+  SELECT
+    project_id,
+    COUNT(*) FILTER (
+      WHERE lower(COALESCE(status_snapshot, '')) IN ('pending', 'waiting', 'requested', 'open')
+    )::integer AS open_decision_count
+  FROM project_decision_requests
+  WHERE tenant_id = $2::uuid
+    AND project_id IN (SELECT id FROM filtered_projects)
+  GROUP BY project_id
+),
+evidence_agg AS (
+  SELECT
+    project_id,
+    COUNT(*) FILTER (
+      WHERE verification_status IN ('submitted', 'rejected')
+    )::integer AS evidence_pending_count
+  FROM project_evidence_refs
+  WHERE tenant_id = $2::uuid
+    AND project_id IN (SELECT id FROM filtered_projects)
+  GROUP BY project_id
+),
+candidate_projects AS (
+  SELECT
+    fp.id, fp.tenant_id, fp.team_id, fp.name, fp.description, fp.goal, fp.status, fp.human_owner_user_id, fp.coordination_workflow_id, fp.coordination_status, fp.coordination_policy, fp.archived_at, fp.created_at, fp.updated_at, fp.repo_url, fp.repo_default_branch, fp.repo_git_credential_ref, fp.repo_scope, fp.repo_binding_status, fp.deleted_at, fp.scenario_template_key, fp.human_owner_user_ids, fp.workspace_ready_status, fp.primary_runtime_node_id, fp.workspace_ready_error, fp.workspace_ready_at, fp.directory_name, fp.budget_token_limit,
+    COALESCE(t.task_total, 0)::integer AS task_total,
+    COALESCE(t.task_pending, 0)::integer AS task_pending,
+    COALESCE(t.task_queued, 0)::integer AS task_queued,
+    COALESCE(t.task_running, 0)::integer AS task_running,
+    COALESCE(t.task_waiting_human, 0)::integer AS task_waiting_human,
+    COALESCE(t.task_blocked, 0)::integer AS task_blocked,
+    COALESCE(t.task_failed, 0)::integer AS task_failed,
+    COALESCE(t.task_completed, 0)::integer AS task_completed,
+    COALESCE(t.task_cancelled, 0)::integer AS task_cancelled,
+    COALESCE(t.task_other, 0)::integer AS task_other,
+    COALESCE(t.waiting_human_unlinked_count, 0)::integer AS waiting_human_unlinked_count,
+    COALESCE(t.unassigned_count, 0)::integer AS unassigned_count,
+    COALESCE(t.active_digital_employee_count, 0)::integer AS active_digital_employee_count,
+    COALESCE(d.open_decision_count, 0)::integer AS open_decision_count,
+    COALESCE(e.evidence_pending_count, 0)::integer AS evidence_pending_count,
+    (COALESCE(t.last_activity_at, fp.updated_at))::timestamptz AS effective_last_activity_at
+  FROM filtered_projects fp
+  LEFT JOIN task_agg t ON t.project_id = fp.id
+  LEFT JOIN decision_agg d ON d.project_id = fp.id
+  LEFT JOIN evidence_agg e ON e.project_id = fp.id
+  ORDER BY
+    CASE
+      WHEN $1::text = 'attention' THEN
+        CASE
+          WHEN (
+            COALESCE(t.task_failed, 0)
+            + COALESCE(t.task_blocked, 0)
+            + COALESCE(t.waiting_human_unlinked_count, 0)
+            + COALESCE(d.open_decision_count, 0)
+          ) > 0 THEN 0
+          ELSE 1
+        END
+      ELSE 0
+    END ASC,
+    CASE
+      WHEN $1::text = 'created' THEN fp.created_at
+      ELSE COALESCE(t.last_activity_at, fp.updated_at)
+    END DESC NULLS LAST,
+    fp.id DESC
+  LIMIT $10 OFFSET $9
+)
+SELECT
+  cp.id AS project_id,
+  cp.name,
+  COALESCE(cp.goal, '')::text AS goal,
+  cp.status,
+  cp.human_owner_user_id,
+  cp.human_owner_user_ids,
+  COALESCE(cp.coordination_status, '')::text AS coordination_status,
+  cp.updated_at,
+  cp.created_at,
+  cp.archived_at,
+  COALESCE(NULLIF(BTRIM(owner.display_name), ''), owner.username, '')::text AS owner_display_name,
+  cp.task_total,
+  cp.task_pending,
+  cp.task_queued,
+  cp.task_running,
+  cp.task_waiting_human,
+  cp.task_blocked,
+  cp.task_failed,
+  cp.task_completed,
+  cp.task_cancelled,
+  cp.task_other,
+  cp.waiting_human_unlinked_count,
+  cp.unassigned_count,
+  cp.active_digital_employee_count,
+  cp.open_decision_count,
+  cp.evidence_pending_count,
+  cp.effective_last_activity_at
+FROM candidate_projects cp
+LEFT JOIN auth_users owner ON owner.id = cp.human_owner_user_id
+ORDER BY
+  CASE
+    WHEN $1::text = 'attention' THEN
+      CASE
+        WHEN (
+          cp.task_failed
+          + cp.task_blocked
+          + cp.waiting_human_unlinked_count
+          + cp.open_decision_count
+        ) > 0 THEN 0
+        ELSE 1
+      END
+    ELSE 0
+  END ASC,
+  CASE
+    WHEN $1::text = 'created' THEN cp.created_at
+    ELSE cp.effective_last_activity_at
+  END DESC NULLS LAST,
+  cp.id DESC
+`
+
+type ListProjectPortfolioItemsParams struct {
+	Sort            string        `json:"sort"`
+	TenantID        uuid.UUID     `json:"tenant_id"`
+	MineOnly        bool          `json:"mine_only"`
+	ActorUserID     uuid.UUID     `json:"actor_user_id"`
+	Q               pgtype.Text   `json:"q"`
+	ProjectStatuses []string      `json:"project_statuses"`
+	OwnerUserID     uuid.NullUUID `json:"owner_user_id"`
+	TaskState       pgtype.Text   `json:"task_state"`
+	Offset          int32         `json:"offset"`
+	Limit           int32         `json:"limit"`
+}
+
+type ListProjectPortfolioItemsRow struct {
+	ProjectID                  uuid.UUID          `json:"project_id"`
+	Name                       string             `json:"name"`
+	Goal                       string             `json:"goal"`
+	Status                     string             `json:"status"`
+	HumanOwnerUserID           uuid.UUID          `json:"human_owner_user_id"`
+	HumanOwnerUserIds          []uuid.UUID        `json:"human_owner_user_ids"`
+	CoordinationStatus         string             `json:"coordination_status"`
+	UpdatedAt                  pgtype.Timestamptz `json:"updated_at"`
+	CreatedAt                  pgtype.Timestamptz `json:"created_at"`
+	ArchivedAt                 pgtype.Timestamptz `json:"archived_at"`
+	OwnerDisplayName           string             `json:"owner_display_name"`
+	TaskTotal                  int32              `json:"task_total"`
+	TaskPending                int32              `json:"task_pending"`
+	TaskQueued                 int32              `json:"task_queued"`
+	TaskRunning                int32              `json:"task_running"`
+	TaskWaitingHuman           int32              `json:"task_waiting_human"`
+	TaskBlocked                int32              `json:"task_blocked"`
+	TaskFailed                 int32              `json:"task_failed"`
+	TaskCompleted              int32              `json:"task_completed"`
+	TaskCancelled              int32              `json:"task_cancelled"`
+	TaskOther                  int32              `json:"task_other"`
+	WaitingHumanUnlinkedCount  int32              `json:"waiting_human_unlinked_count"`
+	UnassignedCount            int32              `json:"unassigned_count"`
+	ActiveDigitalEmployeeCount int32              `json:"active_digital_employee_count"`
+	OpenDecisionCount          int32              `json:"open_decision_count"`
+	EvidencePendingCount       int32              `json:"evidence_pending_count"`
+	EffectiveLastActivityAt    pgtype.Timestamptz `json:"effective_last_activity_at"`
+}
+
+func (q *Queries) ListProjectPortfolioItems(ctx context.Context, arg ListProjectPortfolioItemsParams) ([]ListProjectPortfolioItemsRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectPortfolioItems,
+		arg.Sort,
+		arg.TenantID,
+		arg.MineOnly,
+		arg.ActorUserID,
+		arg.Q,
+		arg.ProjectStatuses,
+		arg.OwnerUserID,
+		arg.TaskState,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectPortfolioItemsRow{}
+	for rows.Next() {
+		var i ListProjectPortfolioItemsRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.Name,
+			&i.Goal,
+			&i.Status,
+			&i.HumanOwnerUserID,
+			&i.HumanOwnerUserIds,
+			&i.CoordinationStatus,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.ArchivedAt,
+			&i.OwnerDisplayName,
+			&i.TaskTotal,
+			&i.TaskPending,
+			&i.TaskQueued,
+			&i.TaskRunning,
+			&i.TaskWaitingHuman,
+			&i.TaskBlocked,
+			&i.TaskFailed,
+			&i.TaskCompleted,
+			&i.TaskCancelled,
+			&i.TaskOther,
+			&i.WaitingHumanUnlinkedCount,
+			&i.UnassignedCount,
+			&i.ActiveDigitalEmployeeCount,
+			&i.OpenDecisionCount,
+			&i.EvidencePendingCount,
+			&i.EffectiveLastActivityAt,
 		); err != nil {
 			return nil, err
 		}
@@ -8111,6 +8573,106 @@ func (q *Queries) ListWorkflowInstances(ctx context.Context, arg ListWorkflowIns
 			&i.CurrentBlockerTitle,
 			&i.CurrentBlockerResourceID,
 			&i.ProjectArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListZombieGateApprovalWaitingHumanProjectTasks = `-- name: ListZombieGateApprovalWaitingHumanProjectTasks :many
+SELECT t.id, t.tenant_id, t.project_id, t.demand_id, t.title, t.summary, t.status, t.assigned_digital_employee_id, t.runtime_task_id, t.digital_employee_run_id, t.risk_level, t.requires_human_approval, t.latest_event_id, t.created_at, t.updated_at, t.coordination_job_id, t.route_decision_id, t.planned_task_key, t.task_kind, t.stage_index, t.expected_outputs, t.input_requirements, t.handoff_contract, t.planner_metadata, t.current_attempt_id, t.accepted_plan_revision_id, t.decomposition_claim_key, t.attempt_count, t.max_attempts, t.retry_not_before, t.waiting_reason, t.waiting_request_id, t.terminal_event_id, t.status_changed_at, t.latest_dispatch_gate_result_id, t.revision_of_task_id, t.latest_task_result_id, t.plan_iteration, t.dismissed_at, t.dismissed_by
+FROM project_tasks t
+WHERE t.status = 'waiting_human'
+  AND t.dismissed_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM project_decision_requests g
+    WHERE g.tenant_id = t.tenant_id
+      AND g.project_id = t.project_id
+      AND g.project_task_id = t.id
+      AND g.decision_type = 'project_task_approval'
+      AND lower(g.status_snapshot) = 'approved'
+      AND g.dispatch_gate_result_id IS NOT NULL
+  )
+  AND (
+    (t.waiting_request_id IS NULL AND t.waiting_reason = 'approval_required')
+    OR EXISTS (
+      SELECT 1
+      FROM project_decision_requests w
+      WHERE w.tenant_id = t.tenant_id
+        AND w.id = t.waiting_request_id
+        AND w.decision_type = 'project_task_approval'
+    )
+  )
+ORDER BY t.updated_at ASC
+LIMIT $1::integer
+`
+
+// waiting_human + 同 task 已有 approved gate 链接真卡，**且当前等待仍是预检闸审批形态**
+// （spec 2026-08-11 §4.2/§4.4）。两种入选形态：
+//
+//	a) 指针空 + waiting_reason=approval_required：批准后中间态，orphan 尚未抢走指针；
+//	b) 指针指向 project_task_approval：零 approval 僵尸补建卡，或根因 A 的「指针挂已批真卡」。
+//
+// 必须排除「已收敛到诚实恢复卡」（指针指 project_task_recovery/clarification 等）：那是
+// 人类的真实待办，heal 回 planned 只会撞回同一堵墙、再开一张新恢复卡并改挂指针，下一轮
+// 看门狗又扫到——每分钟自激一次的无限循环（2026-08-11 实测单任务积到 99 张卡）。
+// 收敛后自然离列：新指针指向非 approval 卡，形态判据不再命中。
+func (q *Queries) ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error) {
+	rows, err := q.db.Query(ctx, ListZombieGateApprovalWaitingHumanProjectTasks, batchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTask{}
+	for rows.Next() {
+		var i ProjectTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.Title,
+			&i.Summary,
+			&i.Status,
+			&i.AssignedDigitalEmployeeID,
+			&i.RuntimeTaskID,
+			&i.DigitalEmployeeRunID,
+			&i.RiskLevel,
+			&i.RequiresHumanApproval,
+			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationJobID,
+			&i.RouteDecisionID,
+			&i.PlannedTaskKey,
+			&i.TaskKind,
+			&i.StageIndex,
+			&i.ExpectedOutputs,
+			&i.InputRequirements,
+			&i.HandoffContract,
+			&i.PlannerMetadata,
+			&i.CurrentAttemptID,
+			&i.AcceptedPlanRevisionID,
+			&i.DecompositionClaimKey,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.RetryNotBefore,
+			&i.WaitingReason,
+			&i.WaitingRequestID,
+			&i.TerminalEventID,
+			&i.StatusChangedAt,
+			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
+			&i.PlanIteration,
+			&i.DismissedAt,
+			&i.DismissedBy,
 		); err != nil {
 			return nil, err
 		}

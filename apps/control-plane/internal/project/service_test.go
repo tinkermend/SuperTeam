@@ -13034,24 +13034,242 @@ func (r *memoryRepository) GetProjectTaskStatusCounts(ctx context.Context, tenan
 			continue
 		}
 		summary.TotalTasks++
-		switch task.Status {
-		case "completed":
-			summary.CompletedTasks++
-		case "failed":
-			summary.FailedTasks++
-		case "cancelled":
-			summary.CancelledTasks++
-		case "waiting_human":
-			summary.PendingHumanTasks++
+		if isActiveTasksGateStatus(task.Status) {
 			summary.ActiveTasks++
-		case "running":
+		}
+		switch ClassifyProjectTaskPortfolioBucket(task.Status, task.RequiresHumanApproval) {
+		case PortfolioBucketPending:
+			summary.PendingTasks++
+		case PortfolioBucketQueued:
+			summary.QueuedTasks++
+		case PortfolioBucketRunning:
 			summary.RunningTasks++
-			summary.ActiveTasks++
-		default:
-			summary.ActiveTasks++
+		case PortfolioBucketWaitingHuman:
+			summary.PendingHumanTasks++
+		case PortfolioBucketBlocked:
+			summary.BlockedTasks++
+		case PortfolioBucketFailed:
+			summary.FailedTasks++
+		case PortfolioBucketCompleted:
+			summary.CompletedTasks++
+		case PortfolioBucketCancelled:
+			summary.CancelledTasks++
+		case PortfolioBucketOther:
+			summary.OtherTasks++
 		}
 	}
 	return summary, nil
+}
+
+func (r *memoryRepository) GetProjectPortfolio(ctx context.Context, req GetProjectPortfolioRequest) (ProjectPortfolioResponse, error) {
+	// Minimal in-memory implementation for service-layer unit tests.
+	visible := make([]Project, 0)
+	for _, p := range r.projects {
+		if p.TenantID != req.TenantID {
+			continue
+		}
+		if req.MineOnly {
+			isOwner := p.HumanOwnerUserID == req.ActorUserID
+			for _, id := range p.HumanOwnerUserIDs {
+				if id == req.ActorUserID {
+					isOwner = true
+					break
+				}
+			}
+			isMember := false
+			for _, m := range r.members[p.ID] {
+				if m.PrincipalType == PrincipalTypeHumanUser && m.PrincipalID == req.ActorUserID && m.Status == "active" {
+					isMember = true
+					break
+				}
+			}
+			if !isOwner && !isMember {
+				continue
+			}
+		}
+		visible = append(visible, p)
+	}
+
+	statusCounts := map[string]int{
+		"draft": 0, "configuring": 0, "running": 0,
+		"paused": 0, "acceptance": 0, "archived": 0,
+	}
+	activeTasks := ProjectTaskPortfolioCounts{}
+	for _, p := range visible {
+		statusCounts[string(p.Status)]++
+		if p.Status == ProjectStatusArchived {
+			continue
+		}
+		for _, task := range r.tasks {
+			if task.TenantID != req.TenantID || task.ProjectID != p.ID || task.DismissedAt != nil {
+				continue
+			}
+			activeTasks.Total++
+			switch ClassifyProjectTaskPortfolioBucket(task.Status, task.RequiresHumanApproval) {
+			case PortfolioBucketPending:
+				activeTasks.Pending++
+			case PortfolioBucketQueued:
+				activeTasks.Queued++
+			case PortfolioBucketRunning:
+				activeTasks.Running++
+			case PortfolioBucketWaitingHuman:
+				activeTasks.WaitingHuman++
+			case PortfolioBucketBlocked:
+				activeTasks.Blocked++
+			case PortfolioBucketFailed:
+				activeTasks.Failed++
+			case PortfolioBucketCompleted:
+				activeTasks.Completed++
+			case PortfolioBucketCancelled:
+				activeTasks.Cancelled++
+			case PortfolioBucketOther:
+				activeTasks.Other++
+			}
+		}
+	}
+
+	filtered := make([]Project, 0, len(visible))
+	for _, p := range visible {
+		if req.Query != "" && !strings.Contains(p.Name, req.Query) && !strings.Contains(p.Goal, req.Query) {
+			continue
+		}
+		if len(req.ProjectStatuses) > 0 {
+			ok := false
+			for _, s := range req.ProjectStatuses {
+				if string(p.Status) == s {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				continue
+			}
+		}
+		if req.OwnerUserID != nil {
+			match := p.HumanOwnerUserID == *req.OwnerUserID
+			for _, id := range p.HumanOwnerUserIDs {
+				if id == *req.OwnerUserID {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		if req.TaskState != "" {
+			has := false
+			for _, task := range r.tasks {
+				if task.ProjectID != p.ID || task.DismissedAt != nil {
+					continue
+				}
+				if string(ClassifyProjectTaskPortfolioBucket(task.Status, task.RequiresHumanApproval)) == req.TaskState {
+					has = true
+					break
+				}
+			}
+			if !has {
+				continue
+			}
+		}
+		filtered = append(filtered, p)
+	}
+
+	total := int32(len(filtered))
+	start := int(req.Offset)
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + int(req.Limit)
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	page := filtered[start:end]
+	items := make([]ProjectPortfolioItem, 0, len(page))
+	for _, p := range page {
+		tc := ProjectTaskPortfolioCounts{}
+		openDecisions := 0
+		waitingUnlinked := 0
+		for _, task := range r.tasks {
+			if task.ProjectID != p.ID || task.DismissedAt != nil {
+				continue
+			}
+			tc.Total++
+			bucket := ClassifyProjectTaskPortfolioBucket(task.Status, task.RequiresHumanApproval)
+			switch bucket {
+			case PortfolioBucketPending:
+				tc.Pending++
+			case PortfolioBucketQueued:
+				tc.Queued++
+			case PortfolioBucketRunning:
+				tc.Running++
+			case PortfolioBucketWaitingHuman:
+				tc.WaitingHuman++
+				// orphan check
+				linked := false
+				for _, d := range r.decisionRequests {
+					if d.ProjectTaskID != nil && *d.ProjectTaskID == task.ID {
+						st := strings.ToLower(d.StatusSnapshot)
+						if st == "pending" || st == "waiting" || st == "requested" || st == "open" {
+							linked = true
+							break
+						}
+					}
+				}
+				if !linked {
+					waitingUnlinked++
+				}
+			case PortfolioBucketBlocked:
+				tc.Blocked++
+			case PortfolioBucketFailed:
+				tc.Failed++
+			case PortfolioBucketCompleted:
+				tc.Completed++
+			case PortfolioBucketCancelled:
+				tc.Cancelled++
+			case PortfolioBucketOther:
+				tc.Other++
+			}
+		}
+		for _, d := range r.decisionRequests {
+			if d.ProjectID == p.ID {
+				st := strings.ToLower(d.StatusSnapshot)
+				if st == "pending" || st == "waiting" || st == "requested" || st == "open" {
+					openDecisions++
+				}
+			}
+		}
+		item := ProjectPortfolioItem{
+			Project: ProjectPortfolioProject{
+				ID: p.ID, Name: p.Name, Goal: p.Goal, Status: p.Status,
+				HumanOwnerUserID: p.HumanOwnerUserID, HumanOwnerUserIDs: p.HumanOwnerUserIDs,
+				CoordinationStatus: p.CoordinationStatus, UpdatedAt: p.UpdatedAt,
+			},
+			TaskCounts: tc,
+			Attention: ProjectPortfolioAttention{
+				OpenDecisionCount:         openDecisions,
+				WaitingHumanUnlinkedCount: waitingUnlinked,
+				CoordinationAnomaly:       coordinationAnomaly(p.Status, p.CoordinationStatus, p.ArchivedAt != nil),
+			},
+		}
+		if p.HumanOwnerUserID != uuid.Nil {
+			item.Owner = &ProjectPortfolioOwner{ID: p.HumanOwnerUserID, DisplayName: ""}
+		}
+		items = append(items, item)
+	}
+
+	return ProjectPortfolioResponse{
+		Summary: ProjectPortfolioSummary{
+			TotalProjects:       len(visible),
+			ProjectStatusCounts: statusCounts,
+			ActiveTaskCounts:    activeTasks,
+		},
+		Items: items,
+		Pagination: ProjectPortfolioPagination{
+			Limit: req.Limit, Offset: req.Offset, Total: total,
+			HasMore: int64(req.Offset)+int64(len(items)) < int64(total),
+		},
+	}, nil
 }
 
 func (r *memoryRepository) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (ProjectTask, error) {
@@ -15587,7 +15805,7 @@ func (r *memoryRepository) ListOrphanWaitingHumanProjectTasks(ctx context.Contex
 		if task.Status != ProjectTaskStatusWaitingHuman || task.DismissedAt != nil {
 			continue
 		}
-		if memoryTaskHasApprovedGateLinkedApproval(r, task) {
+		if memoryTaskHasApprovedGateLinkedApproval(r, task) && memoryTaskWaitIsGateApprovalShaped(r, task) {
 			continue
 		}
 		linkedOpen := false
@@ -15629,6 +15847,21 @@ func memoryTaskHasApprovedGateLinkedApproval(r *memoryRepository, task ProjectTa
 	return false
 }
 
+// memoryTaskWaitIsGateApprovalShaped mirrors the SQL shape predicate: pointer
+// absent + approval_required reason, or pointer at a project_task_approval card.
+func memoryTaskWaitIsGateApprovalShaped(r *memoryRepository, task ProjectTask) bool {
+	if task.WaitingRequestID == nil || *task.WaitingRequestID == uuid.Nil {
+		return task.WaitingReason != nil &&
+			strings.TrimSpace(*task.WaitingReason) == HumanWaitReasonApprovalRequired
+	}
+	for _, d := range r.decisionRequests {
+		if d.ID == *task.WaitingRequestID {
+			return d.DecisionType == "project_task_approval"
+		}
+	}
+	return false
+}
+
 func (r *memoryRepository) ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
 	out := make([]ProjectTask, 0)
 	for _, task := range r.tasks {
@@ -15636,6 +15869,9 @@ func (r *memoryRepository) ListZombieGateApprovalWaitingHumanProjectTasks(ctx co
 			continue
 		}
 		if !memoryTaskHasApprovedGateLinkedApproval(r, task) {
+			continue
+		}
+		if !memoryTaskWaitIsGateApprovalShaped(r, task) {
 			continue
 		}
 		out = append(out, task)

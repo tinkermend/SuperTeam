@@ -93,6 +93,7 @@ type Querier interface {
 	// can decide whether the whole project is ready for human acceptance.
 	CountProjectDemandsByTerminality(ctx context.Context, arg CountProjectDemandsByTerminalityParams) (CountProjectDemandsByTerminalityRow, error)
 	CountProjectPlaybookCastingsForEmployee(ctx context.Context, arg CountProjectPlaybookCastingsForEmployeeParams) (int32, error)
+	CountProjectPortfolioItems(ctx context.Context, arg CountProjectPortfolioItemsParams) (int32, error)
 	CountProjectTaskDispatchFailureEvents(ctx context.Context, arg CountProjectTaskDispatchFailureEventsParams) (int64, error)
 	CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error)
 	// 观测用:不删,只报当前各类超期行的规模,供日志与人工核对。
@@ -351,6 +352,16 @@ type Querier interface {
 	GetProjectForDelete(ctx context.Context, arg GetProjectForDeleteParams) (Project, error)
 	GetProjectPlanRevision(ctx context.Context, arg GetProjectPlanRevisionParams) (ProjectPlanRevision, error)
 	GetProjectPlanRevisionByFingerprint(ctx context.Context, arg GetProjectPlanRevisionByFingerprintParams) (ProjectPlanRevision, error)
+	// ---------------------------------------------------------------------------
+	// Project portfolio home (spec 2026-08-11-project-portfolio-layered-status)
+	// ---------------------------------------------------------------------------
+	// mine_only 谓词与 ListWorkflowInstances 同源（owner ∪ active human member）。
+	// summary 仅受 mine_only 收窄；q/project_status/owner/task_state 只影响 items+total。
+	// 展示桶：project_task_portfolio_bucket() 单一事实源（与 Go 同源）。
+	// 注意 sort=attention 必须先对 filtered 全集算 attention 再 LIMIT，故 task_agg 挂
+	// filtered_projects 而非 candidate 页（§4.2 与「先 LIMIT 再聚合」互斥；spec 已勘误）。
+	// summary 任务层按定义扫可见集合非归档项目（全量聚合，非逐卡扇出）。
+	GetProjectPortfolioSummary(ctx context.Context, arg GetProjectPortfolioSummaryParams) (GetProjectPortfolioSummaryRow, error)
 	GetProjectRepoBinding(ctx context.Context, arg GetProjectRepoBindingParams) (GetProjectRepoBindingRow, error)
 	GetProjectRouteDecision(ctx context.Context, arg GetProjectRouteDecisionParams) (ProjectRouteDecision, error)
 	GetProjectRouteDecisionByCoordinationJob(ctx context.Context, arg GetProjectRouteDecisionByCoordinationJobParams) (ProjectRouteDecision, error)
@@ -386,10 +397,16 @@ type Querier interface {
 	GetProjectTaskSessionLineage(ctx context.Context, arg GetProjectTaskSessionLineageParams) (GetProjectTaskSessionLineageRow, error)
 	// 项目概览任务计数：必须走全表聚合，不能在 ListProjectTasks 的分页片上循环统计
 	// （原实现在"最近更新的 20 条"上数数，任务超过 20 条即漏计，且窗口随更新漂移会让
-	// 计数非单调抖动）。分桶口径与 ListProjectRunSummaries 保持一致；dismissed 任务
-	// 与 ListProjectTasks 默认窗口同样排除，两者数字才对得上。
-	// active 口径 = 非终态，终态集与 project.sql 各处 F5 判据同源（cancelled 属终态，
-	// 旧实现把它算进 active 是错的）。
+	// 计数非单调抖动）。dismissed 任务与 ListProjectTasks 默认窗口同样排除。
+	//
+	// ActiveTasks 闸门口径冻结（spec 2026-08-11 portfolio §5.2.1）：
+	//   status NOT IN ('completed','done','success','failed','cancelled')
+	// blocked 与 error 在此定义下算活跃——这是归档闸门既有行为，不得改成展示桶之和。
+	//
+	// 展示桶与 ActiveTasks 并列、互不派生。
+	// 展示桶单一事实源：project_task_portfolio_bucket()（迁移 20260811180000）
+	// 与 Go ClassifyProjectTaskPortfolioBucket 同源。展示 failed 仅 failed/error；
+	// ListProjectRunSummaries.failed_count 仍含 blocked（运行总览宽失败）。
 	GetProjectTaskStatusCounts(ctx context.Context, arg GetProjectTaskStatusCountsParams) (GetProjectTaskStatusCountsRow, error)
 	// CreateProviderSession retired (2026-07-21).
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
@@ -570,8 +587,9 @@ type Querier interface {
 	ListOpenFGAProjectTeamScopes(ctx context.Context) ([]ListOpenFGAProjectTeamScopesRow, error)
 	// waiting_human 且 waiting_request_id 为空，或指向的决策已非 open。
 	// 看门狗：若任务上另有 open decision 则只补绑指针；否则补建决策卡。
+	// 例外（spec 2026-08-11）：仍处「预检闸审批形态」的任务交给下面的 zombie 扫描 heal，
+	// 不得当「缺卡」进补建列表。两个列表的条件严格互补，任务不会两边都落空。
 	ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
-	ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]TenantTeam, error)
 	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	// 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。
@@ -617,6 +635,7 @@ type Querier interface {
 	ListProjectPlanRevisionsForDemand(ctx context.Context, arg ListProjectPlanRevisionsForDemandParams) ([]ProjectPlanRevision, error)
 	ListProjectPlaybookCastings(ctx context.Context, arg ListProjectPlaybookCastingsParams) ([]ProjectPlaybookCasting, error)
 	ListProjectPlaybookCastingsByTemplate(ctx context.Context, arg ListProjectPlaybookCastingsByTemplateParams) ([]ProjectPlaybookCasting, error)
+	ListProjectPortfolioItems(ctx context.Context, arg ListProjectPortfolioItemsParams) ([]ListProjectPortfolioItemsRow, error)
 	ListProjectReportRefs(ctx context.Context, arg ListProjectReportRefsParams) ([]ProjectReportRef, error)
 	ListProjectRouteDecisions(ctx context.Context, arg ListProjectRouteDecisionsParams) ([]ProjectRouteDecision, error)
 	// 运行总览项目运行带 + 项目管理首页组合计数:跨项目一次聚合,避免逐项目 N+1。
@@ -746,6 +765,15 @@ type Querier interface {
 	//   archived = 已归档项目 或 终态实例（completed/cancelled），供"已归档/已完成"页签回看
 	//   all      = 不过滤（调试/兜底）
 	ListWorkflowInstances(ctx context.Context, arg ListWorkflowInstancesParams) ([]ListWorkflowInstancesRow, error)
+	// waiting_human + 同 task 已有 approved gate 链接真卡，**且当前等待仍是预检闸审批形态**
+	// （spec 2026-08-11 §4.2/§4.4）。两种入选形态：
+	//   a) 指针空 + waiting_reason=approval_required：批准后中间态，orphan 尚未抢走指针；
+	//   b) 指针指向 project_task_approval：零 approval 僵尸补建卡，或根因 A 的「指针挂已批真卡」。
+	// 必须排除「已收敛到诚实恢复卡」（指针指 project_task_recovery/clarification 等）：那是
+	// 人类的真实待办，heal 回 planned 只会撞回同一堵墙、再开一张新恢复卡并改挂指针，下一轮
+	// 看门狗又扫到——每分钟自激一次的无限循环（2026-08-11 实测单任务积到 99 张卡）。
+	// 收敛后自然离列：新指针指向非 approval 卡，形态判据不再命中。
+	ListZombieGateApprovalWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
 	LockProjectEventSequence(ctx context.Context, arg LockProjectEventSequenceParams) error
 	LockProjectTaskForQueue(ctx context.Context, arg LockProjectTaskForQueueParams) (ProjectTask, error)
 	MarkFeishuOutboxFailed(ctx context.Context, arg MarkFeishuOutboxFailedParams) (FeishuOutbox, error)

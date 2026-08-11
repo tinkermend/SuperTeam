@@ -6402,24 +6402,39 @@ func (r *projectStoreMemoryRepository) GetProjectTaskStatusCounts(ctx context.Co
 			continue
 		}
 		summary.TotalTasks++
-		switch strings.ToLower(strings.TrimSpace(task.Status)) {
-		case "completed", "done", "success":
-			summary.CompletedTasks++
-		case "failed":
-			summary.FailedTasks++
-		case "cancelled":
-			summary.CancelledTasks++
-		case "waiting_human":
-			summary.PendingHumanTasks++
-			summary.ActiveTasks++
-		case "running":
-			summary.RunningTasks++
-			summary.ActiveTasks++
+		status := strings.ToLower(strings.TrimSpace(task.Status))
+		switch status {
+		case "completed", "done", "success", "failed", "cancelled":
+			// terminal for ActiveTasks gate
 		default:
 			summary.ActiveTasks++
 		}
+		switch project.ClassifyProjectTaskPortfolioBucket(task.Status, task.RequiresHumanApproval) {
+		case project.PortfolioBucketPending:
+			summary.PendingTasks++
+		case project.PortfolioBucketQueued:
+			summary.QueuedTasks++
+		case project.PortfolioBucketRunning:
+			summary.RunningTasks++
+		case project.PortfolioBucketWaitingHuman:
+			summary.PendingHumanTasks++
+		case project.PortfolioBucketBlocked:
+			summary.BlockedTasks++
+		case project.PortfolioBucketFailed:
+			summary.FailedTasks++
+		case project.PortfolioBucketCompleted:
+			summary.CompletedTasks++
+		case project.PortfolioBucketCancelled:
+			summary.CancelledTasks++
+		case project.PortfolioBucketOther:
+			summary.OtherTasks++
+		}
 	}
 	return summary, nil
+}
+
+func (r *projectStoreMemoryRepository) GetProjectPortfolio(ctx context.Context, req project.GetProjectPortfolioRequest) (project.ProjectPortfolioResponse, error) {
+	return project.ProjectPortfolioResponse{Items: []project.ProjectPortfolioItem{}}, nil
 }
 
 func (r *projectStoreMemoryRepository) CreateAcceptanceRecordWithEvent(ctx context.Context, req project.CreateAcceptanceRecordWithEventRequest) (project.ProjectAcceptanceRecordWriteResult, error) {

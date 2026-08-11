@@ -1055,6 +1055,91 @@ paths:
                 $ref: "#/components/schemas/ProjectRunSummaryResponse"
         "400":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/portfolio:
+    get:
+      operationId: getProjectPortfolio
+      summary: Project home portfolio read model (layered project + task status)
+      description: >-
+        项目管理首页专用读模型。项目生命周期与任务互斥状态桶分层返回；
+        summary 仅受 mine_only 收窄，items 另支持 q/project_status/owner/task_state 筛选与真分页。
+        健康度/关注投影须读 attention.waiting_human_unlinked_count，不得用 task_counts.waiting_human
+        与 open_decision_count 并列相加（§3.3 双计规避）。
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: project_status
+          in: query
+          description: 项目生命周期筛选，可重复传参
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/ProjectStatus"
+          style: form
+          explode: true
+        - name: owner_user_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: task_state
+          in: query
+          description: 返回至少含一个该互斥任务桶的项目
+          schema:
+            type: string
+            enum:
+              - pending
+              - queued
+              - running
+              - waiting_human
+              - blocked
+              - failed
+              - completed
+              - cancelled
+              - other
+        - name: mine_only
+          in: query
+          description: >-
+            仅返回我负责或参与的项目；谓词与 ListWorkflowInstances 同源。
+            同时收窄 summary 与 items。
+          schema:
+            type: boolean
+            default: false
+        - name: sort
+          in: query
+          description: attention（默认，关注优先）| recent | created
+          schema:
+            type: string
+            enum: [attention, recent, created]
+            default: attention
+        - name: limit
+          in: query
+          description: 1–50，默认 12
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 50
+            default: 12
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Project portfolio snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectPortfolioResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}:
     get:
       operationId: getProject
@@ -11053,7 +11138,9 @@ components:
       description: >-
         项目**全量**任务计数（排除 dismissed）。注意与 ProjectOverview.active_tasks
         区分：后者是分页任务列表，本对象才是权威计数。
-        total_tasks = active_tasks + completed_tasks + failed_tasks + cancelled_tasks。
+        ActiveTasks 闸门口径冻结为 status NOT IN (completed/done/success/failed/cancelled)；
+        展示桶（pending/queued/running/waiting_human/blocked/failed/completed/cancelled/other）
+        互斥且之和等于 total_tasks。ActiveTasks 与展示桶并列、互不派生（§5.2.1）。
       required:
         - active_tasks
         - pending_human_tasks
@@ -11062,31 +11149,247 @@ components:
         - running_tasks
         - cancelled_tasks
         - total_tasks
+        - pending_tasks
+        - queued_tasks
+        - blocked_tasks
+        - other_tasks
       properties:
         active_tasks:
           type: integer
           format: int32
-          description: 非终态任务数（不含 completed/failed/cancelled）。
+          description: >-
+            归档闸门用非终态任务数（不含 completed/done/success/failed/cancelled）。
+            blocked 与 error 算活跃。不得用展示桶之和重写。
         pending_human_tasks:
           type: integer
           format: int32
-          description: waiting_human 任务数（属 active_tasks 子集）。
+          description: 互斥展示桶 waiting_human（宽口径，含 requires_human_approval 提升）。
         completed_tasks:
           type: integer
           format: int32
         failed_tasks:
           type: integer
           format: int32
+          description: 互斥展示桶 failed（仅 failed/error，不含 blocked）。
         running_tasks:
           type: integer
           format: int32
-          description: running 任务数（属 active_tasks 子集）。
+          description: 互斥展示桶 running（running/in_progress）。
         cancelled_tasks:
           type: integer
           format: int32
         total_tasks:
           type: integer
           format: int32
+        pending_tasks:
+          type: integer
+          format: int32
+        queued_tasks:
+          type: integer
+          format: int32
+        blocked_tasks:
+          type: integer
+          format: int32
+        other_tasks:
+          type: integer
+          format: int32
+          description: 未登记防御状态；>0 须告警，不得静默丢弃。
+    ProjectTaskPortfolioCounts:
+      type: object
+      description: >-
+        互斥任务状态桶。total = pending+queued+running+waiting_human+blocked+failed+completed+cancelled+other。
+        waiting_human 为宽口径（任务构成条用）；健康度须另读 attention.waiting_human_unlinked_count。
+      required:
+        - total
+        - pending
+        - queued
+        - running
+        - waiting_human
+        - blocked
+        - failed
+        - completed
+        - cancelled
+        - other
+      properties:
+        total:
+          type: integer
+          format: int32
+        pending:
+          type: integer
+          format: int32
+        queued:
+          type: integer
+          format: int32
+        running:
+          type: integer
+          format: int32
+        waiting_human:
+          type: integer
+          format: int32
+        blocked:
+          type: integer
+          format: int32
+        failed:
+          type: integer
+          format: int32
+        completed:
+          type: integer
+          format: int32
+        cancelled:
+          type: integer
+          format: int32
+        other:
+          type: integer
+          format: int32
+    ProjectPortfolioResponse:
+      type: object
+      required:
+        - summary
+        - items
+        - pagination
+        - counts_degraded
+      properties:
+        summary:
+          $ref: "#/components/schemas/ProjectPortfolioSummary"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectPortfolioItem"
+        pagination:
+          $ref: "#/components/schemas/ProjectPortfolioPagination"
+        counts_degraded:
+          type: boolean
+          description: 桶和不变量失败时为 true；服务端已将 total 修正为各桶之和。
+    ProjectPortfolioSummary:
+      type: object
+      required:
+        - total_projects
+        - project_status_counts
+        - active_project_task_counts
+      properties:
+        total_projects:
+          type: integer
+          format: int32
+        project_status_counts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int32
+          description: 项目生命周期分布（含归档）；键为 draft/configuring/running/paused/acceptance/archived。
+        active_project_task_counts:
+          allOf:
+            - $ref: "#/components/schemas/ProjectTaskPortfolioCounts"
+          description: 非归档项目中未 dismissed 任务的互斥桶合计。
+    ProjectPortfolioItem:
+      type: object
+      required:
+        - project
+        - participants
+        - task_counts
+        - attention
+      properties:
+        project:
+          type: object
+          required:
+            - id
+            - name
+            - goal
+            - status
+            - human_owner_user_id
+            - human_owner_user_ids
+            - coordination_status
+            - updated_at
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            goal:
+              type: string
+            status:
+              $ref: "#/components/schemas/ProjectStatus"
+            human_owner_user_id:
+              type: string
+              format: uuid
+            human_owner_user_ids:
+              type: array
+              items:
+                type: string
+                format: uuid
+            coordination_status:
+              type: string
+            updated_at:
+              type: string
+              format: date-time
+        owner:
+          type: object
+          required:
+            - id
+            - display_name
+          properties:
+            id:
+              type: string
+              format: uuid
+            display_name:
+              type: string
+        participants:
+          type: object
+          required:
+            - active_digital_employee_count
+          properties:
+            active_digital_employee_count:
+              type: integer
+              format: int32
+              description: 活跃任务上 assigned_digital_employee_id 的 COUNT(DISTINCT)。
+        task_counts:
+          $ref: "#/components/schemas/ProjectTaskPortfolioCounts"
+        attention:
+          type: object
+          required:
+            - open_decision_count
+            - waiting_human_unlinked_count
+            - evidence_pending_count
+            - unassigned_count
+            - coordination_anomaly
+          properties:
+            open_decision_count:
+              type: integer
+              format: int32
+            waiting_human_unlinked_count:
+              type: integer
+              format: int32
+              description: orphan 等人；健康度唯一可读的等人字段。
+            evidence_pending_count:
+              type: integer
+              format: int32
+            unassigned_count:
+              type: integer
+              format: int32
+            coordination_anomaly:
+              type: boolean
+        last_activity_at:
+          type: string
+          format: date-time
+    ProjectPortfolioPagination:
+      type: object
+      required:
+        - limit
+        - offset
+        - total
+        - has_more
+      properties:
+        limit:
+          type: integer
+          format: int32
+        offset:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int32
+        has_more:
+          type: boolean
     ProjectRunSummaryItem:
       type: object
       required:

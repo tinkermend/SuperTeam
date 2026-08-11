@@ -532,6 +532,7 @@ export type ProjectStatusSummary = {
  * total_tasks = active_tasks + completed_tasks + failed_tasks + cancelled_tasks。
  */
 export type ProjectTaskSummary = {
+  /** 归档闸门用；与展示桶互不派生。 */
   active_tasks: number;
   pending_human_tasks: number;
   completed_tasks: number;
@@ -539,6 +540,11 @@ export type ProjectTaskSummary = {
   running_tasks: number;
   cancelled_tasks: number;
   total_tasks: number;
+  /** portfolio 互斥展示桶（2026-08-11）。 */
+  pending_tasks?: number;
+  queued_tasks?: number;
+  blocked_tasks?: number;
+  other_tasks?: number;
 };
 
 export type ProjectCoordinationWorkflow = {
@@ -1467,6 +1473,101 @@ export function listProjectRunSummaries(
     options,
     `/api/v1/projects/run-summary${suffix}`,
     "project run summaries",
+  );
+}
+
+/** 互斥任务状态桶（portfolio / overview 展示口径）。 */
+export type ProjectTaskPortfolioCounts = {
+  total: number;
+  pending: number;
+  queued: number;
+  running: number;
+  waiting_human: number;
+  blocked: number;
+  failed: number;
+  completed: number;
+  cancelled: number;
+  other: number;
+};
+
+export type ProjectPortfolioSort = "attention" | "recent" | "created";
+
+export type ProjectPortfolioFilters = {
+  q?: string;
+  project_status?: ProjectStatus[];
+  owner_user_id?: string;
+  task_state?: keyof Omit<ProjectTaskPortfolioCounts, "total">;
+  mine_only?: boolean;
+  sort?: ProjectPortfolioSort;
+  limit?: number;
+  offset?: number;
+};
+
+export type ProjectPortfolioItem = {
+  project: {
+    id: string;
+    name: string;
+    goal: string;
+    status: ProjectStatus;
+    human_owner_user_id: string;
+    human_owner_user_ids: string[];
+    coordination_status: string;
+    updated_at: string;
+  };
+  owner?: {
+    id: string;
+    display_name: string;
+  };
+  participants: {
+    active_digital_employee_count: number;
+  };
+  task_counts: ProjectTaskPortfolioCounts;
+  attention: {
+    open_decision_count: number;
+    waiting_human_unlinked_count: number;
+    evidence_pending_count: number;
+    unassigned_count: number;
+    coordination_anomaly: boolean;
+  };
+  last_activity_at?: string;
+};
+
+export type ProjectPortfolioResponse = {
+  summary: {
+    total_projects: number;
+    project_status_counts: Record<string, number>;
+    active_project_task_counts: ProjectTaskPortfolioCounts;
+  };
+  items: ProjectPortfolioItem[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+    has_more: boolean;
+  };
+  counts_degraded: boolean;
+};
+
+export function getProjectPortfolio(
+  options: ApiClientOptions,
+  filters: ProjectPortfolioFilters = {},
+): Promise<ProjectPortfolioResponse> {
+  const search = new URLSearchParams();
+  if (filters.q?.trim()) search.set("q", filters.q.trim());
+  for (const status of filters.project_status ?? []) {
+    search.append("project_status", status);
+  }
+  if (filters.owner_user_id) search.set("owner_user_id", filters.owner_user_id);
+  if (filters.task_state) search.set("task_state", filters.task_state);
+  if (filters.mine_only) search.set("mine_only", "true");
+  if (filters.sort) search.set("sort", filters.sort);
+  if (filters.limit != null) search.set("limit", String(filters.limit));
+  if (filters.offset != null) search.set("offset", String(filters.offset));
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  return getJson<ProjectPortfolioResponse>(
+    options,
+    `/api/v1/projects/portfolio${suffix}`,
+    "project portfolio",
   );
 }
 

@@ -28,6 +28,7 @@ type HandlerService interface {
 	GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error)
 	ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error)
 	ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) (ProjectRunSummaryList, error)
+	GetProjectPortfolio(ctx context.Context, req GetProjectPortfolioRequest) (ProjectPortfolioResponse, error)
 	ListWorkflowInstances(ctx context.Context, req ListWorkflowInstancesRequest) ([]WorkflowInstanceSummary, error)
 	UpdateProjectConfig(ctx context.Context, req UpdateProjectConfigRequest) (*Project, error)
 	ArchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error)
@@ -239,6 +240,73 @@ func (h *HTTPHandler) ListProjectRunSummaries(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, projectRunSummaryResponseFromDomain(result))
+}
+
+func (h *HTTPHandler) GetProjectPortfolio(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectRead)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	limit, offset, ok := paginationFromRequest(w, r)
+	if !ok {
+		return
+	}
+	// portfolio limit 1–50（§5.5）；handler 层拒绝，避免 stub/旁路绕过 service 校验。
+	if limit < 0 || limit > 50 {
+		http.Error(w, "limit must be 1–50", http.StatusBadRequest)
+		return
+	}
+	if limit == 0 {
+		limit = 12
+	}
+	q := r.URL.Query()
+	req := GetProjectPortfolioRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorID,
+		Query:       strings.TrimSpace(q.Get("q")),
+		TaskState:   strings.TrimSpace(q.Get("task_state")),
+		Sort:        ProjectPortfolioSort(strings.TrimSpace(q.Get("sort"))),
+		Limit:       limit,
+		Offset:      offset,
+	}
+	if raw := strings.TrimSpace(q.Get("mine_only")); raw != "" {
+		switch strings.ToLower(raw) {
+		case "true", "1", "yes":
+			req.MineOnly = true
+		case "false", "0", "no":
+			req.MineOnly = false
+		default:
+			http.Error(w, "invalid mine_only", http.StatusBadRequest)
+			return
+		}
+	}
+	if statuses := q["project_status"]; len(statuses) > 0 {
+		req.ProjectStatuses = make([]string, 0, len(statuses))
+		for _, s := range statuses {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				req.ProjectStatuses = append(req.ProjectStatuses, s)
+			}
+		}
+	}
+	if raw := strings.TrimSpace(q.Get("owner_user_id")); raw != "" {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			http.Error(w, "invalid owner_user_id", http.StatusBadRequest)
+			return
+		}
+		req.OwnerUserID = &id
+	}
+	result, err := service.GetProjectPortfolio(r.Context(), req)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectPortfolioResponseFromDomain(result))
 }
 
 func (h *HTTPHandler) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
@@ -4791,6 +4859,125 @@ type projectRunSummaryItemResponse struct {
 type projectRunSummaryResponse struct {
 	Items                  []projectRunSummaryItemResponse `json:"items"`
 	TodayCompletedRunCount int32                           `json:"today_completed_run_count"`
+}
+
+type projectPortfolioTaskCountsResponse struct {
+	Total        int `json:"total"`
+	Pending      int `json:"pending"`
+	Queued       int `json:"queued"`
+	Running      int `json:"running"`
+	WaitingHuman int `json:"waiting_human"`
+	Blocked      int `json:"blocked"`
+	Failed       int `json:"failed"`
+	Completed    int `json:"completed"`
+	Cancelled    int `json:"cancelled"`
+	Other        int `json:"other"`
+}
+
+type projectPortfolioSummaryResponse struct {
+	TotalProjects       int                                  `json:"total_projects"`
+	ProjectStatusCounts map[string]int                       `json:"project_status_counts"`
+	ActiveTaskCounts    projectPortfolioTaskCountsResponse   `json:"active_project_task_counts"`
+}
+
+type projectPortfolioAttentionResponse struct {
+	OpenDecisionCount         int  `json:"open_decision_count"`
+	WaitingHumanUnlinkedCount int  `json:"waiting_human_unlinked_count"`
+	EvidencePendingCount      int  `json:"evidence_pending_count"`
+	UnassignedCount           int  `json:"unassigned_count"`
+	CoordinationAnomaly       bool `json:"coordination_anomaly"`
+}
+
+type projectPortfolioItemResponse struct {
+	Project struct {
+		ID                 string   `json:"id"`
+		Name               string   `json:"name"`
+		Goal               string   `json:"goal"`
+		Status             string   `json:"status"`
+		HumanOwnerUserID   string   `json:"human_owner_user_id"`
+		HumanOwnerUserIDs  []string `json:"human_owner_user_ids"`
+		CoordinationStatus string   `json:"coordination_status"`
+		UpdatedAt          string   `json:"updated_at"`
+	} `json:"project"`
+	Owner *struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"display_name"`
+	} `json:"owner,omitempty"`
+	Participants struct {
+		ActiveDigitalEmployeeCount int `json:"active_digital_employee_count"`
+	} `json:"participants"`
+	TaskCounts projectPortfolioTaskCountsResponse `json:"task_counts"`
+	Attention  projectPortfolioAttentionResponse  `json:"attention"`
+	LastActivityAt *string `json:"last_activity_at,omitempty"`
+}
+
+type projectPortfolioResponse struct {
+	Summary        projectPortfolioSummaryResponse `json:"summary"`
+	Items          []projectPortfolioItemResponse  `json:"items"`
+	Pagination     struct {
+		Limit   int32 `json:"limit"`
+		Offset  int32 `json:"offset"`
+		Total   int32 `json:"total"`
+		HasMore bool  `json:"has_more"`
+	} `json:"pagination"`
+	CountsDegraded bool `json:"counts_degraded"`
+}
+
+func portfolioTaskCountsResponse(c ProjectTaskPortfolioCounts) projectPortfolioTaskCountsResponse {
+	return projectPortfolioTaskCountsResponse{
+		Total: c.Total, Pending: c.Pending, Queued: c.Queued, Running: c.Running,
+		WaitingHuman: c.WaitingHuman, Blocked: c.Blocked, Failed: c.Failed,
+		Completed: c.Completed, Cancelled: c.Cancelled, Other: c.Other,
+	}
+}
+
+func projectPortfolioResponseFromDomain(resp ProjectPortfolioResponse) projectPortfolioResponse {
+	out := projectPortfolioResponse{
+		Summary: projectPortfolioSummaryResponse{
+			TotalProjects:       resp.Summary.TotalProjects,
+			ProjectStatusCounts: resp.Summary.ProjectStatusCounts,
+			ActiveTaskCounts:    portfolioTaskCountsResponse(resp.Summary.ActiveTaskCounts),
+		},
+		Items:          make([]projectPortfolioItemResponse, 0, len(resp.Items)),
+		CountsDegraded: resp.CountsDegraded,
+	}
+	out.Pagination.Limit = resp.Pagination.Limit
+	out.Pagination.Offset = resp.Pagination.Offset
+	out.Pagination.Total = resp.Pagination.Total
+	out.Pagination.HasMore = resp.Pagination.HasMore
+	for _, item := range resp.Items {
+		row := projectPortfolioItemResponse{
+			TaskCounts: portfolioTaskCountsResponse(item.TaskCounts),
+			Attention: projectPortfolioAttentionResponse{
+				OpenDecisionCount:         item.Attention.OpenDecisionCount,
+				WaitingHumanUnlinkedCount: item.Attention.WaitingHumanUnlinkedCount,
+				EvidencePendingCount:      item.Attention.EvidencePendingCount,
+				UnassignedCount:           item.Attention.UnassignedCount,
+				CoordinationAnomaly:       item.Attention.CoordinationAnomaly,
+			},
+		}
+		row.Project.ID = item.Project.ID.String()
+		row.Project.Name = item.Project.Name
+		row.Project.Goal = item.Project.Goal
+		row.Project.Status = string(item.Project.Status)
+		row.Project.HumanOwnerUserID = item.Project.HumanOwnerUserID.String()
+		row.Project.HumanOwnerUserIDs = uuidsToStrings(item.Project.HumanOwnerUserIDs)
+		row.Project.CoordinationStatus = item.Project.CoordinationStatus
+		row.Project.UpdatedAt = item.Project.UpdatedAt.UTC().Format(time.RFC3339Nano)
+		row.Participants.ActiveDigitalEmployeeCount = item.Participants.ActiveDigitalEmployeeCount
+		if item.Owner != nil {
+			row.Owner = &struct {
+				ID          string `json:"id"`
+				DisplayName string `json:"display_name"`
+			}{ID: item.Owner.ID.String(), DisplayName: item.Owner.DisplayName}
+		}
+		if item.LastActivity != nil {
+			s := item.LastActivity.UTC().Format(time.RFC3339Nano)
+			row.LastActivityAt = &s
+		}
+		out.Items = append(out.Items, row)
+	}
+	return out
 }
 
 func projectRunSummaryResponseFromDomain(list ProjectRunSummaryList) projectRunSummaryResponse {

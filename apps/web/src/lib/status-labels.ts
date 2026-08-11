@@ -707,6 +707,44 @@ export function projectRiskReasonTypeLabel(
   );
 }
 
+/** portfolio 互斥任务状态桶中文（构成条 / 图例唯一出口）。 */
+export type ProjectTaskPortfolioBucketKey =
+  | "pending"
+  | "queued"
+  | "running"
+  | "waiting_human"
+  | "blocked"
+  | "failed"
+  | "completed"
+  | "cancelled"
+  | "other";
+
+const PROJECT_TASK_PORTFOLIO_BUCKET_LABELS: Record<
+  ProjectTaskPortfolioBucketKey,
+  string
+> = {
+  pending: "待执行",
+  queued: "排队中",
+  running: "运行中",
+  waiting_human: "等待人类",
+  blocked: "阻断",
+  failed: "失败",
+  completed: "已完成",
+  cancelled: "已取消",
+  other: "其它",
+};
+
+export function projectTaskPortfolioBucketLabel(
+  bucket: string | undefined,
+): string {
+  if (!bucket) return "任务状态";
+  return (
+    PROJECT_TASK_PORTFOLIO_BUCKET_LABELS[
+      bucket as ProjectTaskPortfolioBucketKey
+    ] ?? bucket
+  );
+}
+
 export type HumanWaitSurface =
   | "inbox_kpi"
   | "inbox_badge"

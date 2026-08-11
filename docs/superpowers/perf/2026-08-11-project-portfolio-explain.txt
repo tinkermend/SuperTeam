@@ -1,0 +1,171 @@
+=== GetProjectPortfolioSummary EXPLAIN ===
+                                                                                                                                                                                                                                                                                                                                                                                                                                     QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                      
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Result  (cost=24.98..24.99 rows=1 width=12) (actual time=0.445..0.450 rows=1 loops=1)
+   Output: $2, $3, $4
+   Buffers: shared hit=20
+   CTE visible_projects
+     ->  Seq Scan on superteam.projects p  (cost=0.00..1.07 rows=6 width=25) (actual time=0.029..0.033 rows=6 loops=1)
+           Output: p.id, p.status
+           Filter: ((p.deleted_at IS NULL) AND (p.tenant_id = '00000000-0000-0000-0000-000000000001'::uuid))
+           Buffers: shared hit=1
+   CTE task_buckets
+     ->  Hash Join  (cost=0.20..21.79 rows=41 width=32) (actual time=0.073..0.349 rows=49 loops=1)
+           Output: CASE WHEN ((pt.status)::text = 'cancelled'::text) THEN 'cancelled'::text WHEN ((pt.status)::text = ANY ('{completed,done,success}'::text[])) THEN 'completed'::text WHEN ((pt.status)::text = ANY ('{failed,error}'::text[])) THEN 'failed'::text WHEN ((pt.status)::text = 'blocked'::text) THEN 'blocked'::text WHEN (((pt.status)::text = ANY ('{waiting_human,pending_human,pending_review,approval_required}'::text[])) OR (pt.requires_human_approval AND ((pt.status)::text <> ALL ('{cancelled,completed,done,success,failed,error,blocked}'::text[])))) THEN 'waiting_human'::text WHEN ((pt.status)::text = ANY ('{running,in_progress}'::text[])) THEN 'running'::text WHEN ((pt.status)::text = 'queued'::text) THEN 'queued'::text WHEN ((pt.status)::text = ANY ('{pending,planned,assigned}'::text[])) THEN 'pending'::text ELSE 'other'::text END
+           Hash Cond: (pt.project_id = vp.id)
+           Buffers: shared hit=19
+           ->  Seq Scan on superteam.project_tasks pt  (cost=0.00..19.61 rows=49 width=28) (actual time=0.027..0.279 rows=49 loops=1)
+                 Output: pt.status, pt.requires_human_approval, pt.project_id
+                 Filter: ((pt.dismissed_at IS NULL) AND (pt.tenant_id = '00000000-0000-0000-0000-000000000001'::uuid))
+                 Buffers: shared hit=19
+           ->  Hash  (cost=0.14..0.14 rows=5 width=16) (actual time=0.013..0.014 rows=6 loops=1)
+                 Output: vp.id
+                 Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                 ->  CTE Scan on visible_projects vp  (cost=0.00..0.14 rows=5 width=16) (actual time=0.005..0.007 rows=6 loops=1)
+                       Output: vp.id
+                       Filter: ((vp.status)::text <> 'archived'::text)
+   InitPlan 3 (returns $2)
+     ->  Aggregate  (cost=0.14..0.15 rows=1 width=4) (actual time=0.058..0.059 rows=1 loops=1)
+           Output: (count(*))::integer
+           Buffers: shared hit=1
+           ->  CTE Scan on visible_projects  (cost=0.00..0.12 rows=6 width=0) (actual time=0.034..0.040 rows=6 loops=1)
+                 Output: visible_projects.id, visible_projects.status
+                 Buffers: shared hit=1
+   InitPlan 4 (returns $3)
+     ->  Aggregate  (cost=0.92..0.94 rows=1 width=4) (actual time=0.368..0.368 rows=1 loops=1)
+           Output: (count(*))::integer
+           Buffers: shared hit=19
+           ->  CTE Scan on task_buckets  (cost=0.00..0.82 rows=41 width=0) (actual time=0.073..0.361 rows=49 loops=1)
+                 Output: task_buckets.portfolio_bucket
+                 Buffers: shared hit=19
+   InitPlan 5 (returns $4)
+     ->  Aggregate  (cost=1.03..1.04 rows=1 width=4) (actual time=0.013..0.013 rows=1 loops=1)
+           Output: (count(*) FILTER (WHERE (task_buckets_1.portfolio_bucket = 'waiting_human'::text)))::integer
+           ->  CTE Scan on task_buckets task_buckets_1  (cost=0.00..0.82 rows=41 width=32) (actual time=0.000..0.005 rows=49 loops=1)
+                 Output: task_buckets_1.portfolio_bucket
+ Planning:
+   Buffers: shared hit=589
+ Planning Time: 2.966 ms
+ Execution Time: 0.670 ms
+(46 rows)
+
+
+=== ListProjectPortfolioItems (limit 12, attention) EXPLAIN ===
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Subquery Scan on candidate_projects  (cost=421.28..421.35 rows=6 width=532) (actual time=1.605..1.614 rows=6 loops=1)
+   Output: candidate_projects.id, candidate_projects.name
+   Buffers: shared hit=89
+   CTE filtered_projects
+     ->  Seq Scan on superteam.projects p  (cost=0.00..1.07 rows=6 width=1018) (actual time=0.024..0.028 rows=6 loops=1)
+           Output: p.id, p.tenant_id, p.team_id, p.name, p.description, p.goal, p.status, p.human_owner_user_id, p.coordination_workflow_id, p.coordination_status, p.coordination_policy, p.archived_at, p.created_at, p.updated_at, p.repo_url, p.repo_default_branch, p.repo_git_credential_ref, p.repo_scope, p.repo_binding_status, p.deleted_at, p.scenario_template_key, p.human_owner_user_ids, p.workspace_ready_status, p.primary_runtime_node_id, p.workspace_ready_error, p.workspace_ready_at, p.directory_name, p.budget_token_limit
+           Filter: ((p.deleted_at IS NULL) AND (p.tenant_id = '00000000-0000-0000-0000-000000000001'::uuid))
+           Buffers: shared hit=1
+   ->  Limit  (cost=420.20..420.22 rows=6 width=3022) (actual time=1.603..1.610 rows=6 loops=1)
+         Output: fp.id, NULL::uuid, NULL::uuid, fp.name, NULL::text, NULL::text, NULL::character varying(50), NULL::uuid, NULL::character varying(255), NULL::character varying(50), NULL::jsonb, NULL::timestamp with time zone, NULL::timestamp with time zone, NULL::timestamp with time zone, NULL::text, NULL::character varying(255), NULL::character varying(255), NULL::jsonb, NULL::character varying(32), NULL::timestamp with time zone, NULL::text, NULL::uuid[], NULL::character varying(32), NULL::uuid, NULL::text, NULL::timestamp with time zone, NULL::character varying(64), NULL::bigint, NULL::integer, NULL::integer, NULL::integer, NULL::integer, (COALESCE(t.last_activity_at, fp.updated_at)), (CASE WHEN ((((COALESCE(t.task_failed, 0) + COALESCE(t.task_blocked, 0)) + COALESCE(t.waiting_human_unlinked_count, 0)) + COALESCE(d.open_decision_count, 0)) > 0) THEN 0 ELSE 1 END)
+         Buffers: shared hit=89
+         ->  Sort  (cost=420.20..420.22 rows=6 width=3022) (actual time=1.601..1.607 rows=6 loops=1)
+               Output: fp.id, NULL::uuid, NULL::uuid, fp.name, NULL::text, NULL::text, NULL::character varying(50), NULL::uuid, NULL::character varying(255), NULL::character varying(50), NULL::jsonb, NULL::timestamp with time zone, NULL::timestamp with time zone, NULL::timestamp with time zone, NULL::text, NULL::character varying(255), NULL::character varying(255), NULL::jsonb, NULL::character varying(32), NULL::timestamp with time zone, NULL::text, NULL::uuid[], NULL::character varying(32), NULL::uuid, NULL::text, NULL::timestamp with time zone, NULL::character varying(64), NULL::bigint, NULL::integer, NULL::integer, NULL::integer, NULL::integer, (COALESCE(t.last_activity_at, fp.updated_at)), (CASE WHEN ((((COALESCE(t.task_failed, 0) + COALESCE(t.task_blocked, 0)) + COALESCE(t.waiting_human_unlinked_count, 0)) + COALESCE(d.open_decision_count, 0)) > 0) THEN 0 ELSE 1 END)
+               Sort Key: (CASE WHEN ((((COALESCE(t.task_failed, 0) + COALESCE(t.task_blocked, 0)) + COALESCE(t.waiting_human_unlinked_count, 0)) + COALESCE(d.open_decision_count, 0)) > 0) THEN 0 ELSE 1 END), (COALESCE(t.last_activity_at, fp.updated_at)) DESC NULLS LAST, fp.id DESC
+               Sort Method: quicksort  Memory: 25kB
+               Buffers: shared hit=89
+               ->  Nested Loop Left Join  (cost=67.88..420.12 rows=6 width=3022) (actual time=1.555..1.571 rows=6 loops=1)
+                     Output: fp.id, NULL::uuid, NULL::uuid, fp.name, NULL::text, NULL::text, NULL::character varying(50), NULL::uuid, NULL::character varying(255), NULL::character varying(50), NULL::jsonb, NULL::timestamp with time zone, NULL::timestamp with time zone, NULL::timestamp with time zone, NULL::text, NULL::character varying(255), NULL::character varying(255), NULL::jsonb, NULL::character varying(32), NULL::timestamp with time zone, NULL::text, NULL::uuid[], NULL::character varying(32), NULL::uuid, NULL::text, NULL::timestamp with time zone, NULL::character varying(64), NULL::bigint, NULL::integer, NULL::integer, NULL::integer, NULL::integer, COALESCE(t.last_activity_at, fp.updated_at), CASE WHEN ((((COALESCE(t.task_failed, 0) + COALESCE(t.task_blocked, 0)) + COALESCE(t.waiting_human_unlinked_count, 0)) + COALESCE(d.open_decision_count, 0)) > 0) THEN 0 ELSE 1 END
+                     Inner Unique: true
+                     Join Filter: (t.project_id = fp.id)
+                     Rows Removed by Join Filter: 15
+                     Buffers: shared hit=83
+                     ->  Hash Left Join  (cost=46.70..46.85 rows=6 width=544) (actual time=1.012..1.022 rows=6 loops=1)
+                           Output: fp.id, fp.name, fp.updated_at, d.open_decision_count
+                           Inner Unique: true
+                           Hash Cond: (fp.id = d.project_id)
+                           Buffers: shared hit=29
+                           ->  CTE Scan on filtered_projects fp  (cost=0.00..0.12 rows=6 width=540) (actual time=0.031..0.033 rows=6 loops=1)
+                                 Output: fp.id, fp.tenant_id, fp.team_id, fp.name, fp.description, fp.goal, fp.status, fp.human_owner_user_id, fp.coordination_workflow_id, fp.coordination_status, fp.coordination_policy, fp.archived_at, fp.created_at, fp.updated_at, fp.repo_url, fp.repo_default_branch, fp.repo_git_credential_ref, fp.repo_scope, fp.repo_binding_status, fp.deleted_at, fp.scenario_template_key, fp.human_owner_user_ids, fp.workspace_ready_status, fp.primary_runtime_node_id, fp.workspace_ready_error, fp.workspace_ready_at, fp.directory_name, fp.budget_token_limit
+                                 Buffers: shared hit=1
+                           ->  Hash  (cost=46.64..46.64 rows=5 width=20) (actual time=0.965..0.968 rows=5 loops=1)
+                                 Output: d.open_decision_count, d.project_id
+                                 Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                 Buffers: shared hit=28
+                                 ->  Subquery Scan on d  (cost=46.52..46.64 rows=5 width=20) (actual time=0.942..0.948 rows=5 loops=1)
+                                       Output: d.open_decision_count, d.project_id
+                                       Buffers: shared hit=28
+                                       ->  HashAggregate  (cost=46.52..46.59 rows=5 width=20) (actual time=0.941..0.945 rows=5 loops=1)
+                                             Output: project_decision_requests.project_id, (count(*) FILTER (WHERE (lower((COALESCE(project_decision_requests.status_snapshot, ''::character varying))::text) = ANY ('{pending,waiting,requested,open}'::text[]))))::integer
+                                             Group Key: project_decision_requests.project_id
+                                             Batches: 1  Memory Usage: 24kB
+                                             Buffers: shared hit=28
+                                             ->  Hash Semi Join  (cost=0.20..40.61 rows=473 width=24) (actual time=0.060..0.574 rows=408 loops=1)
+                                                   Output: project_decision_requests.project_id, project_decision_requests.status_snapshot
+                                                   Hash Cond: (project_decision_requests.project_id = filtered_projects.id)
+                                                   Buffers: shared hit=28
+                                                   ->  Seq Scan on superteam.project_decision_requests  (cost=0.00..33.91 rows=473 width=24) (actual time=0.019..0.355 rows=408 loops=1)
+                                                         Output: project_decision_requests.id, project_decision_requests.tenant_id, project_decision_requests.project_id, project_decision_requests.approval_request_id, project_decision_requests.coordination_job_id, project_decision_requests.project_task_id, project_decision_requests.target_user_id, project_decision_requests.decision_type, project_decision_requests.title_snapshot, project_decision_requests.summary_snapshot, project_decision_requests.risk_level_snapshot, project_decision_requests.status_snapshot, project_decision_requests.created_event_id, project_decision_requests.resolved_event_id, project_decision_requests.created_at, project_decision_requests.updated_at, project_decision_requests.resolved_at, project_decision_requests.dispatch_gate_result_id, project_decision_requests.project_task_result_id, project_decision_requests.plan_revision_id
+                                                         Filter: (project_decision_requests.tenant_id = '00000000-0000-0000-0000-000000000001'::uuid)
+                                                         Buffers: shared hit=28
+                                                   ->  Hash  (cost=0.12..0.12 rows=6 width=16) (actual time=0.024..0.025 rows=6 loops=1)
+                                                         Output: filtered_projects.id
+                                                         Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                                         ->  CTE Scan on filtered_projects  (cost=0.00..0.12 rows=6 width=16) (actual time=0.001..0.015 rows=6 loops=1)
+                                                               Output: filtered_projects.id
+                     ->  Materialize  (cost=21.19..372.83 rows=5 width=36) (actual time=0.076..0.089 rows=3 loops=6)
+                           Output: t.last_activity_at, t.task_failed, t.task_blocked, t.waiting_human_unlinked_count, t.project_id
+                           Buffers: shared hit=54
+                           ->  Subquery Scan on t  (cost=21.19..372.81 rows=5 width=36) (actual time=0.448..0.528 rows=5 loops=1)
+                                 Output: t.last_activity_at, t.task_failed, t.task_blocked, t.waiting_human_unlinked_count, t.project_id
+                                 Buffers: shared hit=54
+                                 ->  GroupAggregate  (cost=21.19..372.76 rows=5 width=40) (actual time=0.447..0.526 rows=5 loops=1)
+                                       Output: pt.project_id, NULL::integer, (count(*) FILTER (WHERE (CASE WHEN ((pt.status)::text = 'cancelled'::text) THEN 'cancelled'::text WHEN ((pt.status)::text = ANY ('{completed,done,success}'::text[])) THEN 'completed'::text WHEN ((pt.status)::text = ANY ('{failed,error}'::text[])) THEN 'failed'::text WHEN ((pt.status)::text = 'blocked'::text) THEN 'blocked'::text WHEN (((pt.status)::text = ANY ('{waiting_human,pending_human,pending_review,approval_required}'::text[])) OR (pt.requires_human_approval AND ((pt.status)::text <> ALL ('{cancelled,completed,done,success,failed,error,blocked}'::text[])))) THEN 'waiting_human'::text WHEN ((pt.status)::text = ANY ('{running,in_progress}'::text[])) THEN 'running'::text WHEN ((pt.status)::text = 'queued'::text) THEN 'queued'::text WHEN ((pt.status)::text = ANY ('{pending,planned,assigned}'::text[])) THEN 'pending'::text ELSE 'other'::text END = 'failed'::text)))::integer, (count(*) FILTER (WHERE (CASE WHEN ((pt.status)::text = 'cancelled'::text) THEN 'cancelled'::text WHEN ((pt.status)::text = ANY ('{completed,done,success}'::text[])) THEN 'completed'::text WHEN ((pt.status)::text = ANY ('{failed,error}'::text[])) THEN 'failed'::text WHEN ((pt.status)::text = 'blocked'::text) THEN 'blocked'::text WHEN (((pt.status)::text = ANY ('{waiting_human,pending_human,pending_review,approval_required}'::text[])) OR (pt.requires_human_approval AND ((pt.status)::text <> ALL ('{cancelled,completed,done,success,failed,error,blocked}'::text[])))) THEN 'waiting_human'::text WHEN ((pt.status)::text = ANY ('{running,in_progress}'::text[])) THEN 'running'::text WHEN ((pt.status)::text = 'queued'::text) THEN 'queued'::text WHEN ((pt.status)::text = ANY ('{pending,planned,assigned}'::text[])) THEN 'pending'::text ELSE 'other'::text END = 'blocked'::text)))::integer, (count(*) FILTER (WHERE ((CASE WHEN ((pt.status)::text = 'cancelled'::text) THEN 'cancelled'::text WHEN ((pt.status)::text = ANY ('{completed,done,success}'::text[])) THEN 'completed'::text WHEN ((pt.status)::text = ANY ('{failed,error}'::text[])) THEN 'failed'::text WHEN ((pt.status)::text = 'blocked'::text) THEN 'blocked'::text WHEN (((pt.status)::text = ANY ('{waiting_human,pending_human,pending_review,approval_required}'::text[])) OR (pt.requires_human_approval AND ((pt.status)::text <> ALL ('{cancelled,completed,done,success,failed,error,blocked}'::text[])))) THEN 'waiting_human'::text WHEN ((pt.status)::text = ANY ('{running,in_progress}'::text[])) THEN 'running'::text WHEN ((pt.status)::text = 'queued'::text) THEN 'queued'::text WHEN ((pt.status)::text = ANY ('{pending,planned,assigned}'::text[])) THEN 'pending'::text ELSE 'other'::text END = 'waiting_human'::text) AND (NOT (SubPlan 2)))))::integer, max(pt.updated_at)
+                                       Group Key: pt.project_id
+                                       Buffers: shared hit=54
+                                       ->  Merge Join  (cost=21.19..21.95 rows=49 width=68) (actual time=0.327..0.340 rows=49 loops=1)
+                                             Output: pt.project_id, pt.status, pt.requires_human_approval, pt.tenant_id, pt.id, pt.updated_at
+                                             Merge Cond: (fp_1.id = pt.project_id)
+                                             Buffers: shared hit=19
+                                             ->  Sort  (cost=0.20..0.21 rows=6 width=16) (actual time=0.033..0.034 rows=6 loops=1)
+                                                   Output: fp_1.id
+                                                   Sort Key: fp_1.id
+                                                   Sort Method: quicksort  Memory: 25kB
+                                                   ->  CTE Scan on filtered_projects fp_1  (cost=0.00..0.12 rows=6 width=16) (actual time=0.002..0.008 rows=6 loops=1)
+                                                         Output: fp_1.id
+                                             ->  Sort  (cost=20.99..21.11 rows=49 width=68) (actual time=0.287..0.290 rows=49 loops=1)
+                                                   Output: pt.project_id, pt.status, pt.requires_human_approval, pt.tenant_id, pt.id, pt.updated_at
+                                                   Sort Key: pt.project_id
+                                                   Sort Method: quicksort  Memory: 29kB
+                                                   Buffers: shared hit=19
+                                                   ->  Seq Scan on superteam.project_tasks pt  (cost=0.00..19.61 rows=49 width=68) (actual time=0.025..0.252 rows=49 loops=1)
+                                                         Output: pt.project_id, pt.status, pt.requires_human_approval, pt.tenant_id, pt.id, pt.updated_at
+                                                         Filter: ((pt.dismissed_at IS NULL) AND (pt.tenant_id = '00000000-0000-0000-0000-000000000001'::uuid))
+                                                         Buffers: shared hit=19
+                                       SubPlan 2
+                                         ->  Index Only Scan using idx_project_decision_requests_tenant_task_status_type on superteam.project_decision_requests dr  (cost=0.15..7.04 rows=1 width=0) (actual time=0.005..0.005 rows=1 loops=23)
+                                               Index Cond: ((dr.tenant_id = pt.tenant_id) AND (dr.project_task_id = pt.id))
+                                               Filter: (lower((COALESCE(dr.status_snapshot, ''::character varying))::text) = ANY ('{pending,waiting,requested,open}'::text[]))
+                                               Rows Removed by Filter: 1
+                                               Heap Fetches: 15
+                                               Buffers: shared hit=35
+ Planning:
+   Buffers: shared hit=862
+ Planning Time: 4.888 ms
+ Execution Time: 2.065 ms
+(95 rows)
+
+
+
+=== Morphology gate verdict (2026-08-11 live tenant) ===
+- Tenant scale: 6 projects / 49 non-archived tasks (dev DB)
+- Summary EXPLAIN: Execution Time ~0.67ms; Seq Scan on projects (6 rows) + Hash Join tasks (49 rows)
+- Items EXPLAIN: Execution Time ~2.1ms; Nested Loop count low; SubPlan count=2 (NOT EXISTS for orphan unlinked + owner join)
+- No per-project N× SubPlan loop of 50
+- No cross-tenant scan (filter tenant_id constant)
+- Index migration: NOT applied (default §5.3); plan fine at current scale
+- PASS morphology gate for current fixture size
+
+=== Live API / browser (verify period) ===
+- control-plane pid=33148 owner=this checkout
+- web pid=33342 owner=this checkout
+- portfolio p50=283ms p95=326ms (20 sequential samples) <=500ms PASS
+- dual-count: provider-semantic-e2e-p1 waiting_human=19 unlinked=2 open_decision=315; failed=3 blocked=1; run-summary failed_count=4 (=3+1)
+- archive-preview active_tasks=20 blocker present (blocked counted active)
+- browser /projects: portfolio grid 6 cards, no ProjectRiskQueue, no /overview|/members|/artifacts fan-out
+- first-screen APIs: portfolio + digital-employees + auth/users (+ me/badge)

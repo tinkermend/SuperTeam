@@ -850,6 +850,94 @@ func (s *Service) ListProjectRunSummaries(ctx context.Context, req ListProjectRu
 	return ProjectRunSummaryList{Items: items, TodayCompletedRunCount: todayCompleted}, nil
 }
 
+// GetProjectPortfolio returns the project-home layered status read model.
+// limit defaults to 12 and caps at 50; sort defaults to attention.
+// Bucket-sum invariant failures degrade (counts_degraded) rather than 5xx (§9).
+func (s *Service) GetProjectPortfolio(ctx context.Context, req GetProjectPortfolioRequest) (ProjectPortfolioResponse, error) {
+	if req.TenantID == uuid.Nil {
+		return ProjectPortfolioResponse{}, ErrInvalidProject
+	}
+	if req.MineOnly && req.ActorUserID == uuid.Nil {
+		return ProjectPortfolioResponse{}, ErrInvalidProject
+	}
+	if req.Limit < 0 || req.Limit > 50 {
+		return ProjectPortfolioResponse{}, fmt.Errorf("%w: limit must be 1–50", ErrInvalidProject)
+	}
+	if req.Limit == 0 {
+		req.Limit = 12
+	}
+	if req.Offset < 0 {
+		req.Offset = 0
+	}
+	switch req.Sort {
+	case ProjectPortfolioSortAttention, ProjectPortfolioSortRecent, ProjectPortfolioSortCreated:
+		// ok
+	case "":
+		req.Sort = ProjectPortfolioSortAttention
+	default:
+		return ProjectPortfolioResponse{}, fmt.Errorf("%w: invalid sort", ErrInvalidProject)
+	}
+	if req.TaskState != "" {
+		switch ProjectTaskPortfolioBucket(req.TaskState) {
+		case PortfolioBucketCancelled, PortfolioBucketCompleted, PortfolioBucketFailed,
+			PortfolioBucketBlocked, PortfolioBucketWaitingHuman, PortfolioBucketRunning,
+			PortfolioBucketQueued, PortfolioBucketPending, PortfolioBucketOther:
+			// ok
+		default:
+			return ProjectPortfolioResponse{}, fmt.Errorf("%w: invalid task_state", ErrInvalidProject)
+		}
+	}
+
+	resp, err := s.repository.GetProjectPortfolio(ctx, req)
+	if err != nil {
+		return ProjectPortfolioResponse{}, err
+	}
+
+	// Bucket-sum invariant: degrade, do not 5xx.
+	if resp.Summary.ActiveTaskCounts.EnsureInvariant() {
+		resp.CountsDegraded = true
+		slog.ErrorContext(ctx, "project_portfolio_bucket_invariant_failure",
+			"scope", "summary.active_project_task_counts",
+			"tenant_id", req.TenantID.String(),
+		)
+	}
+	for i := range resp.Items {
+		if resp.Items[i].TaskCounts.EnsureInvariant() {
+			resp.CountsDegraded = true
+			slog.ErrorContext(ctx, "project_portfolio_bucket_invariant_failure",
+				"scope", "item.task_counts",
+				"tenant_id", req.TenantID.String(),
+				"project_id", resp.Items[i].Project.ID.String(),
+			)
+		}
+		if resp.Items[i].TaskCounts.Other > 0 {
+			slog.WarnContext(ctx, "project_portfolio_unknown_task_status",
+				"tenant_id", req.TenantID.String(),
+				"project_id", resp.Items[i].Project.ID.String(),
+				"other_count", resp.Items[i].TaskCounts.Other,
+			)
+		}
+	}
+	if resp.Summary.ActiveTaskCounts.Other > 0 {
+		slog.WarnContext(ctx, "project_portfolio_unknown_task_status",
+			"tenant_id", req.TenantID.String(),
+			"scope", "summary",
+			"other_count", resp.Summary.ActiveTaskCounts.Other,
+		)
+	}
+	if resp.Items == nil {
+		resp.Items = []ProjectPortfolioItem{}
+	}
+	if resp.Summary.ProjectStatusCounts == nil {
+		resp.Summary.ProjectStatusCounts = map[string]int{
+			"draft": 0, "configuring": 0, "running": 0,
+			"paused": 0, "acceptance": 0, "archived": 0,
+		}
+	}
+	return resp, nil
+}
+
+
 func (s *Service) QueueProjectTask(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error) {
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
 		return QueueProjectTaskResult{}, ErrInvalidProject
@@ -6202,10 +6290,14 @@ func (s *Service) repairOrphanWaitingHumanProjectTask(ctx context.Context, repai
 	if task.Status != ProjectTaskStatusWaitingHuman {
 		return nil
 	}
-	// Durable grant already present: never mint a second approval-shaped card
-	// (spec 2026-08-11 §4.2). Heal into redispatch instead.
-	if approved, ok := s.findApprovedGateLinkedProjectTaskApproval(ctx, repairer, task); ok {
-		return s.healWaitingHumanWithApprovedGateDecision(ctx, repairer, task, approved)
+	// Durable grant already present AND the wait is still gate-approval shaped:
+	// never mint a second approval-shaped card (spec 2026-08-11 §4.2). Heal into
+	// redispatch instead. A task that already converged onto an honest recovery
+	// card must NOT be healed — see projectTaskWaitIsGateApprovalShaped.
+	if projectTaskWaitIsGateApprovalShaped(ctx, repairer, task) {
+		if approved, ok := s.findApprovedGateLinkedProjectTaskApproval(ctx, repairer, task); ok {
+			return s.healWaitingHumanWithApprovedGateDecision(ctx, repairer, task, approved)
+		}
 	}
 	// Prefer an existing open decision already scoped to this task.
 	if existing, err := repairer.GetOpenProjectDecisionRequestByTask(ctx, task.TenantID, task.ProjectID, task.ID); err == nil {
@@ -6324,11 +6416,52 @@ func isSystemRepairedZombieApprovalCard(d DecisionRequest) bool {
 // healZombieGateApprovalWaitingHuman cancels the system-repaired zombie card,
 // releases waiting_human → planned, and signals redispatch (spec 2026-08-11 §4.4).
 func (s *Service) healZombieGateApprovalWaitingHuman(ctx context.Context, repairer OrphanWaitingHumanProjectTaskRepairer, task ProjectTask) error {
+	// Second line of defence behind the SQL predicate: only heal a wait that is
+	// still gate-approval shaped. Healing a task already parked on an honest
+	// recovery card re-arms the loop the SQL fix closed.
+	if !projectTaskWaitIsGateApprovalShaped(ctx, repairer, task) {
+		return nil
+	}
 	approved, ok := s.findApprovedGateLinkedProjectTaskApproval(ctx, repairer, task)
 	if !ok {
 		return nil
 	}
 	return s.healWaitingHumanWithApprovedGateDecision(ctx, repairer, task, approved)
+}
+
+// projectTaskWaitIsGateApprovalShaped reports whether a waiting_human task is
+// still parked in the pre-dispatch-gate approval shape that §4.4 heals, as
+// opposed to having already converged onto an honest recovery/clarification
+// card that a human is expected to act on.
+//
+// Two accepted shapes:
+//   - no waiting pointer + waiting_reason=approval_required (the post-approve
+//     intermediate state, before orphan repair steals the pointer);
+//   - pointer at a project_task_approval card (the zero-approval zombie, or
+//     root cause A's "pointer still on the approved real card").
+//
+// Anything else — notably a pointer at project_task_recovery — means the task
+// already converged. Healing it releases to planned, dispatch hits the same
+// wall, RecoverProjectTaskDispatchFailure (retry budget long exhausted) mints
+// yet another recovery card and rebinds the pointer, and the next watchdog tick
+// repeats: a self-sustaining once-a-minute loop that no human can settle
+// (2026-08-11: one task accumulated 99 pending cards this way).
+func projectTaskWaitIsGateApprovalShaped(ctx context.Context, repairer OrphanWaitingHumanProjectTaskRepairer, task ProjectTask) bool {
+	if task.WaitingRequestID == nil || *task.WaitingRequestID == uuid.Nil {
+		return task.WaitingReason != nil &&
+			strings.TrimSpace(*task.WaitingReason) == HumanWaitReasonApprovalRequired
+	}
+	decisions, err := repairer.ListDemandLaunchDecisionRequests(ctx, task.TenantID, task.ProjectID, nil, []uuid.UUID{task.ID}, 100)
+	if err != nil {
+		// Unknown shape: refuse to heal rather than risk re-arming the loop.
+		return false
+	}
+	for _, d := range decisions {
+		if d.ID == *task.WaitingRequestID {
+			return d.DecisionType == "project_task_approval"
+		}
+	}
+	return false
 }
 
 func (s *Service) healWaitingHumanWithApprovedGateDecision(ctx context.Context, repairer OrphanWaitingHumanProjectTaskRepairer, task ProjectTask, approved DecisionRequest) error {
