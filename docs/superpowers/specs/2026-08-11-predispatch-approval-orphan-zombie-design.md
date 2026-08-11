@@ -222,6 +222,34 @@ waiting_request_id → decision.summary 含「系统补建人工决策卡」
 
 不要求手工逐条点批僵尸卡。
 
+#### 4.4-R 回归修复：heal 必须带「形态判据」（2026-08-11 复审追加）
+
+**缺陷**：首版实现的 `ListZombieGateApprovalWaitingHumanProjectTasks` 入选条件只有「waiting_human + 存在 approved gate 卡」，**没有判断任务当前等待是否还是预检闸审批形态**。看门狗每分钟跑一次（`stuckTaskReconcileInterval`），于是：
+
+```text
+heal → release 到 planned + signal 再派发
+  → gate 仍挡（provider 不可用）→ dispatch_failed
+  → RecoverProjectTaskDispatchFailure：重试预算(3)早已耗尽 → 走 waiting_human 分支
+  → 新建一张 project_task_recovery 卡 + 改挂 waiting_request_id
+  → 任务回到 waiting_human，approved gate 卡仍在 → 下一分钟看门狗又扫到
+```
+
+自激循环，**人类无法收敛**：处理掉当前卡，下一分钟又来一张新的。实测 `b449a6d5` 单任务积到 99 张 pending 卡（14:31→16:17），全局 308 张。僵尸卡只是从 `project_task_approval` 类型换成了 `project_task_recovery` 类型继续增殖，§3.1 目标 3「任务能回到可派发或诚实退避」实际未达成。
+
+**修复**：两个列表增加互补的**形态判据**——只 heal 仍处预检闸审批形态的等待：
+
+| 形态 | 判据 | 处置 |
+|---|---|---|
+| 批准后中间态 | `waiting_request_id IS NULL AND waiting_reason='approval_required'` | heal |
+| 僵尸卡 / 根因 A 的「指针挂已批真卡」 | 指针指向的卡 `decision_type='project_task_approval'` | heal |
+| **已收敛到诚实恢复卡** | 指针指向 `project_task_recovery` / `clarification` 等 | **不动**，留给人类 |
+
+`ListOrphanWaitingHumanProjectTasks` 的排除条件同步改为 `NOT (有approved gate卡 AND 形态命中)`，与 zombie 列表严格互补——任务不会两边都落空。service 层 `projectTaskWaitIsGateApprovalShaped` 作为第二道防线（SQL 批量筛选之外的逐条守卫，取数失败时**拒绝 heal** 而非放行）。
+
+**终止性**：heal 后若再撞墙，恢复逻辑改挂的新指针指向非 approval 卡 → 形态判据不再命中 → 自然离列。循环最多走一轮。
+
+**存量清理**（2026-08-11 已执行）：295 张「零 approval + pending + 已不是任务当前指针」的过期卡标 `cancelled`；保留 20 张仍是当前指针的（人类真实待办）。收件箱 328 → 20，且每张 `is_pointer` 均为真。
+
 ### 4.5 `retry_later` 恢复路径接入（主修 D）
 
 > 初版方案遗漏此节。根因 D（§2.4）证明：不修此节，fix A 只是把死法从「僵尸卡」换成「沉默搁置于 planned」。
@@ -319,6 +347,7 @@ gate 的 `RetryAfter` 已由 `EvaluatePreDispatchGate` 在 `retry_later` 时填�
 ### 6.2 单测
 
 - [x] `ListOrphan` / service：存在 approved gate 链接卡时不补建（改为 heal 再派发）。
+- [x] **§4.4-R 回归**：已收敛到诚实恢复卡的任务**不被 heal**（`TestSweepOrphanWaitingHumanDoesNotHealTaskOnHonestRecoveryCard`：零新建卡、指针不动、零 retry signal、恢复卡保持 pending）；heal 对「指针空 + approval_required」仍可达（`TestSweepOrphanWaitingHumanHealsWhenPointerAbsentAndApprovalRequired`）。真库验证：新判据对两个循环任务零命中，orphan 列表同样零命中（循环断开）。
 - [x] `repairOrphan`：禁止 `project_task_approval` + 零 approval（降级 `project_task_clarification`）。
 - [x] `ApplyPreDispatchGateDecision`：gate 链接卡 approved 走 `applyTaskHumanWaitRelease`（`Release` 被调用）。
 - [x] **`retry_later` 恢复**：`isProjectTaskDispatchRetryLater` + workflow `GetVersion(gate-retry-later-schedule)` 分支 `scheduleDispatchRetry`（匹配逻辑单测 + §6.1 正面 E2E）。
