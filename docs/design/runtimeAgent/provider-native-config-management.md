@@ -1,8 +1,8 @@
 # Runtime Provider 原生配置管理
 
 日期：2026-08-10 15:22（Asia/Shanghai）
-修订：2026-08-10（设计复审推翻决策 #2 / #6，管理单元从「文件」降到「键」，见 §16）
-状态：已定稿（决策已拍板，待实现）
+修订：2026-08-10（设计复审推翻决策 #2 / #6，管理单元从「文件」降到「键」，见 §16）；2026-08-10 晚 P0–P2 落地回写（见 §16 实现状态）
+状态：已实现（P0 Runtime / P1 Control Plane / P2 Web Console MVP；已知债见 §17）
 
 ## 1. 问题与目标
 
@@ -397,6 +397,14 @@ CP 在派发 write 前可用快照 hash 做一次快检，但仍以 **节点 act
 
 ## 16. 修订记录
 
+**2026-08-10 晚：P0–P2 落地回写。**
+
+| 阶段 | 落地要点 |
+|------|----------|
+| P0 | Runtime `provider_native_config` adapter：键级 allowlist + RMW + 整文件 sha256；`read/write_provider_native_config`；claude-code auth 不可写（`oauth_session_protected` / `platform_keychain`）；WS 命令 `tokio::spawn` 并发 |
+| P1 | 表 `runtime_provider_native_configs`；敏感键 AES-GCM；Console list/pull/get/put；run-less writeback；等待超时 `timed_out` 仅 CAS `pending` |
+| P2 | 节点详情配置面列表 + Sheet 编辑器；敏感掩码；超时/冲突/不可管理人话化文案 |
+
 **2026-08-10 设计复审：推翻决策 #2 与 #6。**
 
 原方案以「文件」为管理单元、v1 做单文件原文编辑下发。复审核对三家框架官方定义与实测节点后推翻：
@@ -406,6 +414,18 @@ CP 在派发 write 前可用快照 hash 做一次快检，但仍以 **节点 act
 - `~/.config/opencode/opencode.json` **同时**含 `provider`/`model`/`small_model` 与 `mcp`。
 
 即三家里只有 Claude Code 把模型配置与 MCP 分了文件。以文件为单位读写会给运维开出一条绕过能力注册表 / 项目 MCP 绑定 / 凭据加密 / 授权的 MCP 第二写入通道，并在 codex 上额外暴露 sandbox 信任的提升面。故管理单元降到「键」，并新增决策 #9。
+
+## 17. 实现债与延后（相对 v1 验收）
+
+| 项 | 说明 | 优先级 |
+|----|------|--------|
+| `present` 门控 | 列表/编辑未严格按 binary 探测 `present=false` 隐藏或禁用入口；依赖节点命令失败/空结果 | P3 前可接受 |
+| 权限负向用例 | OpenFGA「无 Runtime 管理权不可读敏感键/写」缺自动化负向测 | 测补 |
+| Runtime command 契约门禁 | `read/write_provider_native_config` 活在 Rust 枚举，未进 `verify:contracts` | 与 foundation 债一并 |
+| 心跳 hash 摘要 | §12 P3：心跳带 exists+hash、「与节点不一致」角标 | 可选 |
+| opencode MCP merge | §6.3 任务投影是否 merge host 配置仍待产品二选一 | 文档已记 |
+| 写前备份 / atomic write | 产品接受简单 write；可选备份非 v1 | 后续 |
+| employee `agent_home` | 仅 host；员工 home 同构为后续 epic | 后续 |
 
 同批修正的事实错误：
 

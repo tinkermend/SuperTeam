@@ -907,6 +907,22 @@ func (r *PgRunRepository) UpdateCommandReceipt(ctx context.Context, req UpdateRu
 	if err != nil {
 		return nil, err
 	}
+	// timed_out is CAS on pending only so a late complete/fail is not clobbered.
+	if req.Status == "timed_out" {
+		receipt, err := r.q.UpdateRuntimeCommandReceiptTimedOutIfPending(ctx, queries.UpdateRuntimeCommandReceiptTimedOutIfPendingParams{
+			Result:       result,
+			ErrorMessage: textFromPtr(req.ErrorMessage),
+			TenantID:     req.TenantID,
+			CommandID:    req.CommandID,
+		})
+		if err != nil {
+			if mapNoRows(err) == ErrNotFound {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return runtimeCommandReceiptFromQuery(receipt), nil
+	}
 
 	receipt, err := r.q.UpdateRuntimeCommandReceiptStatus(ctx, queries.UpdateRuntimeCommandReceiptStatusParams{
 		Status:       req.Status,

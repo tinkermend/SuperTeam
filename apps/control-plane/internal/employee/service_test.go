@@ -25,6 +25,40 @@ func TestBuiltinEmployeeTemplateFixturesAreEmptyByDefault(t *testing.T) {
 	require.Empty(t, builtinEmployeeTemplateFixtures(uuid.New()))
 }
 
+func TestMemoryUpdateCommandReceiptTimedOutCASOnlyPending(t *testing.T) {
+	t.Parallel()
+	tenant := uuid.New()
+	repo := newMemoryRepository()
+	cmdID := "cmd-native-timeout-cas"
+	repo.commandReceipts[cmdID] = &RuntimeCommandReceipt{
+		TenantID:  tenant,
+		CommandID: cmdID,
+		Status:    "completed",
+	}
+	msg := "wait timed out"
+	got, err := repo.UpdateCommandReceipt(context.Background(), UpdateRuntimeCommandReceiptRequest{
+		TenantID:     tenant,
+		CommandID:    cmdID,
+		Status:       "timed_out",
+		ErrorMessage: &msg,
+	})
+	require.NoError(t, err)
+	require.Nil(t, got, "CAS miss on non-pending must not rewrite receipt")
+	require.Equal(t, "completed", repo.commandReceipts[cmdID].Status)
+
+	repo.commandReceipts[cmdID].Status = "pending"
+	got, err = repo.UpdateCommandReceipt(context.Background(), UpdateRuntimeCommandReceiptRequest{
+		TenantID:     tenant,
+		CommandID:    cmdID,
+		Status:       "timed_out",
+		ErrorMessage: &msg,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "timed_out", got.Status)
+	require.Equal(t, "timed_out", repo.commandReceipts[cmdID].Status)
+}
+
 func TestCustomAgentEmployeeTypeDefinitionIsAvailableForBlankCustomCreate(t *testing.T) {
 	definition := customAgentEmployeeTypeDefinition()
 	require.Equal(t, "custom_agent", definition.Type)

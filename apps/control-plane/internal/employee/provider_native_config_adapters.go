@@ -79,7 +79,7 @@ func (a *NativeConfigCommanderAdapter) WaitForCommandCompletion(ctx context.Cont
 }
 
 func (a *NativeConfigCommanderAdapter) MarkCommandTimedOut(ctx context.Context, tenantID uuid.UUID, commandID, message string) error {
-	// Best-effort: may race a late complete writeback and overwrite — acceptable for zombie cleanup.
+	// CAS on pending only (UpdateCommandReceipt timed_out path): late complete/fail wins.
 	msg := message
 	_, err := a.receipts.UpdateCommandReceipt(ctx, UpdateRuntimeCommandReceiptRequest{
 		TenantID:     tenantID,

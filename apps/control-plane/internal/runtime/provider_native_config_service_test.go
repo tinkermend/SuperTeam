@@ -617,6 +617,7 @@ func TestListIncludesPlaceholdersWithoutValues(t *testing.T) {
 	if len(items) < 6 {
 		t.Fatalf("expected known surfaces, got %d", len(items))
 	}
+	var foundClaudeAuth bool
 	for _, item := range items {
 		// List type has no ManagedValues field — compile-time safety.
 		if item.ProviderType == "" || item.ConfigKey == "" {
@@ -625,6 +626,35 @@ func TestListIncludesPlaceholdersWithoutValues(t *testing.T) {
 		if !item.NodeOnline {
 			t.Fatal("expected online")
 		}
+		// Pre-pull placeholder: claude-code/auth is never file-writable in v1.
+		if item.ProviderType == "claude-code" && item.ConfigKey == "auth" {
+			foundClaudeAuth = true
+			if item.Manageable {
+				t.Fatalf("claude-code/auth placeholder must be unmanageable, got %#v", item)
+			}
+			if item.UnmanageableReason != "oauth_session_protected" {
+				t.Fatalf("expected oauth_session_protected, got %q", item.UnmanageableReason)
+			}
+		}
+	}
+	if !foundClaudeAuth {
+		t.Fatal("expected claude-code/auth placeholder")
+	}
+}
+
+func TestDefaultSurfaceManageability(t *testing.T) {
+	t.Parallel()
+	ok, reason := defaultSurfaceManageability("claude-code", "auth")
+	if ok || reason != "oauth_session_protected" {
+		t.Fatalf("claude-code/auth: got manageable=%v reason=%q", ok, reason)
+	}
+	ok, reason = defaultSurfaceManageability("codex", "auth")
+	if !ok || reason != "" {
+		t.Fatalf("codex/auth should default manageable until node reports keyring: ok=%v reason=%q", ok, reason)
+	}
+	ok, reason = defaultSurfaceManageability("claude-code", "model_profile")
+	if !ok || reason != "" {
+		t.Fatalf("model_profile should be manageable: ok=%v reason=%q", ok, reason)
 	}
 }
 
