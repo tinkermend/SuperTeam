@@ -20,7 +20,13 @@ runtime:
   max_concurrent_tasks: 3
 
 http:
-  # Runtime Agent 本地 HTTP/WS 服务监听地址
+  # Runtime Agent 本地 HTTP/WS 服务监听地址。
+  #
+  # ⚠ 当前**未接线**：daemon.run() 不 bind 这个地址，`server.rs` 那套本地
+  # HTTP 面（/runs 调试端点、/health）只有 tests/http_server_test.rs 在用。
+  # 也就是说改这里不会让任何端口监听起来（别再去 lsof 找它）。
+  # 真要给运维做 liveness probe 时再把 daemon 接上去；节点存活目前由
+  # Control Plane 侧的 heartbeat/session 判定。
   addr: 127.0.0.1:7077
 
 runs:

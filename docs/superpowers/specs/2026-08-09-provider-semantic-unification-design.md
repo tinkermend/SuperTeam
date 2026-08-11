@@ -365,7 +365,7 @@ contracts/provider/
 | code | 典型来源 | 默认 family | 默认 retryable |
 |---|---|---|---|
 | `PROVIDER_EXIT_NON_ZERO` | 进程非 0 退出 | `transient_provider` 或 `non_retryable_execution`* | *见映射表 |
-| `PROVIDER_SPAWN_FAILED` | 二进制不存在/无权限 | `provider_configuration` | false |
+| `PROVIDER_SPAWN_FAILED` | 二进制不存在/无权限 | `provider_configuration` | false（**生产近乎不可达，见 §5.2.1**） |
 | `PROVIDER_PROTOCOL_ERROR` | 流协议致命错误 / codex 原生 error 行 | `non_retryable_execution` | false |
 | `PROVIDER_NO_TERMINAL_EVENT` | **exit 0 但全程无 TurnCompleted/TurnError**（输出格式漂移被解析层全量丢弃的典型形态） | `transient_provider`（保留诊断信息量） | **true**——派发/归因已修好（2026-08-10），恢复 §13 议题 11 原判；临时 `false` 见 §18-1 已销账 |
 | `RATE_LIMIT` | 限流 | `transient_provider` | true |
@@ -376,6 +376,17 @@ contracts/provider/
 | `WORKSPACE_INVALID` | 工作区/同步/hash | `invalid_contract` | false |
 | `WAITING_HUMAN` | 需人类（若走错误通道） | （通常走 wait-human 状态，不是 fail） | false |
 | `UNKNOWN` | 无法归类 | `non_retryable_execution` | false |
+
+#### 5.2.1 `PROVIDER_SPAWN_FAILED` 被健康闸前置遮蔽（2026-08-10 实测结论）
+
+派发前的预检闸会先看提供方健康：`health.rs` `probe_provider_health` 跑 `<bin> --version`（3 秒超时），探不通就以 `reason_code=provider_unavailable` **拦下派发**，任务停在 `waiting_human` / `attempts=0`，**根本产生不了 attempt**。
+
+而 `PROVIDER_SPAWN_FAILED` 的触发条件（文件不存在 / 无执行权限 / shebang 无效）**同时会让 `--version` 失败**。因此：
+
+- 它只在**健康快照与实际派发之间发生漂移**时可达（binary 在两者之间被删或被改权限），是防御性兜底而非常规路径；
+- 想为它造稳定的 E2E，需要同一个 binary「`--version` 成功但 `spawn()` 失败」，在正常文件系统语义下自相矛盾（卡在探测与派发之间改权限是竞态，不是用例）。
+
+**结论：不为该 code 立 E2E**，保留 `error_map` 单测即可。曾挂在 `TODO.md` 的「spawn 失败专项 E2E」据此撤销。附带判别器：任何"批准了却不派发 / 任务卡在 attempts=0"的现场，先看 `project_events` 里 `project_task.dispatch_blocked` 的 `reason_code`，别先怀疑审批链路。
 
 \* `PROVIDER_EXIT_NON_ZERO`：adapter 若能从 stderr/原生事件识别 rate limit / auth，应先映射到更具体 code；否则 Runtime 统一表可按 exit + 关键字做**最后兜底**（兜底逻辑集中在一处，禁止散落 contains）。
 

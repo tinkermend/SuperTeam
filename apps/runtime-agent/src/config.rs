@@ -24,6 +24,10 @@ pub struct RuntimeSection {
     pub max_concurrent_tasks: u16,
 }
 
+/// 本地 HTTP/WS 监听配置。**当前未接线**：`daemon.run()` 不 bind `addr`，
+/// `crate::server` 的调试端点与 `/health` 只有 `tests/http_server_test.rs` 消费。
+/// 节点存活由 Control Plane 的 heartbeat/session 判定；要做运维 liveness probe
+/// 时需先把 daemon 接上，别以为配了 addr 就有端口在听。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpSection {
     pub addr: SocketAddr,
