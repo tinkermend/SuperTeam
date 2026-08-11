@@ -49,7 +49,37 @@ objectStore:
 
 改完后重启 Control Plane，再跑一次技能上传或任务工件上传做冒烟。
 
-### 2.2 与现有 MinIO dev 的冲突
+### 2.2 桶 CORS（Console 预览）
+
+工件预览走 presigned GET，浏览器对 `127.0.0.1:9000` 跨域请求，桶须放行 Web origin。  
+复用 CP 的 `objectStore` 配置：
+
+```bash
+# 写入（幂等）
+go run ./apps/control-plane/cmd/bucket-cors --config apps/control-plane/config/config.yaml
+
+# 只读检查
+go run ./apps/control-plane/cmd/bucket-cors --config apps/control-plane/config/config.yaml --check
+
+# 自定义来源
+BUCKET_CORS_ORIGINS='http://127.0.0.1:3100,http://localhost:3100' \
+  go run ./apps/control-plane/cmd/bucket-cors --config apps/control-plane/config/config.yaml
+```
+
+默认 origins：`http://127.0.0.1:3100`、`http://localhost:3100`（与 Vite `DEV_SERVER_PORT` 一致）。  
+规则：`GET`/`HEAD`，`AllowedHeaders=*`，`ExposeHeaders=ETag,Content-Type,Content-Length`，`MaxAge=3600`。
+
+### 2.3 真实链路冒烟（技能上传 → 本地桶）
+
+```bash
+# 前置：rustfs up、CP 已指向本地 objectStore 并重启
+node scripts/ops/smoke-local-object-store.mjs
+```
+
+期望输出含 `SMOKE_OK`，且 `archive_object_ref` 形如  
+`s3://superteam-artifacts/skills/<tenant>/...zip`。
+
+### 2.4 与现有 MinIO dev 的冲突
 
 `docker-compose.dev.yml` 里的 **minio 同样默认占用 9000/9001**。  
 同一时刻只应启动 **RustFS 或 MinIO 之一**。本文件描述的是 RustFS 路径。
