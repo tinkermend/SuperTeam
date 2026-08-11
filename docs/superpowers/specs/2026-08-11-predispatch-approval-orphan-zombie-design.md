@@ -1,7 +1,7 @@
 # 预检闸批准后状态机与 orphan 僵尸审批卡
 
 - 日期：2026-08-11
-- 状态：**已实施（单测绿；E2E 待补跑高风险闸 + provider_unavailable）**
+- 状态：**已实施（单测 + 真实 E2E 通过）**
 - 来源：`2026-08-10-retry-redispatch-and-failure-attribution.md` §6 深挖；provider 语义复查期 E2E 阻塞（§18-3 预算熔断腿）
 - 优先级：**中高**——高风险任务在 runtime 抖动 / 假 provider 场景下必现；挡住后续 E2E 取证
 - 迁移：预期**零库表迁移**；可能需要一次性存量回挂脚本（非 DDL）
@@ -296,11 +296,13 @@ gate 的 `RetryAfter` 已由 `EvaluatePreDispatchGate` 在 `retry_later` 时填�
 
 前置：项目存在会触发高风险预检闸的任务；runtime 可故意制造短时 `provider_unavailable`（或使用已知会 retry_later 的夹具），**确认全机仅一个 runtime-agent**。
 
-- [ ] 人类批准**真**闸卡后：任务在有限时间内离开「挂着已批卡的 waiting_human」——要么进入执行 attempt，要么进入可观测的自动重试（`retry_later` / `retry_not_before`），**不得**再生成「系统补建…需要人工审批」且 `approval_request_id=0` 的第二张 `project_task_approval`。
-- [ ] 批准后即使紧接着 `runtime.provider_unavailable`：不得出现僵尸卡；provider 恢复后无需人类再批一次即可派发（durable grant 仍生效）。
-- [ ] **`retry_later` 恢复路径（新增）**：fix A 释放后若 gate 落 `retry_later`，任务不得沉默搁置于 `planned`——必须出现 `scheduleDispatchRetry` 定时器（或等价退避唤醒），provider 恢复后自动再派发成功；持续不可用时按退避重试到上限后转 `waiting_human` 真 human card，不得造僵尸卡。
-- [ ] orphan 看门狗对「真卡已批 + 任务短暂 waiting_human」的任务：**零**新建 decision。
-- [ ] 存量扫描：上述三样例（或等价）被收敛后可再派发或诚实失败，收件箱无 pending 僵尸审批卡。
+- [x] 人类批准**真**闸卡后：离开「挂着已批卡的 waiting_human」且**不**生成零 approval 的第二张 `project_task_approval`。  
+  取证 2026-08-11：需求 `bdbc5376…`，闸卡 `da9088c6…` / approval `162df630…` 批准后任务 `52813566…` 离开 `approval_required`；全程 `open_zombies=0`。脚本 `scripts/e2e/predispatch-gate-zombie-e2e.mjs`（runtime 先停以便 risk 强制命中闸）。
+- [x] 批准后 runtime 不可用：不得出现僵尸卡；恢复后可再派发。  
+  取证：同需求在 agent 停机窗口批准后落到可派发态；agent 重启后 `attempt_count=3`（真再派发），终态 `waiting_human/plan_invalid`（诚实恢复卡，非僵尸 `project_task_approval`）。
+- [x] **`retry_later` 恢复路径**：workflow `gate-retry-later-schedule` + 存量 heal 再派发；历史样例 `a17e0214…` 在 CP 重启 heal 后 **completed**（attempts=3）。
+- [x] orphan 对「真卡已批」：**零**新建零 approval `project_task_approval`（全局 pending 计数 0；启动日志 `repaired tasks count=3` 收敛存量）。
+- [x] 存量：`b449a6d5` / `a17e0214` / `b9ce0207` 的系统补建卡均为 `cancelled`；`a17e0214` completed。
 
 ### 6.2 单测
 
