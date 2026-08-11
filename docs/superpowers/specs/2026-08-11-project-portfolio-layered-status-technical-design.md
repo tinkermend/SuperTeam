@@ -1,14 +1,33 @@
 # 项目管理首页：项目—任务双层状态组合读模型技术方案
 
 - 日期：2026-08-11
-- 状态：提案 v2（已按代码核对复审修订），待人类拍板 §5.4 可见性口径后实施
-- 范围：Console `/projects` 列表态 + Control Plane 项目组合读模型 + 数据库聚合与性能门禁
+- 状态：提案 v2（已按代码核对复审修订）；**P-1 两项已于 2026-08-11 由人类拍板**（可见性 = C、IA = A），可开工
+- 范围：Console `/projects` 列表态 + Control Plane 项目组合读模型 + 数据库聚合与形态门禁
 - 原型：`docs/prototypes/project-management-home-redesign-v2/final-layered-project-task-status.png`
 - 前置规范：
   - `docs/superpowers/specs/2026-07-29-project-status-layers.md`
-  - `docs/superpowers/specs/2026-08-10-projects-home-portfolio-hygiene-design.md`
+  - `docs/superpowers/specs/2026-08-10-projects-home-portfolio-hygiene-design.md`（其实施提交为 `a5c57247`，本方案的现状基线）
 
 > 本方案是 2026-08-10 首页治理后的下一阶段。若实施，本方案将取代其“本期不新建 Project Home 读模型”和“仅做 50 条截断提示”的阶段性约束；原 `GET /api/v1/projects/run-summary` 继续服务运行总览，不扩成第二个项目首页专用契约。
+
+### v2 修订记录（2026-08-11，按代码核对复审）
+
+v1 的领域分层结论保留，落地部分按下列结论重写。每条都对应一处已核实的代码事实，不是风格偏好。
+
+| # | v1 的问题 | v2 处置 |
+|---:|---|---|
+| 1 | 契约把 `waiting_human`（宽口径）与 `open_decision_count` 并列，重新引入 `a5c57247` 刚修掉的 P0 双计 | 新增 §3.3 承重规则 + `attention.waiting_human_unlinked_count` 字段 + 专项测试 |
+| 2 | 要求重写 `GetProjectTaskStatusCounts`，但它是 `archive_readiness` 的闸门输入，与 §2.2 非目标冲突 | 新增 §5.2.1 冻结 `ActiveTasks`、展示桶与闸门互不派生 + 对照测试 |
+| 3 | 「沿用项目列表可见性决策点」——该决策点实为租户级，等于放行 | §5.4.1 三选项已拍板 **C**：租户级默认 + `mine_only` 开关，谓词与 `ListWorkflowInstances` 同源 |
+| 4 | 无 as-is 盘点；要重写的页面 1 天前刚大改 | 新增 §1.3 去留表；IA 冲突已拍板 **A**（卡片网格取代队列，`ProjectRiskQueue` 退役需先证明能力有落点） |
+| 5 | 两个新增索引与既有索引重复，其中一个比既有更差 | §5.3 改为默认不落、以 EXPLAIN 为准，移出 P0 |
+| 6 | 2 秒 SLO + 20 并发压测，在 50/500 规模下无判别性；且性能问题 `a5c57247` 已解决 | §7 压缩为形态门禁 + 回归门禁；§1.2 改写立项理由为口径完整性与分页诚实 |
+| 7 | 文件清单漏 `project-risk.ts`（web 侧口径事实源）；`failed` 拆桶会让健康度静默降级 | §3.5 连带影响表 + §6.3 健康度接线表 + P3 补文件 |
+| 8 | 「严禁全租户聚合」与自身的全局 summary 自相矛盾 | §5.1 限定禁令只对逐卡桶成立 |
+| 9 | 默认排序 `created_at DESC`，关注项会被埋到后页 | §4.2 新增 `sort`，默认 `attention` |
+| 10 | 桶和不变量失败即拒绝输出 = 自造停机面 | §9 改为降级返回 + `counts_degraded` + 告警 |
+| 11 | `completed_today_count` 正在被首页使用但契约未覆盖；`digital_employee_count` 口径未定义 | §4.3 补处置方案与口径钉死表 |
+| 12 | 把 `in_progress` 等防御值描述成「修复窄口径」 | §3.2 说明其在 `project_tasks` 上无写入方，不得作为修复理由 |
 
 ---
 
@@ -70,7 +89,7 @@
 | 现有单元 | 现职责 | 本方案去留 |
 |---|---|---|
 | `ProjectPortfolioSummaryBar` | 顶部组合真值条 | **改造**为 §6.2 的双层摘要，不新建重名组件 |
-| `ProjectRiskQueue` | 关注摘要/执行摘要两列队列 + chip 筛选 | **待拍板**：见下方「IA 冲突」 |
+| `ProjectRiskQueue` | 关注摘要/执行摘要两列队列 + chip 筛选 | **退役**（IA 拍板 A）；chip 筛选并入新 toolbar，退役前须逐项证明能力有落点 |
 | `ProjectTriagePanel` | 右栏选中项目的可行动明细 | 保留，未选中时不加载 |
 | `ProjectPortfolioPerspectivePanel` | 未选中时的右栏组合透视（方案 C，零额外请求） | 保留；数据源从 run-summary 换为 portfolio |
 | chip 默认收敛 + 「更多筛选」 | 风险筛选 | 保留，并入 §6.2 toolbar |
@@ -79,13 +98,15 @@
 | `reasonLabels`（已迁 `status-labels.ts`） | 中文词表 | 保留，新增桶词表并入同一出口 |
 | 「等待超时」chip | 已于 `a5c57247` 下线（run-summary 无等待起点，恒 0） | 保持下线，不得复活 |
 
-**IA 冲突（必须先拍板，否则 §6.2 无法实施）**：现状是「队列 + 右栏 triage」的主从布局（`MasterDetailLayout` 语义），原型与 §6.2 是「卡片网格」。二者不是同一个 IA。可选：
+**IA 冲突 — 已拍板 A（2026-08-11）**：现状是「队列 + 右栏 triage」的主从布局（`MasterDetailLayout` 语义），原型与 §6.2 是「卡片网格」，二者不是同一个 IA。曾考虑的三选项：
 
-- **A（推荐）**：卡片网格取代队列作为主区，`ProjectTriagePanel` 降为卡片点击后的右栏/抽屉。改动最大但与原型一致；
-- **B**：保留队列为主区，仅把任务构成条嵌入队列行。改动最小，但原型的项目卡表达基本落空；
-- **C**：卡片/队列视图切换（§6.3 已提到「卡片/列表切换只改变表现」）。成本最高，两套 UI 都要维护四态与可访问性。
+- **A（已选）**：卡片网格取代队列作为主区，`ProjectTriagePanel` 降为卡片点击后的右栏/抽屉。改动最大但与原型一致；
+- B：保留队列为主区，仅把任务构成条嵌入队列行。改动最小，但原型的项目卡表达基本落空；
+- C：卡片/队列视图切换。成本最高，两套 UI 都要维护四态与可访问性。
 
-本方案后续章节按 **A** 书写。若拍板为 B/C，§6.2、§6.3、§10 的 P3 需重写。
+**A 的实施约束**：`ProjectRiskQueue`（`project-risk-home.tsx:152`）退役前，其 chip 筛选、负责人行、处理人标签、空态文案必须逐项在新 toolbar / 卡片上找到落点并在 §8.2 有断言。退役是删代码，不是搬代码——删之前先证明功能有去处，见 §11 第 5 步。
+
+顺带确认：§6.3 的「卡片/列表切换只改变表现」指的是同一份 portfolio 响应的两种密度呈现（沿用现有列表态密度习惯），**不是**恢复队列 IA。
 
 ---
 
@@ -236,9 +257,12 @@ GET /api/v1/projects/portfolio
 | `project_status` | string[] | 全部 | 项目生命周期筛选，可重复传参 |
 | `owner_user_id` | uuid | 空 | 人类负责人筛选 |
 | `task_state` | enum | 空 | 返回至少含一个该桶任务的项目 |
+| `mine_only` | bool | `false` | 仅返回我负责或参与的项目；谓词与 `ListWorkflowInstances` 同源（§5.4.1） |
 | `sort` | enum | `attention` | `attention` \| `recent` \| `created`，见下 |
 | `limit` | int | 12 | 1～50 |
 | `offset` | int | 0 | 服务端分页 |
+
+`mine_only` 同时作用于 `items` 与 `summary`，两者恒为同一可见集合。
 
 **`sort` 是必需参数，不是可选增强。** 现状 `ListProjectRunSummaries` 的排序是「有失败/待人工的项目优先，其次最新活动时间」；若照 §5.1 草稿的 `ORDER BY created_at DESC` 出货，50 个项目 12 条一页时，一个很久以前创建、今天失败的项目会沉到第 4 页——直接违背 §2.3 的「哪些项目需要关注」。
 
@@ -452,9 +476,11 @@ SELECT ...;
 | Repository | 增加 portfolio 查询与 summary/count 映射 |
 | Service | 校验 limit、权限、任务桶总和不变量 |
 | Handler | 解析筛选、输出响应、记录 Server-Timing |
-| Authorization | **见 §5.4.1，待人类拍板；不得写「沿用」了事** |
+| Authorization | 租户级 authz `Check` 照旧 + `mine_only` 筛选谓词（§5.4.1，已拍板 C）；**不得写「沿用项目列表可见性」了事** |
 
-#### 5.4.1 可见性口径：本方案的唯一阻断项，需人类拍板
+#### 5.4.1 可见性口径 — 已拍板 C（2026-08-11）
+
+**结论：租户级为默认，另给 `mine_only` 开关走「与我相关」谓词。** 论证与被否选项见下。
 
 草稿原文「沿用项目列表可见性决策点，不得仅按 tenant_id 绕过对象可见范围」是一句自相矛盾的话——因为**项目列表的可见性决策点就是租户级**：
 
@@ -470,13 +496,20 @@ SELECT ...;
 
 | 选项 | 语义 | 代价 |
 |---|---|---|
-| **A** 维持租户级 | 与现状 `ListProjects` 一致，portfolio 返回租户全部项目 | 零改动；但把「首页 = 全租户」正式写进新契约，且与同页队列口径继续不一致 |
-| **B** 收敛为「与我相关」 | 对齐 `ListWorkflowInstances` 的 owner ∪ active member | 需同步改 `ListProjects`，否则新旧两个列表接口口径分叉；**会改变现有用户看到的项目集合**，属行为破坏性变更 |
-| **C** 租户级 + 「仅我参与」筛选开关 | 默认 A，给一个 toggle 走 B 的谓词 | 契约多一个参数；两种口径都要测；但不破坏现状且解释得清 |
+| A 维持租户级 | 与现状 `ListProjects` 一致，portfolio 返回租户全部项目 | 零改动；但把「首页 = 全租户」正式写进新契约，且与同页队列口径继续不一致 |
+| B 收敛为「与我相关」 | 对齐 `ListWorkflowInstances` 的 owner ∪ active member | 需同步改 `ListProjects`，否则新旧两个列表接口口径分叉；**会改变现有用户看到的项目集合**，属行为破坏性变更 |
+| **C（已选）** 租户级 + 「仅我参与」开关 | 默认 A，给一个 toggle 走 B 的谓词 | 契约多一个参数；两种口径都要测；但不破坏现状且解释得清 |
 
-**推荐 C**：既不破坏现有可见性，又让「与我相关」成为显式的用户选择而非隐式规则；`summary` 随该开关一起变（同一可见集合，见 §12）。
+选 C 的理由：既不破坏现有可见性，又让「与我相关」成为显式的用户选择而非隐式规则。
 
-**在本项拍板前，P1 不得开工。** 拍板结果需回填本节并写入 CHANGELOG；若拍板为 C，§4.2 需增加 `mine_only: bool = false` 参数，且 §8.1 的权限隔离用例要覆盖两种取值。
+**C 的实施约束**：
+
+1. §4.2 增加参数 `mine_only`（bool，默认 `false`）。
+2. `mine_only=true` 的谓词**必须与 `ListWorkflowInstances`（`project.sql:96-115`）同源**：`actor ∈ projects.human_owner_user_ids` ∪ `project_members` 中 `principal_type='human_user' AND principal_id=actor AND status='active'`。抄一份新谓词就是制造第三套可见性口径——本方案要修的正是这类分叉。
+3. **`summary` 与 `items` 必须用同一可见集合**：开关打开时顶部组合统计一并收窄，否则「顶部 50 个项目、列表 3 个项目」无法解释。§3.4 的范围标签需随开关改写（「全部项目」↔「我参与的项目」）。
+4. `mine_only` 是筛选，不是授权。租户级 authz `Check`（`handler.go:121`）照旧，不因该参数放宽或收紧。
+5. §8.1 权限隔离用例覆盖两种取值；`mine_only=true` 需有「非成员看不到、active member 看得到、非 active member 看不到」三例。
+6. 前端把它做成 toolbar 上的显式开关并持久化到 URL（站内跳转走 TanStack Router），刷新后不丢；默认关闭以保持现状体感。
 
 #### 5.4.2 建议类型
 
@@ -637,7 +670,8 @@ staleTime: 10_000
 - `sort` 三种取值的排序稳定性，含 `last_activity_at IS NULL` 的回退与 `id` 收尾（§4.2）；
 - limit 上下界、offset、total、has_more；
 - 未登记状态进入 other 并记录告警；
-- 权限隔离：其他租户、不可见项目不进入 items/summary（拍板为 C 时覆盖 `mine_only` 两种取值，§5.4.1）；
+- 权限隔离：其他租户项目不进入 items/summary；
+- `mine_only` 两种取值（§5.4.1）：`false` 得租户全量；`true` 时「非成员看不到 / active member 看得到 / 非 active member 看不到」三例，且 `summary` 与 `items` 同集合收窄；
 - repository SQL 测试与 handler 契约测试；
 - 50/500 形态 fixture（供 §7.1 的 EXPLAIN 门禁使用，不用于压测）。
 
@@ -717,7 +751,7 @@ Web：
 
 | 批次 | 内容 | 主要文件 |
 |---|---|---|
-| **P-1** | **人类拍板两项：§5.4.1 可见性口径、§1.3 IA 选项**；拍板结果回填本文档 | 本 spec |
+| ~~P-1~~ | ~~人类拍板两项~~ **已完成（2026-08-11）：可见性 = C（租户级 + `mine_only`）、IA = A（卡片网格取代队列）** | 已回填 §5.4.1、§1.3 |
 | P0 | 状态桶定义与共享计数查询；`GetProjectTaskStatusCounts` 分桶收敛 + 纠正其失效注释；**`ActiveTasks` 冻结与归档闸门对照测试**；50/500 形态 fixture | `storage/queries/project.sql`、`internal/project/types.go`、`pg_repository.go`、`archive_readiness.go`（**只加测试，不改逻辑**）、`project/*_test.go` |
 | P1 | OpenAPI + Portfolio repository/service/handler + 可见性实现 + 观测指标 + 桶和降级路径 | `contracts/control-plane/openapi.yaml`、`internal/project/*` |
 | P2 | Web API 类型、React Query 换源、顶部双层摘要改造 | `lib/api/projects.ts`、`features/projects/index.tsx`、`components/project-risk-home.tsx`（`ProjectPortfolioSummaryBar`） |
@@ -762,7 +796,8 @@ P3 特别提示：`project-risk.ts`（1113 行）是 web 侧的口径事实源�
 | **归档闸门被读模型改动静默放开** | §5.2.1 冻结 `ActiveTasks` 定义、展示桶与闸门互不派生；§8.1 有改动前后 blocker 逐项对照 |
 | **健康度与构成条自相矛盾**（blocked 拆桶后漏改 web） | §3.5 契约拆桶 / 健康度重新合并；P3 明确包含 `project-risk.ts` |
 | 任务桶和项目详情口径再次分叉 | 共享 CASE/查询片段 + 同 fixture 交叉断言；并纠正 `project.sql:580` 那句已失效的「与 ListProjectRunSummaries 一致」注释 |
-| Portfolio endpoint 可见性口径不明 | **不能靠「沿用」化解**——现状决策点即租户级。见 §5.4.1 的三选项与拍板要求；summary 与 items 必须用同一可见集合 |
+| Portfolio endpoint 可见性口径不明 | 已拍板 C（§5.4.1）：租户级默认 + `mine_only` 开关；谓词与 `ListWorkflowInstances` 同源，summary 与 items 恒同集合 |
+| `mine_only` 谓词另写一份 = 第三套可见性口径 | §5.4.1 约束 2 要求与 `project.sql:96-115` 同源；§8.1 三例覆盖 |
 | 顶部全局 summary 与筛选列表被误解 | 明确标签“全部项目/非归档项目任务”，列表显示“筛选结果 N”；归档卡任务不入顶部统计（§3.4） |
 | 关注项被创建时间排序埋到后页 | `sort` 默认 `attention`，与现状队列排序同源（§4.2） |
 | 重写掉一天前刚验收的列表态能力 | §1.3 去留表 + §11 第 5 步逐项核对；未标注者默认保留 |
@@ -777,10 +812,10 @@ P3 特别提示：`project-risk.ts`（1113 行）是 web 侧的口径事实源�
 
 只有同时满足以下条件，才能声明本方案开发完成：
 
-前置（开工条件，不是完成条件）：
+前置（开工条件，已满足）：
 
-- [ ] §5.4.1 可见性口径已由人类拍板并回填；
-- [ ] §1.3 IA 选项已由人类拍板并回填。
+- [x] §5.4.1 可见性口径已拍板并回填：**C — 租户级默认 + `mine_only` 开关**（2026-08-11）；
+- [x] §1.3 IA 选项已拍板并回填：**A — 卡片网格取代队列**（2026-08-11）。
 
 承重不变量：
 
@@ -795,8 +830,9 @@ P3 特别提示：`project-risk.ts`（1113 行）是 web 侧的口径事实源�
 - [ ] OpenAPI、生成代码、SQLC 一致（若最终落了索引，迁移与 `atlas.sum` 一致）；
 - [ ] 首页首屏无逐项目 fan-out，请求数 ≤ 4 且不随项目数增长；
 - [ ] `sort=attention` 为默认，关注项不因分页被埋到后页；
+- [ ] `mine_only` 两种取值行为正确，谓词与 `ListWorkflowInstances` 同源，`summary`/`items` 同集合；
 - [ ] 真分页生效，截断提示已删除；
-- [ ] §1.3 去留表逐项核对完毕，未标注能力无回归；
+- [ ] §1.3 去留表逐项核对完毕，未标注能力无回归；`ProjectRiskQueue` 退役前其能力已全部有落点；
 - [ ] EXPLAIN 形态门禁通过（§7.1），explain 输出已存档；
 - [ ] Portfolio API 单请求 p95 ≤ 500ms，页面首屏不劣于改动前基线（§7.2）。
 
