@@ -24,6 +24,75 @@ func TestValidatePushKeysAllowlist(t *testing.T) {
 	}
 }
 
+// 可执行面必须留在白名单外：apiKeyHelper 是 Claude Code 经 /bin/sh 执行的取凭据命令，
+// opencode 的 provider.<name>.npm 与 models.<id>.provider.* 会让节点加载任意 npm 包。
+func TestValidatePushKeysRejectsExecutableSurfaces(t *testing.T) {
+	t.Parallel()
+	rejected := []struct {
+		provider string
+		key      string
+	}{
+		{"claude-code", "apiKeyHelper"},
+		{"claude-code", "awsCredentialExport"},
+		{"claude-code", "awsAuthRefresh"},
+		{"opencode", "provider.custom.npm"},
+		{"opencode", "provider.custom.models.gpt.provider.npm"},
+		{"opencode", "provider.custom"},
+		{"opencode", "provider"},
+	}
+	for _, tc := range rejected {
+		if err := validatePushKeys(tc.provider, "model_profile", map[string]any{tc.key: "x"}); err == nil {
+			t.Fatalf("expected %s/%s rejected", tc.provider, tc.key)
+		}
+	}
+
+	allowed := []string{
+		"provider.custom.name",
+		"provider.custom.options.baseURL",
+		"provider.custom.options.headers.X-Trace",
+		"provider.custom.models.gpt.name",
+		"provider.custom.models.gpt.limit.context",
+	}
+	for _, key := range allowed {
+		if err := validatePushKeys("opencode", "model_profile", map[string]any{key: "x"}); err != nil {
+			t.Fatalf("expected opencode %s allowlisted: %v", key, err)
+		}
+	}
+}
+
+// 收窄白名单前拉取的快照里可能仍留着 apiKeyHelper / provider.*.npm，
+// 读路径必须过滤掉，否则会被渲染成可编辑字段并在下次 push 时整体 422。
+func TestFilterAllowlistedManagedValuesDropsStaleExecutableKeys(t *testing.T) {
+	t.Parallel()
+	claude := filterAllowlistedManagedValues("claude-code", "model_profile", map[string]any{
+		"model":        "claude-sonnet",
+		"apiKeyHelper": "/bin/old_helper.sh",
+	})
+	if _, ok := claude["apiKeyHelper"]; ok {
+		t.Fatal("stale apiKeyHelper must be filtered out of snapshot reads")
+	}
+	if claude["model"] != "claude-sonnet" {
+		t.Fatalf("allowlisted key must survive: %v", claude["model"])
+	}
+
+	oc := filterAllowlistedManagedValues("opencode", "model_profile", map[string]any{
+		"provider.custom.npm":             "@attacker/pkg",
+		"provider.custom.options.baseURL": "https://api.example/v1",
+	})
+	if _, ok := oc["provider.custom.npm"]; ok {
+		t.Fatal("stale provider npm must be filtered out of snapshot reads")
+	}
+	if oc["provider.custom.options.baseURL"] != "https://api.example/v1" {
+		t.Fatal("opencode data field must survive")
+	}
+
+	// auth 面读集合是整份文件，宽于写集合，不得被过滤。
+	auth := filterAllowlistedManagedValues("claude-code", "auth", map[string]any{"accessToken": "x"})
+	if auth["accessToken"] != "x" {
+		t.Fatal("auth surface reads must not be filtered")
+	}
+}
+
 func TestSensitiveKeyDetection(t *testing.T) {
 	t.Parallel()
 	if !isSensitiveManagedKey("claude-code", "model_profile", "env.ANTHROPIC_API_KEY") {

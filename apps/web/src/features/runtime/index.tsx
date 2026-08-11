@@ -1076,7 +1076,11 @@ function ProviderNativeConfigPanel({
                       </p>
                     ) : (
                       Object.entries(editing.draft).map(([key, value]) => {
-                        const sensitive = isSensitiveField(key, editing.configKey);
+                        const sensitive = isSensitiveField(
+                          key,
+                          editing.configKey,
+                          editing.detail.sensitive_keys
+                        );
                         return (
                           <div key={key} className="grid gap-1">
                             <Label className="font-mono text-[11px] text-ink-2">{key}</Label>
@@ -1108,7 +1112,11 @@ function ProviderNativeConfigPanel({
                     </summary>
                     <pre className="mt-2 max-h-40 overflow-auto font-mono text-[11px] text-ink-2">
                       {JSON.stringify(
-                        maskManagedValues(editing.detail.managed_values, editing.configKey),
+                        maskManagedValues(
+                          editing.detail.managed_values,
+                          editing.configKey,
+                          editing.detail.sensitive_keys
+                        ),
                         null,
                         2
                       )}
@@ -1203,26 +1211,37 @@ function shortHash(hash?: string): string {
   return bare.length > 12 ? `${bare.slice(0, 8)}…` : bare;
 }
 
-function isSensitiveField(key: string, configKey: string): boolean {
+function isSensitiveField(
+  key: string,
+  configKey: string,
+  sensitiveKeys?: string[]
+): boolean {
+  // 服务端判据优先：它与静态加密同源，本地启发式会漂移（`options.apiKey`
+  // 就漏在下面这组匹配之外）。仅在服务端未提供列表时回退。
+  if (sensitiveKeys) {
+    return sensitiveKeys.includes(key);
+  }
   if (configKey === "auth") {
     return true;
   }
+  const lower = key.toLowerCase();
   return (
-    key.includes("TOKEN") ||
-    key.includes("API_KEY") ||
-    key.includes("bearer") ||
-    key.includes("token") ||
-    key.includes("secret")
+    lower.includes("token") ||
+    lower.includes("api_key") ||
+    lower.includes("apikey") ||
+    lower.includes("bearer") ||
+    lower.includes("secret")
   );
 }
 
 function maskManagedValues(
   values: Record<string, unknown> | undefined,
-  configKey: string
+  configKey: string,
+  sensitiveKeys?: string[]
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(values ?? {})) {
-    out[key] = isSensitiveField(key, configKey) ? "••••••••" : value;
+    out[key] = isSensitiveField(key, configKey, sensitiveKeys) ? "••••••••" : value;
   }
   return out;
 }

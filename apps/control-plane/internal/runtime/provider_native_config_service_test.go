@@ -304,6 +304,81 @@ func TestSealAndOpenManagedValuesRoundTrip(t *testing.T) {
 	}
 }
 
+// 密封/解封必须保类型：形如 JSON 标量的密钥（纯数字、true、null）
+// 过去会在解封时被 json.Unmarshal 解成 number/bool/nil，再写回配置文件就是错类型。
+func TestSealAndOpenManagedValuesPreservesScalarLookingSecrets(t *testing.T) {
+	t.Parallel()
+	svc := &Service{sealer: newTestSealer(t)}
+	cases := map[string]any{
+		"numeric":     "123456",
+		"boolean":     "true",
+		"nullish":     "null",
+		"leadingZero": "007",
+		"jsonObject":  `{"a":1}`,
+		"ordinary":    "sk-live-abc",
+	}
+	for name, secret := range cases {
+		in := map[string]any{"env.ANTHROPIC_API_KEY": secret}
+		sealed, err := svc.sealManagedValues("claude-code", "model_profile", in)
+		if err != nil {
+			t.Fatalf("%s seal: %v", name, err)
+		}
+		opened, err := svc.openManagedValues(sealed)
+		if err != nil {
+			t.Fatalf("%s open: %v", name, err)
+		}
+		got := opened["env.ANTHROPIC_API_KEY"]
+		if got != secret {
+			t.Fatalf("%s round-trip changed value/type: want %#v (%T), got %#v (%T)",
+				name, secret, secret, got, got)
+		}
+	}
+
+	// 非字符串类型同样保真。
+	in := map[string]any{"model_providers.custom.query_params": map[string]any{"key": "v"}}
+	sealed, err := svc.sealManagedValues("codex", "model_profile", in)
+	if err != nil {
+		t.Fatalf("seal object: %v", err)
+	}
+	opened, err := svc.openManagedValues(sealed)
+	if err != nil {
+		t.Fatalf("open object: %v", err)
+	}
+	obj, ok := opened["model_providers.custom.query_params"].(map[string]any)
+	if !ok || obj["key"] != "v" {
+		t.Fatalf("object round-trip mismatch: %#v", opened["model_providers.custom.query_params"])
+	}
+}
+
+// 供应商端点上的凭据面必须判为敏感（静态加密 + UI 掩码同源）。
+func TestSensitiveKeyCoversProviderCredentialSurfaces(t *testing.T) {
+	t.Parallel()
+	sensitive := []struct{ provider, configKey, key string }{
+		{"opencode", "model_profile", "provider.custom.options.apiKey"},
+		{"opencode", "model_profile", "provider.custom.options.headers.Authorization"},
+		{"opencode", "model_profile", "provider.custom.options.headers.x-api-key"},
+		{"codex", "model_profile", "model_providers.custom.http_headers"},
+		{"codex", "model_profile", "model_providers.custom.query_params"},
+	}
+	for _, tc := range sensitive {
+		if !isSensitiveManagedKey(tc.provider, tc.configKey, tc.key) {
+			t.Fatalf("expected %s sensitive", tc.key)
+		}
+	}
+	notSensitive := []struct{ provider, configKey, key string }{
+		{"opencode", "model_profile", "provider.custom.options.baseURL"},
+		{"opencode", "model_profile", "provider.custom.options.headers.X-Trace"},
+		{"opencode", "model_profile", "provider.custom.name"},
+		{"codex", "model_profile", "model_providers.custom.base_url"},
+		{"codex", "model_profile", "model_providers.custom.env_key"},
+	}
+	for _, tc := range notSensitive {
+		if isSensitiveManagedKey(tc.provider, tc.configKey, tc.key) {
+			t.Fatalf("did not expect %s sensitive", tc.key)
+		}
+	}
+}
+
 func TestSealManagedValuesRequiresSealerForSensitive(t *testing.T) {
 	t.Parallel()
 	svc := &Service{}
@@ -402,6 +477,156 @@ func TestPullProviderNativeConfigSuccessUpsertsSnapshot(t *testing.T) {
 	}
 	if len(cmd.receipts) != 1 || cmd.receipts[0].ResourceType != providerNativeConfigResourceType {
 		t.Fatalf("receipt: %#v", cmd.receipts)
+	}
+}
+
+// 快照落库失败时 writeback 仍把回执置 completed（为了解阻塞等待者），
+// 但 pull 的全部目的就是取新值——回执里 managed_values 已被剥离，CP 无从恢复，
+// 因此必须报错，而不是把上一次的旧快照当实时值返回。
+func TestPullSurfacesSnapshotError(t *testing.T) {
+	t.Parallel()
+	tenant := uuid.New()
+	actor := uuid.New()
+	node := testNode(tenant)
+	repo := newNativeConfigFakeRepo(node)
+	cmd := &fakeNativeCommander{
+		online: true,
+		waitReceipt: &NativeConfigCommandReceipt{
+			CommandID: "cmd-snap-1",
+			Status:    "completed",
+			Result: map[string]any{
+				"provider_type":     "codex",
+				"config_key":        "model_profile",
+				"file_content_hash": "sha256:new",
+				"snapshot_error":    "seal: credential sealer is required",
+			},
+		},
+	}
+	svc := newNativeConfigService(t, repo, cmd)
+
+	// 预置一份旧快照：修复前这份会被当成「实时」返回。
+	if _, err := repo.UpsertProviderNativeConfig(context.Background(), UpsertProviderNativeConfigParams{
+		TenantID:        tenant,
+		RuntimeNodeID:   node.ID,
+		NodeID:          node.NodeID,
+		ProviderType:    "codex",
+		ConfigKey:       "model_profile",
+		Format:          "toml",
+		ManagedValues:   map[string]any{"model": "stale-model"},
+		FileContentHash: "sha256:old",
+		Manageable:      true,
+		Source:          "pulled",
+		SnapshotAt:      time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+
+	_, err := svc.PullProviderNativeConfig(context.Background(), tenant, actor, node.NodeID, "codex", "model_profile")
+	if err == nil {
+		t.Fatal("expected pull to fail when the snapshot did not persist")
+	}
+	if !errors.Is(err, ErrProviderNativeConfigCommand) {
+		t.Fatalf("expected command error sentinel, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "credential sealer") {
+		t.Fatalf("expected underlying snapshot error surfaced, got %v", err)
+	}
+}
+
+// push 与 pull 不同：节点写入已经落盘，报错会误报成「没生效」。
+// 因此返回成功，但把值标为非实时并带上原因。
+func TestPushSnapshotErrorKeepsSuccessButMarksStale(t *testing.T) {
+	t.Parallel()
+	tenant := uuid.New()
+	actor := uuid.New()
+	node := testNode(tenant)
+	repo := newNativeConfigFakeRepo(node)
+	if _, err := repo.UpsertProviderNativeConfig(context.Background(), UpsertProviderNativeConfigParams{
+		TenantID:        tenant,
+		RuntimeNodeID:   node.ID,
+		NodeID:          node.NodeID,
+		ProviderType:    "codex",
+		ConfigKey:       "model_profile",
+		Format:          "toml",
+		ManagedValues:   map[string]any{"model": "stale-model"},
+		FileContentHash: "sha256:old",
+		Manageable:      true,
+		Source:          "pulled",
+		SnapshotAt:      time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+	cmd := &fakeNativeCommander{
+		online: true,
+		waitReceipt: &NativeConfigCommandReceipt{
+			CommandID: "cmd-snap-2",
+			Status:    "completed",
+			Result: map[string]any{
+				"provider_type":     "codex",
+				"config_key":        "model_profile",
+				"file_content_hash": "sha256:new",
+				"changed_keys":      []any{"model"},
+				"snapshot_error":    "upsert: connection reset",
+			},
+		},
+	}
+	svc := newNativeConfigService(t, repo, cmd)
+
+	detail, err := svc.PushProviderNativeConfig(
+		context.Background(), tenant, actor, node.NodeID, "codex", "model_profile",
+		map[string]any{"model": "gpt-5.6"}, "sha256:old",
+	)
+	if err != nil {
+		t.Fatalf("push should still report success: %v", err)
+	}
+	if !detail.StaleHint {
+		t.Fatal("values are the previous snapshot; stale_hint must stay true")
+	}
+	if !strings.Contains(detail.SnapshotError, "connection reset") {
+		t.Fatalf("expected snapshot_error surfaced, got %q", detail.SnapshotError)
+	}
+}
+
+// 服务端下发敏感键名，Console 不再自行用键名启发式判断（会漂移）。
+func TestGetSnapshotServesSensitiveKeyList(t *testing.T) {
+	t.Parallel()
+	tenant := uuid.New()
+	node := testNode(tenant)
+	repo := newNativeConfigFakeRepo(node)
+	svc := newNativeConfigService(t, repo, &fakeNativeCommander{online: true})
+
+	sealed, err := svc.sealManagedValues("opencode", "model_profile", map[string]any{
+		"model":                           "anthropic/claude-sonnet-4-5",
+		"provider.custom.options.baseURL": "https://api.example/v1",
+		"provider.custom.options.apiKey":  "sk-live-abc",
+	})
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	if _, err := repo.UpsertProviderNativeConfig(context.Background(), UpsertProviderNativeConfigParams{
+		TenantID:      tenant,
+		RuntimeNodeID: node.ID,
+		NodeID:        node.NodeID,
+		ProviderType:  "opencode",
+		ConfigKey:     "model_profile",
+		Format:        "json",
+		ManagedValues: sealed,
+		Manageable:    true,
+		Source:        "pulled",
+		SnapshotAt:    time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	detail, err := svc.GetProviderNativeConfigSnapshot(context.Background(), tenant, node.NodeID, "opencode", "model_profile")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(detail.SensitiveKeys) != 1 || detail.SensitiveKeys[0] != "provider.custom.options.apiKey" {
+		t.Fatalf("expected only apiKey flagged sensitive, got %#v", detail.SensitiveKeys)
+	}
+	if detail.ManagedValues["provider.custom.options.apiKey"] != "sk-live-abc" {
+		t.Fatalf("apiKey must decrypt for authorized reads, got %#v", detail.ManagedValues["provider.custom.options.apiKey"])
 	}
 }
 

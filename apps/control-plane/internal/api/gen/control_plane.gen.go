@@ -6637,18 +6637,24 @@ type PromptTemplateVariable struct {
 
 // ProviderNativeConfigDetail defines model for ProviderNativeConfigDetail.
 type ProviderNativeConfigDetail struct {
-	ConfigKey          string                            `json:"config_key"`
-	ExistsOnNode       bool                              `json:"exists_on_node"`
-	FileContentHash    *string                           `json:"file_content_hash,omitempty"`
-	Format             *ProviderNativeConfigDetailFormat `json:"format,omitempty"`
-	LastPulledAt       *time.Time                        `json:"last_pulled_at,omitempty"`
-	LastPushedAt       *time.Time                        `json:"last_pushed_at,omitempty"`
-	Manageable         bool                              `json:"manageable"`
-	ManagedValues      map[string]interface{}            `json:"managed_values"`
-	NodeOnline         bool                              `json:"node_online"`
-	ProviderType       string                            `json:"provider_type"`
-	ResolvedPath       *string                           `json:"resolved_path,omitempty"`
-	SnapshotAt         *time.Time                        `json:"snapshot_at,omitempty"`
+	ConfigKey       string                            `json:"config_key"`
+	ExistsOnNode    bool                              `json:"exists_on_node"`
+	FileContentHash *string                           `json:"file_content_hash,omitempty"`
+	Format          *ProviderNativeConfigDetailFormat `json:"format,omitempty"`
+	LastPulledAt    *time.Time                        `json:"last_pulled_at,omitempty"`
+	LastPushedAt    *time.Time                        `json:"last_pushed_at,omitempty"`
+	Manageable      bool                              `json:"manageable"`
+	ManagedValues   map[string]interface{}            `json:"managed_values"`
+	NodeOnline      bool                              `json:"node_online"`
+	ProviderType    string                            `json:"provider_type"`
+	ResolvedPath    *string                           `json:"resolved_path,omitempty"`
+
+	// SensitiveKeys 受管键中应掩码显示的键名，由服务端判定（与静态加密判据同源）。 客户端不要自行用键名启发式猜测，否则会与服务端漂移。
+	SensitiveKeys *[]string  `json:"sensitive_keys,omitempty"`
+	SnapshotAt    *time.Time `json:"snapshot_at,omitempty"`
+
+	// SnapshotError 节点命令成功但快照落库失败时的原因。此时 managed_values 是上一次的快照 而非节点当前值，stale_hint 为 true。
+	SnapshotError      *string                           `json:"snapshot_error,omitempty"`
 	Source             *ProviderNativeConfigDetailSource `json:"source,omitempty"`
 	StaleHint          bool                              `json:"stale_hint"`
 	UnmanageableReason *string                           `json:"unmanageable_reason,omitempty"`

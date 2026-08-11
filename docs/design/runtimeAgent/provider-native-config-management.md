@@ -132,12 +132,14 @@ RuntimeProviderNativeConfig
 
 | provider_type | config_key | 文件 | 受管键 | format |
 |---------------|-----------|------|--------|--------|
-| `claude-code` | `model_profile` | `settings.json` | `model`、`fallbackModel`、`apiKeyHelper`、`env` 的受限子键（见 §5.4） | json |
+| `claude-code` | `model_profile` | `settings.json` | `model`、`fallbackModel`、`env` 的受限子键（见 §5.4） | json |
 | `claude-code` | `auth` | — | 见 §5.5，v1 不可写 | — |
-| `codex` | `model_profile` | `config.toml` | `model`、`model_provider`、`model_providers.*`（`name`/`base_url`/`wire_api`/`env_key`/`requires_openai_auth`/`experimental_bearer_token`/`query_params`/`http_headers`） | toml |
+| `codex` | `model_profile` | `config.toml` | `model`、`model_provider`、`model_providers.<name>.<field>`（`field` ∈ `name`/`base_url`/`wire_api`/`env_key`/`requires_openai_auth`/`experimental_bearer_token`/`query_params`/`http_headers`） | toml |
 | `codex` | `auth` | `auth.json` | 全键（该文件语义单一），受 §5.5 可管理性判定约束 | json |
-| `opencode` | `model_profile` | `opencode.json` | `model`、`small_model`、`provider.*` | json |
+| `opencode` | `model_profile` | `opencode.json` | `model`、`small_model`、`provider.<name>.` 下的**数据字段**：`name`、`options.*`、`models.<id>.name`、`models.<id>.limit.*` | json |
 | `opencode` | `auth` | `auth.json` | 全键（该文件语义单一） | json |
+
+**粒度必须到字段，不能到前缀。** `provider.<name>` 整对象写入、`provider.<name>.npm`、`provider.<name>.models.<id>.provider.*` 一律拒绝——理由见 §5.3。同理 `model_providers.<name>` 整对象写入也不在白名单内，只允许具名 `field`。
 
 ### 5.2 路径解析：一律由节点求值，CP 不拼接
 
@@ -163,6 +165,8 @@ RuntimeProviderNativeConfig
 | `[mcp_servers.*]` | codex `config.toml` | MCP 由能力注册表 + 项目 MCP 绑定治理（凭据加密、授权、审计）。经本通道手写会绕过全部治理，且 `merge_codex_config` 会把 host 值合进每次会话 overlay，直接进入真实执行。 |
 | `mcp` | opencode `opencode.json` | 同上 |
 | `[projects."<path>"]` | codex `config.toml` | sandbox 信任决策。可写 = 在任意 runtime 节点把任意路径标 trusted，属权限提升面。 |
+| `apiKeyHelper` | claude-code `settings.json` | 官方定义为「Custom command, run through the system shell(`/bin/sh` on macOS/Linux, `cmd` on Windows), to generate an auth value」，按 `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` 周期性重跑。可写 = 在节点上以 runtime 用户身份持续执行任意命令。同类的 `awsCredentialExport`（输出凭据 JSON 的脚本）、`awsAuthRefresh`（改 `.aws` 目录的脚本）一并排除。节点上已存在该键时也**不回传**，避免被渲染成可编辑字段。 |
+| `provider.<name>.npm`、`provider.<name>.models.<id>.provider.*` | opencode `opencode.json` | `npm` 指定 opencode 会加载用于与供应商通信的 npm 包，模型级 `provider.npm` 可覆盖它。可写 = 让节点装载并执行任意外部包。因此 opencode 的 provider 面只放 §5.1 列出的数据字段，不做 `provider.*` 前缀放行。 |
 | hooks / plugin / command / formatter / lsp / permission | 各框架 | 均可导致节点上执行代码或放宽权限，超出「模型配置管理」范围。 |
 | `~/.claude.json` 全文 | claude-code | 官方明示由 Claude Code 自身管理、不供手改；含 `mcpServers`、`oauthAccount`、逐项目状态与大量缓存（实测约 99KB）。MCP 见上，账号身份不由本方案接管。 |
 
@@ -384,6 +388,7 @@ CP 在派发 write 前可用快照 hash 做一次快检，但仍以 **节点 act
 2. 对受管键：拉取值与节点磁盘一致；编辑下发后节点文件对应键与提交值一致；快照更新。
 3. **非受管内容不被改动**：在含 `[mcp_servers.*]`、`[projects.*]`、注释的 `config.toml` 上下发一次 `model` 变更，事后 diff 证明仅目标键变化，MCP 段、projects 段与注释原样保留。
 4. 白名单外键（如 `mcp_servers.foo`、`projects."/x"`、`env.PATH`）在 API 与 Runtime 两侧均被拒（422），磁盘不变。
+4b. **可执行面键被拒且不回传**：`apiKeyHelper`、`awsCredentialExport`、`awsAuthRefresh`、`provider.<name>.npm`、`provider.<name>.models.<id>.provider.npm`、`provider.<name>`（整对象）写入返回 422 且磁盘不变；节点上已存在的 `apiKeyHelper` / `provider.*.npm` 不出现在 `managed_values` 里；对同一 provider 的数据字段写入不得抹掉既有 `npm`。
 5. 使用过期 `expected_file_content_hash` 保存 → 409，磁盘不被覆盖；他人改动文件的**非受管部分**同样触发 409。
 6. 非法 JSON/TOML → 422，磁盘不变。
 7. macOS 节点的 `claude-code` / `auth` 面显示 `manageable=false` 且原因为钥匙串；尝试写入返回 409，**不产生** `~/.claude/.credentials.json`。
@@ -396,6 +401,15 @@ CP 在派发 write 前可用快照 hash 做一次快检，但仍以 **节点 act
 ---
 
 ## 16. 修订记录
+
+**2026-08-11 实现复查：白名单剔除两个可执行面键。**
+
+复查已落地代码时发现 §5.1 自身把两个代码执行面写进了白名单，实现忠实照做：
+
+- `claude-code` / `apiKeyHelper` —— 官方定义是 Claude Code 经系统 shell 执行的取凭据命令，不是配置值；
+- `opencode` / `provider.*` 采用前缀放行，连带放开了 `provider.<name>.npm`（opencode 加载的 npm 包）与模型级 `provider.npm` 覆盖。
+
+两者都属 §5.3 明文排除的「可导致节点上执行代码」类，与决策 #9 冲突。已从 §5.1 移除并写入 §5.3；opencode 改为字段级放行；`extract` 侧同步不再回传这两类键（否则节点上已存在的值会被渲染成可编辑字段）。两侧 allowlist（`provider_native_config.rs` / `provider_native_config.go`）与拒绝用例已同步，用例经「去掉修复即红」验证。
 
 **2026-08-10 晚：P0–P2 落地回写。**
 

@@ -7729,6 +7729,18 @@ components:
         last_pushed_at:
           type: string
           format: date-time
+        sensitive_keys:
+          type: array
+          description: >-
+            受管键中应掩码显示的键名，由服务端判定（与静态加密判据同源）。
+            客户端不要自行用键名启发式猜测，否则会与服务端漂移。
+          items:
+            type: string
+        snapshot_error:
+          type: string
+          description: >-
+            节点命令成功但快照落库失败时的原因。此时 managed_values 是上一次的快照
+            而非节点当前值，stale_hint 为 true。
     PullProviderNativeConfigRequest:
       type: object
       required:

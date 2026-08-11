@@ -226,6 +226,10 @@ export type ProviderNativeConfigDetail = {
   node_online: boolean;
   last_pulled_at?: string;
   last_pushed_at?: string;
+  /** 服务端判定的应掩码键名（与静态加密判据同源）；优先于本地键名启发式。 */
+  sensitive_keys?: string[];
+  /** 节点命令成功但快照落库失败时的原因；此时 managed_values 是旧快照。 */
+  snapshot_error?: string;
 };
 
 export function listProviderNativeConfigs(

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -150,8 +151,17 @@ func (s *Service) GetProviderNativeConfigSnapshot(ctx context.Context, tenantID 
 	if err != nil {
 		return nil, err
 	}
+	values = filterAllowlistedManagedValues(rec.ProviderType, rec.ConfigKey, values)
+	sensitive := make([]string, 0, len(values))
+	for k := range values {
+		if isSensitiveManagedKey(rec.ProviderType, rec.ConfigKey, k) {
+			sensitive = append(sensitive, k)
+		}
+	}
+	sort.Strings(sensitive)
 	online := s.nativeConfigCommander != nil && s.nativeConfigCommander.IsConnected(nodeID)
 	return &ProviderNativeConfigDetail{
+		SensitiveKeys:      sensitive,
 		ProviderType:       rec.ProviderType,
 		ConfigKey:          rec.ConfigKey,
 		ResolvedPath:       rec.ResolvedPath,
@@ -193,6 +203,13 @@ func (s *Service) PullProviderNativeConfig(ctx context.Context, tenantID, actorI
 	}
 	if receipt.Status != "completed" {
 		return nil, mapNativeConfigCommandError(receipt)
+	}
+	// The writeback path keeps the receipt terminal even when the snapshot upsert
+	// fails, so waiters unblock. A pull whose whole purpose is fresh values has
+	// nothing to return in that case — the receipt carries no managed_values
+	// (stripped before persist), so we cannot recover them here.
+	if snapErr := stringFromResult(receipt.Result, "snapshot_error"); snapErr != "" {
+		return nil, fmt.Errorf("%w: 快照落库失败，未取到节点最新值: %s", ErrProviderNativeConfigCommand, snapErr)
 	}
 
 	// Writeback hook may have already upserted; re-load or upsert from receipt transit fields.
@@ -267,7 +284,15 @@ func (s *Service) PushProviderNativeConfig(ctx context.Context, tenantID, actorI
 	if err != nil {
 		return nil, fmt.Errorf("%w: snapshot missing after push", ErrProviderNativeConfigCommand)
 	}
-	detail.StaleHint = false
+	// Unlike pull, the node write already landed — failing the call would misreport
+	// it as not applied. Report success but keep the values marked non-live so the
+	// UI does not present the previous snapshot as the node's current state.
+	if snapErr := stringFromResult(receipt.Result, "snapshot_error"); snapErr != "" {
+		detail.StaleHint = true
+		detail.SnapshotError = snapErr
+	} else {
+		detail.StaleHint = false
+	}
 	changedKeys := stringSliceFromResult(receipt.Result, "changed_keys")
 	if len(changedKeys) == 0 {
 		for k := range values {
@@ -294,7 +319,7 @@ func (s *Service) ApplyNativeConfigWriteback(ctx context.Context, tenantID uuid.
 	if providerType == "" || configKey == "" {
 		return nil
 	}
-	managedValues := mapFromResult(result, "managed_values")
+	managedValues := filterAllowlistedManagedValues(providerType, configKey, mapFromResult(result, "managed_values"))
 	sealed, err := s.sealManagedValues(providerType, configKey, managedValues)
 	if err != nil {
 		return err
@@ -422,7 +447,12 @@ func (s *Service) sealManagedValues(providerType, configKey string, values map[s
 	out := make(map[string]any, len(values))
 	for k, v := range values {
 		if isSensitiveManagedKey(providerType, configKey, k) {
-			plain := stringifyManagedValue(v)
+			// Seal the JSON encoding, not the bare string, so the original type
+			// survives the round trip. Sealing `stringifyManagedValue` loses it:
+			// a token that happens to look like a JSON scalar ("123456", "true",
+			// "null") comes back as a number/bool/nil and would be written back
+			// into the provider config with the wrong type.
+			plain := jsonEncodeManagedValue(v)
 			if s.sealer == nil {
 				return nil, errors.New("credential sealer is required for sensitive managed values")
 			}
@@ -453,7 +483,11 @@ func (s *Service) openManagedValues(values map[string]any) (map[string]any, erro
 			if err != nil {
 				return nil, err
 			}
-			// Prefer JSON-decoded value when original was non-string JSON.
+			// Current rows hold a JSON encoding (see sealManagedValues), so this
+			// restores the exact original type. Rows sealed before that change hold
+			// a bare string; those fail to decode and fall back to the raw text.
+			// (A legacy row whose value was a numeric-looking string still decodes
+			// as a number — it self-heals on the next pull, which reseals it.)
 			var decoded any
 			if json.Unmarshal([]byte(plain), &decoded) == nil {
 				out[k] = decoded
@@ -539,6 +573,15 @@ type ProviderNativeConfigDetail struct {
 	NodeOnline         bool           `json:"node_online"`
 	LastPulledAt       *time.Time     `json:"last_pulled_at,omitempty"`
 	LastPushedAt       *time.Time     `json:"last_pushed_at,omitempty"`
+	// SensitiveKeys names the managed keys the client must mask. Served from the
+	// same predicate that decides encryption at rest, so the UI never has to
+	// re-derive sensitivity from key names (which drifts — `options.apiKey` was
+	// missed by exactly that kind of heuristic).
+	SensitiveKeys []string `json:"sensitive_keys,omitempty"`
+	// SnapshotError is set when the node command succeeded but persisting the
+	// snapshot failed. The values shown are then the previous snapshot, not the
+	// node's current state — callers must not present them as live.
+	SnapshotError string `json:"snapshot_error,omitempty"`
 }
 
 type nativeSurface struct {
@@ -593,7 +636,9 @@ func validatePushKeys(providerType, configKey string, values map[string]any) err
 func isManagedKeyAllowlisted(providerType, configKey, key string) bool {
 	switch {
 	case providerType == "claude-code" && configKey == "model_profile":
-		if key == "model" || key == "fallbackModel" || key == "apiKeyHelper" {
+		// `apiKeyHelper` is deliberately absent: it is a shell command Claude Code
+		// executes to mint auth values (design §5.3).
+		if key == "model" || key == "fallbackModel" {
 			return true
 		}
 		if strings.HasPrefix(key, "env.") {
@@ -623,11 +668,77 @@ func isManagedKeyAllowlisted(providerType, configKey, key string) bool {
 	case configKey == "auth" && (providerType == "codex" || providerType == "opencode"):
 		return key != "" && !strings.Contains(key, "..") && !strings.HasPrefix(key, "/")
 	case providerType == "opencode" && configKey == "model_profile":
-		return key == "model" || key == "small_model" || strings.HasPrefix(key, "provider.")
+		if key == "model" || key == "small_model" {
+			return true
+		}
+		if strings.HasPrefix(key, "provider.") {
+			return isOpencodeProviderKeyAllowlisted(strings.TrimPrefix(key, "provider."))
+		}
+		return false
 	default:
 		return false
 	}
 }
+
+// isOpencodeProviderKeyAllowlisted allows data-only fields under provider.<name>.
+//
+// `npm` names an npm package that opencode loads to talk to the provider, and
+// `models.<id>.provider.*` can override it per model — both are code-loading
+// surfaces and stay out of the allowlist (design §5.3). A bare provider.<name>
+// write is rejected because the object could carry `npm`.
+func isOpencodeProviderKeyAllowlisted(rest string) bool {
+	idx := strings.Index(rest, ".")
+	if idx < 0 {
+		return false
+	}
+	path := rest[idx+1:]
+	if path == "name" {
+		return true
+	}
+	if strings.HasPrefix(path, "options.") && len(path) > len("options.") {
+		return true
+	}
+	if strings.HasPrefix(path, "models.") {
+		modelRest := strings.TrimPrefix(path, "models.")
+		j := strings.Index(modelRest, ".")
+		if j < 0 {
+			return false
+		}
+		field := modelRest[j+1:]
+		if field == "name" {
+			return true
+		}
+		return strings.HasPrefix(field, "limit.") && len(field) > len("limit.")
+	}
+	return false
+}
+
+// filterAllowlistedManagedValues drops keys that are no longer in the allowlist —
+// e.g. snapshots pulled before an allowlist narrowing. Without this, a stale
+// `apiKeyHelper` / `provider.*.npm` would still render as an editable field and be
+// replayed into the next push payload, failing the whole save with 422.
+//
+// `auth` surfaces are excluded: they are single-purpose files whose read set is the
+// whole file, which is deliberately wider than their write set (claude-code auth is
+// readable but never writable — §5.5).
+func filterAllowlistedManagedValues(providerType, configKey string, values map[string]any) map[string]any {
+	if values == nil {
+		return map[string]any{}
+	}
+	if configKey == "auth" {
+		return values
+	}
+	out := make(map[string]any, len(values))
+	for k, v := range values {
+		if isManagedKeyAllowlisted(providerType, configKey, k) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// authHeaderNameHints match header/param names that customarily carry credentials.
+var authHeaderNameHints = []string{"authorization", "api-key", "apikey", "api_key", "token", "secret"}
 
 func isSensitiveManagedKey(providerType, configKey, key string) bool {
 	if configKey == "auth" {
@@ -639,21 +750,37 @@ func isSensitiveManagedKey(providerType, configKey, key string) bool {
 	if strings.Contains(key, "experimental_bearer_token") {
 		return true
 	}
+	// opencode: provider.<name>.options.apiKey is a credential like any other.
+	if strings.HasSuffix(key, ".options.apiKey") {
+		return true
+	}
+	// codex writes http_headers / query_params as whole blobs; either can carry a
+	// key, and we cannot inspect the value here — treat the blob as sensitive.
+	if strings.HasSuffix(key, ".http_headers") || strings.HasSuffix(key, ".query_params") {
+		return true
+	}
+	// opencode: individual provider headers, e.g. provider.x.options.headers.Authorization.
+	if idx := strings.LastIndex(key, ".options.headers."); idx >= 0 {
+		name := strings.ToLower(key[idx+len(".options.headers."):])
+		for _, hint := range authHeaderNameHints {
+			if strings.Contains(name, hint) {
+				return true
+			}
+		}
+	}
 	_ = providerType
 	return false
 }
 
-func stringifyManagedValue(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	default:
-		b, err := json.Marshal(v)
-		if err != nil {
-			return fmt.Sprint(v)
-		}
-		return string(b)
+// jsonEncodeManagedValue encodes any managed value as JSON so seal/open is
+// type-preserving. Strings become quoted JSON strings — that quoting is what
+// distinguishes the token "123456" from the number 123456 on the way back.
+func jsonEncodeManagedValue(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
 	}
+	return string(b)
 }
 
 func mapNativeConfigCommandError(receipt *NativeConfigCommandReceipt) error {
