@@ -100,6 +100,8 @@ type Querier interface {
 	CountProjectPlaybookCastingsForEmployee(ctx context.Context, arg CountProjectPlaybookCastingsForEmployeeParams) (int32, error)
 	CountProjectPortfolioItems(ctx context.Context, arg CountProjectPortfolioItemsParams) (int32, error)
 	CountProjectTaskDispatchFailureEvents(ctx context.Context, arg CountProjectTaskDispatchFailureEventsParams) (int64, error)
+	// runnable = 真正还能推进的状态；blocked 是等上游，不能单独把需求钉在「执行中」。
+	// 上游已 failed/cancelled 时下游常滞留 blocked，旧口径把 blocked 算 active，需求就永不失败。
 	CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error)
 	// 观测用:不删,只报当前各类超期行的规模,供日志与人工核对。
 	CountRetentionCandidates(ctx context.Context, runtimeDays int32) (CountRetentionCandidatesRow, error)
@@ -600,6 +602,11 @@ type Querier interface {
 	// 例外（spec 2026-08-11）：仍处「预检闸审批形态」的任务交给下面的 zombie 扫描 heal，
 	// 不得当「缺卡」进补建列表。两个列表的条件严格互补，任务不会两边都落空。
 	ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
+	// Pending decision SoT rows with no open inbox projection. Create/upsert is not
+	// one transaction: a failed Upsert (or inbox cancelled without converging the
+	// decision) leaves project UI "待处理" while inbox has nothing to act on.
+	// Watchdog reprojects still-actionable cards or cancels stale ones.
+	ListPendingDecisionsMissingOpenInbox(ctx context.Context, batchLimit int32) ([]ProjectDecisionRequest, error)
 	ListPendingDeleteTeams(ctx context.Context, tenantID uuid.UUID) ([]TenantTeam, error)
 	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	// 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。
@@ -731,6 +738,9 @@ type Querier interface {
 	// run。running/cancelling 是真实活跃态,不在清扫范围。
 	ListStalePreConfirmationDigitalEmployeeRuns(ctx context.Context, arg ListStalePreConfirmationDigitalEmployeeRunsParams) ([]TaskRun, error)
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
+	// 上游已全部终态失败/取消，下游仍 blocked：失败恢复若没走「驳回」就不会 cancelFailureDownstream，
+	// 需求会一直 executing。看门狗按与 cancelFailureDownstream 相同口径取消这些下游。
+	ListStrandedBlockedProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
 	// 僵尸/孤儿任务:停留在 running/in_progress 但没有当前活跃 attempt(current_attempt_id
 	// 为空),且已滞留超过阈值。正常派发会在秒级内建 attempt 并回填 current_attempt_id,
 	// 故长时间 running 而无 attempt 的任务只可能是 runtime 整体失联未落 attempt、协调线程

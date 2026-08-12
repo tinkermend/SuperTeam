@@ -1013,9 +1013,17 @@ func (q *Queries) CountProjectTaskDispatchFailureEvents(ctx context.Context, arg
 const CountProjectTaskStatusesByDemand = `-- name: CountProjectTaskStatusesByDemand :one
 SELECT
     COUNT(*)::bigint AS total,
-    COUNT(*) FILTER (WHERE status = 'completed')::bigint AS completed,
-    COUNT(*) FILTER (WHERE status = 'failed')::bigint AS failed,
-    COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed', 'cancelled'))::bigint AS active
+    COUNT(*) FILTER (WHERE lower(btrim(status)) IN ('completed', 'done', 'success'))::bigint AS completed,
+    COUNT(*) FILTER (WHERE lower(btrim(status)) IN ('failed', 'error'))::bigint AS failed,
+    COUNT(*) FILTER (
+        WHERE lower(btrim(status)) IN (
+            'planned', 'pending', 'queued', 'assigned', 'running', 'in_progress', 'waiting_human'
+        )
+    )::bigint AS runnable,
+    COUNT(*) FILTER (WHERE lower(btrim(status)) = 'blocked')::bigint AS blocked,
+    COUNT(*) FILTER (
+        WHERE lower(btrim(status)) NOT IN ('completed', 'done', 'success', 'failed', 'error', 'cancelled')
+    )::bigint AS active
 FROM project_tasks
 WHERE tenant_id = $1::uuid
   AND demand_id = $2::uuid
@@ -1030,9 +1038,13 @@ type CountProjectTaskStatusesByDemandRow struct {
 	Total     int64 `json:"total"`
 	Completed int64 `json:"completed"`
 	Failed    int64 `json:"failed"`
+	Runnable  int64 `json:"runnable"`
+	Blocked   int64 `json:"blocked"`
 	Active    int64 `json:"active"`
 }
 
+// runnable = 真正还能推进的状态；blocked 是等上游，不能单独把需求钉在「执行中」。
+// 上游已 failed/cancelled 时下游常滞留 blocked，旧口径把 blocked 算 active，需求就永不失败。
 func (q *Queries) CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error) {
 	row := q.db.QueryRow(ctx, CountProjectTaskStatusesByDemand, arg.TenantID, arg.DemandID)
 	var i CountProjectTaskStatusesByDemandRow
@@ -1040,6 +1052,8 @@ func (q *Queries) CountProjectTaskStatusesByDemand(ctx context.Context, arg Coun
 		&i.Total,
 		&i.Completed,
 		&i.Failed,
+		&i.Runnable,
+		&i.Blocked,
 		&i.Active,
 	)
 	return i, err
@@ -5491,6 +5505,67 @@ func (q *Queries) ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchL
 	return items, nil
 }
 
+const ListPendingDecisionsMissingOpenInbox = `-- name: ListPendingDecisionsMissingOpenInbox :many
+SELECT d.id, d.tenant_id, d.project_id, d.approval_request_id, d.coordination_job_id, d.project_task_id, d.target_user_id, d.decision_type, d.title_snapshot, d.summary_snapshot, d.risk_level_snapshot, d.status_snapshot, d.created_event_id, d.resolved_event_id, d.created_at, d.updated_at, d.resolved_at, d.dispatch_gate_result_id, d.project_task_result_id, d.plan_revision_id
+FROM project_decision_requests d
+WHERE lower(btrim(d.status_snapshot)) IN ('pending', 'requested')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM inbox_items i
+    WHERE i.tenant_id = d.tenant_id
+      AND i.source_type = 'project_decision_request'
+      AND i.source_id = d.id
+      AND i.status = 'open'
+  )
+ORDER BY d.created_at ASC, d.id ASC
+LIMIT $1::integer
+`
+
+// Pending decision SoT rows with no open inbox projection. Create/upsert is not
+// one transaction: a failed Upsert (or inbox cancelled without converging the
+// decision) leaves project UI "待处理" while inbox has nothing to act on.
+// Watchdog reprojects still-actionable cards or cancels stale ones.
+func (q *Queries) ListPendingDecisionsMissingOpenInbox(ctx context.Context, batchLimit int32) ([]ProjectDecisionRequest, error) {
+	rows, err := q.db.Query(ctx, ListPendingDecisionsMissingOpenInbox, batchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectDecisionRequest{}
+	for rows.Next() {
+		var i ProjectDecisionRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ApprovalRequestID,
+			&i.CoordinationJobID,
+			&i.ProjectTaskID,
+			&i.TargetUserID,
+			&i.DecisionType,
+			&i.TitleSnapshot,
+			&i.SummarySnapshot,
+			&i.RiskLevelSnapshot,
+			&i.StatusSnapshot,
+			&i.CreatedEventID,
+			&i.ResolvedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedAt,
+			&i.DispatchGateResultID,
+			&i.ProjectTaskResultID,
+			&i.PlanRevisionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectArtifactRefsByTaskIDs = `-- name: ListProjectArtifactRefsByTaskIDs :many
 SELECT id, tenant_id, project_id, project_task_id, artifact_id, artifact_type, title, object_ref, content_type, size_bytes, checksum, retention_status, retention_hold_id, metadata, created_event_id, created_at, updated_at, attempt_id, digital_employee_id FROM project_artifact_refs
 WHERE tenant_id = $1::uuid
@@ -7950,6 +8025,96 @@ func (q *Queries) ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg Li
 			&i.LogSha256,
 			&i.LogCompressed,
 			&i.ErrorCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListStrandedBlockedProjectTasks = `-- name: ListStrandedBlockedProjectTasks :many
+SELECT t.id, t.tenant_id, t.project_id, t.demand_id, t.title, t.summary, t.status, t.assigned_digital_employee_id, t.runtime_task_id, t.digital_employee_run_id, t.risk_level, t.requires_human_approval, t.latest_event_id, t.created_at, t.updated_at, t.coordination_job_id, t.route_decision_id, t.planned_task_key, t.task_kind, t.stage_index, t.expected_outputs, t.input_requirements, t.handoff_contract, t.planner_metadata, t.current_attempt_id, t.accepted_plan_revision_id, t.decomposition_claim_key, t.attempt_count, t.max_attempts, t.retry_not_before, t.waiting_reason, t.waiting_request_id, t.terminal_event_id, t.status_changed_at, t.latest_dispatch_gate_result_id, t.revision_of_task_id, t.latest_task_result_id, t.plan_iteration, t.dismissed_at, t.dismissed_by
+FROM project_tasks t
+WHERE t.status = 'blocked'
+  AND t.dismissed_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM project_task_dependencies d
+    WHERE d.tenant_id = t.tenant_id
+      AND d.project_id = t.project_id
+      AND d.dependent_task_id = t.id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM project_task_dependencies d
+    JOIN project_tasks b
+      ON b.tenant_id = d.tenant_id
+     AND b.id = d.blocker_task_id
+    WHERE d.tenant_id = t.tenant_id
+      AND d.project_id = t.project_id
+      AND d.dependent_task_id = t.id
+      AND lower(btrim(b.status)) NOT IN ('failed', 'cancelled', 'error')
+  )
+ORDER BY t.updated_at ASC, t.id ASC
+LIMIT $1::integer
+`
+
+// 上游已全部终态失败/取消，下游仍 blocked：失败恢复若没走「驳回」就不会 cancelFailureDownstream，
+// 需求会一直 executing。看门狗按与 cancelFailureDownstream 相同口径取消这些下游。
+func (q *Queries) ListStrandedBlockedProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error) {
+	rows, err := q.db.Query(ctx, ListStrandedBlockedProjectTasks, batchLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectTask{}
+	for rows.Next() {
+		var i ProjectTask
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.DemandID,
+			&i.Title,
+			&i.Summary,
+			&i.Status,
+			&i.AssignedDigitalEmployeeID,
+			&i.RuntimeTaskID,
+			&i.DigitalEmployeeRunID,
+			&i.RiskLevel,
+			&i.RequiresHumanApproval,
+			&i.LatestEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationJobID,
+			&i.RouteDecisionID,
+			&i.PlannedTaskKey,
+			&i.TaskKind,
+			&i.StageIndex,
+			&i.ExpectedOutputs,
+			&i.InputRequirements,
+			&i.HandoffContract,
+			&i.PlannerMetadata,
+			&i.CurrentAttemptID,
+			&i.AcceptedPlanRevisionID,
+			&i.DecompositionClaimKey,
+			&i.AttemptCount,
+			&i.MaxAttempts,
+			&i.RetryNotBefore,
+			&i.WaitingReason,
+			&i.WaitingRequestID,
+			&i.TerminalEventID,
+			&i.StatusChangedAt,
+			&i.LatestDispatchGateResultID,
+			&i.RevisionOfTaskID,
+			&i.LatestTaskResultID,
+			&i.PlanIteration,
+			&i.DismissedAt,
+			&i.DismissedBy,
 		); err != nil {
 			return nil, err
 		}

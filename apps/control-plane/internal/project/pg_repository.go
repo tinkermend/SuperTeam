@@ -5456,6 +5456,36 @@ func (r *PgRepository) GetOpenProjectDecisionRequestByTask(ctx context.Context, 
 	return decisionRequestFromRecord(row)
 }
 
+func (r *PgRepository) ListPendingDecisionsMissingOpenInbox(ctx context.Context, limit int32) ([]DecisionRequest, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.q.ListPendingDecisionsMissingOpenInbox(ctx, limit)
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	out := make([]DecisionRequest, 0, len(rows))
+	for _, row := range rows {
+		decision, err := decisionRequestFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, decision)
+	}
+	return out, nil
+}
+
+func (r *PgRepository) ListStrandedBlockedProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.q.ListStrandedBlockedProjectTasks(ctx, limit)
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	return tasksFromRecords(rows)
+}
+
 func (r *PgRepository) BindProjectTaskWaitingRequest(ctx context.Context, tenantID, projectTaskID, decisionRequestID uuid.UUID, waitingReason *string, eventID *uuid.UUID) (ProjectTask, error) {
 	row, err := r.q.BindProjectTaskWaitingRequest(ctx, queries.BindProjectTaskWaitingRequestParams{
 		WaitingRequestID: decisionRequestID,
@@ -5996,9 +6026,39 @@ func (r *PgRepository) advanceProjectDemandStatusWithQueries(ctx context.Context
 	return r.enqueueDemandResultNoticeWithQueries(ctx, q, tenantID, projectID, demandID, target)
 }
 
+type demandTaskStatusCounts struct {
+	Total     int64
+	Completed int64
+	Failed    int64
+	Runnable  int64
+	Blocked   int64
+}
+
+// deriveDemandStatusFromTaskCounts maps task-status buckets onto a demand
+// lifecycle target. gated=true means the caller must run the acceptance-criteria
+// completion gate (all work finished cleanly).
+func deriveDemandStatusFromTaskCounts(counts demandTaskStatusCounts) (target ProjectDemandStatus, gated bool) {
+	if counts.Runnable > 0 {
+		return ProjectDemandStatusExecuting, false
+	}
+	if counts.Failed > 0 {
+		return ProjectDemandStatusFailed, false
+	}
+	if counts.Blocked > 0 {
+		// Upstream still in flight would have counted as runnable. Leftover
+		// blocked with zero failures is promote lag — keep executing.
+		return ProjectDemandStatusExecuting, false
+	}
+	return "", true
+}
+
 // recomputeProjectDemandStatusWithQueries derives a demand's lifecycle status from
-// its project tasks: completed when all tasks finished cleanly, failed when all
-// terminal with at least one failure, otherwise executing while work remains.
+// its project tasks: completed when all tasks finished cleanly, failed when no
+// runnable work remains and at least one task failed, otherwise executing.
+// Downstream tasks parked as blocked do not keep the demand executing once every
+// runnable task is gone and a failure exists — otherwise a failed upstream plus
+// stranded blocked dependents (cancelFailureDownstream only runs on human
+// reject) leaves the demand「执行中」forever.
 func (r *PgRepository) recomputeProjectDemandStatusWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectID, demandID uuid.UUID) error {
 	if demandID == uuid.Nil {
 		return nil
@@ -6013,15 +6073,18 @@ func (r *PgRepository) recomputeProjectDemandStatusWithQueries(ctx context.Conte
 	if counts.Total == 0 {
 		return nil
 	}
-	target := ProjectDemandStatusExecuting
-	if counts.Active == 0 {
-		if counts.Failed > 0 {
-			target = ProjectDemandStatusFailed
-		} else {
-			target, err = gatedCompletionStatusWithQueries(ctx, q, tenantID, projectID, demandID)
-			if err != nil {
-				return err
-			}
+	target, gated := deriveDemandStatusFromTaskCounts(demandTaskStatusCounts{
+		Total:     counts.Total,
+		Completed: counts.Completed,
+		Failed:    counts.Failed,
+		Runnable:  counts.Runnable,
+		Blocked:   counts.Blocked,
+	})
+	if gated {
+		var err error
+		target, err = gatedCompletionStatusWithQueries(ctx, q, tenantID, projectID, demandID)
+		if err != nil {
+			return err
 		}
 	}
 	return r.advanceProjectDemandStatusWithQueries(ctx, q, tenantID, projectID, demandID, target)

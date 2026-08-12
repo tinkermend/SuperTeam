@@ -20,6 +20,12 @@ import (
 //  3. attempt 卡死:queued attempt 派发未确认、running attempt 租约过期被死亡 runtime
 //     抛弃(遗留缺陷#1:runtime 写回丢失致任务永久 running)。既有的 per-tenant sweep
 //     方法此前无任何调度者;这里逐租户驱动它们做有界重试/转人工。
+//  4. 决策 SoT 与收件箱投影分裂:pending decision 无 open inbox 卡(创建后 Upsert
+//     失败、或 inbox 被取消未收敛决策)。SweepOrphanDecisionInboxProjections
+//     对仍可处理的补投影、对已终态关联对象的取消决策。
+//  5. 滞留下游 blocked:上游已 failed/cancelled，下游仍 blocked（失败恢复未走驳回
+//     就不会 cancelFailureDownstream）。SweepStrandedBlockedProjectTasks 取消这些
+//     下游并重算需求状态，避免需求永远「执行中」。
 //
 // 与派发路径的按需恢复(同项目下一次协调触发)互补:runtime 整个死掉、协调线程不再运转
 // 时,只有这个平台级看门狗能把任务收走。逐条/逐租户失败只记日志,下一轮重试。
@@ -44,6 +50,12 @@ func startStuckTaskReconciler(ctx context.Context, projectService *project.Servi
 		}
 		if _, err := projectService.SweepOrphanWaitingHumanProjectTasks(ctx, stuckTaskReapBatchLimit); err != nil && ctx.Err() == nil {
 			slog.Warn("stuck task reconciler: waiting_human orphan repair failed", "error", err)
+		}
+		if _, err := projectService.SweepOrphanDecisionInboxProjections(ctx, stuckTaskReapBatchLimit); err != nil && ctx.Err() == nil {
+			slog.Warn("stuck task reconciler: decision inbox projection repair failed", "error", err)
+		}
+		if _, err := projectService.SweepStrandedBlockedProjectTasks(ctx, stuckTaskReapBatchLimit); err != nil && ctx.Err() == nil {
+			slog.Warn("stuck task reconciler: stranded blocked downstream cancel failed", "error", err)
 		}
 		if _, err := projectService.SweepStuckProjectTaskAttemptsAllTenants(ctx, now); err != nil && ctx.Err() == nil {
 			slog.Warn("stuck task reconciler: attempt recovery sweep failed", "error", err)

@@ -156,7 +156,7 @@ func (s *Service) RequestCastingExpansion(ctx context.Context, req RequestCastin
 	decision.InboxContext = payload
 	if s.inbox != nil {
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
-			return nil, err
+			return nil, s.compensateDecisionInboxProjectionFailure(ctx, decision, err)
 		}
 	}
 	return &decision, nil

@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-12 19:10 任务清理确认改平台弹窗；需求「执行中」孤儿收敛：① 清理任务不再用浏览器 `window.confirm`，改 `ConfirmDialog`；② 需求状态重算把 `blocked` 从「还有活」里拆出——上游已失败、下游只剩 blocked 时需求进 `failed`；③ 看门狗 `SweepStrandedBlockedProjectTasks` 取消前置已失败/取消的滞留下游（失败恢复未驳回时 `cancelFailureDownstream` 不会跑）。真实验证：control-plane pid=69587 启动扫 `cancelled downstream tasks count=1`，需求 `bdbc5376` executing→failed，任务 Verify `blocked`→`cancelled`；库内「失败且无 runnable 仍 executing」=0。定向单测 + vitest 29 绿。
+
+- 2026-08-12 18:57 决策 SoT 与收件箱投影分裂收敛：项目页读 `project_decision_requests.status_snapshot`、收件箱读 `inbox_items` 投影，创建路径非同事务时会出现「项目仍待处理、收件箱无卡」。① 看门狗新增 `SweepOrphanDecisionInboxProjections`（挂 stuck-task reconciler）：pending 且无 open inbox 时，仍可处理则补投影，关联任务/需求已终态或扩编审批上下文缺失则取消决策；② `RequestCastingExpansion` 在 inbox Upsert 失败后补偿取消决策，避免永久悬挂。真实验证：restart control-plane（pid=53954，cwd 本 checkout）启动扫一轮，截图孤儿 `c11a6b82…` 等 4 条 pending→`cancelled`，库内 `pending_missing_any_inbox=0`；定向单测 4/4 绿。
+
 - 2026-08-11 晚 项目管理首页 portfolio 复审残留收口：① **SQL 桶单一事实源** `project_task_portfolio_bucket(status, requires_human_approval)`（迁移 `20260811180000`），5 处查询 CASE 改为函数调用；② 删除死代码 `ProjectRiskQueue`/`ProjectRiskQueueRow` 与带 bug 的 `buildProjectRiskSummaryFromPortfolio`；③ **mine_only/sort/q/status/risk/task_state/page** 持久化到 TanStack Router URL；④ route 契约测试覆盖 portfolio 路由/query/limit>50→400/非法 mine_only；⑤ 页面级测 counts_degraded、sort 切换、mine_only；⑥ **50/500 EXPLAIN** 形态门禁（`docs/superpowers/perf/2026-08-11-project-portfolio-explain-50-500.txt`，exec ~2–5ms，事务回滚不落脏数据）；⑦ 勘误 SQL 注释：`sort=attention` 必须先算 filtered 全集再 LIMIT。
 
 

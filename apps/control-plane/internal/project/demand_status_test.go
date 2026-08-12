@@ -37,3 +37,49 @@ func TestProjectDemandStatusCanAdvance(t *testing.T) {
 		})
 	}
 }
+
+func TestDeriveDemandStatusFromTaskCounts(t *testing.T) {
+	cases := []struct {
+		name       string
+		counts     demandTaskStatusCounts
+		want       ProjectDemandStatus
+		wantGated  bool
+	}{
+		{
+			name:   "runnable keeps executing even with a failure",
+			counts: demandTaskStatusCounts{Total: 2, Failed: 1, Runnable: 1},
+			want:   ProjectDemandStatusExecuting,
+		},
+		{
+			name:   "failed plus stranded blocked is demand failed",
+			counts: demandTaskStatusCounts{Total: 2, Failed: 1, Blocked: 1},
+			want:   ProjectDemandStatusFailed,
+		},
+		{
+			name:   "only failed is demand failed",
+			counts: demandTaskStatusCounts{Total: 1, Failed: 1},
+			want:   ProjectDemandStatusFailed,
+		},
+		{
+			name:      "all completed goes to acceptance gate",
+			counts:    demandTaskStatusCounts{Total: 1, Completed: 1},
+			wantGated: true,
+		},
+		{
+			name:   "blocked leftover without failure is promote lag",
+			counts: demandTaskStatusCounts{Total: 1, Blocked: 1},
+			want:   ProjectDemandStatusExecuting,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, gated := deriveDemandStatusFromTaskCounts(tc.counts)
+			if gated != tc.wantGated {
+				t.Fatalf("gated=%v want %v (status=%s)", gated, tc.wantGated, got)
+			}
+			if !tc.wantGated && got != tc.want {
+				t.Fatalf("status=%s want %s", got, tc.want)
+			}
+		})
+	}
+}

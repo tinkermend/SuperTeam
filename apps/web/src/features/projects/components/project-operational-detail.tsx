@@ -44,6 +44,7 @@ import {
   SoftTabsContent
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { projectPhaseDotClass } from "../project-lifecycle-display";
 import type {
   Project,
@@ -1749,6 +1750,7 @@ function ProjectTasksPanel({
 }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [employeeFilter, setEmployeeFilter] = useState("all");
+  const [dismissTarget, setDismissTarget] = useState<ProjectTask | null>(null);
   const demandTitlesById = useMemo(
     () => new Map((demands ?? []).map((demand) => [demand.id, demand.title])),
     [demands],
@@ -1924,15 +1926,7 @@ function ProjectTasksPanel({
                       disabled={dismissTaskPending}
                       size="sm"
                       variant="outline"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `确认清理任务「${task.title}」？清理后不再出现在待处理与风险中，历史与审计仍保留。`,
-                          )
-                        ) {
-                          onDismissTask?.(task.id);
-                        }
-                      }}
+                      onClick={() => setDismissTarget(task)}
                     >
                       清理任务
                     </Button>
@@ -1946,6 +1940,24 @@ function ProjectTasksPanel({
           )}
         </tbody>
       </DataTable>
+      <ConfirmDialog
+        confirmText="清理任务"
+        desc="清理后不再出现在待处理与风险中，历史与审计仍保留。"
+        handleConfirm={() => {
+          if (!dismissTarget) {
+            return;
+          }
+          onDismissTask?.(dismissTarget.id);
+          setDismissTarget(null);
+        }}
+        open={dismissTarget !== null}
+        title={dismissTarget ? `确认清理任务「${dismissTarget.title}」？` : "确认清理任务？"}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDismissTarget(null);
+          }
+        }}
+      />
     </WorkSurface>
   );
 }

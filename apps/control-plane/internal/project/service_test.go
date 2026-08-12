@@ -12403,6 +12403,9 @@ type memoryRepository struct {
 	ensureDecisionCardsTerminalCalls []ensureDecisionCardsTerminalCall
 	workspaceDeleteRequests         []WorkspaceDeleteRequest
 	workspaceDeleteAuditEvents      []map[string]any
+	// openInboxDecisionIDs tracks which decision IDs currently have an open
+	// inbox projection in memory tests (shared with fakeDecisionInboxProjector).
+	openInboxDecisionIDs map[uuid.UUID]bool
 }
 
 type ensureDecisionCardsTerminalCall struct {
@@ -16261,6 +16264,65 @@ func (r *memoryRepository) ListOrphanWaitingHumanProjectTasks(ctx context.Contex
 	return out, nil
 }
 
+func (r *memoryRepository) ListPendingDecisionsMissingOpenInbox(ctx context.Context, limit int32) ([]DecisionRequest, error) {
+	out := make([]DecisionRequest, 0)
+	for _, decision := range r.decisionRequests {
+		if !isPendingDecisionStatus(decision.StatusSnapshot) {
+			continue
+		}
+		if r.openInboxDecisionIDs != nil && r.openInboxDecisionIDs[decision.ID] {
+			continue
+		}
+		out = append(out, decision)
+		if limit > 0 && int32(len(out)) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) ListStrandedBlockedProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
+	blockerOf := map[uuid.UUID][]uuid.UUID{}
+	for blockerID, dependents := range r.taskDependents {
+		for _, dependentID := range dependents {
+			blockerOf[dependentID] = append(blockerOf[dependentID], blockerID)
+		}
+	}
+	statusByID := map[uuid.UUID]string{}
+	for _, task := range r.tasks {
+		statusByID[task.ID] = task.Status
+	}
+	out := make([]ProjectTask, 0)
+	for _, task := range r.tasks {
+		if task.Status != ProjectTaskStatusBlocked || task.DismissedAt != nil {
+			continue
+		}
+		blockers := blockerOf[task.ID]
+		if len(blockers) == 0 {
+			continue
+		}
+		stranded := true
+		for _, blockerID := range blockers {
+			switch strings.ToLower(strings.TrimSpace(statusByID[blockerID])) {
+			case "failed", "cancelled", "error":
+			default:
+				stranded = false
+			}
+			if !stranded {
+				break
+			}
+		}
+		if !stranded {
+			continue
+		}
+		out = append(out, task)
+		if limit > 0 && int32(len(out)) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 func memoryTaskHasApprovedGateLinkedApproval(r *memoryRepository, task ProjectTask) bool {
 	for _, d := range r.decisionRequests {
 		if d.TenantID != task.TenantID || d.ProjectID != task.ProjectID {
@@ -17180,20 +17242,37 @@ func (f *fakeApprovalResolver) CreateRequest(ctx context.Context, req CreateAppr
 }
 
 type fakeDecisionInboxProjector struct {
-	upserts     []DecisionRequest
-	resolutions []DecisionRequest
-	upsertErr   error
-	resolveErr  error
+	upserts          []DecisionRequest
+	resolutions      []DecisionRequest
+	upsertErr        error
+	resolveErr       error
+	openBySource     map[uuid.UUID]bool
 }
 
 func (f *fakeDecisionInboxProjector) UpsertProjectDecisionRequest(ctx context.Context, decision DecisionRequest) error {
 	f.upserts = append(f.upserts, decision)
-	return f.upsertErr
+	if f.upsertErr != nil {
+		return f.upsertErr
+	}
+	if f.openBySource != nil {
+		if isPendingDecisionStatus(decision.StatusSnapshot) {
+			f.openBySource[decision.ID] = true
+		} else {
+			delete(f.openBySource, decision.ID)
+		}
+	}
+	return nil
 }
 
 func (f *fakeDecisionInboxProjector) ResolveProjectDecisionRequest(ctx context.Context, decision DecisionRequest) error {
 	f.resolutions = append(f.resolutions, decision)
-	return f.resolveErr
+	if f.resolveErr != nil {
+		return f.resolveErr
+	}
+	if f.openBySource != nil {
+		delete(f.openBySource, decision.ID)
+	}
+	return nil
 }
 
 func containsString(values []string, target string) bool {

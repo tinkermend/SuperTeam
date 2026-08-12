@@ -820,6 +820,7 @@ const (
 	ProjectTaskStatusQueued       = "queued"
 	ProjectTaskStatusRunning      = "running"
 	ProjectTaskStatusWaitingHuman = "waiting_human"
+	ProjectTaskStatusBlocked      = "blocked"
 	ProjectTaskStatusCompleted    = "completed"
 	ProjectTaskStatusFailed       = "failed"
 	ProjectTaskStatusCancelled    = "cancelled"

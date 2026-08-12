@@ -992,11 +992,21 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 RETURNING *;
 
 -- name: CountProjectTaskStatusesByDemand :one
+-- runnable = 真正还能推进的状态；blocked 是等上游，不能单独把需求钉在「执行中」。
+-- 上游已 failed/cancelled 时下游常滞留 blocked，旧口径把 blocked 算 active，需求就永不失败。
 SELECT
     COUNT(*)::bigint AS total,
-    COUNT(*) FILTER (WHERE status = 'completed')::bigint AS completed,
-    COUNT(*) FILTER (WHERE status = 'failed')::bigint AS failed,
-    COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed', 'cancelled'))::bigint AS active
+    COUNT(*) FILTER (WHERE lower(btrim(status)) IN ('completed', 'done', 'success'))::bigint AS completed,
+    COUNT(*) FILTER (WHERE lower(btrim(status)) IN ('failed', 'error'))::bigint AS failed,
+    COUNT(*) FILTER (
+        WHERE lower(btrim(status)) IN (
+            'planned', 'pending', 'queued', 'assigned', 'running', 'in_progress', 'waiting_human'
+        )
+    )::bigint AS runnable,
+    COUNT(*) FILTER (WHERE lower(btrim(status)) = 'blocked')::bigint AS blocked,
+    COUNT(*) FILTER (
+        WHERE lower(btrim(status)) NOT IN ('completed', 'done', 'success', 'failed', 'error', 'cancelled')
+    )::bigint AS active
 FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND demand_id = sqlc.arg('demand_id')::uuid;
@@ -1871,6 +1881,53 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND lower(status_snapshot) IN ('pending', 'waiting', 'requested', 'open')
 ORDER BY created_at DESC, id DESC
 LIMIT 1;
+
+-- name: ListStrandedBlockedProjectTasks :many
+-- 上游已全部终态失败/取消，下游仍 blocked：失败恢复若没走「驳回」就不会 cancelFailureDownstream，
+-- 需求会一直 executing。看门狗按与 cancelFailureDownstream 相同口径取消这些下游。
+SELECT t.*
+FROM project_tasks t
+WHERE t.status = 'blocked'
+  AND t.dismissed_at IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM project_task_dependencies d
+    WHERE d.tenant_id = t.tenant_id
+      AND d.project_id = t.project_id
+      AND d.dependent_task_id = t.id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM project_task_dependencies d
+    JOIN project_tasks b
+      ON b.tenant_id = d.tenant_id
+     AND b.id = d.blocker_task_id
+    WHERE d.tenant_id = t.tenant_id
+      AND d.project_id = t.project_id
+      AND d.dependent_task_id = t.id
+      AND lower(btrim(b.status)) NOT IN ('failed', 'cancelled', 'error')
+  )
+ORDER BY t.updated_at ASC, t.id ASC
+LIMIT sqlc.arg('batch_limit')::integer;
+
+-- name: ListPendingDecisionsMissingOpenInbox :many
+-- Pending decision SoT rows with no open inbox projection. Create/upsert is not
+-- one transaction: a failed Upsert (or inbox cancelled without converging the
+-- decision) leaves project UI "待处理" while inbox has nothing to act on.
+-- Watchdog reprojects still-actionable cards or cancels stale ones.
+SELECT d.*
+FROM project_decision_requests d
+WHERE lower(btrim(d.status_snapshot)) IN ('pending', 'requested')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM inbox_items i
+    WHERE i.tenant_id = d.tenant_id
+      AND i.source_type = 'project_decision_request'
+      AND i.source_id = d.id
+      AND i.status = 'open'
+  )
+ORDER BY d.created_at ASC, d.id ASC
+LIMIT sqlc.arg('batch_limit')::integer;
 
 -- name: BindProjectTaskWaitingRequest :one
 -- 给已处于 waiting_human 的任务补挂/改挂 waiting_request_id（不改 status）。

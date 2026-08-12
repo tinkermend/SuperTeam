@@ -653,6 +653,38 @@ describe("ProjectOperationalDetail", () => {
       .toBeVisible();
   });
 
+  it("confirms task cleanup with the platform dialog instead of window.confirm", async () => {
+    const onDismissTask = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const failedTask: ProjectTask = {
+      ...overviewTasks[0],
+      id: "task-failed-1",
+      status: "failed",
+      title: "创建文件 p4-error-code.txt",
+    };
+    const screen = await renderDetail({
+      onDismissTask,
+      tasks: [...overviewTasks, failedTask],
+    });
+
+    await userEvent.click(screen.getByRole("tab", { name: "任务" }));
+    await userEvent.click(screen.getByRole("button", { name: "清理任务" }));
+
+    const dialog = screen.getByRole("alertdialog", {
+      name: "确认清理任务「创建文件 p4-error-code.txt」？",
+    });
+    await expect.element(dialog).toBeVisible();
+    await expect
+      .element(dialog.getByText("清理后不再出现在待处理与风险中，历史与审计仍保留。"))
+      .toBeVisible();
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    await userEvent.click(dialog.getByRole("button", { name: "清理任务" }));
+    expect(onDismissTask).toHaveBeenCalledWith("task-failed-1");
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+    confirmSpy.mockRestore();
+  });
+
   it("resolves owner and service-pool names when membership snapshots are empty", async () => {
     const unnamedOverview: ProjectOverview = {
       ...overview,
