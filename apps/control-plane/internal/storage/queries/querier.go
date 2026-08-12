@@ -418,6 +418,7 @@ type Querier interface {
 	// ListProjectRunSummaries.failed_count 仍含 blocked（运行总览宽失败）。
 	GetProjectTaskStatusCounts(ctx context.Context, arg GetProjectTaskStatusCountsParams) (GetProjectTaskStatusCountsRow, error)
 	GetProjectWorkspaceDeleteRequest(ctx context.Context, arg GetProjectWorkspaceDeleteRequestParams) (ProjectWorkspaceDeleteRequest, error)
+	GetProjectWorkspaceGitSnapshot(ctx context.Context, arg GetProjectWorkspaceGitSnapshotParams) (ProjectWorkspaceGitSnapshot, error)
 	// CreateProviderSession retired (2026-07-21).
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)
@@ -637,6 +638,10 @@ type Querier interface {
 	// 先沿 continues_demand_id 上溯到链头，再从链头向下展开后代。
 	// depth 上限由调用方传入（spec §5.2 D3：数据被手工改出环时必须能停）。
 	ListProjectDemandContinuationChain(ctx context.Context, arg ListProjectDemandContinuationChainParams) ([]ListProjectDemandContinuationChainRow, error)
+	// 左轨 sibling_pending 角标：读时聚合，替代拉 500 决策/任务/修订进内存。
+	// 口径对齐 resolveDemandDossierSiblingPending：status_snapshot=pending；
+	// 任务级经 project_tasks.demand_id，需求级经 project_plan_revisions.demand_id。
+	ListProjectDemandOpenDecisionCounts(ctx context.Context, arg ListProjectDemandOpenDecisionCountsParams) ([]ListProjectDemandOpenDecisionCountsRow, error)
 	ListProjectDemands(ctx context.Context, arg ListProjectDemandsParams) ([]ProjectDemand, error)
 	// Console 左轨专用：最近更新优先，同时间非终态先于终态。
 	// 不得替换 ListProjectDemands（结项文案 / sibling_pending / 协调线程仍按 created_at）。
@@ -683,6 +688,8 @@ type Querier interface {
 	ListProjectTaskGraphDecisionRequests(ctx context.Context, arg ListProjectTaskGraphDecisionRequestsParams) ([]ProjectDecisionRequest, error)
 	ListProjectTaskGraphEvents(ctx context.Context, arg ListProjectTaskGraphEventsParams) ([]ProjectEvent, error)
 	ListProjectTaskGraphNodeTimings(ctx context.Context, arg ListProjectTaskGraphNodeTimingsParams) ([]ListProjectTaskGraphNodeTimingsRow, error)
+	// 控制台流程图默认只要未关闭决策（当前处理），避免一单图带回上百条历史卡。
+	ListProjectTaskGraphOpenDecisionRequests(ctx context.Context, arg ListProjectTaskGraphOpenDecisionRequestsParams) ([]ProjectDecisionRequest, error)
 	ListProjectTaskGraphReplayEvents(ctx context.Context, arg ListProjectTaskGraphReplayEventsParams) ([]ProjectEvent, error)
 	// 每个任务只取**最新一条**闸门结果：闸门结果按 (task, idempotency_key=分派原因+尝试序号)
 	// 唯一，重试重新评估会新增一行，因此最新一行就是当前闸门裁决。
@@ -696,8 +703,10 @@ type Querier interface {
 	ListProjectTasksByCoordinationJob(ctx context.Context, arg ListProjectTasksByCoordinationJobParams) ([]ProjectTask, error)
 	ListProjectTasksByDemand(ctx context.Context, arg ListProjectTasksByDemandParams) ([]ProjectTask, error)
 	ListProjectTransferRequests(ctx context.Context, arg ListProjectTransferRequestsParams) ([]ProjectTransferRequest, error)
+	ListProjectWorkspaceGitSnapshots(ctx context.Context, arg ListProjectWorkspaceGitSnapshotsParams) ([]ProjectWorkspaceGitSnapshot, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]Project, error)
 	ListProjectsCastingEmployee(ctx context.Context, arg ListProjectsCastingEmployeeParams) ([]uuid.UUID, error)
+	ListProjectsDueForWorkspaceGitSample(ctx context.Context, arg ListProjectsDueForWorkspaceGitSampleParams) ([]ListProjectsDueForWorkspaceGitSampleRow, error)
 	ListProjectsForHumanMember(ctx context.Context, arg ListProjectsForHumanMemberParams) ([]ListProjectsForHumanMemberRow, error)
 	ListPromptTemplates(ctx context.Context, arg ListPromptTemplatesParams) ([]TaskPromptTemplate, error)
 	// CreateProviderSessionEvent retired (2026-07-21).
@@ -810,6 +819,8 @@ type Querier interface {
 	MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error)
 	MarkProjectRuntimeNodeProvisioned(ctx context.Context, arg MarkProjectRuntimeNodeProvisionedParams) (ProjectRuntimeNode, error)
 	MarkProjectTaskLatestDispatchGate(ctx context.Context, arg MarkProjectTaskLatestDispatchGateParams) (ProjectTask, error)
+	MarkProjectWorkspaceGitProbeInflight(ctx context.Context, arg MarkProjectWorkspaceGitProbeInflightParams) error
+	MarkProjectWorkspaceGitSnapshotFailed(ctx context.Context, arg MarkProjectWorkspaceGitSnapshotFailedParams) error
 	MarkQueuedProjectTaskAttemptDispatchStartFailed(ctx context.Context, arg MarkQueuedProjectTaskAttemptDispatchStartFailedParams) (ProjectTaskAttempt, error)
 	MovePlannedProjectTaskToWaitingHumanForGate(ctx context.Context, arg MovePlannedProjectTaskToWaitingHumanForGateParams) (ProjectTask, error)
 	MoveProjectTaskDispatchFailureToWaitingHuman(ctx context.Context, arg MoveProjectTaskDispatchFailureToWaitingHumanParams) (ProjectTask, error)
@@ -1009,6 +1020,7 @@ type Querier interface {
 	UpsertInboxItem(ctx context.Context, arg UpsertInboxItemParams) (InboxItem, error)
 	UpsertInboxItemByApprovalSource(ctx context.Context, arg UpsertInboxItemByApprovalSourceParams) (InboxItem, error)
 	UpsertProjectEmployeeNodeAffinity(ctx context.Context, arg UpsertProjectEmployeeNodeAffinityParams) (ProjectEmployeeNodeAffinity, error)
+	UpsertProjectWorkspaceGitSnapshotSuccess(ctx context.Context, arg UpsertProjectWorkspaceGitSnapshotSuccessParams) error
 	UpsertProviderSessionByExternalID(ctx context.Context, arg UpsertProviderSessionByExternalIDParams) (ProviderSession, error)
 	UpsertRuntimeCapability(ctx context.Context, arg UpsertRuntimeCapabilityParams) (RuntimeCapability, error)
 	UpsertRuntimeEnrollment(ctx context.Context, arg UpsertRuntimeEnrollmentParams) (RuntimeEnrollment, error)

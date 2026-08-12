@@ -2023,8 +2023,9 @@ describe("ProjectsView", () => {
     const layout = screen.getByTestId("projects-risk-home-layout").element();
     expect(layout.className).not.toContain("grid-cols");
     expect(screen.container.querySelector('[data-testid="project-portfolio-grid"]')).toBeNull();
-    // 详情默认工作台为运营首屏，不再内嵌 plan-graph-canvas。
-    expect(screen.container.querySelector('[data-testid="project-ops-home"]')).toBeTruthy();
+    // 详情默认任务表为运营首屏，不再内嵌 plan-graph-canvas。
+    expect(screen.container.querySelector('[data-testid="demand-task-table"]')).toBeTruthy();
+    expect(screen.container.querySelector('[data-testid="project-ops-home"]')).toBeNull();
   });
 
   it("keeps project filtering and v3 pagination controls working", async () => {
@@ -2242,9 +2243,7 @@ describe("ProjectsView", () => {
       .element(screen.getByRole("menuitem", { name: "配置项目" }))
       .toHaveAttribute("href", "/projects/project-1/config");
 
-    const opsHome = screen.container.querySelector('[data-testid="project-ops-home"]');
     const visibleLinkLabels = Array.from(screen.container.querySelectorAll("a"))
-      .filter((link) => !opsHome?.contains(link))
       .map((link) => link.textContent?.trim());
     expect(visibleLinkLabels).not.toContain("审计");
     expect(visibleLinkLabels).not.toContain("成本");
@@ -2789,15 +2788,8 @@ describe("ProjectsView", () => {
     const fetcher = createProjectFetcher();
     const screen = await renderProjects(fetcher, "project-1");
 
-    // 业务阻塞已迁到运营首屏「本项目阻塞」，不再用 Dispatch gate 业务文案。
-    await expect
-      .element(screen.getByTestId("project-ops-blockers").getByText("需要负责人确认"))
-      .toBeInTheDocument();
-    await expect
-      .element(
-        screen.getByTestId("project-ops-blockers").getByText("待处理", { exact: true }).first(),
-      )
-      .toBeInTheDocument();
+    await expect.element(screen.getByTestId("demand-task-table")).toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "决策" })).toBeInTheDocument();
     expect(pageText()).not.toContain("路由决策");
     expect(pageText()).not.toContain("转派请求");
 
@@ -2809,26 +2801,11 @@ describe("ProjectsView", () => {
       .toBeInTheDocument();
     await expect.element(screen.getByText("转派请求")).toBeInTheDocument();
 
-    await userEvent.click(
-      screen
-        .getByTestId("project-ops-blockers")
-        .getByRole("button", { name: "批准" })
-        .first(),
-    );
-
-    await vi.waitFor(() => {
-      expect(
-        fetchCalls(fetcher).some(([url, init]) => {
-          return (
-            String(url).endsWith(
-              "/api/v1/projects/project-1/decisions/decision-1/resolve",
-            ) &&
-            init?.method === "POST" &&
-            JSON.parse(String(init.body)).decision === "approved"
-          );
-        }),
-      ).toBe(true);
-    });
+    await userEvent.click(screen.getByRole("tab", { name: "决策" }));
+    await expect.element(screen.getByText("需要负责人确认")).toBeInTheDocument();
+    await expect
+      .element(screen.getByRole("link", { name: "在收件箱处理 →" }).first())
+      .toBeInTheDocument();
   });
 
   it("does not mount project detail actions on the projects index", async () => {

@@ -34,10 +34,14 @@ pub const MAX_ATTACHMENT_FILE_BYTES: u64 = 5 * 1024 * 1024;
 pub const MAX_ATTACHMENT_COUNT: usize = 20;
 pub const MAX_ATTACHMENT_TOTAL_BYTES: u64 = 50 * 1024 * 1024;
 
-/// Declared deliverables (声明式交付物 v2 spec §2): files the agent writes
-/// into the workspace `deliverables/` directory under the dispatch contract.
+/// Declared deliverables (声明式交付物 v2 spec §2 / 2026-08-12 P0):
+/// files the agent writes into the session output subdirectory
+/// `.superteam/sessions/{command_id}/deliverables/` (legacy workspace-root
+/// `deliverables/` is still dual-read with a visible hint).
 /// Single-file cap matches the control plane presign hard limit.
 pub const DELIVERABLES_DIR: &str = "deliverables";
+pub const DECLARED_SOURCE_SESSION: &str = "session";
+pub const DECLARED_SOURCE_LEGACY_PATH: &str = "legacy_path";
 pub const MAX_DECLARED_FILE_BYTES: u64 = MAX_ARTIFACT_FILE_BYTES as u64;
 pub const MAX_DECLARED_COUNT: usize = 20;
 pub const MAX_DECLARED_TOTAL_BYTES: u64 = 100 * 1024 * 1024;
@@ -88,11 +92,14 @@ pub struct CollectedArtifact {
     pub bytes: Vec<u8>,
 }
 
-/// A workspace file captured as an `execution_output` attachment.
+/// A workspace file captured as an `execution_output` attachment or a
+/// declared deliverable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectedAttachment {
     pub artifact: CollectedArtifact,
     pub relative_path: String,
+    /// Declared-pipeline origin: `session` or `legacy_path`. Attachments leave this None.
+    pub source: Option<String>,
 }
 
 /// A candidate file dropped by a cap — surfaced as a self-report artifact row
@@ -346,34 +353,82 @@ pub async fn collect_attachments(
         collection.attachments.push(CollectedAttachment {
             artifact: build_artifact("execution_output", name, content_type, false, false, 0, bytes),
             relative_path: relative,
+            source: None,
         });
     }
 
     collection
 }
 
-/// Collects declared deliverables from the workspace `deliverables/` dir
-/// (声明式交付物 v2 spec §2): every regular file inside, no extension
-/// whitelist — the declared directory IS the whitelist. Hidden path
-/// components are still excluded. `artifact_type=declared`,
-/// `is_evidence=true` (the control plane maps it to a submitted
-/// declared_output evidence row). Not redacted, like attachments.
-pub async fn collect_declared_deliverables(workspace: &Path) -> AttachmentCollection {
+/// Collects declared deliverables from this command's session output
+/// subdirectory (spec 2026-08-12 P0). Hidden-component exclusion is judged
+/// **relative to the declaration root** so files under `.superteam/sessions/`
+/// are collectable; hidden files *inside* that root are still dropped.
+///
+/// Dual-read: workspace-root `deliverables/` is still collected when present,
+/// tagged `legacy_path`, and accompanied by a visible skip-note. Collection
+/// is scoped to `command_id` so task B cannot re-report task A's files.
+pub async fn collect_declared_deliverables(
+    workspace: &Path,
+    command_id: &str,
+) -> AttachmentCollection {
     let mut collection = AttachmentCollection::default();
-    let root = workspace.join(DELIVERABLES_DIR);
-    if !root.is_dir() {
-        return collection;
-    }
-    // 单文件上限跟随工件上限快照(与 CP presign 校验同源,P2 spec §3);
-    // 数量/总量上限仍是本地常量(未纳入注册表)。
     let max_declared_file_bytes = crate::platform_limits::current().artifact_max_file_bytes as u64;
+
+    if let Ok(session_rel) = crate::project_session::session_deliverables_relative(command_id) {
+        collect_from_declared_root(
+            workspace,
+            &session_rel,
+            DECLARED_SOURCE_SESSION,
+            max_declared_file_bytes,
+            &mut collection,
+        )
+        .await;
+    }
+
+    let legacy_before_attachments = collection.attachments.len();
+    let legacy_before_skipped = collection.skipped.len();
+    collect_from_declared_root(
+        workspace,
+        DELIVERABLES_DIR,
+        DECLARED_SOURCE_LEGACY_PATH,
+        max_declared_file_bytes,
+        &mut collection,
+    )
+    .await;
+    let collected_legacy = collection.attachments.len() > legacy_before_attachments
+        || collection.skipped.len() > legacy_before_skipped;
+    if collected_legacy {
+        collection.skipped.push(SkippedAttachment {
+            relative_path: format!("{DELIVERABLES_DIR}/"),
+            reason: format!(
+                "legacy_path：仍从工作区根 {DELIVERABLES_DIR}/ 采集到文件；请改写入 .superteam/sessions/<command_id>/{DELIVERABLES_DIR}/（双读过渡，不得静默兼容）"
+            ),
+        });
+    }
+
+    collection
+}
+
+async fn collect_from_declared_root(
+    workspace: &Path,
+    declared_rel: &str,
+    source: &str,
+    max_declared_file_bytes: u64,
+    collection: &mut AttachmentCollection,
+) {
+    let root = workspace.join(declared_rel);
+    if !root.is_dir() {
+        return;
+    }
 
     let mut eligible: Vec<(String, u64, std::time::SystemTime)> = Vec::new();
     for relative in snapshot_workspace_files(&root) {
+        // Hidden/noise judged relative to the declaration root, not workspace root.
         if has_excluded_component(&relative) {
             continue;
         }
-        let full_relative = format!("{DELIVERABLES_DIR}/{relative}");
+        let full_relative = format!("{declared_rel}/{relative}");
         let Ok(metadata) = tokio::fs::metadata(root.join(&relative)).await else {
             continue;
         };
@@ -396,7 +451,11 @@ pub async fn collect_declared_deliverables(workspace: &Path) -> AttachmentCollec
 
     eligible.sort_by(|a, b| b.2.cmp(&a.2));
 
-    let mut total_bytes = 0u64;
+    let mut total_bytes: u64 = collection
+        .attachments
+        .iter()
+        .map(|attachment| attachment.artifact.bytes.len() as u64)
+        .sum();
     for (relative, size, _) in eligible {
         if collection.attachments.len() >= MAX_DECLARED_COUNT {
             collection.skipped.push(SkippedAttachment {
@@ -446,10 +505,9 @@ pub async fn collect_declared_deliverables(workspace: &Path) -> AttachmentCollec
         collection.attachments.push(CollectedAttachment {
             artifact: build_artifact("declared", name, content_type, true, false, 0, bytes),
             relative_path: relative,
+            source: Some(source.to_string()),
         });
     }
-
-    collection
 }
 
 /// Uploads declared deliverables with the SAME all-or-nothing semantics as
@@ -477,6 +535,7 @@ pub async fn upload_declared_deliverables(
             "is_evidence": true,
             "redaction_count": 0,
             "relative_path": attachment.relative_path,
+            "source": attachment.source,
         }));
     }
     for skip in collection.skipped {
@@ -488,6 +547,11 @@ pub async fn upload_declared_deliverables(
             "type": "declared_skipped",
             "ref": skip.relative_path.clone(),
             "title": format!("{} — {}", skip.relative_path, skip.reason),
+            "source": if skip.reason.starts_with("legacy_path") {
+                serde_json::Value::String(DECLARED_SOURCE_LEGACY_PATH.to_string())
+            } else {
+                serde_json::Value::Null
+            },
         }));
     }
     Ok(refs)
@@ -548,7 +612,7 @@ fn attachment_content_type(relative_path: &str) -> Option<&'static str> {
         .map(|(_, content_type)| *content_type)
 }
 
-fn has_excluded_component(relative_path: &str) -> bool {
+pub(crate) fn has_excluded_component(relative_path: &str) -> bool {
     Path::new(relative_path).components().any(|component| {
         component.as_os_str().to_str().is_some_and(|name| {
             name.starts_with('.') || ATTACHMENT_EXCLUDED_DIRS.contains(&name)
@@ -1085,17 +1149,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn declared_deliverables_collects_all_files_regardless_of_extension() {
+    async fn declared_deliverables_collects_from_session_output_dir() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::create_dir_all(root.join("deliverables/sub")).unwrap();
-        std::fs::write(root.join("deliverables/report.html"), "<h1>r</h1>").unwrap();
-        std::fs::write(root.join("deliverables/data.bin"), [1u8; 8]).unwrap(); // 无扩展名白名单限制
-        std::fs::write(root.join("deliverables/sub/extra.csv"), "a,b").unwrap();
-        std::fs::write(root.join("deliverables/.hidden.md"), "no").unwrap(); // 隐藏仍排除
-        std::fs::write(root.join("stray.md"), "not declared").unwrap(); // 目录外不属声明管道
+        let declared = crate::project_session::session_deliverables_dir(root, "cmd-a").unwrap();
+        std::fs::create_dir_all(declared.join("sub")).unwrap();
+        std::fs::write(declared.join("report.html"), "<h1>r</h1>").unwrap();
+        std::fs::write(declared.join("data.bin"), [1u8; 8]).unwrap();
+        std::fs::write(declared.join("sub/extra.csv"), "a,b").unwrap();
+        std::fs::write(declared.join(".hidden.md"), "no").unwrap();
+        std::fs::write(root.join("stray.md"), "not declared").unwrap();
+        // MCP config in the same session tree must not be collected.
+        let mcp = crate::project_session::session_dir(root, "cmd-a")
+            .unwrap()
+            .join("mcp/claude.mcp.json");
+        std::fs::create_dir_all(mcp.parent().unwrap()).unwrap();
+        std::fs::write(&mcp, "{}").unwrap();
 
-        let collection = collect_declared_deliverables(root).await;
+        let collection = collect_declared_deliverables(root, "cmd-a").await;
         let mut paths: Vec<&str> = collection
             .attachments
             .iter()
@@ -1105,32 +1176,160 @@ mod tests {
         assert_eq!(
             paths,
             vec![
-                "deliverables/data.bin",
-                "deliverables/report.html",
-                "deliverables/sub/extra.csv"
+                ".superteam/sessions/cmd-a/deliverables/data.bin",
+                ".superteam/sessions/cmd-a/deliverables/report.html",
+                ".superteam/sessions/cmd-a/deliverables/sub/extra.csv"
             ]
+        );
+        assert!(
+            collection
+                .attachments
+                .iter()
+                .all(|attachment| attachment.source.as_deref() == Some(DECLARED_SOURCE_SESSION))
         );
         let report = collection
             .attachments
             .iter()
-            .find(|attachment| attachment.relative_path == "deliverables/report.html")
+            .find(|attachment| {
+                attachment.relative_path
+                    == ".superteam/sessions/cmd-a/deliverables/report.html"
+            })
             .unwrap();
         assert_eq!(report.artifact.artifact_type, "declared");
         assert!(report.artifact.is_evidence);
         let bin = collection
             .attachments
             .iter()
-            .find(|attachment| attachment.relative_path == "deliverables/data.bin")
+            .find(|attachment| {
+                attachment.relative_path == ".superteam/sessions/cmd-a/deliverables/data.bin"
+            })
             .unwrap();
         assert_eq!(bin.artifact.content_type, "application/octet-stream");
+        assert!(collection.skipped.is_empty());
     }
 
     #[tokio::test]
     async fn declared_dir_absent_collects_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let collection = collect_declared_deliverables(dir.path()).await;
+        let collection = collect_declared_deliverables(dir.path(), "cmd-missing").await;
         assert!(collection.attachments.is_empty());
         assert!(collection.skipped.is_empty());
+    }
+
+    #[tokio::test]
+    async fn declared_legacy_path_is_dual_read_with_visible_hint() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("deliverables")).unwrap();
+        std::fs::write(root.join("deliverables/old-report.html"), "<h1>legacy</h1>").unwrap();
+
+        let collection = collect_declared_deliverables(root, "cmd-new").await;
+        assert_eq!(collection.attachments.len(), 1);
+        assert_eq!(
+            collection.attachments[0].relative_path,
+            "deliverables/old-report.html"
+        );
+        assert_eq!(
+            collection.attachments[0].source.as_deref(),
+            Some(DECLARED_SOURCE_LEGACY_PATH)
+        );
+        assert!(
+            collection
+                .skipped
+                .iter()
+                .any(|skip| skip.reason.contains("legacy_path")
+                    && skip.relative_path == "deliverables/"),
+            "dual-read must emit a visible hint, got {:?}",
+            collection.skipped
+        );
+    }
+
+    #[tokio::test]
+    async fn declared_collection_does_not_cross_command_sessions() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let a = crate::project_session::session_deliverables_dir(root, "cmd-a").unwrap();
+        let b = crate::project_session::session_deliverables_dir(root, "cmd-b").unwrap();
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("from-a.html"), "A").unwrap();
+        std::fs::write(b.join("from-b.html"), "B").unwrap();
+
+        let collection = collect_declared_deliverables(root, "cmd-b").await;
+        let paths: Vec<&str> = collection
+            .attachments
+            .iter()
+            .map(|attachment| attachment.relative_path.as_str())
+            .collect();
+        assert_eq!(
+            paths,
+            vec![".superteam/sessions/cmd-b/deliverables/from-b.html"]
+        );
+        assert!(
+            !paths.iter().any(|path| path.contains("cmd-a")),
+            "task B must not re-report task A's deliverables: {paths:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn declared_prefers_session_path_and_still_dual_reads_legacy() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let session = crate::project_session::session_deliverables_dir(root, "cmd-now").unwrap();
+        std::fs::create_dir_all(&session).unwrap();
+        std::fs::write(session.join("new.html"), "session").unwrap();
+        std::fs::create_dir_all(root.join("deliverables")).unwrap();
+        std::fs::write(root.join("deliverables/old.html"), "legacy").unwrap();
+
+        let collection = collect_declared_deliverables(root, "cmd-now").await;
+        let mut paths: Vec<&str> = collection
+            .attachments
+            .iter()
+            .map(|attachment| attachment.relative_path.as_str())
+            .collect();
+        paths.sort();
+        assert_eq!(
+            paths,
+            vec![
+                ".superteam/sessions/cmd-now/deliverables/new.html",
+                "deliverables/old.html"
+            ]
+        );
+        let session_item = collection
+            .attachments
+            .iter()
+            .find(|item| item.relative_path.ends_with("new.html"))
+            .unwrap();
+        assert_eq!(session_item.source.as_deref(), Some(DECLARED_SOURCE_SESSION));
+        let legacy_item = collection
+            .attachments
+            .iter()
+            .find(|item| item.relative_path == "deliverables/old.html")
+            .unwrap();
+        assert_eq!(
+            legacy_item.source.as_deref(),
+            Some(DECLARED_SOURCE_LEGACY_PATH)
+        );
+        assert!(
+            collection
+                .skipped
+                .iter()
+                .any(|skip| skip.reason.contains("legacy_path"))
+        );
+    }
+
+    #[test]
+    fn declared_hidden_check_is_relative_to_declaration_root() {
+        // Workspace-root judgement would exclude the whole new tree.
+        assert!(has_excluded_component(
+            ".superteam/sessions/cmd-a/deliverables/report.html"
+        ));
+        // Relative to the declaration root, ordinary files are kept.
+        assert!(!has_excluded_component("report.html"));
+        assert!(!has_excluded_component("sub/extra.csv"));
+        // Hidden files inside the declaration root are still excluded.
+        assert!(has_excluded_component(".hidden.md"));
+        assert!(has_excluded_component("sub/.secret/file.txt"));
     }
 
     #[tokio::test]

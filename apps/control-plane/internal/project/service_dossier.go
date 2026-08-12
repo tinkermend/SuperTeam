@@ -1038,65 +1038,7 @@ func (s *Service) resolveDemandDossierAcceptance(ctx context.Context, tenantID u
 // plan_revision.demand_id。只认前者会把计划确认漏掉——而那正是最高频的待办,
 // 角标显示 0 会让人以为这一单不用管。
 func (s *Service) resolveDemandDossierSiblingPending(ctx context.Context, tenantID, projectID uuid.UUID) ([]DemandDossierSiblingPending, error) {
-	demands, err := s.repository.ListProjectDemands(ctx, tenantID, projectID, 200, 0)
-	if err != nil {
-		return nil, err
-	}
-	decisions, err := s.repository.ListDecisionRequests(ctx, tenantID, projectID, 500, 0)
-	if err != nil {
-		return nil, err
-	}
-	tasks, err := s.repository.ListProjectTasks(ctx, tenantID, projectID, nil, 500, 0)
-	if err != nil {
-		return nil, err
-	}
-	revisions, err := s.repository.ListPlanRevisions(ctx, ListPlanRevisionsRequest{
-		TenantID:  tenantID,
-		ProjectID: projectID,
-		Limit:     500,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	demandByTask := make(map[uuid.UUID]uuid.UUID, len(tasks))
-	for _, task := range tasks {
-		if task.DemandID != nil {
-			demandByTask[task.ID] = *task.DemandID
-		}
-	}
-	demandByRevision := make(map[uuid.UUID]uuid.UUID, len(revisions))
-	for _, revision := range revisions {
-		demandByRevision[revision.ID] = revision.DemandID
-	}
-
-	counts := map[uuid.UUID]int{}
-	for _, decision := range decisions {
-		if !isOpenDecisionStatus(decision.StatusSnapshot) {
-			continue
-		}
-		switch {
-		case decision.ProjectTaskID != nil:
-			if demandID, ok := demandByTask[*decision.ProjectTaskID]; ok {
-				counts[demandID]++
-			}
-		case decision.PlanRevisionID != nil:
-			if demandID, ok := demandByRevision[*decision.PlanRevisionID]; ok {
-				counts[demandID]++
-			}
-		}
-	}
-
-	siblings := make([]DemandDossierSiblingPending, 0, len(demands))
-	for _, demand := range demands {
-		siblings = append(siblings, DemandDossierSiblingPending{
-			DemandID:      demand.ID,
-			OpenDecisions: counts[demand.ID],
-			DemandTitle:   demand.Title,
-			DemandStatus:  string(demand.Status),
-		})
-	}
-	return siblings, nil
+	return s.repository.ListProjectDemandOpenDecisionCounts(ctx, tenantID, projectID)
 }
 
 func dedupeStringsPreservingOrder(values []string) []string {

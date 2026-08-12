@@ -114,7 +114,9 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
     queryKey: ["run-overview", "task-graph", selectedProjectId, selectedDemandId],
     queryFn: () =>
       getProjectTaskGraph({ baseUrl: apiBaseUrl, fetcher }, selectedProjectId as string, {
-        demandId: selectedDemandId as string
+        demandId: selectedDemandId as string,
+        omitRecentEvents: true,
+        openDecisionsOnly: true,
 }),
     enabled: Boolean(selectedProjectId) && Boolean(selectedDemandId),
     refetchInterval: 10_000,

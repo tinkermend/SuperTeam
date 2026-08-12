@@ -194,8 +194,10 @@
 - 任务 workspace 是真 git worktree；`workspace_mode` 已有 `none/readonly/diff/detached_run/branch`，按 task kind 映射。
 - runtime 执行结束会跑 `git diff HEAD` 并作为 `artifact_type="diff"` 的证据工件上传（落库为 `code_change` 证据），已走脱敏与截断。
 - **只采未提交的 tracked 变更**；员工自行 commit 后 diff 工件为空（源码注释标为待接线）。
-- attestation 的 `git_branch/git_base_ref/git_head_sha/git_diff_sha256` 四列**表与契约都已存在，runtime 硬编码 None**。
+- attestation 的 `git_branch/git_base_ref/git_head_sha/git_diff_sha256` 四列**已于 2026-08-01 真实回填**（`collect_workspace_git_facts` → `executor.rs` 的 attestation 写回）。**但 `git_base_ref` 落的是派发下发的 `default_branch` 名字、不是基线 SHA**（`project_store.go` → `runs.rs` → attestation），故「相对哪次提交」的参照系仍然缺失；`2026-08-12` 供给模型之后平台不再 checkout，该名字更不能当测量原点。
 - 无结构化 changed-files 模型；Web 端 `text/x-diff` 连预览都不支持。
+- **项目工作区没有任何 git 状态事实**（2026-08-12 核实）：`WorkspaceReadyStatus` 只答「目录在不在、能否派发」；全仓唯一读过 `git status --porcelain` 的地方是认领向导的一次性 `probe_project_directory`，结果折成一个 bool 且不进项目信息。
+- **`deliverables/` 采集后从不删除**（2026-08-12 核实），而终态清理明确跳过稳定项目目录 ⇒ 凡产出过声明式交付物的项目 `git status` 永久非空；且该目录无 attempt 归属，后续任务会把前任务的遗留文件当成自己的声明式交付物重报。
 - 变更采集基于 git 而非 provider 事件流，因此三个 provider 天然同权（Codex/OpenCode 不产生 tool 事件）。
 
 **发起入口（共五个，勿漏）**
@@ -239,8 +241,16 @@
 | 0 | 本文 | 为什么与不变量 | 所有 spec 的共同前提 |
 | 1 | 一单卷宗 → [`2026-07-29-demand-workbench-design.md`](./2026-07-29-demand-workbench-design.md)（**已实施** 2026-07-31，R2 范围） | 项目详情需求视图升级为处所；中栏时间线为主/图为辅；右轨按剧本 kind；密度前端可切；统一深链；**新增** demand 只读 dossier API | **容器先行**：接续、变更、治理动作都挂它；CP 只读聚合 + Web，无写路径/无迁移 |
 | 2 | 同单接续 → [`2026-08-01-demand-continuation-design.md`](./2026-08-01-demand-continuation-design.md)（**立项未实施**） | 「继续这一单」入口；**接续 = 新 demand + 血缘链**（§4.3）；**派发期按员工逐代上溯取回各自会话根**；卷宗按链折叠；recovery 丢血缘修复；resume 降级 | 用户最痛；挂在 #1 的容器上。原「待勘察」已收敛：决策路由已从 store 重建（§6），接续走既有 signal 模式即可，不改 workflow 输入、不改 planner |
-| 3 | 变更范围可见 | base 记录 + commit 后 diff + numstat 文件清单；attestation git 字段回填；右轨渲染器接真数据 | 只填充 #1 的一个渲染器；对运维场景无关，可独立后置 |
+| 3 | 项目工作区 git 状态可观测 → [`2026-08-12-project-workspace-git-observability.md`](./2026-08-12-project-workspace-git-observability.md)（**立项未实施**；**2026-08-12 人类拍板重定义**，原范围见下） | P0 平台产物收进 `.superteam/` 隐藏目录（顺带修声明式交付物无 attempt 归属的串味）；P1 项目一等信息新增「是否干净 / HEAD 哈希 / 未提交清单」，主动定时采 + 手动刷新 + 任务终态收尾，调度在 CP、执行走既有 `probe_project_directory` | 平台是项目目录的**唯一操作方**，却看不见现场；对运维场景无关，可独立后置 |
 | 4 | 轻发起与剧本归属 | 中枢轻发起；剧本/收口/编制缺口在计划确认卡一屏定；Prompt 模板降权改名；来源字段补齐后收敛项目对话框；项目允许剧本集 | 主要是**简化与收敛**而非新建能力；依赖 #1 已存在（发起完落到哪） |
+
+**#3 的 2026-08-12 重定义（人类拍板，按 §0「不重议原则」记录理由）**
+
+- **原范围**：「base 记录 + commit 后 diff + numstat 文件清单；attestation git 字段回填；右轨渲染器接真数据」。
+- **改为**：项目工作区 git 状态可观测（干净与否 + HEAD 哈希 + 未提交清单）+ 平台产物隐藏目录收敛。
+- **理由三条**：① 原范围的 `base` 落不了地——`git_base_ref` 拿到的是 `default_branch` 名字而非 SHA（§6），且平台已不再 checkout；② 稳定项目目录多任务共用且不加锁（`2026-07-23` §0.9，本文 §3 未改）⇒「哪几行是哪个员工写的」无法诚实归属，**不得**按 commit author 猜、**不得**为采集加锁或恢复 per-task worktree；③ 人类判断：核心价值是「这个项目现在有没有遗留未提交、停在哪次提交」，而非「这一单改了什么」——前者是平台作为唯一操作方必须能答的，后者人本来也不会逐行看。
+- **后置另立**（已入根目录 `TODO.md`）：demand 级变更范围感知（这一单改了哪些文件、增删多少）；右轨接平台测量事实（届时声明与测量**并列**，不一致本身是有用信号）；`attestation.git_base_ref` 语义正名。
+- §5 已否决的「逐行 diff review 工具」与 §7 全局非目标「side-by-side 差异查看器」**不受影响，仍然否决**。
 
 ### 收口批登记（剧本可落地化，2026-08）
 

@@ -217,6 +217,41 @@ export function workspaceReadyStatusLabel(status: string | undefined): string {
   });
 }
 
+/** 项目工作区 git 干净与否（spec 2026-08-12 P1）。 */
+export function workspaceGitCleanLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    clean: "工作区干净",
+    dirty: "工作区脏",
+  });
+}
+
+export function workspaceGitRepoStateLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    detached: "HEAD 游离",
+    merge: "合并冲突中",
+    ok: "仓库正常",
+    rebase: "变基进行中",
+  });
+}
+
+export function workspaceGitFileCategoryLabel(status: string | undefined): string {
+  return labelWithOverrides(status, {
+    deleted: "已删除",
+    modified: "已修改",
+    renamed: "已重命名",
+    staged: "已暂存",
+    untracked: "未跟踪",
+  });
+}
+
+/** 采样失败/离线文案；已是中文整句时原样返回。 */
+export function workspaceGitSampleErrorLabel(message: string | undefined): string {
+  const text = (message ?? "").trim();
+  if (!text) {
+    return "未采到";
+  }
+  return text;
+}
 
 export function demandStatusLabel(status: string | undefined): string {
   return labelWithOverrides(status, {

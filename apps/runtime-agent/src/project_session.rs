@@ -21,7 +21,10 @@ use crate::mcp_config::{
 use crate::project_workspace::{SkillLinkReport, link_provider_skills, shield_projected_capability_paths, unlink_provider_skills};
 use crate::workspace_files::atomic_write;
 
-const SESSIONS_DIR: &str = ".superteam/sessions";
+/// 稳定项目目录内的平台私有会话树（与 `.git/info/exclude` 的 `.superteam/**` 对齐）。
+pub const SESSIONS_DIR: &str = ".superteam/sessions";
+/// 声明式交付物在会话目录下的输出子目录名（spec 2026-08-12 P0）。
+pub const DELIVERABLES_SUBDIR: &str = "deliverables";
 const MANIFEST_FILE: &str = "manifest.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -48,6 +51,25 @@ pub struct ProjectSessionInstall {
 }
 
 pub fn session_dir(workspace_path: &Path, command_id: &str) -> Result<PathBuf> {
+    Ok(workspace_path.join(SESSIONS_DIR).join(validated_command_id(command_id)?))
+}
+
+pub fn manifest_path(workspace_path: &Path, command_id: &str) -> Result<PathBuf> {
+    Ok(session_dir(workspace_path, command_id)?.join(MANIFEST_FILE))
+}
+
+/// 本轮声明式交付物目录（工作区绝对路径）。
+pub fn session_deliverables_dir(workspace_path: &Path, command_id: &str) -> Result<PathBuf> {
+    Ok(session_dir(workspace_path, command_id)?.join(DELIVERABLES_SUBDIR))
+}
+
+/// 本轮声明式交付物相对工作区根的路径，如 `.superteam/sessions/{command_id}/deliverables`。
+pub fn session_deliverables_relative(command_id: &str) -> Result<String> {
+    let command_id = validated_command_id(command_id)?;
+    Ok(format!("{SESSIONS_DIR}/{command_id}/{DELIVERABLES_SUBDIR}"))
+}
+
+fn validated_command_id(command_id: &str) -> Result<String> {
     let command_id = command_id.trim();
     if command_id.is_empty() {
         bail!("command_id is required for project session");
@@ -55,11 +77,7 @@ pub fn session_dir(workspace_path: &Path, command_id: &str) -> Result<PathBuf> {
     if command_id.contains('/') || command_id.contains('\\') || command_id.contains("..") {
         bail!("command_id is not a safe path segment");
     }
-    Ok(workspace_path.join(SESSIONS_DIR).join(command_id))
-}
-
-pub fn manifest_path(workspace_path: &Path, command_id: &str) -> Result<PathBuf> {
-    Ok(session_dir(workspace_path, command_id)?.join(MANIFEST_FILE))
+    Ok(command_id.to_string())
 }
 
 /// 会话开始：先收敛本 command 残留，再装载技能/MCP 并写清单。
@@ -156,41 +174,76 @@ fn install_project_session_inner(
     })
 }
 
-/// 按清单卸载：unlink 技能软链、删除本次 session 目录（含 MCP 投影与 manifest）。
-/// 不存在清单时为 no-op。绝不删除项目根。
+/// 按清单卸载：unlink 技能软链、删除本次 MCP 投影与 manifest。
+/// 声明式交付物子目录保留（采集后不删；由 janitor 按会话数封顶）。
+/// 不存在清单时仍收敛投影残留，但同样保留非空 deliverables/。绝不删除项目根。
 pub fn unload_project_session(workspace_path: &Path, command_id: &str) -> Result<()> {
-    let mpath = match manifest_path(workspace_path, command_id) {
+    let dir = match session_dir(workspace_path, command_id) {
         Ok(path) => path,
         Err(_) => return Ok(()),
     };
-    if !mpath.exists() {
-        // 无清单：仍尝试清掉空 session 目录残留。
-        let dir = session_dir(workspace_path, command_id)?;
-        if dir.exists() {
-            let _ = fs::remove_dir_all(&dir);
-        }
-        return Ok(());
+    let mpath = dir.join(MANIFEST_FILE);
+    if mpath.exists() {
+        let raw = fs::read_to_string(&mpath)
+            .with_context(|| format!("read project session manifest {}", mpath.display()))?;
+        let manifest: ProjectSessionManifest = serde_json::from_str(&raw)
+            .with_context(|| format!("parse project session manifest {}", mpath.display()))?;
+
+        unlink_provider_skills(
+            workspace_path,
+            &manifest.provider_type,
+            &manifest.skill_keys,
+        )?;
     }
 
-    let raw = fs::read_to_string(&mpath)
-        .with_context(|| format!("read project session manifest {}", mpath.display()))?;
-    let manifest: ProjectSessionManifest = serde_json::from_str(&raw)
-        .with_context(|| format!("parse project session manifest {}", mpath.display()))?;
-
-    unlink_provider_skills(
-        workspace_path,
-        &manifest.provider_type,
-        &manifest.skill_keys,
-    )?;
-
-    let dir = session_dir(workspace_path, command_id)?;
     if dir.exists() {
-        fs::remove_dir_all(&dir).with_context(|| {
+        retain_session_deliverables_and_remove_rest(&dir).with_context(|| {
             format!(
-                "remove project session dir {} (skills already unlinked)",
+                "remove project session projections {} (skills already unlinked)",
                 dir.display()
             )
         })?;
+    }
+    Ok(())
+}
+
+/// 删掉会话目录里除 `deliverables/` 以外的一切（MCP / manifest / overlay）。
+/// 交付物子树为空或不存在时连会话目录一起去掉，避免空壳堆积。
+fn retain_session_deliverables_and_remove_rest(dir: &Path) -> Result<()> {
+    for entry in fs::read_dir(dir)
+        .with_context(|| format!("read session dir {}", dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("read session dir entry {}", dir.display()))?;
+        if entry.file_name() == DELIVERABLES_SUBDIR {
+            continue;
+        }
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("stat {}", path.display()))?;
+        if file_type.is_dir() {
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("remove session projection dir {}", path.display()))?;
+        } else {
+            fs::remove_file(&path)
+                .with_context(|| format!("remove session projection file {}", path.display()))?;
+        }
+    }
+
+    let deliverables = dir.join(DELIVERABLES_SUBDIR);
+    let keep = deliverables.is_dir()
+        && fs::read_dir(&deliverables)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false);
+    if !keep {
+        if deliverables.exists() {
+            let _ = fs::remove_dir_all(&deliverables);
+        }
+        let _ = fs::remove_dir(dir);
+        if dir.exists() {
+            fs::remove_dir_all(dir)
+                .with_context(|| format!("remove empty session dir {}", dir.display()))?;
+        }
     }
     Ok(())
 }
@@ -442,6 +495,41 @@ mod tests {
         fs::create_dir_all(&workspace).unwrap();
         let path = session_mcp_config_path(&workspace, "cmd-x", "claude-code").unwrap();
         assert!(path.ends_with(".superteam/sessions/cmd-x/mcp/claude.mcp.json"));
+    }
+
+    #[test]
+    fn unload_preserves_session_deliverables_and_removes_projections() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let workspace = temp.path().join("proj");
+        fs::create_dir_all(home.join(".claude/skills/alpha")).unwrap();
+        fs::write(home.join(".claude/skills/alpha/SKILL.md"), "alpha\n").unwrap();
+        fs::create_dir_all(&workspace).unwrap();
+
+        install_project_session(
+            &home,
+            &workspace,
+            "cmd-keep",
+            "claude-code",
+            &["alpha".to_string()],
+            &[sample_server("github")],
+        )
+        .unwrap();
+
+        let deliverables = session_deliverables_dir(&workspace, "cmd-keep").unwrap();
+        fs::create_dir_all(&deliverables).unwrap();
+        fs::write(deliverables.join("report.html"), "<h1>keep</h1>").unwrap();
+
+        unload_project_session(&workspace, "cmd-keep").unwrap();
+
+        assert!(
+            deliverables.join("report.html").exists(),
+            "declared deliverables must survive session unload"
+        );
+        assert!(!manifest_path(&workspace, "cmd-keep").unwrap().exists());
+        assert!(!workspace.join(".claude/skills/alpha").exists());
+        let mcp = session_mcp_config_path(&workspace, "cmd-keep", "claude-code").unwrap();
+        assert!(!mcp.exists(), "MCP projection must still be removed");
     }
 
     #[test]

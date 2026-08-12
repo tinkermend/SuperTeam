@@ -55,10 +55,10 @@ export function DemandDossierRail({
     handoffSummary.unknown;
 
   return (
-    <div className="grid gap-3" data-testid="demand-dossier-rail">
-      <SoftCard className="p-4" data-testid="demand-dossier-handoff-summary">
+    <div className="grid min-w-0 gap-3" data-testid="demand-dossier-rail">
+      <SoftCard className="min-w-0 p-4" data-testid="demand-dossier-handoff-summary">
         <div className="flex items-center gap-2">
-          <ClipboardCheck className="size-4 text-ink-2" />
+          <ClipboardCheck className="size-4 shrink-0 text-ink-2" />
           <h3 className="text-sm font-semibold text-ink">交付判定</h3>
         </div>
         {total === 0 ? (
@@ -131,40 +131,52 @@ export function DemandDossierRail({
         </SoftCard>
       ) : (
         slots.map((slot) => (
-          <SoftCard className="p-4" data-testid={`demand-dossier-slot-${slot.kind}`} key={slot.kind}>
+          <SoftCard
+            className="min-w-0 p-4"
+            data-testid={`demand-dossier-slot-${slot.kind}`}
+            key={slot.kind}
+          >
             <div className="flex items-center justify-between gap-2">
               {/* 槽标题用服务端已中文化的 title；kind 只作技术键不外显。 */}
-              <h3 className="text-sm font-semibold text-ink">{slot.title}</h3>
-              <span className="text-[11px] tabular-nums text-ink-3">{slot.items.length}</span>
+              <h3 className="min-w-0 truncate text-sm font-semibold text-ink">{slot.title}</h3>
+              <span className="shrink-0 text-[11px] tabular-nums text-ink-3">
+                {slot.items.length}
+              </span>
             </div>
             {slot.items.length === 0 ? (
               <p className="mt-2 text-[12px] text-ink-3">本单尚无该类交付事实。</p>
             ) : (
-              <ul className="mt-2.5 grid gap-2">
+              <ul className="mt-2.5 grid min-w-0 gap-2">
                 {slot.items.map((item) => (
-                  <li className="rounded-inner bg-card-soft px-2.5 py-2" key={item.id}>
+                  <li
+                    className="min-w-0 rounded-inner bg-card-soft px-2.5 py-2"
+                    key={item.id}
+                  >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">
+                      <p className="min-w-0 flex-1 break-words text-[12.5px] font-medium text-ink">
                         {item.title}
                       </p>
-                      <StatusPill tone={railItemTone(item.state)}>
+                      <StatusPill className="shrink-0" tone={railItemTone(item.state)}>
                         {dossierRailItemStateLabel(item.state)}
                       </StatusPill>
                     </div>
                     {item.summary ? (
-                      <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-ink-2">
+                      <p className="mt-1 break-words text-[12px] leading-5 text-ink-2">
                         {item.summary}
                       </p>
                     ) : null}
                     {item.ref ? (
-                      <p className="mt-1 truncate font-mono text-[11px] text-ink-3" title={item.ref}>
+                      <p
+                        className="mt-1 break-all font-mono text-[11px] leading-4 text-ink-3"
+                        title={item.ref}
+                      >
                         {/* 纯 UUID 的引用加「引用 ·」前缀：路径/URI 自带语义可直接显示，
                             裸标识符单独一行会被读成"这个对象叫这个名字"。 */}
                         {UUID_PATTERN.test(item.ref) ? `引用 · ${item.ref}` : item.ref}
                       </p>
                     ) : null}
                     {item.project_task_name ? (
-                      <p className="mt-1 truncate text-[11px] text-ink-3">
+                      <p className="mt-1 break-words text-[11px] text-ink-3">
                         来自 · {item.project_task_name}
                       </p>
                     ) : null}

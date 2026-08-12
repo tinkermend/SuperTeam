@@ -6008,6 +6008,79 @@ func (q *Queries) ListProjectDemandContinuationChain(ctx context.Context, arg Li
 	return items, nil
 }
 
+const ListProjectDemandOpenDecisionCounts = `-- name: ListProjectDemandOpenDecisionCounts :many
+SELECT
+  d.id AS demand_id,
+  d.title AS demand_title,
+  d.status AS demand_status,
+  COUNT(pdr.id)::int AS open_decisions
+FROM project_demands d
+LEFT JOIN project_decision_requests pdr
+  ON pdr.tenant_id = d.tenant_id
+ AND pdr.project_id = d.project_id
+ AND lower(btrim(COALESCE(pdr.status_snapshot, ''))) = 'pending'
+ AND (
+   pdr.project_task_id IN (
+     SELECT t.id
+     FROM project_tasks t
+     WHERE t.tenant_id = d.tenant_id
+       AND t.project_id = d.project_id
+       AND t.demand_id = d.id
+   )
+   OR pdr.plan_revision_id IN (
+     SELECT r.id
+     FROM project_plan_revisions r
+     WHERE r.tenant_id = d.tenant_id
+       AND r.project_id = d.project_id
+       AND r.demand_id = d.id
+   )
+ )
+WHERE d.tenant_id = $1::uuid
+  AND d.project_id = $2::uuid
+GROUP BY d.id, d.title, d.status
+ORDER BY d.created_at DESC
+`
+
+type ListProjectDemandOpenDecisionCountsParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+}
+
+type ListProjectDemandOpenDecisionCountsRow struct {
+	DemandID      uuid.UUID `json:"demand_id"`
+	DemandTitle   string    `json:"demand_title"`
+	DemandStatus  string    `json:"demand_status"`
+	OpenDecisions int32     `json:"open_decisions"`
+}
+
+// 左轨 sibling_pending 角标：读时聚合，替代拉 500 决策/任务/修订进内存。
+// 口径对齐 resolveDemandDossierSiblingPending：status_snapshot=pending；
+// 任务级经 project_tasks.demand_id，需求级经 project_plan_revisions.demand_id。
+func (q *Queries) ListProjectDemandOpenDecisionCounts(ctx context.Context, arg ListProjectDemandOpenDecisionCountsParams) ([]ListProjectDemandOpenDecisionCountsRow, error) {
+	rows, err := q.db.Query(ctx, ListProjectDemandOpenDecisionCounts, arg.TenantID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProjectDemandOpenDecisionCountsRow{}
+	for rows.Next() {
+		var i ListProjectDemandOpenDecisionCountsRow
+		if err := rows.Scan(
+			&i.DemandID,
+			&i.DemandTitle,
+			&i.DemandStatus,
+			&i.OpenDecisions,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectDemands = `-- name: ListProjectDemands :many
 SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key, continues_demand_id FROM project_demands
 WHERE tenant_id = $1::uuid
@@ -7365,6 +7438,72 @@ func (q *Queries) ListProjectTaskGraphNodeTimings(ctx context.Context, arg ListP
 	for rows.Next() {
 		var i ListProjectTaskGraphNodeTimingsRow
 		if err := rows.Scan(&i.ProjectTaskID, &i.StartedAt, &i.FinishedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListProjectTaskGraphOpenDecisionRequests = `-- name: ListProjectTaskGraphOpenDecisionRequests :many
+SELECT id, tenant_id, project_id, approval_request_id, coordination_job_id, project_task_id, target_user_id, decision_type, title_snapshot, summary_snapshot, risk_level_snapshot, status_snapshot, created_event_id, resolved_event_id, created_at, updated_at, resolved_at, dispatch_gate_result_id, project_task_result_id, plan_revision_id FROM project_decision_requests
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+  AND (
+    coordination_job_id = ANY($3::uuid[])
+    OR project_task_id = ANY($4::uuid[])
+  )
+  AND lower(btrim(COALESCE(status_snapshot, ''))) IN ('pending', 'requested', 'waiting', 'open')
+ORDER BY created_at DESC
+`
+
+type ListProjectTaskGraphOpenDecisionRequestsParams struct {
+	TenantID           uuid.UUID   `json:"tenant_id"`
+	ProjectID          uuid.UUID   `json:"project_id"`
+	CoordinationJobIds []uuid.UUID `json:"coordination_job_ids"`
+	ProjectTaskIds     []uuid.UUID `json:"project_task_ids"`
+}
+
+// 控制台流程图默认只要未关闭决策（当前处理），避免一单图带回上百条历史卡。
+func (q *Queries) ListProjectTaskGraphOpenDecisionRequests(ctx context.Context, arg ListProjectTaskGraphOpenDecisionRequestsParams) ([]ProjectDecisionRequest, error) {
+	rows, err := q.db.Query(ctx, ListProjectTaskGraphOpenDecisionRequests,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.CoordinationJobIds,
+		arg.ProjectTaskIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectDecisionRequest{}
+	for rows.Next() {
+		var i ProjectDecisionRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.ApprovalRequestID,
+			&i.CoordinationJobID,
+			&i.ProjectTaskID,
+			&i.TargetUserID,
+			&i.DecisionType,
+			&i.TitleSnapshot,
+			&i.SummarySnapshot,
+			&i.RiskLevelSnapshot,
+			&i.StatusSnapshot,
+			&i.CreatedEventID,
+			&i.ResolvedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ResolvedAt,
+			&i.DispatchGateResultID,
+			&i.ProjectTaskResultID,
+			&i.PlanRevisionID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

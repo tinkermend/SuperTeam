@@ -88,12 +88,14 @@ func (s *Service) cancelStrandedBlockedProjectTask(ctx context.Context, repairer
 	if err != nil {
 		return err
 	}
-	_, err = repairer.UpdateProjectTaskStatus(ctx, task.TenantID, task.ID, ProjectTaskStatusCancelled, &event.ID, []string{ProjectTaskStatusBlocked, "planned", "pending"})
+	updated, err := repairer.UpdateProjectTaskStatus(ctx, task.TenantID, task.ID, ProjectTaskStatusCancelled, &event.ID, []string{ProjectTaskStatusBlocked, "planned", "pending"})
 	if err != nil {
 		if errors.Is(err, ErrProjectNotFound) {
 			return ErrProjectConflict
 		}
 		return err
 	}
+	// Best-effort: cancelled 终态也采一次工作区 git，与 attempt fail/complete 路径对齐。
+	s.maybeSampleWorkspaceGitOnTaskTerminal(ctx, task.TenantID, task.ProjectID, updated)
 	return nil
 }

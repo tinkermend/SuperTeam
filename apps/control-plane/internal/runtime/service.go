@@ -727,6 +727,7 @@ func (s *Service) ListRuntimeEvents(ctx context.Context, filter ListRuntimeEvent
 		Severity:     filter.Severity,
 		NodeID:       filter.NodeID,
 		ProviderType: filter.ProviderType,
+		Since:        filter.Since,
 		Limit:        filter.Limit,
 		Offset:       filter.Offset,
 	})

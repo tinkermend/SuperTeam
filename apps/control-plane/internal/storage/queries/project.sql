@@ -961,6 +961,41 @@ ORDER BY
   created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListProjectDemandOpenDecisionCounts :many
+-- 左轨 sibling_pending 角标：读时聚合，替代拉 500 决策/任务/修订进内存。
+-- 口径对齐 resolveDemandDossierSiblingPending：status_snapshot=pending；
+-- 任务级经 project_tasks.demand_id，需求级经 project_plan_revisions.demand_id。
+SELECT
+  d.id AS demand_id,
+  d.title AS demand_title,
+  d.status AS demand_status,
+  COUNT(pdr.id)::int AS open_decisions
+FROM project_demands d
+LEFT JOIN project_decision_requests pdr
+  ON pdr.tenant_id = d.tenant_id
+ AND pdr.project_id = d.project_id
+ AND lower(btrim(COALESCE(pdr.status_snapshot, ''))) = 'pending'
+ AND (
+   pdr.project_task_id IN (
+     SELECT t.id
+     FROM project_tasks t
+     WHERE t.tenant_id = d.tenant_id
+       AND t.project_id = d.project_id
+       AND t.demand_id = d.id
+   )
+   OR pdr.plan_revision_id IN (
+     SELECT r.id
+     FROM project_plan_revisions r
+     WHERE r.tenant_id = d.tenant_id
+       AND r.project_id = d.project_id
+       AND r.demand_id = d.id
+   )
+ )
+WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND d.project_id = sqlc.arg('project_id')::uuid
+GROUP BY d.id, d.title, d.status
+ORDER BY d.created_at DESC;
+
 -- name: CreateProjectConfigRevision :one
 INSERT INTO project_config_revisions (
     tenant_id,
@@ -2387,6 +2422,18 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
     coordination_job_id = ANY(sqlc.arg('coordination_job_ids')::uuid[])
     OR project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
   )
+ORDER BY created_at DESC;
+
+-- name: ListProjectTaskGraphOpenDecisionRequests :many
+-- 控制台流程图默认只要未关闭决策（当前处理），避免一单图带回上百条历史卡。
+SELECT * FROM project_decision_requests
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND (
+    coordination_job_id = ANY(sqlc.arg('coordination_job_ids')::uuid[])
+    OR project_task_id = ANY(sqlc.arg('project_task_ids')::uuid[])
+  )
+  AND lower(btrim(COALESCE(status_snapshot, ''))) IN ('pending', 'requested', 'waiting', 'open')
 ORDER BY created_at DESC;
 
 -- name: CreateProjectTaskResult :one

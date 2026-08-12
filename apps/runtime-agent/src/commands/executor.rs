@@ -2122,8 +2122,9 @@ impl RuntimeCommandWritebackSink {
         crate::artifacts::upload_artifacts(&self.client, artifacts).await
     }
 
-    /// Collects and uploads declared deliverables from `deliverables/`
-    /// (v2 spec §2). Upload failure fails the completion, like evidence.
+    /// Collects and uploads declared deliverables from this command's
+    /// session output dir (v2 spec §2 / 2026-08-12 P0). Upload failure
+    /// fails the completion, like evidence.
     async fn collect_and_upload_declared(&self) -> anyhow::Result<Vec<serde_json::Value>> {
         let Some(context) = &self.artifact_collection else {
             return Ok(Vec::new());
@@ -2131,7 +2132,8 @@ impl RuntimeCommandWritebackSink {
         let Some(workspace) = &context.workspace_path else {
             return Ok(Vec::new());
         };
-        let collection = crate::artifacts::collect_declared_deliverables(workspace).await;
+        let collection =
+            crate::artifacts::collect_declared_deliverables(workspace, &self.command_id).await;
         if collection.attachments.is_empty() && collection.skipped.is_empty() {
             return Ok(Vec::new());
         }

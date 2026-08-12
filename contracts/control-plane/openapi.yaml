@@ -1571,6 +1571,27 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/workspace/git-status/refresh:
+    post:
+      operationId: refreshProjectWorkspaceGitStatus
+      summary: Refresh observed project directory git status from the primary runtime node
+      description: >-
+        Asynchronous probe via the runtime command channel. Project read
+        permission is sufficient. Same-project inflight probes are throttled.
+        Offline nodes keep the previous snapshot and surface sample_error.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project including latest or pending workspace_git snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}/overview:
     get:
       operationId: getProjectOverview
@@ -1983,6 +2004,22 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: omit_recent_events
+          in: query
+          description: >
+            为 true 时跳过 recent_events（控制台流程图默认）。
+            缺省 false，保持历史全量响应。
+          schema:
+            type: boolean
+            default: false
+        - name: open_decisions_only
+          in: query
+          description: >
+            为 true 时 decision_requests 仅含未关闭决策（pending/requested/waiting/open），
+            供节点「当前处理」。缺省 false 返回全历史。
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Project task graph
@@ -2078,6 +2115,11 @@ paths:
     get:
       operationId: listProjectDemands
       summary: List project demands
+      description: >
+        Console 左轨排序：`updated_at DESC`，同时间非终态
+        （submitted/recorded/planning_pending/planned/executing/acceptance_pending）
+        先于终态（completed/failed/cancelled/planning_failed）。
+        内部仓储 `ListProjectDemands` 仍按 `created_at DESC`，本端点不共用那条查询。
       parameters:
         - $ref: "#/components/parameters/ProjectId"
         - $ref: "#/components/parameters/Limit"
@@ -6720,6 +6762,7 @@ components:
           type: string
         attempts:
           type: integer
+          format: int32
         last_error:
           type: string
           nullable: true
@@ -8632,6 +8675,80 @@ components:
         - verified
         - rejected
         - superseded
+    ProjectWorkspaceGitFileEntry:
+      type: object
+      required:
+        - path
+        - category
+      properties:
+        path:
+          type: string
+        category:
+          type: string
+          enum:
+            - modified
+            - staged
+            - untracked
+            - deleted
+            - renamed
+    ProjectWorkspaceGitStatus:
+      type: object
+      required:
+        - applicable
+        - uncommitted_count
+      description: >-
+        Latest observed project directory git status (spec 2026-08-12 P1).
+        Non-git projects are not applicable (not clean). Probe failures keep
+        the previous snapshot and set sample_error.
+      properties:
+        applicable:
+          type: boolean
+          description: False when the directory is not a git repo (or not yet observed as one).
+        is_git_repo:
+          type: boolean
+          nullable: true
+        is_clean:
+          type: boolean
+          nullable: true
+          description: Relative to HEAD; null when not applicable / not observed.
+        head_commit:
+          type: string
+        current_branch:
+          type: string
+        detached:
+          type: boolean
+        repo_state:
+          type: string
+          enum:
+            - ok
+            - detached
+            - rebase
+            - merge
+        uncommitted_count:
+          type: integer
+        uncommitted_entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectWorkspaceGitFileEntry"
+        uncommitted_truncated:
+          type: boolean
+        uncommitted_omitted:
+          type: integer
+        sampled_at:
+          type: string
+          format: date-time
+        sampled_runtime_node_id:
+          type: string
+          format: uuid
+        sampled_node_id:
+          type: string
+        sample_error:
+          type: string
+        last_attempt_at:
+          type: string
+          format: date-time
+        refresh_pending:
+          type: boolean
     Project:
       type: object
       required:
@@ -8715,6 +8832,8 @@ components:
           type: string
           format: date-time
           description: When the project first became workspace-ready.
+        workspace_git:
+          $ref: "#/components/schemas/ProjectWorkspaceGitStatus"
         archived_at:
           type: string
           format: date-time
@@ -11587,6 +11706,8 @@ components:
         last_activity_at:
           type: string
           format: date-time
+        workspace_git:
+          $ref: "#/components/schemas/ProjectWorkspaceGitStatus"
     ProjectPortfolioPagination:
       type: object
       required:

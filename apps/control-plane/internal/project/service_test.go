@@ -13837,6 +13837,54 @@ func (r *memoryRepository) ListProjectDemandsForConsole(ctx context.Context, ten
 	return filtered, nil
 }
 
+func (r *memoryRepository) ListProjectDemandOpenDecisionCounts(ctx context.Context, tenantID, projectID uuid.UUID) ([]DemandDossierSiblingPending, error) {
+	demands, err := r.ListProjectDemands(ctx, tenantID, projectID, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	demandByTask := make(map[uuid.UUID]uuid.UUID)
+	for _, task := range r.tasks {
+		if task.TenantID == tenantID && task.ProjectID == projectID && task.DemandID != nil {
+			demandByTask[task.ID] = *task.DemandID
+		}
+	}
+	demandByRevision := make(map[uuid.UUID]uuid.UUID)
+	for _, revision := range r.planRevisions {
+		if revision.TenantID == tenantID && revision.ProjectID == projectID {
+			demandByRevision[revision.ID] = revision.DemandID
+		}
+	}
+	counts := map[uuid.UUID]int{}
+	for _, decision := range r.decisionRequests {
+		if decision.TenantID != tenantID || decision.ProjectID != projectID {
+			continue
+		}
+		if !isOpenDecisionStatus(decision.StatusSnapshot) {
+			continue
+		}
+		switch {
+		case decision.ProjectTaskID != nil:
+			if demandID, ok := demandByTask[*decision.ProjectTaskID]; ok {
+				counts[demandID]++
+			}
+		case decision.PlanRevisionID != nil:
+			if demandID, ok := demandByRevision[*decision.PlanRevisionID]; ok {
+				counts[demandID]++
+			}
+		}
+	}
+	siblings := make([]DemandDossierSiblingPending, 0, len(demands))
+	for _, demand := range demands {
+		siblings = append(siblings, DemandDossierSiblingPending{
+			DemandID:      demand.ID,
+			OpenDecisions: counts[demand.ID],
+			DemandTitle:   demand.Title,
+			DemandStatus:  string(demand.Status),
+		})
+	}
+	return siblings, nil
+}
+
 func consoleDemandStatusRank(status ProjectDemandStatus) int {
 	switch status {
 	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled, ProjectDemandStatusPlanningFailed:

@@ -329,6 +329,7 @@ type ListRuntimeEventsFilter struct {
 	Severity     *RuntimeEventSeverity
 	NodeID       *string
 	ProviderType *string
+	Since        *time.Time
 	Limit        int32
 	Offset       int32
 }

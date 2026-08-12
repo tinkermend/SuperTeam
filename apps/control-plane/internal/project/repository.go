@@ -48,6 +48,8 @@ type Repository interface {
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	// ListProjectDemandsForConsole 是 HTTP 列表专用序（最近更新 + 非终态优先）。
 	ListProjectDemandsForConsole(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
+	// ListProjectDemandOpenDecisionCounts 左轨角标：每条需求的 pending 决策数（读时聚合）。
+	ListProjectDemandOpenDecisionCounts(ctx context.Context, tenantID, projectID uuid.UUID) ([]DemandDossierSiblingPending, error)
 	CreateConfigRevision(ctx context.Context, req UpdateProjectConfigRequest, project Project, eventID uuid.UUID) (ProjectConfigRevision, error)
 	GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error)
 	GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error)
@@ -547,6 +549,10 @@ type GetProjectTaskGraphRequest struct {
 	DemandID          *uuid.UUID
 	Limit             int32
 	Offset            int32
+	// OmitRecentEvents 跳过 recent_events 子查询（控制台流程图默认 true）。
+	OmitRecentEvents bool
+	// OpenDecisionsOnly 只返回未关闭决策（当前处理），不带历史卡。
+	OpenDecisionsOnly bool
 }
 
 type CreateExecutionSummaryRequest struct {

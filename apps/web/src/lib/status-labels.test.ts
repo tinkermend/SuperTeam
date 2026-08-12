@@ -17,6 +17,10 @@ import {
   statusLabel,
   teamStatusLabel,
   workspaceReadyStatusLabel,
+  workspaceGitCleanLabel,
+  workspaceGitFileCategoryLabel,
+  workspaceGitRepoStateLabel,
+  workspaceGitSampleErrorLabel,
   logActionLabel,
   logModuleLabel,
   logResourceTypeLabel,
@@ -144,6 +148,16 @@ describe("domain overrides", () => {
     expect(workspaceReadyStatusLabel(undefined)).toBe("未知");
   });
 
+  it("workspace git labels cover clean/dirty and repo middle states", () => {
+    expect(workspaceGitCleanLabel("clean")).toBe("工作区干净");
+    expect(workspaceGitCleanLabel("dirty")).toBe("工作区脏");
+    expect(workspaceGitRepoStateLabel("rebase")).toBe("变基进行中");
+    expect(workspaceGitRepoStateLabel("merge")).toBe("合并冲突中");
+    expect(workspaceGitFileCategoryLabel("untracked")).toBe("未跟踪");
+    expect(workspaceGitSampleErrorLabel("节点离线，显示的是 3 分钟前的现场")).toBe(
+      "节点离线，显示的是 3 分钟前的现场",
+    );
+  });
 
   it("demandStatusLabel covers demand lifecycle codes", () => {
     expect(demandStatusLabel("submitted")).toBe("待计划");

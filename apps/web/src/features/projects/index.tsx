@@ -40,6 +40,7 @@ import {
   listProjectRuntimeNodes,
   provisionProjectRuntimeNode,
   markProjectWorkspaceReady,
+  refreshProjectWorkspaceGitStatus,
   recloneProjectWorkspace,
   archiveProject,
   unarchiveProject,
@@ -102,6 +103,7 @@ import {
   ShellPageHeaderBack
 } from "@/components/layout/shell-page-header";
 import { ProjectOperationalDetail } from "./components/project-operational-detail";
+import { normalizeProjectDetailSection } from "./lib/project-detail-section";
 import { ProjectRuntimePlacementPanel } from "./components/project-runtime-placement-panel";
 import { CreateProjectShell } from "./components/create-project";
 import { SubmitDemandDialog } from "./components/submit-demand-dialog";
@@ -343,18 +345,17 @@ export function ProjectsView({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as {
-    /** 需求流程区选中需求（?tab=demands&demand=<id>）。 */
+    /** 需求流程选中需求（?demand=<id>）。 */
     demand?: string;
     focus?: string;
     tab?: string;
     /**
      * `task` 参数两种消费靠 tab 判别（切勿拆成两个参数名）：
      * - `?tab=trace&task=<id>` → 执行轨迹面板过滤（traceTaskId）
-     * - `?tab=tasks&task=<id>` → 打开该任务详情弹层（detailTaskId）
-     * 其他 tab 下的 task 忽略。
+     * - 默认任务页签或 `?tab=tasks&task=<id>` → 打开该任务详情弹层
      */
     task?: string;
-    /** 一单卷宗中栏视图（?tab=demands&demand=<id>&view=timeline|graph）。 */
+    /** 一单卷宗中栏视图（?view=timeline|graph）；流程/历史页签已拆开后较少使用。 */
     view?: string;
     /** 工作台治理子 tab（?governance=evidence）。 */
     governance?: string;
@@ -719,7 +720,9 @@ export function ProjectsView({
     queryKey: ["project-task-graph", effectiveProjectId, latestDemandId],
     queryFn: () =>
       getProjectTaskGraph(apiOptions, effectiveProjectId as string, {
-        demandId: latestDemandId as string
+        demandId: latestDemandId as string,
+        omitRecentEvents: true,
+        openDecisionsOnly: true,
 }),
     placeholderData: keepPreviousData
 });
@@ -977,6 +980,23 @@ export function ProjectsView({
       ]);
     }
 });
+
+  const refreshWorkspaceGitMutation = useMutation({
+    mutationFn: async () => {
+      if (!apiOptions || !effectiveProjectId) {
+        throw new Error("missing project");
+      }
+      return refreshProjectWorkspaceGitStatus(apiOptions, effectiveProjectId);
+    },
+    onSuccess: async (project) => {
+      queryClient.setQueryData(["project", project.id], project);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["project", project.id] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
+      ]);
+    },
+  });
+
 
   const submitDemandMutation = useMutation({
     mutationFn: (input: SubmitProjectDemandInput) =>
@@ -1406,29 +1426,31 @@ export function ProjectsView({
                     executionSummaries={projectExecutionSummaries}
                     fetchTaskGraph={(demandId) =>
                       getProjectTaskGraph(apiOptions, effectiveProjectId as string, {
-                        demandId
+                        demandId,
+                        omitRecentEvents: true,
+                        openDecisionsOnly: true,
 })
                     }
                     focusDecisionId={search.focus}
                     demandView={search.view === "graph" ? "graph" : "timeline"}
                     initialDemandId={search.demand}
                     onDemandViewChange={(view) => {
-                      // 视图进 URL：刷新不丢、深链能直接指到图。
                       void navigate({
                         params: { projectId: effectiveProjectId as string },
                         search: (prev: Record<string, unknown>) => ({
                           ...prev,
-                          tab: "demands",
                           view: view === "graph" ? "graph" : undefined
                         }),
                         to: "/projects/$projectId"
                       });
                     }}
                     initialTab={isProjectOperationalTab(search.tab) ? search.tab : undefined}
-                    // tab=trace：执行轨迹过滤；tab=tasks：开弹层。见上方 search.task 注释。
+                    // tab=trace：执行轨迹过滤；默认/tasks：开弹层。
                     traceTaskId={search.tab === "trace" ? search.task : undefined}
                     detailTaskIdFromUrl={
-                      search.tab === "tasks" ? search.task : undefined
+                      normalizeProjectDetailSection(search.tab) === "tasks"
+                        ? search.task
+                        : undefined
                     }
                     focusEvidenceId={search.evidence}
                     governanceInitialTab={
@@ -1462,6 +1484,10 @@ export function ProjectsView({
                         recloneWorkspaceMutation.mutate(effectiveProjectId);
                       }
                     }}
+                    onRefreshWorkspaceGit={() => {
+                      refreshWorkspaceGitMutation.mutate();
+                    }}
+                    workspaceGitRefreshPending={refreshWorkspaceGitMutation.isPending}
                     onMarkWorkspaceReady={() => {
                       if (effectiveProjectId) {
                         markWorkspaceReadyMutation.mutate(effectiveProjectId);
@@ -1796,7 +1822,9 @@ function isProjectOperationalTab(value: string | undefined): boolean {
     value === "config" ||
     value === "assets" ||
     value === "trace" ||
-    value === "demands"
+    value === "demands" ||
+    value === "flow" ||
+    value === "history"
   );
 }
 

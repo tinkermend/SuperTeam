@@ -2217,6 +2217,57 @@ func (e ProjectTaskGraphHandoffDeliverableVerdict) Valid() bool {
 	}
 }
 
+// Defines values for ProjectWorkspaceGitFileEntryCategory.
+const (
+	Deleted   ProjectWorkspaceGitFileEntryCategory = "deleted"
+	Modified  ProjectWorkspaceGitFileEntryCategory = "modified"
+	Renamed   ProjectWorkspaceGitFileEntryCategory = "renamed"
+	Staged    ProjectWorkspaceGitFileEntryCategory = "staged"
+	Untracked ProjectWorkspaceGitFileEntryCategory = "untracked"
+)
+
+// Valid indicates whether the value is a known member of the ProjectWorkspaceGitFileEntryCategory enum.
+func (e ProjectWorkspaceGitFileEntryCategory) Valid() bool {
+	switch e {
+	case Deleted:
+		return true
+	case Modified:
+		return true
+	case Renamed:
+		return true
+	case Staged:
+		return true
+	case Untracked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectWorkspaceGitStatusRepoState.
+const (
+	Detached ProjectWorkspaceGitStatusRepoState = "detached"
+	Merge    ProjectWorkspaceGitStatusRepoState = "merge"
+	Ok       ProjectWorkspaceGitStatusRepoState = "ok"
+	Rebase   ProjectWorkspaceGitStatusRepoState = "rebase"
+)
+
+// Valid indicates whether the value is a known member of the ProjectWorkspaceGitStatusRepoState enum.
+func (e ProjectWorkspaceGitStatusRepoState) Valid() bool {
+	switch e {
+	case Detached:
+		return true
+	case Merge:
+		return true
+	case Ok:
+		return true
+	case Rebase:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProviderNativeConfigDetailFormat.
 const (
 	ProviderNativeConfigDetailFormatJson ProviderNativeConfigDetailFormat = "json"
@@ -5523,6 +5574,9 @@ type Project struct {
 	TenantId             openapi_types.UUID  `json:"tenant_id"`
 	UpdatedAt            *time.Time          `json:"updated_at,omitempty"`
 
+	// WorkspaceGit Latest observed project directory git status (spec 2026-08-12 P1). Non-git projects are not applicable (not clean). Probe failures keep the previous snapshot and set sample_error.
+	WorkspaceGit *ProjectWorkspaceGitStatus `json:"workspace_git,omitempty"`
+
 	// WorkspaceReadyAt When the project first became workspace-ready.
 	WorkspaceReadyAt *time.Time `json:"workspace_ready_at,omitempty"`
 
@@ -6299,6 +6353,9 @@ type ProjectPortfolioItem struct {
 
 	// TaskCounts 互斥任务状态桶。total = pending+queued+running+waiting_human+blocked+failed+completed+cancelled+other。 waiting_human 为宽口径（任务构成条用）；健康度须另读 attention.waiting_human_unlinked_count。
 	TaskCounts ProjectTaskPortfolioCounts `json:"task_counts"`
+
+	// WorkspaceGit Latest observed project directory git status (spec 2026-08-12 P1). Non-git projects are not applicable (not clean). Probe failures keep the previous snapshot and set sample_error.
+	WorkspaceGit *ProjectWorkspaceGitStatus `json:"workspace_git,omitempty"`
 }
 
 // ProjectPortfolioPagination defines model for ProjectPortfolioPagination.
@@ -6824,6 +6881,42 @@ type ProjectTransferRequest struct {
 	TenantId                     openapi_types.UUID   `json:"tenant_id"`
 	UpdatedAt                    *time.Time           `json:"updated_at,omitempty"`
 }
+
+// ProjectWorkspaceGitFileEntry defines model for ProjectWorkspaceGitFileEntry.
+type ProjectWorkspaceGitFileEntry struct {
+	Category ProjectWorkspaceGitFileEntryCategory `json:"category"`
+	Path     string                               `json:"path"`
+}
+
+// ProjectWorkspaceGitFileEntryCategory defines model for ProjectWorkspaceGitFileEntry.Category.
+type ProjectWorkspaceGitFileEntryCategory string
+
+// ProjectWorkspaceGitStatus Latest observed project directory git status (spec 2026-08-12 P1). Non-git projects are not applicable (not clean). Probe failures keep the previous snapshot and set sample_error.
+type ProjectWorkspaceGitStatus struct {
+	// Applicable False when the directory is not a git repo (or not yet observed as one).
+	Applicable    bool    `json:"applicable"`
+	CurrentBranch *string `json:"current_branch,omitempty"`
+	Detached      *bool   `json:"detached,omitempty"`
+	HeadCommit    *string `json:"head_commit,omitempty"`
+
+	// IsClean Relative to HEAD; null when not applicable / not observed.
+	IsClean              *bool                               `json:"is_clean,omitempty"`
+	IsGitRepo            *bool                               `json:"is_git_repo,omitempty"`
+	LastAttemptAt        *time.Time                          `json:"last_attempt_at,omitempty"`
+	RefreshPending       *bool                               `json:"refresh_pending,omitempty"`
+	RepoState            *ProjectWorkspaceGitStatusRepoState `json:"repo_state,omitempty"`
+	SampleError          *string                             `json:"sample_error,omitempty"`
+	SampledAt            *time.Time                          `json:"sampled_at,omitempty"`
+	SampledNodeId        *string                             `json:"sampled_node_id,omitempty"`
+	SampledRuntimeNodeId *openapi_types.UUID                 `json:"sampled_runtime_node_id,omitempty"`
+	UncommittedCount     int                                 `json:"uncommitted_count"`
+	UncommittedEntries   *[]ProjectWorkspaceGitFileEntry     `json:"uncommitted_entries,omitempty"`
+	UncommittedOmitted   *int                                `json:"uncommitted_omitted,omitempty"`
+	UncommittedTruncated *bool                               `json:"uncommitted_truncated,omitempty"`
+}
+
+// ProjectWorkspaceGitStatusRepoState defines model for ProjectWorkspaceGitStatus.RepoState.
+type ProjectWorkspaceGitStatusRepoState string
 
 // ProjectWorkspaceManualActionRequest defines model for ProjectWorkspaceManualActionRequest.
 type ProjectWorkspaceManualActionRequest struct {
@@ -8833,6 +8926,7 @@ type ListRuntimeEventsParams struct {
 	Severity     *RuntimeEventSeverity `form:"severity,omitempty" json:"severity,omitempty"`
 	NodeId       *string               `form:"node_id,omitempty" json:"node_id,omitempty"`
 	ProviderType *string               `form:"provider_type,omitempty" json:"provider_type,omitempty"`
+	Since        *time.Time            `form:"since,omitempty" json:"since,omitempty"`
 }
 
 // HeartbeatRuntimeNodeParams defines parameters for HeartbeatRuntimeNode.
@@ -10389,6 +10483,9 @@ type ServerInterface interface {
 	// Restore an archived project to running
 	// (POST /api/v1/projects/{projectId}/unarchive)
 	UnarchiveProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
+	// Refresh observed project directory git status from the primary runtime node
+	// (POST /api/v1/projects/{projectId}/workspace/git-status/refresh)
+	RefreshProjectWorkspaceGitStatus(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Mark project workspace ready after manual disk repair
 	// (POST /api/v1/projects/{projectId}/workspace/mark-ready)
 	MarkProjectWorkspaceReady(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -11661,6 +11758,12 @@ func (_ Unimplemented) ListProjectTransferRequests(w http.ResponseWriter, r *htt
 // Restore an archived project to running
 // (POST /api/v1/projects/{projectId}/unarchive)
 func (_ Unimplemented) UnarchiveProject(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Refresh observed project directory git status from the primary runtime node
+// (POST /api/v1/projects/{projectId}/workspace/git-status/refresh)
+func (_ Unimplemented) RefreshProjectWorkspaceGitStatus(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -17979,6 +18082,32 @@ func (siw *ServerInterfaceWrapper) UnarchiveProject(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// RefreshProjectWorkspaceGitStatus operation middleware
+func (siw *ServerInterfaceWrapper) RefreshProjectWorkspaceGitStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshProjectWorkspaceGitStatus(w, r, projectId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // MarkProjectWorkspaceReady operation middleware
 func (siw *ServerInterfaceWrapper) MarkProjectWorkspaceReady(w http.ResponseWriter, r *http.Request) {
 
@@ -18709,6 +18838,19 @@ func (siw *ServerInterfaceWrapper) ListRuntimeEvents(w http.ResponseWriter, r *h
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "provider_type"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider_type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "since" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "since", r.URL.Query(), &params.Since, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "since"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "since", Err: err})
 		}
 		return
 	}
@@ -21964,6 +22106,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/unarchive", wrapper.UnarchiveProject)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/workspace/git-status/refresh", wrapper.RefreshProjectWorkspaceGitStatus)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/workspace/mark-ready", wrapper.MarkProjectWorkspaceReady)

@@ -122,8 +122,10 @@ export function MasterDetailLayout({
           detailInFlow && isWide && railGridCols[rail],
         )}
       >
-        {master}
-        {detailInFlow ? detail : null}
+        <div className={cn("min-w-0", fill && "h-full min-h-0")}>{master}</div>
+        {detailInFlow ? (
+          <div className={cn("min-w-0", fill && "h-full min-h-0")}>{detail}</div>
+        ) : null}
       </div>
       {detail && !isWide && narrowDetail === "sheet" ? (
         <Sheet

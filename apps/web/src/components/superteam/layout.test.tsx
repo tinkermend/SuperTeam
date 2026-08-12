@@ -60,6 +60,11 @@ describe("MasterDetailLayout", () => {
     expect(grid.className).toContain("h-full");
     expect(grid.className).toContain("items-stretch");
     expect(grid.className).not.toContain("items-start");
+    // 两列外包一层 min-w-0，避免长路径把轨道撑破；fill 时高度继续透传。
+    for (const child of Array.from(grid.children)) {
+      expect((child as HTMLElement).className).toContain("min-w-0");
+      expect((child as HTMLElement).className).toContain("h-full");
+    }
   });
 
   it("keeps the page-scrolling default when fill is not set", async () => {

@@ -627,6 +627,30 @@ describe("project API", () => {
     );
   });
 
+  it("passes slim task-graph filters for console flow", async () => {
+    const fetcher = vi.fn(async () =>
+      new Response(JSON.stringify({ nodes: [], edges: [] }), {
+        headers: { "content-type": "application/json" },
+        status: 200,
+      }),
+    );
+
+    await getProjectTaskGraph(
+      { baseUrl: "http://control-plane.local", fetcher },
+      "project-1",
+      {
+        demandId: "demand-1",
+        omitRecentEvents: true,
+        openDecisionsOnly: true,
+      },
+    );
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project-1/task-graph?demand_id=demand-1&omit_recent_events=true&open_decisions_only=true",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("gets a single project task by id (deep-link fallback)", async () => {
     const task = {
       id: "55555555-5555-4555-8555-555555555555",

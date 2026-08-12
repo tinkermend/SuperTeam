@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -22,6 +23,9 @@ func NewProjectWorkspaceCloneWritebackAdapter(service *Service) employee.Project
 }
 
 func (a ProjectWorkspaceCloneWritebackAdapter) OnProjectWorkspaceCommandTerminal(ctx context.Context, receipt employee.RuntimeCommandReceipt, success bool) error {
+	if strings.TrimSpace(receipt.CommandType) == runtimeCommandProbeProjectDirectory {
+		return a.applyProbeReceipt(ctx, receipt, success)
+	}
 	errMsg := ""
 	if receipt.ErrorMessage != nil {
 		errMsg = *receipt.ErrorMessage

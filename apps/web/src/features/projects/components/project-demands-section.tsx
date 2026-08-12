@@ -42,6 +42,16 @@ import { DemandDossierTimeline } from "./demand-dossier-timeline";
 import { StaffGapDialog } from "./staff-gap-dialog";
 import { DemandProcessRail } from "./demand-process-rail";
 
+/**
+ * 流程/历史右栏不展示证据与工件：资产 tab 已有可查看/下载入口，
+ * 这里只剩截断路径、不可点，占栏无意义。交付判定 / 结论 / 分支提交仍留。
+ */
+const DOSSIER_RAIL_OMITTED_KINDS = new Set(["evidence_ref", "artifact_ref"]);
+
+function dossierRailSlotsForWorkbench(dossier: ProjectDemandDossier) {
+  return dossier.rail.slots.filter((slot) => !DOSSIER_RAIL_OMITTED_KINDS.has(slot.kind));
+}
+
 // 与工作台执行图同一权威画布（@xyflow/react 重依赖，懒加载同一 chunk）。
 const FlowGraphCanvas = lazy(() =>
   import("@/features/flow-graph/flow-graph-canvas").then((m) => ({
@@ -159,6 +169,7 @@ export function ProjectDemandsSection({
     queryFn: () =>
       getProjectDemandDossier(apiOptions, selectedDemand!.id, { siblingPending: true }),
     queryKey: ["demand-dossier", apiBaseUrl, selectedDemand?.id],
+    staleTime: 15_000,
     // 兜底轮询只在 drive 密度下开：卷宗是重聚合（launch facts + 交接判定 +
     // 证据/工件 + 补名），巡检态还每 30s 重拉一遍纯属浪费。秒级活性由 SSE
     // invalidate 承担，这里只兜 SSE 不可用的情况。
@@ -200,9 +211,18 @@ export function ProjectDemandsSection({
     queryFn: () => fetchTaskGraph!(selectedDemand!.id),
     // 与页面预载/任务弹层同 key 族：最新需求直接命中缓存。
     queryKey: ["project-task-graph", projectId, selectedDemand?.id],
-    refetchInterval: 30_000
+    refetchInterval: 30_000,
+    staleTime: 15_000
 });
-  const graph = graphQuery.data;
+  // 切 demand 时 keepPreviousData 可能短暂留着上一单的图；只认当前 demand 的节点。
+  const graph = useMemo(() => {
+    const data = graphQuery.data;
+    if (!data || !selectedDemand) return undefined;
+    const belongs =
+      data.nodes.length === 0 ||
+      data.nodes.some((node) => node.demand_id === selectedDemand.id);
+    return belongs ? data : undefined;
+  }, [graphQuery.data, selectedDemand]);
 
   const pendingByDemand = useMemo(() => {
     const map = new Map<string, number>();
@@ -275,8 +295,42 @@ export function ProjectDemandsSection({
               />
             </SoftCard>
           ) : !dossier ? (
-            <LoadingState label="正在加载这一单…" />
+            <SoftCard className="grid gap-3 p-4" data-testid="demand-dossier-loading">
+              <div className="min-w-0">
+                <h3 className="truncate text-base font-semibold text-ink">
+                  {selectedDemand.title}
+                </h3>
+                <p className="mt-1 text-[13px] text-ink-3">正在加载这一单的卷宗…</p>
+              </div>
+              {activeView === "graph" ? (
+                graph && graph.nodes.length > 0 ? (
+                  <section className="grid gap-2" data-testid="demand-flow-graph-section">
+                    <Suspense fallback={<LoadingState label="正在加载执行图…" />}>
+                      <FlowGraphCanvas
+                        key={selectedDemand.id}
+                        graph={graph}
+                        live
+                        onNodeOpen={(nodeId) => {
+                          const taskId = taskIdFromNodeId(nodeId);
+                          if (taskId) onOpenTask(taskId);
+                        }}
+                        onSelectedNodeChange={(nodeId) => {
+                          if (!nodeId) onClearTask?.();
+                        }}
+                        selectedNodeId={detailTaskId ? taskNodeId(detailTaskId) : undefined}
+                      />
+                    </Suspense>
+                  </section>
+                ) : graphQuery.isPending ? (
+                  <LoadingState label="正在加载执行图…" />
+                ) : null
+              ) : (
+                <LoadingState label="正在加载协调时间线…" />
+              )}
+            </SoftCard>
           ) : (
+            // 卷宗壳已占左侧需求列表；嵌套主从用 lg（@5xl / 420px），
+            // 避免 md 在剩余宽度刚过 @4xl 时并排把右栏挤扁。
             <MasterDetailLayout
               detail={
                 <DemandDossierRail
@@ -292,7 +346,7 @@ export function ProjectDemandsSection({
                   acceptanceOpen={acceptanceOpen}
                   handoffSummary={dossier.handoff_summary}
                   onAcceptanceToggle={() => setAcceptanceOpen((value) => !value)}
-                  slots={dossier.rail.slots}
+                  slots={dossierRailSlotsForWorkbench(dossier)}
                 />
               }
               master={
@@ -309,7 +363,7 @@ export function ProjectDemandsSection({
                         <h3 className="text-sm font-semibold tracking-normal">权威流程图</h3>
                       </div>
                       {graph && graph.nodes.length > 0 ? (
-                        <Suspense fallback={<LoadingState />}>
+                        <Suspense fallback={<LoadingState label="正在加载执行图…" />}>
                           {/* key 按需求重挂画布：切需求即终止上一需求可能在进行的回放会话。 */}
                           <FlowGraphCanvas
                             key={selectedDemand.id}
@@ -325,7 +379,7 @@ export function ProjectDemandsSection({
                             selectedNodeId={detailTaskId ? taskNodeId(detailTaskId) : undefined}
                           />
                         </Suspense>
-                      ) : graphQuery.isFetching || graphQuery.isLoading ? (
+                      ) : graphQuery.isPending ? (
                         <LoadingState label="正在加载执行图…" />
                       ) : (
                         <SoftCard className="p-6">
@@ -351,7 +405,7 @@ export function ProjectDemandsSection({
                 </div>
               }
               narrowDetail="stack"
-              rail="md"
+              rail="lg"
             />
           )}
         </div>

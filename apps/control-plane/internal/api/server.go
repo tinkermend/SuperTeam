@@ -433,6 +433,7 @@ func (s *Server) registerRoutes() {
 				r.Post("/projects/{projectId}/runtime-nodes/{runtimeNodeId}/provision", s.projectHandler.ProvisionWorkspaceOnNode)
 				r.Post("/projects/{projectId}/workspace/reclone", s.projectHandler.RecloneProjectWorkspace)
 				r.Post("/projects/{projectId}/workspace/mark-ready", s.projectHandler.MarkProjectWorkspaceReady)
+				r.Post("/projects/{projectId}/workspace/git-status/refresh", s.projectHandler.RefreshProjectWorkspaceGitStatus)
 				r.Get("/projects/{projectId}/runtime-readiness", s.projectHandler.GetProjectRuntimeReadiness)
 				r.Get("/projects/{projectId}/runtime-nodes", s.projectHandler.ListProjectRuntimeNodes)
 				r.Get("/projects/{projectId}/members", s.projectHandler.ListProjectMembers)

@@ -95,3 +95,37 @@ func TestResolveDeclaredDeliverableRefsToleratesMissingPrefix(t *testing.T) {
 		t.Fatalf("缺前缀写法应命中, got %q", resolved.Deliverables[0].Ref)
 	}
 }
+
+func TestResolveDeclaredDeliverableRefsAcceptsSessionPrefix(t *testing.T) {
+	id := uuid.New()
+	sessionPath := ".superteam/sessions/cmd-1/deliverables/report.html"
+	declared := map[string]uuid.UUID{
+		sessionPath:    id,
+		"report.html":  id,
+		"deliverables/report.html": id,
+	}
+	contract := TaskResultContract{Deliverables: []TaskResultDeliverable{
+		{Name: "report", Ref: sessionPath},
+		{Name: "legacy", Ref: "deliverables/report.html"},
+		{Name: "bare", Ref: "report.html"},
+	}}
+	resolved := resolveDeclaredDeliverableRefs(contract, declared)
+	for i, item := range resolved.Deliverables {
+		if item.Ref != id.String() {
+			t.Fatalf("deliverable %d ref = %q, want artifact id", i, item.Ref)
+		}
+	}
+}
+
+func TestStripSessionDeliverablesPrefix(t *testing.T) {
+	rest, ok := stripSessionDeliverablesPrefix(".superteam/sessions/cmd-9/deliverables/sub/a.json")
+	if !ok || rest != "sub/a.json" {
+		t.Fatalf("got %q ok=%v", rest, ok)
+	}
+	if _, ok := stripSessionDeliverablesPrefix("deliverables/a.json"); ok {
+		t.Fatal("legacy prefix must not match session stripper")
+	}
+	if _, ok := stripSessionDeliverablesPrefix(".superteam/sessions/cmd-9/mcp/claude.mcp.json"); ok {
+		t.Fatal("non-deliverables session path must not strip")
+	}
+}

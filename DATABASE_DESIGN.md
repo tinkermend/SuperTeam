@@ -379,7 +379,19 @@ CREATE UNIQUE INDEX uq_task_events_run_sequence
 - 内部 actor/resource 优先保存 UUID；外部对象使用 `external_ref` 或 `resource_ref`。
 - 高风险动作、需求歧义、权限不足、上线发布、删除写入、测试失败后的业务判断，都应能落到审批或审计记录。
 
-## 10. Migration、sqlc 与 OpenAPI
+### 9.8 项目工作区观测
+
+建议边界：
+
+- `projects`：项目主表（业务身份与供给态）。
+- `project_workspace_git_snapshots`：与 projects 1:1 的最近一次 git 现场快照；清单截断后落 JSONB；失败只写 `sample_error`，不得覆盖成功快照。
+
+要求：
+
+- 不得为展示字段往 `projects` 主表追加十余列。
+- `sampled_at` 单调覆盖写；探测失败保留上次快照。
+- 非 git 目录为不适用，不是干净。
+
 
 ### 10.1 Migration 策略
 

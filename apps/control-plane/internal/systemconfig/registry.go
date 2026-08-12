@@ -31,6 +31,7 @@ const (
 	KeyRuntimeWorkspaceBaseDir            = "runtime.workspace_base_dir"
 	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
 	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
+	KeyProjectWorkspaceGitSampleIntervalSeconds = "project.workspace_git_sample_interval_seconds"
 	KeyProjectTaskDefaultMaxAttempts       = "project_task.default_max_attempts"
 	// KeyCastingGapDiscoveryMaxPerDemand bounds semantic casting-gap discoverer
 	// LLM calls per demand (design 2026-08-05 §3.3 / open detail #2). 0 disables.
@@ -206,6 +207,18 @@ var registry = []Definition{
 		DefaultValue: 15 * 60,
 		MinValue:     2 * 60,
 		MaxValue:     6 * 3600,
+	},
+	{
+		Key:    KeyProjectWorkspaceGitSampleIntervalSeconds,
+		Domain: DomainExecution,
+		Label:  "项目工作区 git 采样间隔",
+		Description: "控制平面看门狗对已就绪项目主节点探测 git 现场的基础间隔。" +
+			"空闲（干净且无采样错误）项目按内部固定倍数降频；单轮批量上限为常量。" +
+			"只影响展示时钟，不在派发前或 attempt 开始时采集。",
+		ValueType:    ValueTypeDurationSeconds,
+		DefaultValue: 60,
+		MinValue:     15,
+		MaxValue:     600,
 	},
 	{
 		Key:    KeyProjectTaskDefaultMaxAttempts,

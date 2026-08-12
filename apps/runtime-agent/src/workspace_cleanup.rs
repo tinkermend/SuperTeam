@@ -5,7 +5,9 @@
 //!   任务工作区（仅 `{base}/workspaces/` 三级 attempt 目录；chat 线程目录有自己
 //!   的会话连续性语义，从不在终态清理）。
 //! - 后台清扫（janitor）：任务工作区按项目 LRU 裁剪到 `max_retained`；chat 线程
-//!   目录按 TTL + 每项目条数兜底清理。活跃 run 引用的目录一律跳过。
+//!   目录按 TTL + 每项目条数兜底清理；稳定项目目录内 `.superteam/sessions/`
+//!   输出子树按会话数封顶（声明式交付物隐藏目录，spec 2026-08-12 P0）。活跃 run
+//!   引用的目录一律跳过。
 //!
 //! 稳定项目目录 `{base}/{project_name}`（spec 2026-07-23）**永不**进入本模块的
 //! 删除计划：`TerminalWorkspaceCleanup::plan` 只认 legacy
@@ -102,12 +104,15 @@ pub struct SweepConfig {
     pub chat_ttl: Duration,
     /// 每项目保留的 chat 线程目录数上限（TTL 内也裁剪）。
     pub chat_max_retained: usize,
+    /// 每个工作区保留的 `.superteam/sessions/{command_id}` 输出子树数（LRU）。
+    pub max_retained_session_outputs: usize,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct SweepReport {
     pub removed_workspaces: usize,
     pub removed_chat_threads: usize,
+    pub removed_session_outputs: usize,
 }
 
 /// 后台清扫。`active` 为当前非终态 run 引用的工作区绝对路径集合，一律跳过。
@@ -115,6 +120,7 @@ pub fn sweep(base_dir: &Path, config: &SweepConfig, active: &HashSet<PathBuf>) -
     let mut report = SweepReport::default();
     report.removed_workspaces = sweep_task_workspaces(base_dir, config, active);
     report.removed_chat_threads = sweep_chat_threads(base_dir, config, active);
+    report.removed_session_outputs = sweep_session_outputs(base_dir, config, active);
     report
 }
 
@@ -178,6 +184,90 @@ fn sweep_chat_threads(base_dir: &Path, config: &SweepConfig, active: &HashSet<Pa
         }
     }
     removed
+}
+
+const RESERVED_BASE_DIR_NAMES: &[&str] = &["workspaces", "chat", "repos", "employees"];
+
+/// 稳定项目目录 / chat 线程 / legacy attempt 目录里的会话输出子树封顶。
+/// 工作区仍被活跃 run 引用时整棵跳过，避免删掉正在写的 command 输出。
+fn sweep_session_outputs(
+    base_dir: &Path,
+    config: &SweepConfig,
+    active: &HashSet<PathBuf>,
+) -> usize {
+    let mut removed = 0usize;
+    for project_dir in list_dirs(base_dir) {
+        let name = project_dir
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        if RESERVED_BASE_DIR_NAMES.contains(&name) || name.starts_with('.') {
+            continue;
+        }
+        removed += sweep_one_sessions_tree(
+            &project_dir.join(".superteam/sessions"),
+            config,
+            active.contains(&project_dir),
+        );
+    }
+    for project in list_dirs(&base_dir.join("chat")) {
+        for thread in list_dirs(&project) {
+            removed += sweep_one_sessions_tree(
+                &thread.join(".superteam/sessions"),
+                config,
+                active.contains(&thread),
+            );
+        }
+    }
+    for project in list_dirs(&base_dir.join("workspaces")) {
+        for task in list_dirs(&project) {
+            for attempt in list_dirs(&task) {
+                removed += sweep_one_sessions_tree(
+                    &attempt.join(".superteam/sessions"),
+                    config,
+                    active.contains(&attempt),
+                );
+            }
+        }
+    }
+    removed
+}
+
+fn sweep_one_sessions_tree(
+    sessions_dir: &Path,
+    config: &SweepConfig,
+    workspace_active: bool,
+) -> usize {
+    if workspace_active || !sessions_dir.is_dir() {
+        return 0;
+    }
+    let mut sessions: Vec<(SystemTime, PathBuf)> = list_dirs(sessions_dir)
+        .into_iter()
+        .map(|dir| (session_output_activity(&dir), dir))
+        .collect();
+    if sessions.len() <= config.max_retained_session_outputs {
+        return 0;
+    }
+    sessions.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut removed = 0usize;
+    for (_, session_dir) in sessions
+        .iter()
+        .skip(config.max_retained_session_outputs)
+    {
+        remove_workspace_dir(session_dir, None);
+        removed += 1;
+    }
+    removed
+}
+
+fn session_output_activity(session_dir: &Path) -> SystemTime {
+    let own = last_activity(session_dir);
+    let deliverables = session_dir.join("deliverables");
+    if deliverables.is_dir() {
+        own.max(last_activity(&deliverables))
+    } else {
+        own
+    }
 }
 
 fn project_repo_path(base_dir: &Path, project_dir: &Path) -> Option<PathBuf> {
@@ -245,6 +335,7 @@ pub fn spawn_janitor(config: crate::config::RuntimeConfig, runs: crate::runs::Ru
         max_retained_workspaces: config.workspace.max_retained as usize,
         chat_ttl: Duration::from_secs(u64::from(config.workspace.chat_ttl_days) * 86_400),
         chat_max_retained: config.workspace.chat_max_retained as usize,
+        max_retained_session_outputs: config.workspace.max_retained as usize,
     };
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(60)).await;
@@ -257,10 +348,15 @@ pub fn spawn_janitor(config: crate::config::RuntimeConfig, runs: crate::runs::Ru
             })
             .await
             .unwrap_or_default();
-            if report.removed_workspaces > 0 || report.removed_chat_threads > 0 {
+            if report.removed_workspaces > 0
+                || report.removed_chat_threads > 0
+                || report.removed_session_outputs > 0
+            {
                 eprintln!(
-                    "workspace janitor: removed {} task workspaces, {} chat threads",
-                    report.removed_workspaces, report.removed_chat_threads
+                    "workspace janitor: removed {} task workspaces, {} chat threads, {} session outputs",
+                    report.removed_workspaces,
+                    report.removed_chat_threads,
+                    report.removed_session_outputs
                 );
             }
             tokio::time::sleep(Duration::from_secs(30 * 60)).await;
@@ -353,6 +449,7 @@ mod tests {
                 max_retained_workspaces: 2,
                 chat_ttl: Duration::from_secs(7 * 86_400),
                 chat_max_retained: 20,
+                max_retained_session_outputs: 10,
             },
             &active,
         );
@@ -382,6 +479,7 @@ mod tests {
                 max_retained_workspaces: 10,
                 chat_ttl: Duration::from_secs(7 * 86_400),
                 chat_max_retained: 20,
+                max_retained_session_outputs: 10,
             },
             &HashSet::new(),
         );
@@ -399,11 +497,57 @@ mod tests {
                 max_retained_workspaces: 10,
                 chat_ttl: Duration::from_secs(7 * 86_400),
                 chat_max_retained: 2,
+                max_retained_session_outputs: 10,
             },
             &HashSet::new(),
         );
         assert_eq!(report.removed_chat_threads, 1);
         assert_eq!(list_dirs(&base.join("chat/p2")).len(), 2);
+    }
+
+    #[test]
+    fn sweep_prunes_session_outputs_beyond_retention_and_skips_active_workspace() {
+        let temp = TempDir::new().unwrap();
+        let base = temp.path();
+        let project = base.join("acme-app");
+        for (name, age_days) in [("cmd-1", 5u64), ("cmd-2", 4), ("cmd-3", 3), ("cmd-4", 1)] {
+            let deliverables = project.join(".superteam/sessions").join(name).join("deliverables");
+            mk(&deliverables);
+            std::fs::write(deliverables.join("out.html"), name).unwrap();
+            set_mtime(&deliverables, Duration::from_secs(age_days * 86_400));
+            set_mtime(deliverables.parent().unwrap(), Duration::from_secs(age_days * 86_400));
+        }
+        let active_project = base.join("busy-app");
+        for name in ["old", "new"] {
+            let deliverables = active_project
+                .join(".superteam/sessions")
+                .join(name)
+                .join("deliverables");
+            mk(&deliverables);
+            std::fs::write(deliverables.join("out.html"), name).unwrap();
+        }
+
+        let active: HashSet<PathBuf> = [active_project.clone()].into();
+        let report = sweep(
+            base,
+            &SweepConfig {
+                max_retained_workspaces: 10,
+                chat_ttl: Duration::from_secs(7 * 86_400),
+                chat_max_retained: 20,
+                max_retained_session_outputs: 2,
+            },
+            &active,
+        );
+        assert_eq!(report.removed_session_outputs, 2);
+        assert!(project.join(".superteam/sessions/cmd-4").exists());
+        assert!(project.join(".superteam/sessions/cmd-3").exists());
+        assert!(!project.join(".superteam/sessions/cmd-2").exists());
+        assert!(!project.join(".superteam/sessions/cmd-1").exists());
+        assert!(
+            active_project.join(".superteam/sessions/old").exists(),
+            "active workspace session outputs must not be pruned"
+        );
+        assert!(active_project.join(".superteam/sessions/new").exists());
     }
 
     #[test]

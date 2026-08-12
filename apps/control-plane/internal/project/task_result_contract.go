@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/google/uuid"
@@ -525,8 +526,14 @@ func resolveDeclaredDeliverableRefs(contract TaskResultContract, declared map[st
 		}
 		artifactRefID, ok := declared[ref]
 		if !ok {
-			// 兼容 agent 只写文件名或省略 deliverables/ 前缀的写法。
-			artifactRefID, ok = declared[strings.TrimPrefix(ref, "deliverables/")]
+			// 兼容 agent 只写文件名、省略前缀、或仍用旧 deliverables/ 前缀。
+			// 新前缀 .superteam/sessions/{command_id}/deliverables/ 与旧前缀都认。
+			for _, alias := range declaredDeliverableLookupAliases(ref) {
+				artifactRefID, ok = declared[alias]
+				if ok {
+					break
+				}
+			}
 		}
 		if !ok {
 			continue
@@ -537,6 +544,58 @@ func resolveDeclaredDeliverableRefs(contract TaskResultContract, declared map[st
 		}
 	}
 	return contract
+}
+
+// declaredDeliverableLookupAliases 把契约 ref 展开成可能出现在 declared 映射里的键：
+// 文件名、去掉旧 `deliverables/` 前缀、去掉新会话输出前缀后的相对路径。
+func declaredDeliverableLookupAliases(ref string) []string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil
+	}
+	seen := map[string]struct{}{ref: {}}
+	aliases := make([]string, 0, 4)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		aliases = append(aliases, value)
+	}
+	if trimmed, ok := strings.CutPrefix(ref, "deliverables/"); ok {
+		add(trimmed)
+	}
+	if rest, ok := stripSessionDeliverablesPrefix(ref); ok {
+		add(rest)
+		add("deliverables/" + rest)
+	}
+	if base := path.Base(ref); base != "." && base != "/" && base != ref {
+		add(base)
+	}
+	return aliases
+}
+
+// stripSessionDeliverablesPrefix 识别 `.superteam/sessions/{command_id}/deliverables/` 前缀。
+func stripSessionDeliverablesPrefix(ref string) (string, bool) {
+	const sessionsPrefix = ".superteam/sessions/"
+	if !strings.HasPrefix(ref, sessionsPrefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(ref, sessionsPrefix)
+	slash := strings.IndexByte(rest, '/')
+	if slash <= 0 {
+		return "", false
+	}
+	afterCommand := rest[slash+1:]
+	const deliverablesPrefix = "deliverables/"
+	if !strings.HasPrefix(afterCommand, deliverablesPrefix) {
+		return "", false
+	}
+	return strings.TrimPrefix(afterCommand, deliverablesPrefix), true
 }
 
 // taskPlannerProduces mirrors projectcoordination.plannerProducesFromMetadata:

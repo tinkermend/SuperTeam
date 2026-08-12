@@ -1083,6 +1083,8 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 	if container.ProjectService != nil && container.SystemConfig != nil {
 		// 僵尸任务收敛看门狗(卡死任务收敛 spec P1):孤儿 running 任务兜底 + 既有 attempt 恢复接线。
 		go startStuckTaskReconciler(ctx, container.ProjectService, container.SystemConfig)
+		// 项目工作区 git 状态采样看门狗（spec 2026-08-12 P1）。
+		go startWorkspaceGitStatusReconciler(ctx, container.ProjectService, container.SystemConfig)
 	}
 	if container.InboxChangeNotifier != nil {
 		go container.InboxChangeNotifier.Start(ctx)

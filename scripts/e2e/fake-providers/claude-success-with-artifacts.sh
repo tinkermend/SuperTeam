@@ -19,13 +19,31 @@ if [ "${1:-}" = "--version" ]; then
 fi
 
 # cwd 是任务工作区（claude provider current_dir=workspace_path）
-mkdir -p deliverables
+# 声明式交付物写入本轮会话输出子目录（spec 2026-08-12 P0）；无会话目录时回退旧路径。
+# 多会话并存时取最近修改的 sessions/*（勿用字典序首个，否则会串写入旧 command）。
+DELIV_DIR="deliverables"
+newest_session="$(
+  python3 - <<'PY'
+from pathlib import Path
+root = Path(".superteam/sessions")
+if not root.is_dir():
+    raise SystemExit(0)
+dirs = [p for p in root.iterdir() if p.is_dir()]
+if not dirs:
+    raise SystemExit(0)
+print(max(dirs, key=lambda p: p.stat().st_mtime))
+PY
+)"
+if [ -n "${newest_session}" ] && [ -d "${newest_session}" ]; then
+  DELIV_DIR="${newest_session}/deliverables"
+fi
+mkdir -p "$DELIV_DIR"
 stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 marker="superteam-rustfs-runtime-artifact-${stamp}"
 
 # 默认至少写一个声明式交付物 + 一个 execution_output 候选
 printf '%s\n' "# RustFS runtime artifact smoke" "" "marker: ${marker}" "" "ok" \
-  > "deliverables/rustfs-smoke-report.md"
+  > "$DELIV_DIR/rustfs-smoke-report.md"
 printf '%s\n' "execution_output candidate" "marker: ${marker}" \
   > "rustfs-smoke-notes.md"
 
@@ -33,10 +51,11 @@ printf '%s\n' "execution_output candidate" "marker: ${marker}" \
 deliv_json='[]'
 if [ -f "$PRODUCES_FILE" ]; then
   # shellcheck disable=SC2016
-  deliv_json="$(PRODUCES_FILE="$PRODUCES_FILE" MARKER="$marker" python3 - <<'PY'
+  deliv_json="$(PRODUCES_FILE="$PRODUCES_FILE" MARKER="$marker" DELIV_DIR="$DELIV_DIR" python3 - <<'PY'
 import json, os, pathlib
 path = pathlib.Path(os.environ["PRODUCES_FILE"])
 marker = os.environ["MARKER"]
+root = pathlib.Path(os.environ["DELIV_DIR"])
 try:
     names = json.loads(path.read_text())
 except Exception:
@@ -44,8 +63,7 @@ except Exception:
 if not isinstance(names, list):
     names = []
 deliverables = []
-root = pathlib.Path("deliverables")
-root.mkdir(exist_ok=True)
+root.mkdir(parents=True, exist_ok=True)
 for raw in names:
     name = str(raw).strip()
     if not name:
@@ -58,7 +76,7 @@ for raw in names:
     )
     deliverables.append({
         "name": name,
-        "ref": f"deliverables/{fname}",
+        "ref": f"{root.as_posix()}/{fname}",
         "value": "ok",
     })
 print(json.dumps(deliverables, ensure_ascii=False))
@@ -67,10 +85,11 @@ PY
 fi
 
 # result 字段是字符串；若本身是 JSON 对象文本，runtime 会 parse 出 result_contract
-RESULT_OBJ="$(DELIV="$deliv_json" MARKER="$marker" ACCEPT_FILE="$ACCEPT_FILE" python3 - <<'PY'
+RESULT_OBJ="$(DELIV="$deliv_json" MARKER="$marker" ACCEPT_FILE="$ACCEPT_FILE" DELIV_DIR="$DELIV_DIR" python3 - <<'PY'
 import json, os, pathlib
 deliverables = json.loads(os.environ["DELIV"] or "[]")
 marker = os.environ["MARKER"]
+deliv_dir = os.environ.get("DELIV_DIR") or "deliverables"
 accept_path = pathlib.Path(os.environ.get("ACCEPT_FILE") or "")
 acceptance = []
 if accept_path.is_file():
@@ -80,11 +99,12 @@ if accept_path.is_file():
             for c in raw:
                 text = str(c).strip()
                 if text:
+                    fallback = f"{deliv_dir}/rustfs-smoke-report.md"
                     acceptance.append({
                         "criterion": text,
                         "status": "passed",
                         "summary": f"satisfied by fake provider marker={marker}",
-                        "evidence_refs": [f"deliverables/{deliverables[0]['name']}.md" if deliverables else "deliverables/rustfs-smoke-report.md"],
+                        "evidence_refs": [deliverables[0]["ref"] if deliverables else fallback],
                     })
     except Exception:
         pass

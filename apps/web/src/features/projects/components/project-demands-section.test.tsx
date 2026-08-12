@@ -438,6 +438,63 @@ describe("ProjectDemandsSection", () => {
     await expect.element(screen.getByText("剧本 · 软件交付")).toBeVisible();
   });
 
+  it("omits evidence and artifact slots from the flow/history rail", async () => {
+    const screen = await renderSection({
+      apiOptions: {
+        baseUrl: "http://cp.test",
+        fetcher: stubFetcher({
+          rail: {
+            slots: [
+              {
+                items: [
+                  {
+                    id: "conclusion:1",
+                    state: "info",
+                    summary: "交付结论摘要",
+                    title: "结论项",
+                  },
+                ],
+                kind: "conclusion",
+                title: "结论",
+              },
+              {
+                items: [
+                  {
+                    id: "evidence:1",
+                    ref: "artifacts/tenant/sha256/abc",
+                    state: "delivered",
+                    title: "raw.jsonl",
+                  },
+                ],
+                kind: "evidence_ref",
+                title: "证据",
+              },
+              {
+                items: [
+                  {
+                    id: "artifact:1",
+                    ref: "artifacts/tenant/sha256/def",
+                    state: "delivered",
+                    title: "report.md",
+                  },
+                ],
+                kind: "artifact_ref",
+                title: "工件",
+              },
+            ],
+          },
+        }),
+      },
+    });
+
+    await expect.element(screen.getByTestId("demand-dossier-slot-conclusion")).toBeVisible();
+    expect(screen.container.querySelector('[data-testid="demand-dossier-slot-evidence_ref"]')).toBeNull();
+    expect(screen.container.querySelector('[data-testid="demand-dossier-slot-artifact_ref"]')).toBeNull();
+    expect(screen.container.querySelector('[data-testid="demand-dossier-rail"]')?.textContent).not.toContain(
+      "raw.jsonl",
+    );
+  });
+
   it("keeps 继续这一单 out of the flow/history dossier pane (shell river owns it)", async () => {
     const screen = await renderSection({
       apiOptions: {

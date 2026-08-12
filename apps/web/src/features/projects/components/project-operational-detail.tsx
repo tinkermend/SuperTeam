@@ -107,12 +107,16 @@ import { ProjectDemandsSection } from "./project-demands-section";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
 import { ProjectTaskDetailDialog } from "./project-task-detail-dialog";
 import { ProjectOwnerAvatarStack } from "./project-owner-avatar-stack";
+import { ProjectWorkspaceGitPanel } from "./project-workspace-git-panel";
 import {
   assetsInitialTabFromQuery,
   normalizeProjectDetailSection,
   type ProjectDetailSection
 } from "../lib/project-detail-section";
 import type { UserIdentityData } from "@/components/superteam/user-identity";
+
+/** 项目详情卷宗/执行图短缓存：有界陈旧 + SSE/mutation invalidate，避免切页签必等重拉。 */
+const PROJECT_DETAIL_READ_STALE_MS = 15_000;
 
 type ProjectOperationalDetailProps = {
   acceptance?: ProjectAcceptanceRecord;
@@ -163,6 +167,8 @@ type ProjectOperationalDetailProps = {
   onDeleteProject?: () => void;
   onRecloneWorkspace?: () => void;
   onMarkWorkspaceReady?: () => void;
+  onRefreshWorkspaceGit?: () => void;
+  workspaceGitRefreshPending?: boolean;
   workspaceActionPending?: boolean;
   onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
   onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
@@ -240,6 +246,8 @@ export function ProjectOperationalDetail({
   onDeleteProject,
   onRecloneWorkspace,
   onMarkWorkspaceReady,
+  onRefreshWorkspaceGit,
+  workspaceGitRefreshPending,
   workspaceActionPending,
   onCreateArchiveSnapshot,
   onCreateEvidence,
@@ -266,6 +274,8 @@ export function ProjectOperationalDetail({
   const [planOpen, setPlanOpen] = useState(false);
   const [continueOpen, setContinueOpen] = useState(false);
   const [demandSearch, setDemandSearch] = useState("");
+  const [mountedFlowPane, setMountedFlowPane] = useState(false);
+  const [mountedHistoryPane, setMountedHistoryPane] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [extraDemands, setExtraDemands] = useState<ProjectDemand[]>([]);
@@ -298,6 +308,12 @@ export function ProjectOperationalDetail({
       ),
     );
   }, [initialTab, focusDecisionId, focusEvidenceId]);
+
+  // 流程/历史：首次进入后再 forceMount，避免首屏任务页就挂上 ReactFlow。
+  useEffect(() => {
+    if (activeSection === "flow") setMountedFlowPane(true);
+    if (activeSection === "history") setMountedHistoryPane(true);
+  }, [activeSection]);
 
   // ?tab=trace 深链（任务详情弹层「查看执行轨迹」）：落在工作台并展开高级项目
   // 事实区，再定位到执行轨迹面板。等 Collapsible 展开渲染后再滚动。
@@ -351,17 +367,20 @@ export function ProjectOperationalDetail({
     return [...demands, ...extraDemands.filter((demand) => !seen.has(demand.id))];
   }, [demands, extraDemands]);
   const requestedDemandId = initialDemandId ?? loadedDemands[0]?.id;
+  // 卷宗/图是重读模型：短 staleTime + SSE invalidate，避免切页签必等 1～2s。
   const dossierQuery = useQuery({
     enabled: Boolean(apiOptions && requestedDemandId),
     placeholderData: keepPreviousData,
     queryFn: () =>
       getProjectDemandDossier(apiOptions!, requestedDemandId!, { siblingPending: true }),
     queryKey: ["demand-dossier", apiBaseUrl, requestedDemandId],
+    staleTime: PROJECT_DETAIL_READ_STALE_MS,
   });
   const graphQuery = useQuery({
     enabled: Boolean(fetchTaskGraph && requestedDemandId),
     queryFn: () => fetchTaskGraph!(requestedDemandId!),
     queryKey: ["project-task-graph", project?.id, requestedDemandId],
+    staleTime: PROJECT_DETAIL_READ_STALE_MS,
   });
 
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
@@ -511,6 +530,11 @@ export function ProjectOperationalDetail({
                   ? ` · ${project.workspace_ready_error}`
                   : ""}
               </p>
+              <ProjectWorkspaceGitPanel
+                pending={workspaceGitRefreshPending}
+                status={project.workspace_git}
+                onRefresh={onRefreshWorkspaceGit}
+              />
               <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-2">
                 <button
                   className="rounded-sm font-medium underline-offset-2 transition-colors hover:text-ink hover:underline"
@@ -716,8 +740,13 @@ export function ProjectOperationalDetail({
               />
             </SoftTabsContent>
 
-            <SoftTabsContent className="m-0 min-w-0 p-3" value="flow">
-              {apiBaseUrl && apiOptions ? (
+            {/* 首次访问后再 forceMount：切走不卸载 ReactFlow / 查询订阅。 */}
+            <SoftTabsContent
+              className={cn("m-0 min-w-0 p-3", activeSection !== "flow" && "hidden")}
+              forceMount={mountedFlowPane || undefined}
+              value="flow"
+            >
+              {apiBaseUrl && apiOptions && (mountedFlowPane || activeSection === "flow") ? (
                 <ProjectDemandsSection
                   apiBaseUrl={apiBaseUrl}
                   apiOptions={apiOptions}
@@ -745,8 +774,12 @@ export function ProjectOperationalDetail({
               />
             </SoftTabsContent>
 
-            <SoftTabsContent className="m-0 min-w-0 p-3" value="history">
-              {apiBaseUrl && apiOptions ? (
+            <SoftTabsContent
+              className={cn("m-0 min-w-0 p-3", activeSection !== "history" && "hidden")}
+              forceMount={mountedHistoryPane || undefined}
+              value="history"
+            >
+              {apiBaseUrl && apiOptions && (mountedHistoryPane || activeSection === "history") ? (
                 <ProjectDemandsSection
                   apiBaseUrl={apiBaseUrl}
                   apiOptions={apiOptions}

@@ -21,13 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-12 23:08 项目详情页签切换性能（plan `2026-08-12-project-detail-tab-perf.md`）：**P0** dossier/task-graph `staleTime=15s` + 流程/历史首次进入后 `forceMount`（有缓存不因 refetch 清空）；**P1** `sibling_pending` 改读时聚合 SQL（不再灌 200 需求 + 500 决策/任务/修订进内存）；**P2** `task-graph` 增 `omit_recent_events` / `open_decisions_only`（控制台默认开启）。**真实链路**（control-plane pid=92586 / web pid=92842，cwd 本 checkout）：同 demand 全量 graph ~168KB/avg 884ms → 瘦身 ~5KB/avg 685ms；`dossier?sibling_pending` 相对无 sibling 增量约 50ms（基线曾 ~0.8s）。定向 go/vitest + `verify:contracts` 绿。
+
 - 2026-08-12 22:07 日志给人看：投递列表 API 补 `project_name` / `resource_title`（读 payload）与 `recipient_display_name`（反查用户）；操作日志补 `resource_name`（details/配置键）；前端行摘要与详情用 `ObjectRef`（名称为主、短 UUID 可复制）。**真实链路**（control-plane pid=25077 / web pid=25512）：投递详情「收件人 开发管理员」「项目 S10 Git 屏蔽验收」「资源 处理项目任务失败」，UUID 仅短 chip。定向 go/vitest 绿。
 
 - 2026-08-12 21:48 日志调查台补充：平台事件「事件类型」不以长 chip 行加回，改工具栏分组下拉（节点健康/命令/注册/原生配置），级别仍用 chips；空态区分时间窗与筛选，有筛选且非全部时间时提示先扩窗再清筛。默认仍 24 小时。浏览器：点操作「团队」见「近 24 小时内无匹配…全部时间」；平台事件有「全部类型」下拉、无事件类型 chip。定向 vitest 7 绿。
 
 - 2026-08-12 21:47 项目详情去掉「需求」页签与「驱动/巡检」人工密度开关：旧 `?tab=demands` 深链 remap 到任务表并保留 `demand=`；意图/剧本/收口与「继续这一单」挂在阶段河；历史时间线疏密仍由 `signals` 自动推导。定向 vitest 覆盖 remap / river continue。
 
-
+- 2026-08-12 21:45 项目工作区 git 可观测（spec `2026-08-12-project-workspace-git-observability.md`）：**P0** 声明式交付物迁到 `.superteam/sessions/{command_id}/deliverables/`（双读旧 `deliverables/` + 可见 `legacy_path` 提示；采集相对声明根；会话输出子树 LRU 封顶）；**P1** 侧表 `project_workspace_git_snapshots` + 项目对象 `workspace_git` + `POST .../workspace/git-status/refresh`；看门狗定时采样（不落 receipt）、任务终态 best-effort 补采、`--no-optional-locks` 只读探测。配置键 `project.workspace_git_sample_interval_seconds`。Web 详情脏/净/HEAD/刷新现场 + 列表瘦徽标。定向：Runtime `project_workspace` 34、CP workspace git / deliverable 单测、web 22、`verify:contracts`、`migrate-validate` 绿。**真实链路**（验证期 control-plane pid=1329 / web pid=1843 / runtime-agent pid=2252，本 checkout pid 目录）：迁移已 apply；非 git 项目 refresh → `applicable=false` 且无 `is_clean`；git 项目 `S10 Git 屏蔽验收` refresh → `is_clean=true` + HEAD `e9b8bb3…`。P0 全链路「派发声明交付物任务」本轮未再跑（依赖假 Provider 任务夹具）。
 
 - 2026-08-12 21:19 日志管理改成调查台：`Main width=wide` + `PageTabs`；四 Tab 筛区收成 `ListToolbar` 一行（时间 `Segmented` 默认 24 小时、模块/状态 chips、密度切换）；行改成相对时间 + 一句话摘要，失败只留左侧 accent；详情改 `MasterDetailLayout`（宽屏右栏 / 窄屏 Sheet）；投递去掉「消息投递台账」双重标题，kind/失败原因补中文词表。**真实链路**（验证期 control-plane pid=24339 / web pid=57486，cwd 均为本 checkout）：`/logs/login` 默认 24 小时、行「admin 登录成功」、点开右栏含 IP/UA；`/logs/operation` 两行「admin 重置/更新 · team.constitution_max_chars」无 `type:uuid`，详情含来源 IP；投递首行「结果通知 · 项目需求」无英文 kind。定向 vitest 42 绿。
 

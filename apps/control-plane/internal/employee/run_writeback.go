@@ -27,9 +27,11 @@ type DigitalEmployeeRunWritebackService struct {
 }
 
 // ProjectWorkspaceCommandHook observes project_workspace command terminals
-// (clone) so Control Plane can flip workspace_ready_status.
+// (clone / probe) so Control Plane can flip workspace_ready_status or apply
+// git snapshots. Receiptless probes (定时采样) go through OnReceiptlessProbeTerminal.
 type ProjectWorkspaceCommandHook interface {
 	OnProjectWorkspaceCommandTerminal(ctx context.Context, receipt RuntimeCommandReceipt, success bool) error
+	OnReceiptlessProbeTerminal(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback, success bool) error
 }
 
 // ProviderNativeConfigCommandHook persists encrypted managed-key snapshots from read/write terminals.
@@ -256,6 +258,16 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminal(ctx context.Context,
 func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Context, identity RuntimeCommandWritebackIdentity, commandID string, terminal RuntimeCommandTerminalWriteback, spec terminalSpec) (bool, *ProviderSessionEventLedgerRecordRequest, error) {
 	receipt, run, err := s.loadCommandRun(ctx, identity, commandID, true)
 	if err != nil {
+		if errors.Is(err, ErrNotFound) && s.projectWorkspaceHook != nil {
+			projectID := projectIDFromTerminalResult(terminal.Result)
+			if projectID != uuid.Nil {
+				success := string(spec.status) == string(DigitalEmployeeRunStatusCompleted)
+				if hookErr := s.projectWorkspaceHook.OnReceiptlessProbeTerminal(ctx, identity, commandID, terminal, success); hookErr != nil {
+					return false, nil, fmt.Errorf("project workspace receiptless probe hook: %w", hookErr)
+				}
+				return false, nil, nil
+			}
+		}
 		return false, nil, err
 	}
 	if isTerminalReceiptStatus(receipt.Status) && receipt.Status != string(spec.status) {
@@ -284,10 +296,11 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 				return false, nil, fmt.Errorf("update project workspace command receipt: %w", err)
 			}
 			if s.projectWorkspaceHook != nil && updated != nil &&
-				strings.TrimSpace(updated.CommandType) == "clone_project_repository" {
+				(strings.TrimSpace(updated.CommandType) == "clone_project_repository" ||
+					strings.TrimSpace(updated.CommandType) == "probe_project_directory") {
 				success := updated.Status == "completed"
 				if hookErr := s.projectWorkspaceHook.OnProjectWorkspaceCommandTerminal(ctx, *updated, success); hookErr != nil {
-					return false, nil, fmt.Errorf("project workspace clone hook: %w", hookErr)
+					return false, nil, fmt.Errorf("project workspace command hook: %w", hookErr)
 				}
 			}
 			return false, nil, nil
@@ -978,4 +991,20 @@ func (s *DigitalEmployeeRunWritebackService) logRuntimeAudit(ctx context.Context
 		return fmt.Errorf("log audit event: %w", err)
 	}
 	return nil
+}
+
+func projectIDFromTerminalResult(result map[string]any) uuid.UUID {
+	if result == nil {
+		return uuid.Nil
+	}
+	raw, _ := result["project_id"].(string)
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return uuid.Nil
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil
+	}
+	return id
 }

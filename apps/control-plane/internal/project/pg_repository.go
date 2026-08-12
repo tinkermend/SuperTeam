@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -573,7 +574,7 @@ func createProjectDeleteAuditEventWithQueries(ctx context.Context, q *queries.Qu
 	if err != nil {
 		return err
 	}
-	_, err = q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "project_management",
 		ActorType:    "user",
@@ -1156,6 +1157,26 @@ func (r *PgRepository) ListProjectDemandsForConsole(ctx context.Context, tenantI
 		return nil, err
 	}
 	return demandsFromRecords(rows)
+}
+
+func (r *PgRepository) ListProjectDemandOpenDecisionCounts(ctx context.Context, tenantID, projectID uuid.UUID) ([]DemandDossierSiblingPending, error) {
+	rows, err := r.q.ListProjectDemandOpenDecisionCounts(ctx, queries.ListProjectDemandOpenDecisionCountsParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DemandDossierSiblingPending, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, DemandDossierSiblingPending{
+			DemandID:      row.DemandID,
+			OpenDecisions: int(row.OpenDecisions),
+			DemandTitle:   row.DemandTitle,
+			DemandStatus:  row.DemandStatus,
+		})
+	}
+	return out, nil
 }
 
 func (r *PgRepository) CreateConfigRevision(ctx context.Context, req UpdateProjectConfigRequest, project Project, eventID uuid.UUID) (ProjectConfigRevision, error) {
@@ -3438,7 +3459,11 @@ func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTa
 		return graph, err
 	}
 	jobIDs := graphCoordinationJobIDs(req.CoordinationJobID, tasks)
-	graph.DecisionRequests, err = r.listProjectTaskGraphDecisionRequests(ctx, req.TenantID, req.ProjectID, jobIDs, taskIDs)
+	if req.OpenDecisionsOnly {
+		graph.DecisionRequests, err = r.listProjectTaskGraphOpenDecisionRequests(ctx, req.TenantID, req.ProjectID, jobIDs, taskIDs)
+	} else {
+		graph.DecisionRequests, err = r.listProjectTaskGraphDecisionRequests(ctx, req.TenantID, req.ProjectID, jobIDs, taskIDs)
+	}
 	if err != nil {
 		return graph, err
 	}
@@ -3454,9 +3479,11 @@ func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTa
 		return graph, err
 	}
 	graph.StageSummaries = buildProjectTaskGraphStageSummaries(graph.Nodes)
-	graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, jobIDs, taskIDs, decisionRequestIDs(graph.DecisionRequests))
-	if err != nil {
-		return graph, err
+	if !req.OmitRecentEvents {
+		graph.RecentEvents, err = r.projectTaskGraphEvents(ctx, req, jobIDs, taskIDs, decisionRequestIDs(graph.DecisionRequests))
+		if err != nil {
+			return graph, err
+		}
 	}
 	return graph, nil
 }
@@ -6517,6 +6544,22 @@ func (r *PgRepository) listProjectTaskGraphDecisionRequests(ctx context.Context,
 	return decisionRequestsFromRecords(rows)
 }
 
+func (r *PgRepository) listProjectTaskGraphOpenDecisionRequests(ctx context.Context, tenantID, projectID uuid.UUID, coordinationJobIDs, projectTaskIDs []uuid.UUID) ([]DecisionRequest, error) {
+	if len(coordinationJobIDs) == 0 && len(projectTaskIDs) == 0 {
+		return []DecisionRequest{}, nil
+	}
+	rows, err := r.q.ListProjectTaskGraphOpenDecisionRequests(ctx, queries.ListProjectTaskGraphOpenDecisionRequestsParams{
+		TenantID:           tenantID,
+		ProjectID:          projectID,
+		CoordinationJobIds: coordinationJobIDs,
+		ProjectTaskIds:     projectTaskIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return decisionRequestsFromRecords(rows)
+}
+
 func (r *PgRepository) CreateEvidenceRef(ctx context.Context, req CreateEvidenceRefRequest) (ProjectEvidenceRef, error) {
 	return r.createEvidenceRefWithQueries(ctx, r.q, req)
 }
@@ -9421,7 +9464,7 @@ func (r *PgRepository) CreateWorkspaceDeleteAuditEvent(ctx context.Context, tena
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
 		EventType:    "project_management",
 		ActorType:    "user",

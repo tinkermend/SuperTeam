@@ -482,6 +482,54 @@ const (
 	WorkspaceReadyStatusError   WorkspaceReadyStatus = "error"
 )
 
+// ProjectWorkspaceGitRepoState 仓库中间态；不得与「脏」混为一谈。
+type ProjectWorkspaceGitRepoState string
+
+const (
+	ProjectWorkspaceGitRepoStateOK       ProjectWorkspaceGitRepoState = "ok"
+	ProjectWorkspaceGitRepoStateDetached ProjectWorkspaceGitRepoState = "detached"
+	ProjectWorkspaceGitRepoStateRebase   ProjectWorkspaceGitRepoState = "rebase"
+	ProjectWorkspaceGitRepoStateMerge    ProjectWorkspaceGitRepoState = "merge"
+)
+
+// ProjectWorkspaceGitFileCategory 未提交清单类别。
+type ProjectWorkspaceGitFileCategory string
+
+const (
+	ProjectWorkspaceGitFileModified  ProjectWorkspaceGitFileCategory = "modified"
+	ProjectWorkspaceGitFileStaged    ProjectWorkspaceGitFileCategory = "staged"
+	ProjectWorkspaceGitFileUntracked ProjectWorkspaceGitFileCategory = "untracked"
+	ProjectWorkspaceGitFileDeleted   ProjectWorkspaceGitFileCategory = "deleted"
+	ProjectWorkspaceGitFileRenamed   ProjectWorkspaceGitFileCategory = "renamed"
+)
+
+// ProjectWorkspaceGitStatus 最近一次观测到的项目目录 git 状态（spec 2026-08-12 P1）。
+type ProjectWorkspaceGitStatus struct {
+	Applicable          bool                             `json:"applicable"`
+	IsGitRepo           *bool                            `json:"is_git_repo,omitempty"`
+	IsClean             *bool                            `json:"is_clean,omitempty"`
+	HeadCommit          string                           `json:"head_commit,omitempty"`
+	CurrentBranch       string                           `json:"current_branch,omitempty"`
+	Detached            bool                             `json:"detached,omitempty"`
+	RepoState           ProjectWorkspaceGitRepoState     `json:"repo_state,omitempty"`
+	UncommittedCount    int                              `json:"uncommitted_count"`
+	UncommittedEntries  []ProjectWorkspaceGitFileEntry   `json:"uncommitted_entries,omitempty"`
+	UncommittedTruncated bool                            `json:"uncommitted_truncated,omitempty"`
+	UncommittedOmitted  int                              `json:"uncommitted_omitted,omitempty"`
+	SampledAt           *time.Time                       `json:"sampled_at,omitempty"`
+	SampledRuntimeNodeID *uuid.UUID                      `json:"sampled_runtime_node_id,omitempty"`
+	SampledNodeID       string                           `json:"sampled_node_id,omitempty"`
+	SampleError         string                           `json:"sample_error,omitempty"`
+	LastAttemptAt       *time.Time                       `json:"last_attempt_at,omitempty"`
+	RefreshPending      bool                             `json:"refresh_pending,omitempty"`
+	InflightAt          *time.Time                       `json:"-"`
+}
+
+type ProjectWorkspaceGitFileEntry struct {
+	Path     string                           `json:"path"`
+	Category ProjectWorkspaceGitFileCategory  `json:"category"`
+}
+
 type Project struct {
 	ID                     uuid.UUID
 	TenantID               uuid.UUID
@@ -504,6 +552,8 @@ type Project struct {
 	WorkspaceReadyAt       *time.Time
 	// WorkspaceOwnership: platform_managed | attached (spec 2026-08-12 P2).
 	WorkspaceOwnership WorkspaceOwnership
+	// WorkspaceGit 是最近一次观测到的项目目录 git 状态；未采样时为 nil。
+	WorkspaceGit *ProjectWorkspaceGitStatus
 	// BudgetTokenLimit 是项目 token 预算上限;nil = 不限。达到后派发前闸阻止开新任务
 	// (运行中任务不打断)。已消耗见 SumProjectConsumedTokens。
 	BudgetTokenLimit *int64
@@ -2244,6 +2294,7 @@ type ProjectPortfolioItem struct {
 	TaskCounts   ProjectTaskPortfolioCounts   `json:"task_counts"`
 	Attention    ProjectPortfolioAttention    `json:"attention"`
 	LastActivity *time.Time                   `json:"last_activity_at,omitempty"`
+	WorkspaceGit *ProjectWorkspaceGitStatus   `json:"workspace_git,omitempty"`
 }
 
 type ProjectPortfolioPagination struct {

@@ -237,7 +237,7 @@ pub fn probe_project_directory(
         return Ok(facts);
     }
 
-    if let Ok(origin) = run_git_stdout(
+    if let Ok(origin) = run_git_stdout_readonly(
         &path,
         [
             OsString::from("config"),
@@ -250,7 +250,8 @@ pub fn probe_project_directory(
             serde_json::Value::String(origin.trim().to_string()),
         );
     }
-    if let Ok(branch) = run_git_stdout(
+    let mut detached = false;
+    if let Ok(branch) = run_git_stdout_readonly(
         &path,
         [
             OsString::from("rev-parse"),
@@ -259,13 +260,13 @@ pub fn probe_project_directory(
         ],
     ) {
         let branch = branch.trim().to_string();
-        let detached = branch == "HEAD";
+        detached = branch == "HEAD";
         facts.insert("detached".into(), serde_json::Value::Bool(detached));
         if !detached {
             facts.insert("current_branch".into(), serde_json::Value::String(branch));
         }
     }
-    if let Ok(head) = run_git_stdout(
+    if let Ok(head) = run_git_stdout_readonly(
         &path,
         [OsString::from("rev-parse"), OsString::from("HEAD")],
     ) {
@@ -274,19 +275,158 @@ pub fn probe_project_directory(
             serde_json::Value::String(head.trim().to_string()),
         );
     }
-    if let Ok(status) = run_git_stdout(
+    let repo_state = detect_git_repo_state(&path, detached);
+    facts.insert(
+        "repo_state".into(),
+        serde_json::Value::String(repo_state.to_string()),
+    );
+    if let Ok(status) = run_git_stdout_readonly(
         &path,
         [
             OsString::from("status"),
-            OsString::from("--porcelain"),
+            OsString::from("--porcelain=v1"),
+            OsString::from("--untracked-files=all"),
         ],
     ) {
+        let (entries, truncated, omitted) = parse_porcelain_uncommitted(&status);
         facts.insert(
             "dirty".into(),
-            serde_json::Value::Bool(!status.trim().is_empty()),
+            serde_json::Value::Bool(!entries.is_empty() || omitted > 0),
+        );
+        facts.insert(
+            "uncommitted_count".into(),
+            serde_json::Value::Number((entries.len() + omitted).into()),
+        );
+        facts.insert(
+            "uncommitted_truncated".into(),
+            serde_json::Value::Bool(truncated),
+        );
+        facts.insert(
+            "uncommitted_omitted".into(),
+            serde_json::Value::Number(omitted.into()),
+        );
+        facts.insert(
+            "uncommitted_entries".into(),
+            serde_json::Value::Array(entries),
         );
     }
     Ok(facts)
+}
+
+/// Porcelain 清单截断上限（spec 2026-08-12 §5.1，形状照 snapshot 5000 兜底）。
+const UNCOMMITTED_LIST_LIMIT: usize = 5000;
+
+fn detect_git_repo_state(path: &Path, detached: bool) -> &'static str {
+    let git_dir = path.join(".git");
+    let git_dir = if git_dir.is_dir() {
+        git_dir
+    } else {
+        // bare-ish / worktree pointer: fall back to common conflict markers on path.
+        path.join(".git")
+    };
+    if git_dir.join("MERGE_HEAD").exists() {
+        return "merge";
+    }
+    if git_dir.join("rebase-merge").exists() || git_dir.join("rebase-apply").exists() {
+        return "rebase";
+    }
+    if detached {
+        return "detached";
+    }
+    "ok"
+}
+
+fn parse_porcelain_uncommitted(status: &str) -> (Vec<serde_json::Value>, bool, usize) {
+    let mut entries = Vec::new();
+    let mut omitted = 0usize;
+    for raw in status.lines() {
+        let line = raw.trim_end();
+        if line.len() < 3 {
+            continue;
+        }
+        let xy = &line[..2];
+        let rest = line[3..].trim();
+        if rest.is_empty() {
+            continue;
+        }
+        let category = porcelain_category(xy, rest);
+        let path = porcelain_path(xy, rest);
+        if entries.len() >= UNCOMMITTED_LIST_LIMIT {
+            omitted += 1;
+            continue;
+        }
+        entries.push(serde_json::json!({
+            "path": path,
+            "category": category,
+        }));
+    }
+    (entries, omitted > 0, omitted)
+}
+
+fn porcelain_category(xy: &str, rest: &str) -> &'static str {
+    if xy == "??" {
+        return "untracked";
+    }
+    if xy == "!!" {
+        return "untracked";
+    }
+    if xy.contains('U') {
+        return "modified";
+    }
+    if xy.contains('R') || rest.contains(" -> ") {
+        return "renamed";
+    }
+    if xy.contains('D') {
+        return "deleted";
+    }
+    if !xy.as_bytes()[0].is_ascii_whitespace() {
+        return "staged";
+    }
+    "modified"
+}
+
+fn porcelain_path(xy: &str, rest: &str) -> String {
+    if xy.contains('R') || rest.contains(" -> ") {
+        rest.rsplit_once(" -> ")
+            .map(|(_, to)| to.trim().to_string())
+            .unwrap_or_else(|| rest.to_string())
+    } else {
+        rest.trim_matches('"').to_string()
+    }
+}
+
+fn run_git_stdout_readonly<I, S>(cwd: &Path, args: I) -> Result<String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
+    let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let output = Command::new("git")
+        .current_dir(cwd)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .arg("--no-optional-locks")
+        .args(&args)
+        .output()
+        .with_context(|| format!("run git (readonly) in {}", cwd.display()))?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    anyhow::bail!(
+        "git command failed in {}: git --no-optional-locks {}{}{}",
+        cwd.display(),
+        args.iter()
+            .map(|arg| arg.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" "),
+        if stderr.trim().is_empty() { "" } else { ": " },
+        if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        }
+    )
 }
 
 /// 删除项目时移除 `{base}/{project_name}`;缺失视为成功(幂等)。
@@ -1828,6 +1968,51 @@ mod tests {
             serde_json::Value::Bool(true),
             "未提交改动必须如实报给人看,否则认领的是一份看不见的现场"
         );
+        assert_eq!(dirty["repo_state"], serde_json::Value::String("ok".to_string()));
+        assert_eq!(dirty["uncommitted_count"], serde_json::json!(1));
+        let entries = dirty["uncommitted_entries"].as_array().expect("entries");
+        assert_eq!(entries[0]["path"], "README.md");
+        assert_eq!(entries[0]["category"], "modified");
+        assert_eq!(dirty["uncommitted_truncated"], serde_json::Value::Bool(false));
+    }
+
+    #[test]
+    fn probe_reports_untracked_and_does_not_call_non_git_clean() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join("notes")).unwrap();
+        std::fs::write(temp.path().join("notes/a.md"), "x").unwrap();
+        let facts = probe_project_directory(temp.path(), "notes").unwrap();
+        assert_eq!(facts["is_git_repo"], serde_json::Value::Bool(false));
+        assert!(facts.get("dirty").is_none(), "non-git must not be reported clean");
+        assert!(facts.get("uncommitted_entries").is_none());
+    }
+
+    #[test]
+    fn probe_reports_rebase_state_separately_from_dirty() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().join("rebasing");
+        std::fs::create_dir_all(&repo).unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "rebasing"]);
+        run_test_git(&repo, ["config", "user.email", "test@example.com"]);
+        run_test_git(&repo, ["config", "user.name", "Test User"]);
+        std::fs::write(repo.join("a.txt"), "a\n").unwrap();
+        run_test_git(&repo, ["add", "."]);
+        run_test_git(&repo, ["commit", "-m", "a"]);
+        std::fs::create_dir_all(repo.join(".git/rebase-merge")).unwrap();
+        let facts = probe_project_directory(temp.path(), "rebasing").unwrap();
+        assert_eq!(facts["repo_state"], serde_json::Value::String("rebase".to_string()));
+    }
+
+    #[test]
+    fn parse_porcelain_truncates_and_counts_omitted() {
+        let mut status = String::new();
+        for i in 0..(UNCOMMITTED_LIST_LIMIT + 3) {
+            status.push_str(&format!("?? extra-{i}.txt\n"));
+        }
+        let (entries, truncated, omitted) = parse_porcelain_uncommitted(&status);
+        assert_eq!(entries.len(), UNCOMMITTED_LIST_LIMIT);
+        assert!(truncated);
+        assert_eq!(omitted, 3);
     }
 
     /// 软链是逃逸面：探测必须标出来，且不得把它当成目录。

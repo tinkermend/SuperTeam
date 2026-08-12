@@ -77,7 +77,8 @@ export type ProjectDemandStatus =
   | "acceptance_pending"
   | "completed"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "planning_failed";
 export type WorkflowInstanceStatus =
   | "planning"
   | "running"
@@ -158,6 +159,40 @@ export type ProjectAcceptanceStatus =
 
 export type WorkspaceReadyStatus = "pending" | "ready" | "error";
 
+export type ProjectWorkspaceGitRepoState = "ok" | "detached" | "rebase" | "merge";
+
+export type ProjectWorkspaceGitFileCategory =
+  | "modified"
+  | "staged"
+  | "untracked"
+  | "deleted"
+  | "renamed";
+
+export type ProjectWorkspaceGitFileEntry = {
+  path: string;
+  category: ProjectWorkspaceGitFileCategory | string;
+};
+
+export type ProjectWorkspaceGitStatus = {
+  applicable: boolean;
+  is_git_repo?: boolean;
+  is_clean?: boolean;
+  head_commit?: string;
+  current_branch?: string;
+  detached?: boolean;
+  repo_state?: ProjectWorkspaceGitRepoState | string;
+  uncommitted_count: number;
+  uncommitted_entries?: ProjectWorkspaceGitFileEntry[];
+  uncommitted_truncated?: boolean;
+  uncommitted_omitted?: number;
+  sampled_at?: string;
+  sampled_runtime_node_id?: string;
+  sampled_node_id?: string;
+  sample_error?: string;
+  last_attempt_at?: string;
+  refresh_pending?: boolean;
+};
+
 export type ProjectRepoBindingStatus = "bound" | "unbound";
 
 export type ProjectRepoBinding = {
@@ -189,6 +224,8 @@ export type Project = {
   primary_runtime_node_id?: string;
   workspace_ready_error?: string;
   workspace_ready_at?: string;
+  /** 最近一次观测到的项目目录 git 状态；未采样时缺省。 */
+  workspace_git?: ProjectWorkspaceGitStatus;
   archived_at?: string;
   allowed_actions?: string[];
   created_at?: string;
@@ -723,7 +760,7 @@ export type ProjectDemandDossier = {
     /** true = 收口来自尚未确认的计划，展示须标「拟」。 */
     exit_pending?: boolean;
   };
-  /** 密度判定的原料，不是结论——密度由前端决定并允许用户切换。 */
+  /** 密度判定的原料，不是结论——前端按 signals 自动推导时间线疏密（无人工切换）。 */
   signals: {
     has_open_decisions: boolean;
     active_task_count: number;
@@ -1296,8 +1333,20 @@ export type ListProjectTasksFilters = {
 };
 
 export type GetProjectTaskGraphFilters =
-  | { demandId: string; coordinationJobId?: string }
-  | { coordinationJobId: string; demandId?: string };
+  | {
+      demandId: string;
+      coordinationJobId?: string;
+      /** 跳过 recent_events；控制台流程图默认 true。 */
+      omitRecentEvents?: boolean;
+      /** 只返回未关闭决策；控制台流程图默认 true。 */
+      openDecisionsOnly?: boolean;
+    }
+  | {
+      coordinationJobId: string;
+      demandId?: string;
+      omitRecentEvents?: boolean;
+      openDecisionsOnly?: boolean;
+    };
 
 export type PaginationFilters = {
   limit?: number;
@@ -1421,6 +1470,12 @@ function taskGraphQuery(filters: GetProjectTaskGraphFilters): string {
   }
   if (filters.coordinationJobId) {
     params.set("coordination_job_id", filters.coordinationJobId);
+  }
+  if (filters.omitRecentEvents) {
+    params.set("omit_recent_events", "true");
+  }
+  if (filters.openDecisionsOnly) {
+    params.set("open_decisions_only", "true");
   }
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -1661,6 +1716,17 @@ export function markProjectWorkspaceReady(
     projectPath(projectId, "/workspace/mark-ready"),
     reason ? { reason } : {},
     "mark project workspace ready",
+  );
+}
+
+export function refreshProjectWorkspaceGitStatus(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<Project> {
+  return postJsonWithoutBody<Project>(
+    options,
+    projectPath(projectId, "/workspace/git-status/refresh"),
+    "refresh project workspace git status",
   );
 }
 

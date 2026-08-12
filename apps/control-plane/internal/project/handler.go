@@ -557,6 +557,33 @@ func (h *HTTPHandler) MarkProjectWorkspaceReady(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, projectResponseFromDomain(*project))
 }
 
+func (h *HTTPHandler) RefreshProjectWorkspaceGitStatus(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectRead)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	type refresher interface {
+		RefreshProjectWorkspaceGitStatus(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error)
+	}
+	refreshService, ok := any(service).(refresher)
+	if !ok {
+		http.Error(w, "workspace git refresh not available", http.StatusNotImplemented)
+		return
+	}
+	project, err := refreshService.RefreshProjectWorkspaceGitStatus(r.Context(), tenantID, projectID, actorID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	response := projectResponseFromDomain(*project)
+	response.AllowedActions = h.allowedProjectActions(r.Context(), tenantID, projectID)
+	writeJSON(w, http.StatusOK, response)
+}
+
 type workspaceManualActionBody struct {
 	Reason string `json:"reason"`
 }
@@ -990,6 +1017,9 @@ func (h *HTTPHandler) GetProjectTaskGraph(w http.ResponseWriter, r *http.Request
 		writeHandlerError(w, ErrInvalidProject)
 		return
 	}
+	// 默认全量（兼容旧客户端）；控制台流程图显式传 omit_recent_events / open_decisions_only。
+	req.OmitRecentEvents = strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("omit_recent_events")), "true")
+	req.OpenDecisionsOnly = strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("open_decisions_only")), "true")
 	graph, err := service.GetProjectTaskGraph(r.Context(), req)
 	if err != nil {
 		writeHandlerError(w, err)
@@ -2740,6 +2770,7 @@ type projectResponse struct {
 	WorkspaceReadyError    *string                    `json:"workspace_ready_error,omitempty"`
 	WorkspaceReadyAt       *string                    `json:"workspace_ready_at,omitempty"`
 	WorkspaceOwnership     string                     `json:"workspace_ownership,omitempty"`
+	WorkspaceGit           *projectWorkspaceGitResponse `json:"workspace_git,omitempty"`
 	ArchivedAt             *string                    `json:"archived_at,omitempty"`
 	AllowedActions         []string                   `json:"allowed_actions,omitempty"`
 	CreatedAt              string                     `json:"created_at,omitempty"`
@@ -3772,10 +3803,70 @@ func projectResponseFromDomain(project Project) projectResponse {
 		WorkspaceReadyError:    project.WorkspaceReadyError,
 		WorkspaceReadyAt:       timePtr(project.WorkspaceReadyAt),
 		WorkspaceOwnership:     string(projectWorkspaceOwnership(project)),
+		WorkspaceGit:           projectWorkspaceGitResponseFromDomain(project.WorkspaceGit),
 		ArchivedAt:             timePtr(project.ArchivedAt),
 		CreatedAt:              timeValue(project.CreatedAt),
 		UpdatedAt:              timeValue(project.UpdatedAt),
 	}
+}
+
+type projectWorkspaceGitFileEntryResponse struct {
+	Path     string `json:"path"`
+	Category string `json:"category"`
+}
+
+type projectWorkspaceGitResponse struct {
+	Applicable           bool                                    `json:"applicable"`
+	IsGitRepo            *bool                                   `json:"is_git_repo,omitempty"`
+	IsClean              *bool                                   `json:"is_clean,omitempty"`
+	HeadCommit           string                                  `json:"head_commit,omitempty"`
+	CurrentBranch        string                                  `json:"current_branch,omitempty"`
+	Detached             bool                                    `json:"detached,omitempty"`
+	RepoState            string                                  `json:"repo_state,omitempty"`
+	UncommittedCount     int                                     `json:"uncommitted_count"`
+	UncommittedEntries   []projectWorkspaceGitFileEntryResponse  `json:"uncommitted_entries,omitempty"`
+	UncommittedTruncated bool                                    `json:"uncommitted_truncated,omitempty"`
+	UncommittedOmitted   int                                     `json:"uncommitted_omitted,omitempty"`
+	SampledAt            *string                                 `json:"sampled_at,omitempty"`
+	SampledRuntimeNodeID *string                                 `json:"sampled_runtime_node_id,omitempty"`
+	SampledNodeID        string                                  `json:"sampled_node_id,omitempty"`
+	SampleError          string                                  `json:"sample_error,omitempty"`
+	LastAttemptAt        *string                                 `json:"last_attempt_at,omitempty"`
+	RefreshPending       bool                                    `json:"refresh_pending,omitempty"`
+}
+
+func projectWorkspaceGitResponseFromDomain(status *ProjectWorkspaceGitStatus) *projectWorkspaceGitResponse {
+	if status == nil {
+		return nil
+	}
+	out := &projectWorkspaceGitResponse{
+		Applicable:           status.Applicable,
+		IsGitRepo:            status.IsGitRepo,
+		IsClean:              status.IsClean,
+		HeadCommit:           status.HeadCommit,
+		CurrentBranch:        status.CurrentBranch,
+		Detached:             status.Detached,
+		RepoState:            string(status.RepoState),
+		UncommittedCount:     status.UncommittedCount,
+		UncommittedTruncated: status.UncommittedTruncated,
+		UncommittedOmitted:   status.UncommittedOmitted,
+		SampledAt:            timePtr(status.SampledAt),
+		SampledRuntimeNodeID: stringPtr(status.SampledRuntimeNodeID),
+		SampledNodeID:        status.SampledNodeID,
+		SampleError:          status.SampleError,
+		LastAttemptAt:        timePtr(status.LastAttemptAt),
+		RefreshPending:       status.RefreshPending,
+	}
+	if len(status.UncommittedEntries) > 0 {
+		out.UncommittedEntries = make([]projectWorkspaceGitFileEntryResponse, 0, len(status.UncommittedEntries))
+		for _, entry := range status.UncommittedEntries {
+			out.UncommittedEntries = append(out.UncommittedEntries, projectWorkspaceGitFileEntryResponse{
+				Path:     entry.Path,
+				Category: string(entry.Category),
+			})
+		}
+	}
+	return out
 }
 
 func projectRepoBindingResponseFromDomain(binding ProjectRepoBinding) projectRepoBindingResponse {
@@ -5153,6 +5244,7 @@ type projectPortfolioItemResponse struct {
 	TaskCounts projectPortfolioTaskCountsResponse `json:"task_counts"`
 	Attention  projectPortfolioAttentionResponse  `json:"attention"`
 	LastActivityAt *string `json:"last_activity_at,omitempty"`
+	WorkspaceGit *projectWorkspaceGitResponse `json:"workspace_git,omitempty"`
 }
 
 type projectPortfolioResponse struct {
@@ -5219,6 +5311,7 @@ func projectPortfolioResponseFromDomain(resp ProjectPortfolioResponse) projectPo
 			s := item.LastActivity.UTC().Format(time.RFC3339Nano)
 			row.LastActivityAt = &s
 		}
+		row.WorkspaceGit = projectWorkspaceGitResponseFromDomain(item.WorkspaceGit)
 		out.Items = append(out.Items, row)
 	}
 	return out

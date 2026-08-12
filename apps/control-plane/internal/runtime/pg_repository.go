@@ -616,6 +616,7 @@ func (r *PgRepository) ListRuntimeEvents(ctx context.Context, params ListRuntime
 		Severity:     runtimeEventSeverityToText(params.Severity),
 		NodeID:       textFromString(params.NodeID),
 		ProviderType: textFromString(params.ProviderType),
+		Since:        timestamptzFromTimePtr(params.Since),
 		Offset:       params.Offset,
 		Limit:        params.Limit,
 	})

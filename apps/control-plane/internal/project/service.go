@@ -35,6 +35,7 @@ type Service struct {
 	automationProjectCascade  AutomationProjectCascade
 	workspaceCommander        RuntimeWorkspaceCommander
 	workspaceReceipts         ProjectWorkspaceReceiptLister
+	workspaceGit              workspaceGitStore
 	// 批二：角色词表 / 编制 / 可达收口
 	roleVocabulary         RoleVocabularyActiveKeys
 	scenarioTemplateSpecs  ScenarioTemplateSpecSource
@@ -205,6 +206,7 @@ func NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repository 
 	}
 	teamScopeAuthorizer, _ := repository.(ProjectTeamScopeAuthorizer)
 	memberTeamResolver, _ := repository.(MemberTeamAssignmentResolver)
+	workspaceGit, _ := repository.(workspaceGitStore)
 	return &Service{
 		repository:            repository,
 		coordinator:           coordinator,
@@ -213,6 +215,7 @@ func NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repository 
 		archiveArtifactLocker: locker,
 		teamScopeAuthorizer:   teamScopeAuthorizer,
 		memberTeamResolver:    memberTeamResolver,
+		workspaceGit:          workspaceGit,
 	}, nil
 }
 
@@ -610,6 +613,7 @@ func (s *Service) GetProject(ctx context.Context, tenantID, projectID uuid.UUID)
 	if err != nil {
 		return nil, err
 	}
+	s.attachWorkspaceGitStatus(ctx, &project)
 	return &project, nil
 }
 
@@ -935,7 +939,12 @@ func (s *Service) ListProjects(ctx context.Context, req ListProjectsRequest) ([]
 		return nil, ErrInvalidProject
 	}
 	req.Limit, req.Offset = normalizePagination(req.Limit, req.Offset)
-	return s.repository.ListProjects(ctx, req)
+	projects, err := s.repository.ListProjects(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	s.attachWorkspaceGitStatusMany(ctx, req.TenantID, projects)
+	return projects, nil
 }
 
 func (s *Service) ListProjectRunSummaries(ctx context.Context, req ListProjectRunSummariesRequest) (ProjectRunSummaryList, error) {
@@ -1040,6 +1049,7 @@ func (s *Service) GetProjectPortfolio(ctx context.Context, req GetProjectPortfol
 			"paused": 0, "acceptance": 0, "archived": 0,
 		}
 	}
+	s.attachWorkspaceGitStatusPortfolio(ctx, req.TenantID, resp.Items)
 	return resp, nil
 }
 
@@ -4109,6 +4119,7 @@ func (s *Service) CompleteProjectTaskAttempt(ctx context.Context, req CompletePr
 		})
 		return nil, err
 	}
+	s.maybeSampleWorkspaceGitOnTaskTerminal(ctx, req.TenantID, task.ProjectID, result.Task)
 	return &result.Summary, nil
 }
 
@@ -5569,6 +5580,7 @@ func (s *Service) FailProjectTask(ctx context.Context, req FailProjectTaskReques
 		})
 		return nil, err
 	}
+	s.maybeSampleWorkspaceGitOnTaskTerminal(ctx, req.TenantID, task.ProjectID, result.Task)
 	return &result.Task, nil
 }
 
@@ -5637,6 +5649,7 @@ func (s *Service) FailProjectTaskAttempt(ctx context.Context, req FailProjectTas
 	if err != nil {
 		return nil, err
 	}
+	s.maybeSampleWorkspaceGitOnTaskTerminal(ctx, req.TenantID, task.ProjectID, result.Task)
 	if result.Task.Status == ProjectTaskStatusWaitingHuman {
 		if result.Decision.ID == uuid.Nil {
 			return nil, fmt.Errorf("waiting_human writeback missing decision: %w", ErrInvalidProject)
@@ -6814,6 +6827,7 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 	if err != nil {
 		return nil, err
 	}
+	s.maybeSampleWorkspaceGitOnTaskTerminal(ctx, req.TenantID, req.ProjectID, result.Task)
 	if result.Task.Status == ProjectTaskStatusWaitingHuman {
 		if result.Decision.ID == uuid.Nil {
 			return nil, fmt.Errorf("waiting_human recovery writeback missing decision: %w", ErrInvalidProject)
@@ -8990,6 +9004,7 @@ func (s *Service) GetOverview(ctx context.Context, tenantID, projectID uuid.UUID
 	if err != nil {
 		return nil, err
 	}
+	s.attachWorkspaceGitStatus(ctx, &project)
 	members, err := s.repository.ListProjectMembers(ctx, tenantID, projectID)
 	if err != nil {
 		return nil, err

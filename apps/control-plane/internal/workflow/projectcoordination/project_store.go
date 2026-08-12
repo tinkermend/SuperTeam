@@ -3712,7 +3712,7 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 		"acceptance_results 必须逐条覆盖 handoff_contract.acceptance_criteria，status 使用 passed 并带 evidence_refs；" +
 		"evidence_refs/verification 用于说明已读取或验证的证据。" +
 		"result_contract 必须含 deliverables 数组，逐项覆盖 produces 列出的每个产出名（每项含 name 与 value 或 ref）；produces 为空时可省略。" +
-		"文件形态的交付物必须写入工作目录 deliverables/ 目录，并在对应项的 ref 填相对路径（如 deliverables/report.html）；纯值型交付物（结论、数字、链接）用 value。\n" +
+		"文件形态的交付物必须写入 `.superteam/sessions/<本轮 command_id>/deliverables/` 这一层输出子目录（不要进入其上级目录），并在对应项的 ref 填相对路径（如 `.superteam/sessions/<本轮 command_id>/deliverables/report.html`）；纯值型交付物（结论、数字、链接）用 value。\n" +
 		"upstream_results 是你直接上游任务的真实产出，优先复用其中的值与引用，不要重做上游已完成的工作。\n" +
 		"请按项目任务要求执行，并直接输出结论、证据、工件引用、不确定性和 result_contract。" +
 		"你只需要给出最终答案；Runtime Agent 会在本轮结束后记录该答案。"

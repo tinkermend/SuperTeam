@@ -1863,6 +1863,53 @@ type ProjectWorkspaceDeleteRequest struct {
 	Reason      pgtype.Text        `json:"reason"`
 }
 
+// 项目工作区最近一次观测到的 git 状态快照；覆盖写，清单截断后落 JSONB。
+type ProjectWorkspaceGitSnapshot struct {
+	ID uuid.UUID `json:"id"`
+	// 租户 ID。
+	TenantID uuid.UUID `json:"tenant_id"`
+	// 项目 ID；与 projects 1:1。
+	ProjectID uuid.UUID `json:"project_id"`
+	// 是否 git 仓库；NULL 表示尚未成功观测。非 git 为不适用，不是干净。
+	IsGitRepo pgtype.Bool `json:"is_git_repo"`
+	// 相对 HEAD 无未提交业务改动；非 git 时为 NULL。
+	IsClean pgtype.Bool `json:"is_clean"`
+	// rev-parse HEAD 实际提交 ID。
+	HeadCommit pgtype.Text `json:"head_commit"`
+	// 当前分支名；detached 时为空。
+	CurrentBranch pgtype.Text `json:"current_branch"`
+	// HEAD 是否 detached。
+	Detached bool `json:"detached"`
+	// ok / detached / rebase / merge；中间态不得糊成脏。
+	RepoState pgtype.Text `json:"repo_state"`
+	// 未提交条目总数（含截断未列出）。
+	UncommittedCount int32 `json:"uncommitted_count"`
+	// 截断后的未提交清单（path + category）。
+	UncommittedEntries []byte `json:"uncommitted_entries"`
+	// 清单是否被截断。
+	UncommittedTruncated bool `json:"uncommitted_truncated"`
+	// 截断未列出的条数。
+	UncommittedOmitted int32 `json:"uncommitted_omitted"`
+	// 最近一次成功写入快照的时间；失败不覆盖。
+	SampledAt pgtype.Timestamptz `json:"sampled_at"`
+	// 采自主节点 UUID。
+	SampledRuntimeNodeID uuid.NullUUID `json:"sampled_runtime_node_id"`
+	// 采自主节点对外 node_id。
+	SampledNodeID pgtype.Text `json:"sampled_node_id"`
+	// 最近一次未采到原因；成功时清空。失败保留上次快照。
+	SampleError pgtype.Text `json:"sample_error"`
+	// 最近一次探测尝试时间（含失败）。
+	LastAttemptAt pgtype.Timestamptz `json:"last_attempt_at"`
+	// 在飞探测开始时间；用于同项目节流。
+	InflightAt pgtype.Timestamptz `json:"inflight_at"`
+	// 在飞探测 command_id。
+	InflightCommandID pgtype.Text `json:"inflight_command_id"`
+	// 行创建时间。
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	// 行更新时间。
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Provider 会话映射表
 type ProviderSession struct {
 	// Provider 会话主键 UUID
