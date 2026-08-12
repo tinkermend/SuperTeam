@@ -40,8 +40,8 @@ type OutboxRepository interface {
 	ListPendingOutbox(ctx context.Context, tenantID uuid.UUID, limit int32) ([]OutboxItem, error)
 	MarkOutboxSent(ctx context.Context, tenantID, id uuid.UUID, feishuMessageID string) (OutboxItem, error)
 	MarkOutboxFailed(ctx context.Context, tenantID, id uuid.UUID, reason string) (OutboxItem, error)
-	ListOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32) ([]OutboxItem, error)
-	CountOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string) (int64, error)
+	ListOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32, since *time.Time) ([]OutboxItem, error)
+	CountOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, since *time.Time) (int64, error)
 	RequeueOutbox(ctx context.Context, tenantID, id uuid.UUID) (OutboxItem, error)
 }
 
@@ -91,7 +91,7 @@ func (r *PgRepository) MarkOutboxFailed(ctx context.Context, tenantID, id uuid.U
 	return outboxItemFromRow(row), nil
 }
 
-func (r *PgRepository) ListOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32) ([]OutboxItem, error) {
+func (r *PgRepository) ListOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32, since *time.Time) ([]OutboxItem, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -101,6 +101,7 @@ func (r *PgRepository) ListOutboxByStatuses(ctx context.Context, tenantID uuid.U
 	rows, err := r.q.ListFeishuOutboxByStatuses(ctx, queries.ListFeishuOutboxByStatusesParams{
 		TenantID: tenantID,
 		Statuses: statuses,
+		Since:    timestamptzFromTimePtr(since),
 		Limit:    limit,
 		Offset:   offset,
 	})
@@ -114,11 +115,19 @@ func (r *PgRepository) ListOutboxByStatuses(ctx context.Context, tenantID uuid.U
 	return items, nil
 }
 
-func (r *PgRepository) CountOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string) (int64, error) {
+func (r *PgRepository) CountOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, since *time.Time) (int64, error) {
 	return r.q.CountFeishuOutboxByStatuses(ctx, queries.CountFeishuOutboxByStatusesParams{
 		TenantID: tenantID,
 		Statuses: statuses,
+		Since:    timestamptzFromTimePtr(since),
 	})
+}
+
+func timestamptzFromTimePtr(t *time.Time) pgtype.Timestamptz {
+	if t == nil || t.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: t.UTC(), Valid: true}
 }
 
 func (r *PgRepository) RequeueOutbox(ctx context.Context, tenantID, id uuid.UUID) (OutboxItem, error) {

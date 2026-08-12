@@ -99,6 +99,7 @@ export type ListRuntimeEventsOptions = ApiClientOptions & {
   severity?: RuntimeEventSeverity;
   node_id?: string;
   provider_type?: string;
+  since?: string;
 };
 
 function listRuntimeNodesPath(options: ListRuntimeNodesOptions): string {
@@ -141,6 +142,10 @@ function listRuntimeEventsPath(options: ListRuntimeEventsOptions): string {
 
   if (options.provider_type) {
     params.set("provider_type", options.provider_type);
+  }
+
+  if (options.since) {
+    params.set("since", options.since);
   }
 
   const query = params.toString();

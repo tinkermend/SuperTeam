@@ -18,6 +18,7 @@ import (
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/permission"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/prompttemplate"
@@ -292,6 +293,7 @@ func (s *Server) registerRoutes() {
 	s.router = chi.NewRouter()
 	s.router.Use(middleware.Recovery())
 	s.router.Use(middleware.Logger())
+	s.router.Use(oplog.RequestMeta)
 	s.router.Use(middleware.CORS(s.allowedOrigins))
 
 	s.router.Get("/health", func(w http.ResponseWriter, r *http.Request) {

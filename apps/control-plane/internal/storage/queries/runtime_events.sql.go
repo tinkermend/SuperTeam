@@ -199,18 +199,20 @@ WHERE tenant_id = $1::uuid
   AND ($3::varchar IS NULL OR severity = $3::varchar)
   AND ($4::varchar IS NULL OR node_id = $4::varchar)
   AND ($5::varchar IS NULL OR provider_type = $5::varchar)
+  AND ($6::timestamptz IS NULL OR created_at >= $6)
 ORDER BY created_at DESC
-LIMIT $7 OFFSET $6
+LIMIT $8 OFFSET $7
 `
 
 type ListRuntimeEventsParams struct {
-	TenantID     uuid.UUID   `json:"tenant_id"`
-	EventType    pgtype.Text `json:"event_type"`
-	Severity     pgtype.Text `json:"severity"`
-	NodeID       pgtype.Text `json:"node_id"`
-	ProviderType pgtype.Text `json:"provider_type"`
-	Offset       int32       `json:"offset"`
-	Limit        int32       `json:"limit"`
+	TenantID     uuid.UUID          `json:"tenant_id"`
+	EventType    pgtype.Text        `json:"event_type"`
+	Severity     pgtype.Text        `json:"severity"`
+	NodeID       pgtype.Text        `json:"node_id"`
+	ProviderType pgtype.Text        `json:"provider_type"`
+	Since        pgtype.Timestamptz `json:"since"`
+	Offset       int32              `json:"offset"`
+	Limit        int32              `json:"limit"`
 }
 
 func (q *Queries) ListRuntimeEvents(ctx context.Context, arg ListRuntimeEventsParams) ([]RuntimeEvent, error) {
@@ -220,6 +222,7 @@ func (q *Queries) ListRuntimeEvents(ctx context.Context, arg ListRuntimeEventsPa
 		arg.Severity,
 		arg.NodeID,
 		arg.ProviderType,
+		arg.Since,
 		arg.Offset,
 		arg.Limit,
 	)

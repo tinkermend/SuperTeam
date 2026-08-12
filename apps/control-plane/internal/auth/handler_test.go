@@ -550,6 +550,37 @@ func TestListOperationLogsFiltersByModule(t *testing.T) {
 	}
 }
 
+func TestListOperationLogsExcludesModule(t *testing.T) {
+	repo, _, handler, token := newAuthenticatedHandler(t)
+	repo.operationLogs = append(repo.operationLogs,
+		mockOperationLog{Module: "authz", Action: "employee.create", Result: LoginResultSucceeded},
+		mockOperationLog{Module: "teams", Action: "team.create", Result: LoginResultSucceeded},
+	)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/operation-logs?exclude_module=authz", nil)
+	request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	recorder := httptest.NewRecorder()
+
+	exclude := "authz"
+	handler.ListOperationLogs(recorder, request, ListOperationLogsParams{
+		ExcludeModule: &exclude,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response OperationLogListResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Items) != 1 {
+		t.Fatalf("expected exactly one operation log after excluding authz, got %d", len(response.Items))
+	}
+	if response.Items[0].Module != "teams" {
+		t.Fatalf("expected module teams, got %q", response.Items[0].Module)
+	}
+}
+
 func TestListOperationLogsRequiresSession(t *testing.T) {
 	_, _, handler, _ := newAuthenticatedHandler(t)
 

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/systemconfig"
 	"github.com/superteam/control-plane/internal/teamguard"
@@ -60,11 +61,12 @@ type CapabilityBindingEventRecorder interface {
 }
 
 type Service struct {
-	repository                 Repository
-	objectStore                ObjectStore
-	systemConfig               systemconfig.Reader
-	skillMCPDependencyChecker  SkillMCPDependencyChecker
-	eventRecorder               CapabilityBindingEventRecorder
+	repository                Repository
+	objectStore               ObjectStore
+	systemConfig              systemconfig.Reader
+	skillMCPDependencyChecker SkillMCPDependencyChecker
+	eventRecorder             CapabilityBindingEventRecorder
+	oplogLogger               oplog.Logger
 }
 
 func NewService(repository Repository, objectStore ObjectStore) *Service {
@@ -74,6 +76,10 @@ func NewService(repository Repository, objectStore ObjectStore) *Service {
 // SetSystemConfigReader 注入配置中心读取器;未注入(测试)时使用注册表默认值。
 func (s *Service) SetSystemConfigReader(reader systemconfig.Reader) {
 	s.systemConfig = reader
+}
+
+func (s *Service) SetOperationLogger(log oplog.Logger) {
+	s.oplogLogger = log
 }
 
 func (s *Service) archivePresignTTL(ctx context.Context, tenantID uuid.UUID) time.Duration {
@@ -121,7 +127,8 @@ func (s *Service) InstallSkill(ctx context.Context, req InstallSkillRequest) (In
 			result.AlreadyBound = true
 			return result, nil
 		}
-		if _, err := s.BindSkillToTeam(ctx, BindTeamSkillRequest{TenantID: req.TenantID, TeamID: req.TeamID, SkillID: req.SkillID}); err != nil {
+		if _, err := s.BindSkillToTeam(ctx, BindTeamSkillRequest{TenantID: req.TenantID, TeamID: req.TeamID, SkillID: req.SkillID, ActorUserID: req.ActorUserID}); err != nil {
+			s.recordSkillOperation(ctx, req, "skill.install", oplog.ResultFailed, map[string]any{"error": err.Error()})
 			return InstallSkillResult{}, err
 		}
 	case SkillInstallTargetEmployee:
@@ -140,15 +147,45 @@ func (s *Service) InstallSkill(ctx context.Context, req InstallSkillRequest) (In
 			}
 		}
 		if _, err := s.BindSkillToEmployee(ctx, BindEmployeeSkillRequest{TenantID: req.TenantID, DigitalEmployeeID: req.DigitalEmployeeID, SkillID: req.SkillID}); err != nil {
-			// 团队已提供该技能时不再吞成"已绑定"静默成功：让 409 冒出去，
-			// 界面才能说清"没装、也不需要装"。真正的重复安装在上面 effective
-			// 列表判重时已经短路返回，走不到这里。
+			s.recordSkillOperation(ctx, req, "skill.install", oplog.ResultFailed, map[string]any{"error": err.Error()})
 			return InstallSkillResult{}, err
 		}
 	default:
 		return InstallSkillResult{}, fmt.Errorf("%w: target_scope must be team or employee", ErrInvalidInput)
 	}
+	s.recordSkillOperation(ctx, req, "skill.install", oplog.ResultSucceeded, map[string]any{
+		"target_scope": req.TargetScope,
+	})
 	return result, nil
+}
+
+func (s *Service) recordSkillOperation(ctx context.Context, req InstallSkillRequest, action, result string, details map[string]any) {
+	if details == nil {
+		details = map[string]any{}
+	}
+	details["target_scope"] = req.TargetScope
+	resourceType := "skill"
+	resourceID := req.SkillID.String()
+	if req.TargetScope == SkillInstallTargetTeam && req.TeamID != uuid.Nil {
+		resourceType = "team"
+		resourceID = req.TeamID.String()
+		details["skill_id"] = req.SkillID.String()
+	}
+	if req.TargetScope == SkillInstallTargetEmployee && req.DigitalEmployeeID != uuid.Nil {
+		resourceType = "digital_employee"
+		resourceID = req.DigitalEmployeeID.String()
+		details["skill_id"] = req.SkillID.String()
+	}
+	oplog.WriteBestEffort(ctx, s.oplogLogger, oplog.Record{
+		TenantID:     req.TenantID,
+		UserID:       req.ActorUserID,
+		Module:       oplog.ModuleSkills,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Action:       action,
+		Result:       result,
+		Details:      details,
+	})
 }
 
 func containsSkillID(skills []*Skill, skillID uuid.UUID) bool {

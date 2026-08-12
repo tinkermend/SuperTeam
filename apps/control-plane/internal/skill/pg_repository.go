@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -357,7 +358,7 @@ func (r *PgRepository) writeTeamSkillTakeoverAudit(ctx context.Context, req Bind
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: req.TenantID, Valid: req.TenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -406,7 +407,7 @@ func (r *PgRepository) writeTeamCapabilityAudit(ctx context.Context, req BindTea
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: req.TenantID, Valid: req.TenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",

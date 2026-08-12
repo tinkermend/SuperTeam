@@ -4,6 +4,8 @@ import {
   decisionStatusLabel,
   decisionTypeLabel,
   deleteBlockerTypeLabel,
+  deliveryOutboxKindLabel,
+  deliveryOutboxStatusLabel,
   demandStatusLabel,
   employeeStatusLabel,
   governanceStatusLabel,
@@ -15,6 +17,14 @@ import {
   statusLabel,
   teamStatusLabel,
   workspaceReadyStatusLabel,
+  logActionLabel,
+  logModuleLabel,
+  logResourceTypeLabel,
+  loginFailureReasonLabel,
+  loginLogEventLabel,
+  runtimeEventSeverityLabel,
+  runtimeEventSourceLabel,
+  runtimeEventTypeLabel,
 } from "./status-labels";
 
 describe("statusLabel", () => {
@@ -134,6 +144,7 @@ describe("domain overrides", () => {
     expect(workspaceReadyStatusLabel(undefined)).toBe("未知");
   });
 
+
   it("demandStatusLabel covers demand lifecycle codes", () => {
     expect(demandStatusLabel("submitted")).toBe("待计划");
     // §5.5: planning_pending 拆词后为「排队规划中」,planning_failed 为「规划失败」。
@@ -180,5 +191,24 @@ describe("humanWaitLabel", () => {
     expect(humanWaitLabel("run_overview_badge")).toBe("待人工");
     expect(humanWaitLabel("project_object")).toBe("待决决策");
     expect(humanWaitLabel("inbox_progress_second_person")).toBe("待你");
+  });
+});
+
+describe("log labels", () => {
+  it("maps console log modules, actions, login events, runtime events, and delivery statuses", () => {
+    expect(logModuleLabel("auth")).toBe("用户");
+    expect(logModuleLabel("authz")).toBe("授权判定");
+    expect(logActionLabel("user.create")).toBe("创建用户");
+    expect(logActionLabel("team.skill.bind")).toBe("安装公共技能");
+    expect(loginLogEventLabel("login_failed")).toBe("登录失败");
+    expect(runtimeEventTypeLabel("node_offline")).toBe("节点离线");
+    expect(runtimeEventSourceLabel("runtime_node")).toBe("Runtime 节点");
+    expect(runtimeEventSeverityLabel("error")).toBe("错误");
+    expect(deliveryOutboxStatusLabel("sent")).toBe("已送达");
+    expect(deliveryOutboxStatusLabel("skipped_unbound")).toBe("未绑定跳过");
+    expect(logResourceTypeLabel("user")).toBe("用户");
+    expect(logResourceTypeLabel("project_demand")).toBe("项目需求");
+    expect(loginFailureReasonLabel("invalid_credentials")).toBe("账号或密码不正确");
+    expect(deliveryOutboxKindLabel("result_notice")).toBe("结果通知");
   });
 });

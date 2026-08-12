@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -45,7 +46,7 @@ func (r *PgRepository) CreateEvent(ctx context.Context, event *Event) error {
 	if err != nil {
 		return err
 	}
-	created, err := r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	created, err := oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: event.TenantID, Valid: event.TenantID != uuid.Nil},
 		EventType:    event.EventType,
 		ActorType:    event.ActorType,

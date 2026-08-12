@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -29,10 +30,10 @@ func (s *stubOutboxRepo) MarkOutboxSent(context.Context, uuid.UUID, uuid.UUID, s
 func (s *stubOutboxRepo) MarkOutboxFailed(context.Context, uuid.UUID, uuid.UUID, string) (OutboxItem, error) {
 	return s.item, s.err
 }
-func (s *stubOutboxRepo) ListOutboxByStatuses(context.Context, uuid.UUID, []string, int32, int32) ([]OutboxItem, error) {
+func (s *stubOutboxRepo) ListOutboxByStatuses(context.Context, uuid.UUID, []string, int32, int32, *time.Time) ([]OutboxItem, error) {
 	return nil, nil
 }
-func (s *stubOutboxRepo) CountOutboxByStatuses(context.Context, uuid.UUID, []string) (int64, error) {
+func (s *stubOutboxRepo) CountOutboxByStatuses(context.Context, uuid.UUID, []string, *time.Time) (int64, error) {
 	return 0, nil
 }
 func (s *stubOutboxRepo) RequeueOutbox(context.Context, uuid.UUID, uuid.UUID) (OutboxItem, error) {

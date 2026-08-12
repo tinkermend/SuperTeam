@@ -185,6 +185,12 @@ paths:
           schema:
             type: string
             enum: [succeeded, failed]
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: 成功
@@ -237,6 +243,17 @@ paths:
           schema:
             type: string
             enum: [succeeded, failed]
+        - name: exclude_module
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: 成功
@@ -953,6 +970,10 @@ components:
         resource_id:
           type: string
           nullable: true
+        resource_name:
+          type: string
+          nullable: true
+          description: 资源显示名（读侧从 details 或配置键解析；给人看，不替代 resource_id）
         action:
           type: string
         result:
@@ -966,6 +987,10 @@ components:
           nullable: true
         user_agent:
           type: string
+          nullable: true
+        details:
+          type: object
+          additionalProperties: true
           nullable: true
         created_at:
           type: string

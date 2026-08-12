@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/storage/queries"
 	"github.com/superteam/control-plane/internal/teamguard"
 )
@@ -270,7 +271,7 @@ func (r *PgRepository) CreateDigitalEmployeeDeleteAuditEvent(ctx context.Context
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "digital_employee_management",
 		ActorType:    "user",
@@ -340,7 +341,7 @@ func (r *PgRepository) ReassignDigitalEmployeeTeam(ctx context.Context, params R
 	}); err != nil {
 		return DigitalEmployeeRecord{}, err
 	}
-	if _, err := r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	if _, err := oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "digital_employee_management",
 		ActorType:    "user",
@@ -366,7 +367,7 @@ func (r *PgRepository) writeTeamTransferAudit(
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",

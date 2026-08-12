@@ -253,6 +253,7 @@ type ListLoginLogsFilter struct {
 	UserID    *uuid.UUID
 	EventType string
 	Result    string
+	Since     *time.Time
 	Limit     int32
 	Offset    int32
 }
@@ -270,17 +271,20 @@ type OperationLog struct {
 	RequestID    string
 	ClientIP     string
 	UserAgent    string
+	Details      map[string]any
 	CreatedAt    time.Time
 }
 
 // ListOperationLogsFilter Web 控制台操作日志查询过滤条件。
 type ListOperationLogsFilter struct {
-	UserID *uuid.UUID
-	Module string
-	Action string
-	Result string
-	Limit  int32
-	Offset int32
+	UserID         *uuid.UUID
+	Module         string
+	ExcludeModule  string
+	Action         string
+	Result         string
+	Since          *time.Time
+	Limit          int32
+	Offset         int32
 }
 
 // CreateOperationLogParams 创建 Web 控制台操作日志所需字段。
@@ -292,6 +296,7 @@ type CreateOperationLogParams struct {
 	ResourceID   string
 	Action       string
 	Result       string
+	RequestID    string
 	ClientIP     string
 	UserAgent    string
 }

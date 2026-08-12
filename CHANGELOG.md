@@ -21,11 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-12 22:07 日志给人看：投递列表 API 补 `project_name` / `resource_title`（读 payload）与 `recipient_display_name`（反查用户）；操作日志补 `resource_name`（details/配置键）；前端行摘要与详情用 `ObjectRef`（名称为主、短 UUID 可复制）。**真实链路**（control-plane pid=25077 / web pid=25512）：投递详情「收件人 开发管理员」「项目 S10 Git 屏蔽验收」「资源 处理项目任务失败」，UUID 仅短 chip。定向 go/vitest 绿。
+
+- 2026-08-12 21:48 日志调查台补充：平台事件「事件类型」不以长 chip 行加回，改工具栏分组下拉（节点健康/命令/注册/原生配置），级别仍用 chips；空态区分时间窗与筛选，有筛选且非全部时间时提示先扩窗再清筛。默认仍 24 小时。浏览器：点操作「团队」见「近 24 小时内无匹配…全部时间」；平台事件有「全部类型」下拉、无事件类型 chip。定向 vitest 7 绿。
+
 - 2026-08-12 21:47 项目详情去掉「需求」页签与「驱动/巡检」人工密度开关：旧 `?tab=demands` 深链 remap 到任务表并保留 `demand=`；意图/剧本/收口与「继续这一单」挂在阶段河；历史时间线疏密仍由 `signals` 自动推导。定向 vitest 覆盖 remap / river continue。
+
+
+
+- 2026-08-12 21:19 日志管理改成调查台：`Main width=wide` + `PageTabs`；四 Tab 筛区收成 `ListToolbar` 一行（时间 `Segmented` 默认 24 小时、模块/状态 chips、密度切换）；行改成相对时间 + 一句话摘要，失败只留左侧 accent；详情改 `MasterDetailLayout`（宽屏右栏 / 窄屏 Sheet）；投递去掉「消息投递台账」双重标题，kind/失败原因补中文词表。**真实链路**（验证期 control-plane pid=24339 / web pid=57486，cwd 均为本 checkout）：`/logs/login` 默认 24 小时、行「admin 登录成功」、点开右栏含 IP/UA；`/logs/operation` 两行「admin 重置/更新 · team.constitution_max_chars」无 `type:uuid`，详情含来源 IP；投递首行「结果通知 · 项目需求」无英文 kind。定向 vitest 42 绿。
 
 - 2026-08-12 21:17 项目详情卷宗壳布局收口：左轨+阶段河+页签收成一张 fused SoftCard（228px 轨，河始终四格一行，不再用 `xl:grid-cols-4` 折成指标卡）；运行落点改挂项目头卡一行摘要，不再插在河与任务表之间。浏览器实测（control-plane pid=24339 / web pid=57486，cwd 本 checkout）：壳内河 4×192px、壳高随工作区约 450px；改前同页河折成 2×2、9 张独立卡、任务表从 y=597 才开始。
 
 - 2026-08-12 21:07 项目详情改成「卷宗为脊柱 + 阶段河 + 关联任务表」（spec `docs/superpowers/specs/2026-08-12-project-detail-dossier-task-table.md`）：默认骨架左轨需求流程 + 四格阶段河 + 页签（任务默认）；任务表主行 Demand、子行 `task-graph?demand_id=` 的 nodes；当前处理连 `decision_requests`/`dispatch_gates`，关联连卷宗 rail/handoff；Console `GET /projects/{id}/demands` 改走 `updated_at DESC` + 非终态优先（仓储 `ListProjectDemands` 默认序不动）；左轨 `limit+1` 加载更多、搜索只滤已加载集。深链 `?tab=tasks|flow|history|demands&demand=` 仍可用。**真实链路**（验证期 control-plane pid=24339 / web pid=24927，cwd 均为本 checkout）：项目 `5c40c4fb` 默认任务页签；左轨选中 `gate-e2e-risk`（失败、1 小时前）排在更早仍「已计划」的 Phase1 之上；任务表 2 子行 = graph 2 nodes（Verify 已取消 / Create 失败，当前处理「已阻塞」= `dispatch_gates.status=blocked`）；加载更多 20→28 条且选中不丢；`?tab=history` 协调时间线、`?tab=flow` 权威流程图。本环境收件箱 open=0，未对照一张待决卡。
+
+- 2026-08-12 20:58 日志管理缺口落地（方案 `docs/superpowers/plans/2026-08-12-logs-management-gap.md`）：控制台审计双写 `web_operation_logs`（团队/员工/技能/系统配置/场景模板），员工 create/update 与技能安装失败补写；操作日志默认排除 `authz`；四 Tab 加时间窗、行详情、中文词表；投递「全部」含 sent/pending。**真实链路**（验证期 control-plane pid=13252 / web pid=14422，cwd 本 checkout 未漂移）：改 `team.constitution_max_chars` 后 `/logs/operation` 可见「系统配置 / 更新·重置」及详情 Sheet（UA/details）；失败登录 `SuperTeamLogsE2E/1.0` 出现在登录日志；投递「已送达」筛到 sent（合计 1316→1306）。
 
 - 2026-08-12 19:10 任务清理确认改平台弹窗；需求「执行中」孤儿收敛：① 清理任务不再用浏览器 `window.confirm`，改 `ConfirmDialog`；② 需求状态重算把 `blocked` 从「还有活」里拆出——上游已失败、下游只剩 blocked 时需求进 `failed`；③ 看门狗 `SweepStrandedBlockedProjectTasks` 取消前置已失败/取消的滞留下游（失败恢复未驳回时 `cancelFailureDownstream` 不会跑）。真实验证：control-plane pid=69587 启动扫 `cancelled downstream tasks count=1`，需求 `bdbc5376` executing→failed，任务 Verify `blocked`→`cancelled`；库内「失败且无 runnable 仍 executing」=0。定向单测 + vitest 29 绿。
 

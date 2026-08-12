@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -327,7 +328,7 @@ func (r *PgRepository) writeTeamCapabilityAudit(
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",

@@ -1,8 +1,10 @@
 package feishu
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +21,7 @@ import (
 type AdminHTTPHandler struct {
 	service    *Service
 	authorizer authz.Authorizer
+	userNamer  UserDisplayNamer
 }
 
 func NewAdminHTTPHandler(service *Service) *AdminHTTPHandler {
@@ -224,18 +227,30 @@ func (h *AdminHTTPHandler) ChannelHealth(w http.ResponseWriter, r *http.Request)
 }
 
 type outboxOpsItem struct {
-	ID              string  `json:"id"`
-	Kind            string  `json:"kind"`
-	Status          string  `json:"status"`
-	ResourceType    string  `json:"resource_type"`
-	ResourceID      string  `json:"resource_id"`
-	ProjectID       string  `json:"project_id,omitempty"`
-	RecipientUserID string  `json:"recipient_user_id"`
-	RecipientOpenID string  `json:"recipient_open_id"`
-	Attempts        int32   `json:"attempts"`
-	LastError       *string `json:"last_error,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	ID                    string  `json:"id"`
+	Kind                  string  `json:"kind"`
+	Status                string  `json:"status"`
+	ResourceType          string  `json:"resource_type"`
+	ResourceID            string  `json:"resource_id"`
+	ResourceTitle         string  `json:"resource_title,omitempty"`
+	ProjectID             string  `json:"project_id,omitempty"`
+	ProjectName           string  `json:"project_name,omitempty"`
+	RecipientUserID       string  `json:"recipient_user_id"`
+	RecipientDisplayName  string  `json:"recipient_display_name,omitempty"`
+	RecipientOpenID       string  `json:"recipient_open_id"`
+	Attempts              int32   `json:"attempts"`
+	LastError             *string `json:"last_error,omitempty"`
+	CreatedAt             string  `json:"created_at"`
+	UpdatedAt             string  `json:"updated_at"`
+}
+
+// UserDisplayNamer resolves auth user display labels for operational logs.
+type UserDisplayNamer interface {
+	LookupDisplayNames(ctx context.Context, ids []uuid.UUID) map[uuid.UUID]string
+}
+
+func (h *AdminHTTPHandler) SetUserDisplayNamer(namer UserDisplayNamer) {
+	h.userNamer = namer
 }
 
 // ListOperationalOutbox 失败/未绑定投递列表(运营面)。
@@ -260,29 +275,37 @@ func (h *AdminHTTPHandler) ListOperationalOutbox(w http.ResponseWriter, r *http.
 			offset = int32(n)
 		}
 	}
-	items, total, err := h.service.ListOperationalOutbox(r.Context(), tenantID, statuses, limit, offset)
+	var since *time.Time
+	if raw := strings.TrimSpace(r.URL.Query().Get("since")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			http.Error(w, "invalid since", http.StatusBadRequest)
+			return
+		}
+		since = &parsed
+	}
+	items, total, err := h.service.ListOperationalOutbox(r.Context(), tenantID, statuses, limit, offset, since)
 	if err != nil {
 		writeFeishuError(w, err)
 		return
 	}
 	out := make([]outboxOpsItem, 0, len(items))
+	recipientIDs := make([]uuid.UUID, 0, len(items))
+	seenRecipients := map[uuid.UUID]struct{}{}
 	for _, item := range items {
-		row := outboxOpsItem{
-			ID:              item.ID.String(),
-			Kind:            item.Kind,
-			Status:          item.Status,
-			ResourceType:    item.ResourceType,
-			ResourceID:      item.ResourceID.String(),
-			RecipientUserID: item.RecipientUserID.String(),
-			RecipientOpenID: item.RecipientOpenID,
-			Attempts:        item.Attempts,
-			LastError:       item.LastError,
-			CreatedAt:       item.CreatedAt.UTC().Format(time.RFC3339),
-			UpdatedAt:       item.UpdatedAt.UTC().Format(time.RFC3339),
+		if item.RecipientUserID != uuid.Nil {
+			if _, ok := seenRecipients[item.RecipientUserID]; !ok {
+				seenRecipients[item.RecipientUserID] = struct{}{}
+				recipientIDs = append(recipientIDs, item.RecipientUserID)
+			}
 		}
-		if item.ProjectID != nil {
-			row.ProjectID = item.ProjectID.String()
-		}
+	}
+	recipientNames := map[uuid.UUID]string{}
+	if h.userNamer != nil && len(recipientIDs) > 0 {
+		recipientNames = h.userNamer.LookupDisplayNames(r.Context(), recipientIDs)
+	}
+	for _, item := range items {
+		row := toOutboxOpsItem(item, recipientNames)
 		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "total": total})
@@ -308,7 +331,15 @@ func (h *AdminHTTPHandler) RequeueOutbox(w http.ResponseWriter, r *http.Request)
 		writeFeishuError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, outboxOpsItem{
+	names := map[uuid.UUID]string{}
+	if h.userNamer != nil && item.RecipientUserID != uuid.Nil {
+		names = h.userNamer.LookupDisplayNames(r.Context(), []uuid.UUID{item.RecipientUserID})
+	}
+	writeJSON(w, http.StatusOK, toOutboxOpsItem(item, names))
+}
+
+func toOutboxOpsItem(item OutboxItem, recipientNames map[uuid.UUID]string) outboxOpsItem {
+	row := outboxOpsItem{
 		ID:              item.ID.String(),
 		Kind:            item.Kind,
 		Status:          item.Status,
@@ -320,5 +351,30 @@ func (h *AdminHTTPHandler) RequeueOutbox(w http.ResponseWriter, r *http.Request)
 		LastError:       item.LastError,
 		CreatedAt:       item.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:       item.UpdatedAt.UTC().Format(time.RFC3339),
-	})
+	}
+	if item.ProjectID != nil {
+		row.ProjectID = item.ProjectID.String()
+	}
+	row.ProjectName = payloadString(item.Payload, "project_name")
+	row.ResourceTitle = payloadString(item.Payload, "title")
+	if name := recipientNames[item.RecipientUserID]; name != "" {
+		row.RecipientDisplayName = name
+	}
+	return row
+}
+
+func payloadString(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	raw, ok := payload[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
 }

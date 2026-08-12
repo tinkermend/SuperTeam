@@ -657,6 +657,12 @@ paths:
           schema:
             type: string
             minLength: 1
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
       responses:
         "200":
           description: Runtime event list
@@ -6698,9 +6704,18 @@ components:
         project_id:
           type: string
           format: uuid
+        project_name:
+          type: string
+          description: 项目显示名（读侧从 payload 或项目表解析；给人看，不替代 project_id）
+        resource_title:
+          type: string
+          description: 资源标题（如决策/需求标题；给人看，不替代 resource_id）
         recipient_user_id:
           type: string
           format: uuid
+        recipient_display_name:
+          type: string
+          description: 收件人显示名（display_name 或 username；给人看，不替代 recipient_user_id）
         recipient_open_id:
           type: string
         attempts:

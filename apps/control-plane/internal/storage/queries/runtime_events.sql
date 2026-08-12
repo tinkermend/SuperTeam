@@ -35,6 +35,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND (sqlc.narg('severity')::varchar IS NULL OR severity = sqlc.narg('severity')::varchar)
   AND (sqlc.narg('node_id')::varchar IS NULL OR node_id = sqlc.narg('node_id')::varchar)
   AND (sqlc.narg('provider_type')::varchar IS NULL OR provider_type = sqlc.narg('provider_type')::varchar)
+  AND (sqlc.narg('since')::timestamptz IS NULL OR created_at >= sqlc.narg('since'))
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 

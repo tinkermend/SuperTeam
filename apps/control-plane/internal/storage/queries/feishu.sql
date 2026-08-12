@@ -217,6 +217,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 SELECT * FROM feishu_outbox
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND status = ANY(sqlc.arg('statuses')::varchar[])
+  AND (sqlc.narg('since')::timestamptz IS NULL OR updated_at >= sqlc.narg('since'))
 ORDER BY updated_at DESC
 LIMIT sqlc.arg('limit')
 OFFSET sqlc.arg('offset');
@@ -225,7 +226,8 @@ OFFSET sqlc.arg('offset');
 SELECT count(*)::bigint
 FROM feishu_outbox
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND status = ANY(sqlc.arg('statuses')::varchar[]);
+  AND status = ANY(sqlc.arg('statuses')::varchar[])
+  AND (sqlc.narg('since')::timestamptz IS NULL OR updated_at >= sqlc.narg('since'));
 
 -- name: RequeueFeishuOutbox :one
 -- 运营重推:failed 终态回到 pending 并清 attempts/last_error。

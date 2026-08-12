@@ -29,18 +29,18 @@ function createQueryClient() {
     defaultOptions: {
       queries: {
         retry: false
-}
-}
-});
+      }
+    }
+  });
 }
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: {
       "content-type": "application/json"
-},
+    },
     status: 200
-});
+  });
 }
 
 function createFetcher() {
@@ -55,22 +55,22 @@ function createFetcher() {
             client_ip: "127.0.0.1",
             created_at: "2026-06-20T08:30:00Z",
             id: "op-1",
-            module: "users",
+            module: "auth",
             resource_id: "user-9",
             resource_type: "user",
             result: "succeeded",
             username: "admin"
-},
+          },
         ]
-});
+      });
     }
 
     return new Response(JSON.stringify({ error: `unhandled ${url.pathname}` }), {
       headers: {
         "content-type": "application/json"
-},
+      },
       status: 404
-});
+    });
   }) as unknown as typeof fetch;
 }
 
@@ -87,20 +87,33 @@ async function renderRoute(fetcher = createFetcher()) {
 
 describe("OperationLogsRoute", () => {
   it("renders operation logs from the control plane with v3 surfaces", async () => {
-    const screen = await renderRoute();
+    const fetcher = createFetcher();
+    const screen = await renderRoute(fetcher);
 
-    await expect.element(screen.getByText("user.create")).toBeVisible();
-    await expect.element(screen.getByRole("cell", { name: "users" })).toBeVisible();
+    await expect.element(screen.getByText("创建用户")).toBeVisible();
+    await expect.element(screen.getByText("admin")).toBeVisible();
 
     expect(document.body.querySelector('[data-slot="work-surface"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="data-table"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-slot="list-toolbar"]')).not.toBeNull();
+    const requestUrl = String(fetcher.mock.calls[0]?.[0]);
+    expect(requestUrl).toContain("exclude_module=authz");
+    expect(requestUrl).toContain("since=");
   });
 
   it("renders module quick-filter chips", async () => {
     const screen = await renderRoute();
 
-    await expect.element(screen.getByRole("button", { name: "全部" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "users" })).toBeVisible();
-    await expect.element(screen.getByRole("button", { name: "authz" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "用户" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "授权判定" })).toBeVisible();
+    await expect.element(screen.getByRole("button", { name: "系统配置" })).toBeVisible();
+  });
+
+  it("opens master-detail on row click", async () => {
+    const screen = await renderRoute();
+
+    await screen.getByText("创建用户").click();
+    await expect.element(screen.getByTestId("log-detail")).toBeVisible();
+    await expect.element(screen.getByText("127.0.0.1")).toBeVisible();
   });
 });

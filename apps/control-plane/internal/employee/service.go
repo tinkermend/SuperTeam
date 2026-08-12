@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/approval"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/permission"
 	"github.com/superteam/control-plane/internal/skill"
 	"github.com/superteam/control-plane/internal/systemconfig"
@@ -37,6 +38,7 @@ type Service struct {
 	roleStore EmployeeRoleStore
 	// castingImpact 预检/级联解除编制（可选；未注入则移除角色不查编制）。
 	castingImpact CastingImpactGateway
+	oplogLogger   oplog.Logger
 }
 
 // CastingImpactGateway previews and cascades casting rows when employee roles shrink.
@@ -106,6 +108,10 @@ func (s *Service) SetEmployeeRoleStore(store EmployeeRoleStore) {
 
 func (s *Service) SetCastingImpactGateway(g CastingImpactGateway) {
 	s.castingImpact = g
+}
+
+func (s *Service) SetOperationLogger(log oplog.Logger) {
+	s.oplogLogger = log
 }
 
 func (s *Service) validateRoleKeys(ctx context.Context, tenantID uuid.UUID, roleKeys []string) error {
@@ -806,6 +812,9 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 	if err := s.attachLatestConfigRevision(ctx, employee); err != nil {
 		return nil, err
 	}
+	s.recordEmployeeOperation(ctx, normalized.TenantID, normalized.OwnerUserID, employee.ID, "digital_employee.create", oplog.ResultSucceeded, map[string]any{
+		"name": employee.Name,
+	})
 	return employee, nil
 }
 
@@ -1423,6 +1432,9 @@ func (s *Service) UpdateStatus(ctx context.Context, req UpdateStatusRequest) (*D
 	if err != nil {
 		return nil, fmt.Errorf("update digital employee status: %w", err)
 	}
+	s.recordEmployeeOperation(ctx, req.TenantID, uuid.Nil, req.DigitalEmployeeID, "digital_employee.status.update", oplog.ResultSucceeded, map[string]any{
+		"status": string(req.Status),
+	})
 	return employeeFromRecord(record), nil
 }
 
@@ -1452,6 +1464,9 @@ func (s *Service) UpdateProfile(ctx context.Context, req UpdateProfileRequest) (
 			employee.ProjectSummary.Projects = []DigitalEmployeeProjectLinkSummary{}
 		}
 	}
+	s.recordEmployeeOperation(ctx, req.TenantID, uuid.Nil, req.DigitalEmployeeID, "digital_employee.profile.update", oplog.ResultSucceeded, map[string]any{
+		"name": employee.Name,
+	})
 	return employee, nil
 }
 
@@ -1603,6 +1618,9 @@ func (s *Service) CreateConfigRevision(ctx context.Context, req CreateDigitalEmp
 	}); txErr != nil {
 		return nil, txErr
 	}
+	s.recordEmployeeOperation(ctx, req.TenantID, approvedBy, req.DigitalEmployeeID, "digital_employee.config.revise", oplog.ResultSucceeded, map[string]any{
+		"revision_number": record.RevisionNumber,
+	})
 	return configRevisionFromRecord(record), nil
 }
 
@@ -1951,6 +1969,19 @@ func (s *Service) attachLatestConfigRevision(ctx context.Context, employee *Digi
 	employee.CapabilityBindings = cloneMap(config.CapabilityBindings)
 	employee.BudgetPolicy = cloneMap(config.BudgetPolicy)
 	return nil
+}
+
+func (s *Service) recordEmployeeOperation(ctx context.Context, tenantID, actorID, employeeID uuid.UUID, action, result string, details map[string]any) {
+	oplog.WriteBestEffort(ctx, s.oplogLogger, oplog.Record{
+		TenantID:     tenantID,
+		UserID:       actorID,
+		Module:       oplog.ModuleEmployees,
+		ResourceType: "digital_employee",
+		ResourceID:   employeeID.String(),
+		Action:       action,
+		Result:       result,
+		Details:      details,
+	})
 }
 
 func configRevisionFromRecord(record DigitalEmployeeConfigRevisionRecord) *DigitalEmployeeConfigRevision {

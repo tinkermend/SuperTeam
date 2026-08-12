@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -220,6 +222,14 @@ func (h *RuntimeHandler) ListRuntimeEvents(w http.ResponseWriter, r *http.Reques
 	}
 	if providerType := r.URL.Query().Get("provider_type"); providerType != "" {
 		filter.ProviderType = &providerType
+	}
+	if sinceRaw := strings.TrimSpace(r.URL.Query().Get("since")); sinceRaw != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, sinceRaw)
+		if err != nil {
+			http.Error(w, "invalid since", http.StatusBadRequest)
+			return
+		}
+		filter.Since = &parsed
 	}
 
 	events, err := h.runtimeService.ListRuntimeEvents(r.Context(), filter)

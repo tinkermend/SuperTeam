@@ -255,7 +255,7 @@ func (s *Service) GetChannelHealth(ctx context.Context, tenantID uuid.UUID) (Cha
 	}, nil
 }
 
-func (s *Service) ListOperationalOutbox(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32) ([]OutboxItem, int64, error) {
+func (s *Service) ListOperationalOutbox(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32, since *time.Time) ([]OutboxItem, int64, error) {
 	if tenantID == uuid.Nil {
 		return nil, 0, ErrInvalidInput
 	}
@@ -263,11 +263,11 @@ func (s *Service) ListOperationalOutbox(ctx context.Context, tenantID uuid.UUID,
 		statuses = []string{"failed", "skipped_unbound"}
 	}
 	repo := s.repoOutbox()
-	items, err := repo.ListOutboxByStatuses(ctx, tenantID, statuses, limit, offset)
+	items, err := repo.ListOutboxByStatuses(ctx, tenantID, statuses, limit, offset, since)
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := repo.CountOutboxByStatuses(ctx, tenantID, statuses)
+	total, err := repo.CountOutboxByStatuses(ctx, tenantID, statuses, since)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -282,8 +282,8 @@ func (s *Service) RequeueFailedOutbox(ctx context.Context, tenantID, id uuid.UUI
 }
 
 type outboxOpsRepo interface {
-	ListOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32) ([]OutboxItem, error)
-	CountOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string) (int64, error)
+	ListOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, limit, offset int32, since *time.Time) ([]OutboxItem, error)
+	CountOutboxByStatuses(ctx context.Context, tenantID uuid.UUID, statuses []string, since *time.Time) (int64, error)
 	RequeueOutbox(ctx context.Context, tenantID, id uuid.UUID) (OutboxItem, error)
 }
 
@@ -299,10 +299,10 @@ func (s *Service) repoOutbox() outboxOpsRepo {
 
 type noopOutboxRepo struct{}
 
-func (noopOutboxRepo) ListOutboxByStatuses(context.Context, uuid.UUID, []string, int32, int32) ([]OutboxItem, error) {
+func (noopOutboxRepo) ListOutboxByStatuses(context.Context, uuid.UUID, []string, int32, int32, *time.Time) ([]OutboxItem, error) {
 	return nil, ErrInvalidInput
 }
-func (noopOutboxRepo) CountOutboxByStatuses(context.Context, uuid.UUID, []string) (int64, error) {
+func (noopOutboxRepo) CountOutboxByStatuses(context.Context, uuid.UUID, []string, *time.Time) (int64, error) {
 	return 0, ErrInvalidInput
 }
 func (noopOutboxRepo) RequeueOutbox(context.Context, uuid.UUID, uuid.UUID) (OutboxItem, error) {

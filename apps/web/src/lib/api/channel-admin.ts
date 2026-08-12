@@ -70,8 +70,11 @@ export type FeishuOperationalOutboxItem = {
   status: string;
   resource_type: string;
   resource_id: string;
+  resource_title?: string;
   project_id?: string;
+  project_name?: string;
   recipient_user_id: string;
+  recipient_display_name?: string;
   recipient_open_id: string;
   attempts: number;
   last_error?: string | null;
@@ -179,10 +182,11 @@ export async function getFeishuChannelHealth(options: ApiClientOptions): Promise
 
 export async function listFeishuOperationalOutbox(
   options: ApiClientOptions,
-  params?: { status?: string; limit?: number; offset?: number },
+  params?: { status?: string; since?: string; limit?: number; offset?: number },
 ): Promise<{ items: FeishuOperationalOutboxItem[]; total: number }> {
   const query = new URLSearchParams();
   if (params?.status) query.set("status", params.status);
+  if (params?.since) query.set("since", params.since);
   if (params?.limit != null) query.set("limit", String(params.limit));
   if (params?.offset != null) query.set("offset", String(params.offset));
   const suffix = query.toString() ? `?${query.toString()}` : "";

@@ -503,10 +503,12 @@ function PageTabList({ className, ...props }: ComponentProps<"div">) {
 function PageTab({
   className,
   active,
+  asChild,
   ...props
-}: ComponentProps<"button"> & { active?: boolean }) {
+}: ComponentProps<"button"> & { active?: boolean; asChild?: boolean }) {
+  const Comp = asChild ? Slot : "button";
   return (
-    <button
+    <Comp
       data-slot="page-tab"
       aria-pressed={active}
       className={cn(

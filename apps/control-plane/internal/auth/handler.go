@@ -104,6 +104,9 @@ func (h *HTTPHandler) ListLoginLogs(w http.ResponseWriter, r *http.Request, para
 	if params.Result != nil {
 		filter.Result = string(*params.Result)
 	}
+	if params.Since != nil {
+		filter.Since = params.Since
+	}
 	logs, err := h.service.ListLoginLogs(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal server error")
@@ -134,6 +137,12 @@ func (h *HTTPHandler) ListOperationLogs(w http.ResponseWriter, r *http.Request, 
 	}
 	if params.Result != nil {
 		filter.Result = string(*params.Result)
+	}
+	if params.ExcludeModule != nil {
+		filter.ExcludeModule = strings.TrimSpace(*params.ExcludeModule)
+	}
+	if params.Since != nil {
+		filter.Since = params.Since
 	}
 
 	logs, err := h.service.ListOperationLogs(r.Context(), filter)
@@ -657,11 +666,42 @@ func toGeneratedOperationLogRecord(log OperationLog) OperationLogRecord {
 		Module:       log.Module,
 		RequestId:    optionalString(log.RequestID),
 		ResourceId:   optionalString(log.ResourceID),
+		ResourceName: optionalString(operationResourceName(log)),
 		ResourceType: optionalString(log.ResourceType),
 		Result:       OperationLogRecordResult(log.Result),
 		UserAgent:    optionalString(log.UserAgent),
 		UserId:       optionalOpenAPIUUID(log.UserID),
 		Username:     optionalString(log.Username),
+		Details:      optionalDetails(log.Details),
+	}
+}
+
+// operationResourceName prefers human labels already present in details / config keys.
+func operationResourceName(log OperationLog) string {
+	if strings.TrimSpace(log.ResourceType) == "system_config" {
+		return strings.TrimSpace(log.ResourceID)
+	}
+	for _, key := range []string{"resource_name", "name", "display_name", "title", "key"} {
+		if value := detailString(log.Details, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func detailString(details map[string]any, key string) string {
+	if details == nil {
+		return ""
+	}
+	raw, ok := details[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	default:
+		return ""
 	}
 }
 
@@ -805,6 +845,14 @@ func optionalString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func optionalDetails(value map[string]any) *map[string]interface{} {
+	if len(value) == 0 {
+		return nil
+	}
+	copied := map[string]interface{}(value)
+	return &copied
 }
 
 func valueOrDefault(value *int32, fallback int32) int32 {

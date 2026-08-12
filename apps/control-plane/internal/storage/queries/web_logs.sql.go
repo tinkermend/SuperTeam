@@ -167,16 +167,18 @@ SELECT id, tenant_id, event_type, user_id, username, session_id, client_ip, user
 WHERE ($1::uuid IS NULL OR user_id = $1::uuid)
   AND ($2::varchar IS NULL OR event_type = $2::varchar)
   AND ($3::varchar IS NULL OR result = $3::varchar)
+  AND ($4::timestamptz IS NULL OR created_at >= $4)
 ORDER BY created_at DESC, id DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type ListWebLoginLogsParams struct {
-	UserID    uuid.NullUUID `json:"user_id"`
-	EventType pgtype.Text   `json:"event_type"`
-	Result    pgtype.Text   `json:"result"`
-	Offset    int32         `json:"offset"`
-	Limit     int32         `json:"limit"`
+	UserID    uuid.NullUUID      `json:"user_id"`
+	EventType pgtype.Text        `json:"event_type"`
+	Result    pgtype.Text        `json:"result"`
+	Since     pgtype.Timestamptz `json:"since"`
+	Offset    int32              `json:"offset"`
+	Limit     int32              `json:"limit"`
 }
 
 func (q *Queries) ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsParams) ([]WebLoginLog, error) {
@@ -184,6 +186,7 @@ func (q *Queries) ListWebLoginLogs(ctx context.Context, arg ListWebLoginLogsPara
 		arg.UserID,
 		arg.EventType,
 		arg.Result,
+		arg.Since,
 		arg.Offset,
 		arg.Limit,
 	)
@@ -222,27 +225,33 @@ const ListWebOperationLogs = `-- name: ListWebOperationLogs :many
 SELECT id, tenant_id, user_id, username, module, resource_type, resource_id, action, result, request_id, client_ip, user_agent, details, created_at FROM web_operation_logs
 WHERE ($1::uuid IS NULL OR user_id = $1::uuid)
   AND ($2::varchar IS NULL OR module = $2::varchar)
-  AND ($3::varchar IS NULL OR action = $3::varchar)
-  AND ($4::varchar IS NULL OR result = $4::varchar)
+  AND ($3::varchar IS NULL OR module <> $3::varchar)
+  AND ($4::varchar IS NULL OR action = $4::varchar)
+  AND ($5::varchar IS NULL OR result = $5::varchar)
+  AND ($6::timestamptz IS NULL OR created_at >= $6)
 ORDER BY created_at DESC, id DESC
-LIMIT $6 OFFSET $5
+LIMIT $8 OFFSET $7
 `
 
 type ListWebOperationLogsParams struct {
-	UserID uuid.NullUUID `json:"user_id"`
-	Module pgtype.Text   `json:"module"`
-	Action pgtype.Text   `json:"action"`
-	Result pgtype.Text   `json:"result"`
-	Offset int32         `json:"offset"`
-	Limit  int32         `json:"limit"`
+	UserID        uuid.NullUUID      `json:"user_id"`
+	Module        pgtype.Text        `json:"module"`
+	ExcludeModule pgtype.Text        `json:"exclude_module"`
+	Action        pgtype.Text        `json:"action"`
+	Result        pgtype.Text        `json:"result"`
+	Since         pgtype.Timestamptz `json:"since"`
+	Offset        int32              `json:"offset"`
+	Limit         int32              `json:"limit"`
 }
 
 func (q *Queries) ListWebOperationLogs(ctx context.Context, arg ListWebOperationLogsParams) ([]WebOperationLog, error) {
 	rows, err := q.db.Query(ctx, ListWebOperationLogs,
 		arg.UserID,
 		arg.Module,
+		arg.ExcludeModule,
 		arg.Action,
 		arg.Result,
+		arg.Since,
 		arg.Offset,
 		arg.Limit,
 	)

@@ -162,6 +162,7 @@ export type ListLoginLogsOptions = ApiClientOptions & {
   offset?: number;
   event_type?: LoginLogEventType;
   result?: LoginLogResult;
+  since?: string;
 };
 
 export type OperationLogResult = "succeeded" | "failed";
@@ -170,10 +171,12 @@ export type OperationLogRecord = {
   action: string;
   client_ip?: string;
   created_at: string;
+  details?: Record<string, unknown>;
   id: string;
   module: string;
   request_id?: string;
   resource_id?: string;
+  resource_name?: string;
   resource_type?: string;
   result: OperationLogResult;
   user_agent?: string;
@@ -189,8 +192,10 @@ export type ListOperationLogsOptions = ApiClientOptions & {
   limit?: number;
   offset?: number;
   module?: string;
+  exclude_module?: string;
   action?: string;
   result?: OperationLogResult;
+  since?: string;
 };
 
 export type UpdateCurrentUserProfileRequest = {
@@ -290,6 +295,9 @@ export async function listLoginLogs(options: ListLoginLogsOptions): Promise<Logi
   if (options.result) {
     params.set("result", options.result);
   }
+  if (options.since) {
+    params.set("since", options.since);
+  }
   const query = params.toString();
   const path = query ? `/api/auth/login-logs?${query}` : "/api/auth/login-logs";
   const response = await fetcher(buildApiUrl(options.baseUrl, path), {
@@ -337,11 +345,17 @@ export async function listOperationLogs(options: ListOperationLogsOptions): Prom
   if (options.module) {
     params.set("module", options.module);
   }
+  if (options.exclude_module) {
+    params.set("exclude_module", options.exclude_module);
+  }
   if (options.action) {
     params.set("action", options.action);
   }
   if (options.result) {
     params.set("result", options.result);
+  }
+  if (options.since) {
+    params.set("since", options.since);
   }
   const query = params.toString();
   const path = query ? `/api/auth/operation-logs?${query}` : "/api/auth/operation-logs";

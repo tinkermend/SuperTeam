@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -167,7 +168,7 @@ func createTeamAuditEvent(ctx context.Context, q *queries.Queries, params Create
 	if err != nil {
 		return err
 	}
-	_, err = q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -190,7 +191,7 @@ func createTeamMemberAuditEvent(ctx context.Context, q *queries.Queries, params 
 	if err != nil {
 		return err
 	}
-	_, err = q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -224,7 +225,7 @@ func (r *PgRepository) BindTeamDigitalEmployee(ctx context.Context, params BindT
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -258,7 +259,7 @@ func (r *PgRepository) UnbindTeamDigitalEmployee(ctx context.Context, params Bin
 	if err != nil {
 		return err
 	}
-	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: params.TenantID, Valid: params.TenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -482,7 +483,7 @@ func (r *PgRepository) DeleteTeam(ctx context.Context, tenantID, teamID, actorUs
 	if err != nil {
 		return fmt.Errorf("marshal team delete audit details: %w", err)
 	}
-	if _, err := qtx.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	if _, err := oplog.InsertAudit(ctx, qtx, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -569,7 +570,7 @@ func (r *PgRepository) RestorePendingDeleteTeam(ctx context.Context, tenantID, t
 	if err != nil {
 		return TeamRecord{}, fmt.Errorf("marshal team restore audit details: %w", err)
 	}
-	if _, err := qtx.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	if _, err := oplog.InsertAudit(ctx, qtx, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -636,7 +637,7 @@ func (r *PgRepository) ConfirmTeamDelete(ctx context.Context, tenantID, teamID, 
 	if err != nil {
 		return TeamRecord{}, fmt.Errorf("marshal team delete confirm audit details: %w", err)
 	}
-	if _, err := qtx.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	if _, err := oplog.InsertAudit(ctx, qtx, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -762,7 +763,7 @@ func (r *PgRepository) GrantTeamMemberRole(ctx context.Context, in GrantTeamRole
 	if err != nil {
 		return TeamMemberRecord{}, err
 	}
-	if _, err := r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	if _, err := oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: in.TenantID, Valid: in.TenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",
@@ -871,7 +872,7 @@ func (r *PgRepository) writeTeamMemberAudit(
 	if err != nil {
 		return err
 	}
-	_, err = q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+	_, err = oplog.InsertAudit(ctx, q, queries.CreateAuditEventParams{
 		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
 		EventType:    "team_management",
 		ActorType:    "user",

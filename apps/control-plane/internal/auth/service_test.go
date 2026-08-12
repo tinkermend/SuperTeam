@@ -330,6 +330,9 @@ func (m *mockRepo) ListOperationLogs(ctx context.Context, filter ListOperationLo
 		if filter.Module != "" && log.Module != filter.Module {
 			continue
 		}
+		if filter.ExcludeModule != "" && log.Module == filter.ExcludeModule {
+			continue
+		}
 		if filter.Action != "" && log.Action != filter.Action {
 			continue
 		}

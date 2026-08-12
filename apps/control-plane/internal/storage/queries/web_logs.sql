@@ -28,6 +28,7 @@ SELECT * FROM web_login_logs
 WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid)
   AND (sqlc.narg('event_type')::varchar IS NULL OR event_type = sqlc.narg('event_type')::varchar)
   AND (sqlc.narg('result')::varchar IS NULL OR result = sqlc.narg('result')::varchar)
+  AND (sqlc.narg('since')::timestamptz IS NULL OR created_at >= sqlc.narg('since'))
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -64,7 +65,9 @@ INSERT INTO web_operation_logs (
 SELECT * FROM web_operation_logs
 WHERE (sqlc.narg('user_id')::uuid IS NULL OR user_id = sqlc.narg('user_id')::uuid)
   AND (sqlc.narg('module')::varchar IS NULL OR module = sqlc.narg('module')::varchar)
+  AND (sqlc.narg('exclude_module')::varchar IS NULL OR module <> sqlc.narg('exclude_module')::varchar)
   AND (sqlc.narg('action')::varchar IS NULL OR action = sqlc.narg('action')::varchar)
   AND (sqlc.narg('result')::varchar IS NULL OR result = sqlc.narg('result')::varchar)
+  AND (sqlc.narg('since')::timestamptz IS NULL OR created_at >= sqlc.narg('since'))
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

@@ -437,6 +437,7 @@ func (r *PgRepository) ListLoginLogs(ctx context.Context, filter ListLoginLogsFi
 		UserID:    nullUUID(filter.UserID),
 		EventType: pgtype.Text{String: filter.EventType, Valid: filter.EventType != ""},
 		Result:    pgtype.Text{String: filter.Result, Valid: filter.Result != ""},
+		Since:     timestamptzFromPtr(filter.Since),
 		Offset:    filter.Offset,
 		Limit:     filter.Limit,
 	})
@@ -468,6 +469,10 @@ func (r *PgRepository) CreateOperationLog(ctx context.Context, params CreateOper
 		},
 		Action: params.Action,
 		Result: params.Result,
+		RequestID: pgtype.Text{
+			String: params.RequestID,
+			Valid:  params.RequestID != "",
+		},
 		ClientIp: pgtype.Text{
 			String: params.ClientIP,
 			Valid:  params.ClientIP != "",
@@ -482,12 +487,14 @@ func (r *PgRepository) CreateOperationLog(ctx context.Context, params CreateOper
 
 func (r *PgRepository) ListOperationLogs(ctx context.Context, filter ListOperationLogsFilter) ([]OperationLog, error) {
 	rows, err := r.q.ListWebOperationLogs(ctx, queries.ListWebOperationLogsParams{
-		UserID: nullUUID(filter.UserID),
-		Module: pgtype.Text{String: filter.Module, Valid: filter.Module != ""},
-		Action: pgtype.Text{String: filter.Action, Valid: filter.Action != ""},
-		Result: pgtype.Text{String: filter.Result, Valid: filter.Result != ""},
-		Offset: filter.Offset,
-		Limit:  filter.Limit,
+		UserID:        nullUUID(filter.UserID),
+		Module:        pgtype.Text{String: filter.Module, Valid: filter.Module != ""},
+		ExcludeModule: pgtype.Text{String: filter.ExcludeModule, Valid: filter.ExcludeModule != ""},
+		Action:        pgtype.Text{String: filter.Action, Valid: filter.Action != ""},
+		Result:        pgtype.Text{String: filter.Result, Valid: filter.Result != ""},
+		Since:         timestamptzFromPtr(filter.Since),
+		Offset:        filter.Offset,
+		Limit:         filter.Limit,
 	})
 	if err != nil {
 		return nil, err
@@ -807,6 +814,25 @@ func toDomainOperationLog(log queries.WebOperationLog) OperationLog {
 		RequestID:    log.RequestID.String,
 		ClientIP:     log.ClientIp.String,
 		UserAgent:    log.UserAgent.String,
+		Details:      mapFromJSON(log.Details),
 		CreatedAt:    log.CreatedAt.Time,
 	}
+}
+
+func mapFromJSON(raw []byte) map[string]any {
+	if len(raw) == 0 {
+		return map[string]any{}
+	}
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+		return map[string]any{}
+	}
+	return value
+}
+
+func timestamptzFromPtr(value *time.Time) pgtype.Timestamptz {
+	if value == nil || value.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: value.UTC(), Valid: true}
 }

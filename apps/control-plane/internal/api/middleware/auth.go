@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/auth"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/runtime"
 )
 
@@ -52,6 +53,11 @@ func ConsoleUserAuth(authService ConsoleUserAuthService) func(http.Handler) http
 			}
 			ctx := context.WithValue(r.Context(), UserIDKey, current.User.ID)
 			ctx = context.WithValue(ctx, TenantIDKey, current.TenantID)
+			username := ""
+			if current.User != nil {
+				username = current.User.Username
+			}
+			ctx = oplog.WithActor(ctx, current.TenantID, current.User.ID, username)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -309,6 +315,9 @@ func ServiceAuth(authService ServiceAuthService, resolver OnBehalfOfResolver) fu
 				ctx = context.WithValue(ctx, UserIDKey, actingUserID)
 				ctx = context.WithValue(ctx, ActingUserIDKey, actingUserID)
 				ctx = context.WithValue(ctx, ActingOpenIDKey, openID)
+				ctx = oplog.WithActor(ctx, identity.TenantID, actingUserID, "")
+			} else {
+				ctx = oplog.WithActor(ctx, identity.TenantID, uuid.Nil, "")
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

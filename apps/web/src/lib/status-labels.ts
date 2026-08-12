@@ -217,6 +217,7 @@ export function workspaceReadyStatusLabel(status: string | undefined): string {
   });
 }
 
+
 export function demandStatusLabel(status: string | undefined): string {
   return labelWithOverrides(status, {
     acceptance_pending: "待验收",
@@ -496,6 +497,190 @@ export function teamAuditActionLabel(action: string | undefined): string {
     return "未知";
   }
   return TEAM_AUDIT_ACTION_LABELS[action.trim()] ?? action;
+}
+
+const LOG_MODULE_LABELS: Record<string, string> = {
+  auth: "用户",
+  authz: "授权判定",
+  employees: "员工",
+  projects: "项目",
+  scenario_templates: "场景模板",
+  skills: "技能",
+  system_config: "系统配置",
+  teams: "团队",
+};
+
+export function logModuleLabel(module: string | undefined): string {
+  if (!module) {
+    return "未知";
+  }
+  return LOG_MODULE_LABELS[module.trim()] ?? module;
+}
+
+const LOG_RESOURCE_TYPE_LABELS: Record<string, string> = {
+  auth_user: "用户",
+  decision_request: "决策请求",
+  digital_employee: "数字员工",
+  project: "项目",
+  project_demand: "项目需求",
+  scenario_template: "场景模板",
+  scenario_templates: "场景模板",
+  skill: "技能",
+  system_config: "系统配置",
+  team: "团队",
+  tenant_membership: "租户成员",
+  user: "用户",
+};
+
+export function logResourceTypeLabel(type: string | undefined): string {
+  if (!type) {
+    return "";
+  }
+  return LOG_RESOURCE_TYPE_LABELS[type.trim()] ?? type;
+}
+
+const LOG_ACTION_LABELS: Record<string, string> = {
+  create: "创建",
+  reset: "重置",
+  status: "变更状态",
+  update: "更新",
+  version: "发布新版本",
+  "digital_employee.config.revise": "修订员工配置",
+  "digital_employee.create": "创建数字员工",
+  "digital_employee.delete": "删除数字员工",
+  "digital_employee.profile.update": "更新员工资料",
+  "digital_employee.status.update": "更新员工状态",
+  "digital_employee.team.reassign": "调整员工所属团队",
+  "project.create": "创建项目",
+  "project.delete": "删除项目",
+  "skill.install": "安装技能",
+  "user.change_own_password": "修改自己的密码",
+  "user.create": "创建用户",
+  "user.disable": "停用用户",
+  "user.enable": "启用用户",
+  "user.reset_password": "重置密码",
+  "user.tenant_membership.delete": "移除租户成员",
+  "user.tenant_membership.upsert": "更新租户成员",
+  "user.update_contact": "更新联系方式",
+  "user.update_own_profile": "更新个人资料",
+};
+
+export function logActionLabel(action: string | undefined): string {
+  if (!action) {
+    return "未知";
+  }
+  const key = action.trim();
+  return LOG_ACTION_LABELS[key] ?? TEAM_AUDIT_ACTION_LABELS[key] ?? key;
+}
+
+const LOGIN_LOG_EVENT_LABELS: Record<string, string> = {
+  login_failed: "登录失败",
+  login_succeeded: "登录成功",
+  logout_succeeded: "登出成功",
+};
+
+export function loginLogEventLabel(eventType: string | undefined): string {
+  if (!eventType) {
+    return "未知";
+  }
+  return LOGIN_LOG_EVENT_LABELS[eventType.trim()] ?? eventType;
+}
+
+const LOGIN_FAILURE_REASON_LABELS: Record<string, string> = {
+  captcha_expired: "验证码已过期",
+  captcha_invalid: "验证码不正确",
+  invalid_credentials: "账号或密码不正确",
+  user_disabled: "账号已停用",
+};
+
+export function loginFailureReasonLabel(reason: string | undefined): string {
+  if (!reason) {
+    return "";
+  }
+  return LOGIN_FAILURE_REASON_LABELS[reason.trim()] ?? reason;
+}
+
+const RUNTIME_EVENT_TYPE_LABELS: Record<string, string> = {
+  capability_degraded: "能力降级",
+  capability_reported: "能力上报",
+  command_cancelled: "命令已取消",
+  command_completed: "命令完成",
+  command_event: "命令事件",
+  command_failed: "命令失败",
+  command_timed_out: "命令超时",
+  enrollment_approved: "注册已批准",
+  enrollment_rejected: "注册已拒绝",
+  enrollment_requested: "注册申请",
+  enrollment_revoked: "注册已撤销",
+  node_offline: "节点离线",
+  node_online: "节点上线",
+  provider_native_config_pull: "拉取原生配置",
+  provider_native_config_push: "下发原生配置",
+};
+
+export function runtimeEventTypeLabel(eventType: string | undefined): string {
+  if (!eventType) {
+    return "未知";
+  }
+  return RUNTIME_EVENT_TYPE_LABELS[eventType.trim()] ?? eventType;
+}
+
+const RUNTIME_EVENT_SOURCE_LABELS: Record<string, string> = {
+  provider_native_config: "Provider 原生配置",
+  provider_session: "Provider 会话",
+  runtime_capability: "节点能力",
+  runtime_command: "Runtime 命令",
+  runtime_enrollment: "节点注册",
+  runtime_node: "Runtime 节点",
+};
+
+export function runtimeEventSourceLabel(source: string | undefined): string {
+  if (!source) {
+    return "未知";
+  }
+  return RUNTIME_EVENT_SOURCE_LABELS[source.trim()] ?? source;
+}
+
+const RUNTIME_EVENT_SEVERITY_LABELS: Record<string, string> = {
+  error: "错误",
+  info: "信息",
+  success: "成功",
+  warning: "预警",
+};
+
+export function runtimeEventSeverityLabel(severity: string | undefined): string {
+  if (!severity) {
+    return "未知";
+  }
+  return RUNTIME_EVENT_SEVERITY_LABELS[severity.trim()] ?? severity;
+}
+
+const DELIVERY_OUTBOX_STATUS_LABELS: Record<string, string> = {
+  failed: "失败",
+  pending: "待投递",
+  sent: "已送达",
+  skipped_unbound: "未绑定跳过",
+  superseded: "已取代",
+};
+
+export function deliveryOutboxStatusLabel(status: string | undefined): string {
+  if (!status) {
+    return "未知";
+  }
+  return DELIVERY_OUTBOX_STATUS_LABELS[status.trim()] ?? status;
+}
+
+const DELIVERY_OUTBOX_KIND_LABELS: Record<string, string> = {
+  card_update: "卡片更新",
+  decision_card: "决策卡片",
+  result_notice: "结果通知",
+};
+
+export function deliveryOutboxKindLabel(kind: string | undefined): string {
+  if (!kind) {
+    return "未知";
+  }
+  return DELIVERY_OUTBOX_KIND_LABELS[kind.trim()] ?? kind;
 }
 
 // 团队宪法规则分类词表。D9：宪法只是注入 provider 提示词的软提醒，不触发任何门禁

@@ -1,8 +1,8 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { ScrollText } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
+import { PageTab, PageTabList, PageTabs } from "@/components/superteam";
 
 export const Route = createFileRoute("/_authenticated/logs")({
   component: LogsLayout
@@ -25,26 +25,19 @@ function LogsLayout() {
         icon={<ScrollText />}
         iconTone="mute"
         title="日志管理"
-        subtitle="登录审计、操作追溯、平台事件与消息投递"
+        subtitle="最近的登录、控制台变更、节点事件与消息投递"
       />
-      <Main width="canvas" className="min-w-0 overflow-x-hidden">
+      <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex w-full flex-col gap-4 text-ink">
-          <nav className="h-auto max-w-full flex-wrap justify-start gap-1 overflow-x-auto rounded-[14px] bg-card p-1.5 shadow-card flex">
-            {tabItems.map((tab) => (
-              <Link
-                key={tab.value}
-                to={tab.to}
-                className={cn(
-                  "h-9 flex-none rounded-[10px] border-0 px-4 py-2 text-[13px] font-semibold shadow-none transition-colors hover:bg-card-soft hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60",
-                  activeValue === tab.value
-                    ? "bg-brand-soft text-brand-deep"
-                    : "text-ink-2"
-                )}
-              >
-                {tab.label}
-              </Link>
-            ))}
-          </nav>
+          <PageTabs aria-label="日志类型">
+            <PageTabList>
+              {tabItems.map((tab) => (
+                <PageTab active={activeValue === tab.value} asChild key={tab.value}>
+                  <Link to={tab.to}>{tab.label}</Link>
+                </PageTab>
+              ))}
+            </PageTabList>
+          </PageTabs>
           <Outlet />
         </div>
       </Main>

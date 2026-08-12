@@ -26,6 +26,7 @@ import (
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/permission"
 	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/project"
@@ -496,6 +497,8 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	skillRepository := skill.NewPgRepository(stores.Postgres, q)
 	skillService := skill.NewService(skillRepository, stores.ObjectStore)
 	skillService.SetSystemConfigReader(systemConfigService)
+	operationLogger := &oplog.PgLogger{Q: q}
+	skillService.SetOperationLogger(operationLogger)
 	runtimeService.SetRequiredToolsResolver(skillService)
 	// runtime 包被 api/middleware 反向依赖不能 import systemconfig,以闭包注入。
 	runtimeService.SetSessionTTLResolver(func(ctx context.Context, tenantID uuid.UUID) time.Duration {
@@ -521,6 +524,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return nil, err
 	}
 	employeeService.SetSystemConfigReader(systemConfigService)
+	employeeService.SetOperationLogger(operationLogger)
 	envCodec, err := employee.NewEnvironmentValueCodec(employee.EnvironmentValueCodecConfig{
 		Keys:        cfg.EmployeeEnv.Keys,
 		ActiveKeyID: cfg.EmployeeEnv.ActiveKeyID,
@@ -946,6 +950,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	feishuOutboxNotifier := feishu.NewOutboxChangeNotifier(stores.Postgres)
 	feishuConnectorHandler.SetOutboxChangeNotifier(feishuOutboxNotifier)
 	feishuAdminHandler := feishu.NewAdminHTTPHandler(feishuService)
+	feishuAdminHandler.SetUserDisplayNamer(feishu.AuthUserDisplayNamer{Q: q})
 	feishuOAuthHandler := feishu.NewOAuthHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
 	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)

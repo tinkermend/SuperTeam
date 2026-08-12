@@ -11,6 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/superteam/control-plane/internal/authz"
+	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/platform"
 )
 
@@ -710,6 +711,9 @@ func (s *Service) recordUserOperation(ctx context.Context, actor Actor, userID u
 		ResourceID:   resourceID,
 		Action:       action,
 		Result:       result,
+		ClientIP:     oplog.MetaFromContext(ctx).ClientIP,
+		UserAgent:    oplog.MetaFromContext(ctx).UserAgent,
+		RequestID:    oplog.MetaFromContext(ctx).RequestID,
 	})
 }
 

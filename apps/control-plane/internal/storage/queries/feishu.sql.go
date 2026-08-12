@@ -17,15 +17,17 @@ SELECT count(*)::bigint
 FROM feishu_outbox
 WHERE tenant_id = $1::uuid
   AND status = ANY($2::varchar[])
+  AND ($3::timestamptz IS NULL OR updated_at >= $3)
 `
 
 type CountFeishuOutboxByStatusesParams struct {
-	TenantID uuid.UUID `json:"tenant_id"`
-	Statuses []string  `json:"statuses"`
+	TenantID uuid.UUID          `json:"tenant_id"`
+	Statuses []string           `json:"statuses"`
+	Since    pgtype.Timestamptz `json:"since"`
 }
 
 func (q *Queries) CountFeishuOutboxByStatuses(ctx context.Context, arg CountFeishuOutboxByStatusesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, CountFeishuOutboxByStatuses, arg.TenantID, arg.Statuses)
+	row := q.db.QueryRow(ctx, CountFeishuOutboxByStatuses, arg.TenantID, arg.Statuses, arg.Since)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -501,22 +503,25 @@ const ListFeishuOutboxByStatuses = `-- name: ListFeishuOutboxByStatuses :many
 SELECT id, tenant_id, project_id, kind, resource_type, resource_id, recipient_user_id, recipient_open_id, payload, status, attempts, last_error, feishu_message_id, created_at, updated_at FROM feishu_outbox
 WHERE tenant_id = $1::uuid
   AND status = ANY($2::varchar[])
+  AND ($3::timestamptz IS NULL OR updated_at >= $3)
 ORDER BY updated_at DESC
-LIMIT $4
-OFFSET $3
+LIMIT $5
+OFFSET $4
 `
 
 type ListFeishuOutboxByStatusesParams struct {
-	TenantID uuid.UUID `json:"tenant_id"`
-	Statuses []string  `json:"statuses"`
-	Offset   int32     `json:"offset"`
-	Limit    int32     `json:"limit"`
+	TenantID uuid.UUID          `json:"tenant_id"`
+	Statuses []string           `json:"statuses"`
+	Since    pgtype.Timestamptz `json:"since"`
+	Offset   int32              `json:"offset"`
+	Limit    int32              `json:"limit"`
 }
 
 func (q *Queries) ListFeishuOutboxByStatuses(ctx context.Context, arg ListFeishuOutboxByStatusesParams) ([]FeishuOutbox, error) {
 	rows, err := q.db.Query(ctx, ListFeishuOutboxByStatuses,
 		arg.TenantID,
 		arg.Statuses,
+		arg.Since,
 		arg.Offset,
 		arg.Limit,
 	)
