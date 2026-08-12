@@ -1145,6 +1145,19 @@ func (r *PgRepository) ListProjectDemands(ctx context.Context, tenantID, project
 	return demandsFromRecords(rows)
 }
 
+func (r *PgRepository) ListProjectDemandsForConsole(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error) {
+	rows, err := r.q.ListProjectDemandsForConsole(ctx, queries.ListProjectDemandsForConsoleParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return demandsFromRecords(rows)
+}
+
 func (r *PgRepository) CreateConfigRevision(ctx context.Context, req UpdateProjectConfigRequest, project Project, eventID uuid.UUID) (ProjectConfigRevision, error) {
 	snapshotMap := projectConfigSnapshot(project)
 	snapshot, err := jsonbObject(snapshotMap, "config_snapshot")

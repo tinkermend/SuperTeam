@@ -716,7 +716,7 @@ function buildRelatedReferences(item: InboxItem): RelatedReference[] {
       // （该跳仍保留：飞书历史卡片与不带项目身份的旧数据还靠它兜底）。
       href: demand.id
         ? item.source_project_id
-          ? `/projects/${encodeURIComponent(item.source_project_id)}?demand=${encodeURIComponent(demand.id)}&tab=demands`
+          ? `/projects/${encodeURIComponent(item.source_project_id)}?demand=${encodeURIComponent(demand.id)}&tab=tasks`
           : `/workflows/${encodeURIComponent(demand.id)}`
         : undefined
 });

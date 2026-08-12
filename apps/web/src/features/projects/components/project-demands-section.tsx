@@ -1,7 +1,7 @@
 import { humanWaitLabel } from "@/lib/status-labels";
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { ClipboardList, FileText } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
@@ -26,28 +26,21 @@ import {
   type ProjectTaskGraph,
   type ProjectTaskGraphDispatchGate
 } from "@/lib/api/projects";
-import { demandStatusLabel } from "@/lib/status-labels";
-import { formatRelativeTime } from "@/lib/format-time";
 import { isTerminalTaskStatus } from "@/lib/task-status";
 import { taskIdFromNodeId, taskNodeId } from "@/features/flow-graph/flow-graph-adapter";
 import { useProjectActivityInvalidate } from "../hooks/use-project-activity-invalidate";
 import { DemandCriteriaPanel } from "./demand-criteria-panel";
 import {
-  readStoredDossierDensity,
   resolveDossierDensity,
-  writeStoredDossierDensity,
-  type DossierDensity
 } from "./demand-dossier-density";
 import {
   DemandDossierHeader,
-  demandStatusTone,
   type DemandDossierView
 } from "./demand-dossier-header";
 import { DemandDossierRail } from "./demand-dossier-rail";
 import { DemandDossierTimeline } from "./demand-dossier-timeline";
 import { StaffGapDialog } from "./staff-gap-dialog";
-import { DemandContinueDialog } from "./demand-continue-dialog";
-import { findChainOf, foldDemandChains } from "./demand-chains";
+import { DemandProcessRail } from "./demand-process-rail";
 
 // 与工作台执行图同一权威画布（@xyflow/react 重依赖，懒加载同一 chunk）。
 const FlowGraphCanvas = lazy(() =>
@@ -66,8 +59,14 @@ type ProjectDemandsSectionProps = {
   eventSourceFactory?: (url: string) => EventSource;
   /** 按 demand 拉执行图；queryKey 与页面预载同族（project-task-graph）复用缓存。 */
   fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
+  /** 左轨已提到项目壳时不再铺第二份列表。 */
+  hideList?: boolean;
+  /** 深链/接续写回 URL 时保留当前页签。 */
+  listTab?: string;
   onClearTask?: () => void;
   onOpenTask: (taskId: string) => void;
+  /** 独立页签只展示卷宗的一块，关掉单头时间线/图切换。 */
+  pane?: "document" | "graph" | "timeline";
   projectId: string;
   /** ?demand= 深链选中的需求；缺省回退最新需求。 */
   selectedDemandId?: string;
@@ -114,8 +113,11 @@ export function ProjectDemandsSection({
   detailTaskId,
   eventSourceFactory,
   fetchTaskGraph,
+  hideList = false,
+  listTab = "tasks",
   onClearTask,
   onOpenTask,
+  pane,
   projectId,
   selectedDemandId,
   view = "timeline",
@@ -125,20 +127,20 @@ export function ProjectDemandsSection({
     demands.find((demand) => demand.id === selectedDemandId) ?? demands[0];
   const navigate = useNavigate();
   const sectionQueryClient = useQueryClient();
-  const [continueOpen, setContinueOpen] = useState(false);
-  // 左轨按接续链折叠：一条链只占一行（spec 2026-08-01 §8.2）。不折叠的话，
-  // 每接续一次列表就多出一行看似无关的单。
-  const chains = useMemo(() => foldDemandChains(demands), [demands]);
-  const selectedChain = findChainOf(chains, selectedDemand?.id);
+  const [railSearch, setRailSearch] = useState("");
   const goToDemand = useCallback(
     (demandId: string) => {
       void navigate({
         params: { projectId },
-        search: (prev: Record<string, unknown>) => ({ ...prev, demand: demandId, tab: "demands" }),
+        search: (prev: Record<string, unknown>) => ({
+          ...prev,
+          demand: demandId,
+          tab: listTab,
+        }),
         to: "/projects/$projectId",
       });
     },
-    [navigate, projectId],
+    [listTab, navigate, projectId],
   );
 
   // 数据活性升级（spec 2026-07-27 §5 P2-E）：主通道是既有跨员工活动 SSE 的
@@ -187,17 +189,7 @@ export function ProjectDemandsSection({
 };
   }, [dossierQuery.data, selectedDemand?.id]);
 
-  const [densityOverride, setDensityOverride] = useState<DossierDensity | undefined>(() =>
-    readStoredDossierDensity(typeof window === "undefined" ? undefined : window.localStorage),
-  );
-  const density = resolveDossierDensity(dossier?.signals, densityOverride);
-  const handleDensityChange = (next: DossierDensity) => {
-    setDensityOverride(next);
-    writeStoredDossierDensity(
-      typeof window === "undefined" ? undefined : window.localStorage,
-      next,
-    );
-  };
+  const density = resolveDossierDensity(dossier?.signals, undefined);
 
   // 图数据保持常拉（与改版前一致）：除图视图外，派发闸横幅、阻塞横幅与规划缺口
   // 面板都读 graph.blocking_facts / dispatch_gates。改成"仅图视图才拉"会让默认
@@ -221,6 +213,8 @@ export function ProjectDemandsSection({
   }, [dossier]);
 
   const [acceptanceOpen, setAcceptanceOpen] = useState(false);
+  const activeView: DemandDossierView =
+    pane === "graph" ? "graph" : pane === "timeline" || pane === "document" ? "timeline" : view;
 
   if (demands.length === 0) {
     return (
@@ -236,83 +230,23 @@ export function ProjectDemandsSection({
 
   return (
     <div
-      className="grid min-w-0 items-start gap-4 lg:grid-cols-[260px_minmax(0,1fr)]"
+      className={cn(
+        "grid min-w-0 items-start gap-4",
+        hideList ? "" : "lg:grid-cols-[260px_minmax(0,1fr)]",
+      )}
       data-testid="project-demands-section"
     >
-      <SoftCard className="overflow-hidden lg:sticky lg:top-4">
-        <div className="border-b border-line px-4 py-3">
-          <h3 className="text-sm font-semibold text-ink">需求</h3>
-          <p className="mt-0.5 text-[11.5px] text-ink-3">{chains.length} 条 · 最新在前</p>
-        </div>
-        <nav aria-label="需求列表" className="max-h-[520px] divide-y divide-line overflow-y-auto">
-          {chains.map((chain) => {
-            // 行代表整条链，落点是链上最新一单；选中链内任一单都算本行选中。
-            const demand = chain.latest;
-            const isSelected = chain === selectedChain;
-            const continuationCount = chain.members.length - 1;
-            const pendingCount = chain.members.reduce(
-              (total, member) => total + (pendingByDemand.get(member.id) ?? 0),
-              0,
-            );
-            return (
-              <Link
-                aria-current={isSelected ? "true" : undefined}
-                className={cn(
-                  "block px-4 py-3 transition-colors hover:bg-card-soft",
-                  isSelected && "bg-brand-soft shadow-[inset_2px_0_0_var(--brand)]",
-                )}
-                data-testid={`demand-list-item-${demand.id}`}
-                key={demand.id}
-                params={{ projectId }}
-                search={{ demand: demand.id, tab: "demands" }}
-                to="/projects/$projectId"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-[13px] font-semibold",
-                      isSelected ? "text-brand-deep" : "text-ink",
-                    )}
-                  >
-                    {demand.title}
-                  </p>
-                  {pendingCount > 0 ? (
-                    <span
-                      aria-label={`待你处理 ${pendingCount} 项`}
-                      className="shrink-0 rounded-full bg-warn-soft px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-warn-text"
-                      data-testid={`demand-list-pending-${demand.id}`}
-                    >
-                      {pendingCount}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                  <StatusPill tone={demandStatusTone(demand.status)}>
-                    {demandStatusLabel(demand.status)}
-                  </StatusPill>
-                  {continuationCount > 0 ? (
-                    <span
-                      className="rounded-full bg-card-soft px-1.5 py-0.5 text-[10.5px] text-ink-3"
-                      data-testid={`demand-list-continuations-${demand.id}`}
-                    >
-                      接续 {continuationCount} 次
-                    </span>
-                  ) : null}
-                  {demand.created_at ? (
-                    <time
-                      className="text-[11px] tabular-nums text-ink-3"
-                      dateTime={demand.created_at}
-                      title={demand.created_at}
-                    >
-                      {formatRelativeTime(demand.created_at)}
-                    </time>
-                  ) : null}
-                </div>
-              </Link>
-            );
-          })}
-        </nav>
-      </SoftCard>
+      {hideList ? null : (
+        <DemandProcessRail
+          currentTab={listTab}
+          demands={demands}
+          onSearchQueryChange={setRailSearch}
+          pendingByDemand={pendingByDemand}
+          projectId={projectId}
+          searchQuery={railSearch}
+          selectedDemandId={selectedDemand?.id}
+        />
+      )}
 
       {selectedDemand ? (
         <div className="grid min-w-0 gap-4">
@@ -364,15 +298,11 @@ export function ProjectDemandsSection({
               master={
                 <div className="grid min-w-0 gap-4">
                   <DemandDossierHeader
-                    density={density}
                     dossier={dossier}
-                    onContinue={() => setContinueOpen(true)}
-                    onDensityChange={handleDensityChange}
+                    hideViewToggle
                     onSelectDemand={goToDemand}
-                    onViewChange={onViewChange ?? (() => undefined)}
-                    view={view}
                   />
-                  {view === "graph" ? (
+                  {pane === "document" ? null : activeView === "graph" ? (
                     <section className="grid gap-2" data-testid="demand-flow-graph-section">
                       <div className="flex items-center gap-2 px-1">
                         <ClipboardList className="size-4 text-ink-2" />
@@ -425,25 +355,6 @@ export function ProjectDemandsSection({
             />
           )}
         </div>
-      ) : null}
-      {selectedDemand ? (
-        <DemandContinueDialog
-          apiOptions={apiOptions}
-          demandId={selectedDemand.id}
-          demandTitle={selectedDemand.title}
-          onContinued={(created) => {
-            // 必须显式失效父页需求列表：不刷新的话左轨里没有这条新单，
-            // 跳过去会落在一个列表不认识的 demand 上（链也折不出来）。
-            // 不能只依赖 SSE——它是尽力而为的，而这里是刚发生的确定事实。
-            void sectionQueryClient.invalidateQueries({
-              queryKey: ["project-demands", projectId],
-            });
-            // 落到新一单的卷宗：接续的价值就在"接着往下看"，停在旧单上等于没接。
-            goToDemand(created.id);
-          }}
-          onOpenChange={setContinueOpen}
-          open={continueOpen}
-        />
       ) : null}
     </div>
   );

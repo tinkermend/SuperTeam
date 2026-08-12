@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-12 21:47 项目详情去掉「需求」页签与「驱动/巡检」人工密度开关：旧 `?tab=demands` 深链 remap 到任务表并保留 `demand=`；意图/剧本/收口与「继续这一单」挂在阶段河；历史时间线疏密仍由 `signals` 自动推导。定向 vitest 覆盖 remap / river continue。
+
+- 2026-08-12 21:17 项目详情卷宗壳布局收口：左轨+阶段河+页签收成一张 fused SoftCard（228px 轨，河始终四格一行，不再用 `xl:grid-cols-4` 折成指标卡）；运行落点改挂项目头卡一行摘要，不再插在河与任务表之间。浏览器实测（control-plane pid=24339 / web pid=57486，cwd 本 checkout）：壳内河 4×192px、壳高随工作区约 450px；改前同页河折成 2×2、9 张独立卡、任务表从 y=597 才开始。
+
+- 2026-08-12 21:07 项目详情改成「卷宗为脊柱 + 阶段河 + 关联任务表」（spec `docs/superpowers/specs/2026-08-12-project-detail-dossier-task-table.md`）：默认骨架左轨需求流程 + 四格阶段河 + 页签（任务默认）；任务表主行 Demand、子行 `task-graph?demand_id=` 的 nodes；当前处理连 `decision_requests`/`dispatch_gates`，关联连卷宗 rail/handoff；Console `GET /projects/{id}/demands` 改走 `updated_at DESC` + 非终态优先（仓储 `ListProjectDemands` 默认序不动）；左轨 `limit+1` 加载更多、搜索只滤已加载集。深链 `?tab=tasks|flow|history|demands&demand=` 仍可用。**真实链路**（验证期 control-plane pid=24339 / web pid=24927，cwd 均为本 checkout）：项目 `5c40c4fb` 默认任务页签；左轨选中 `gate-e2e-risk`（失败、1 小时前）排在更早仍「已计划」的 Phase1 之上；任务表 2 子行 = graph 2 nodes（Verify 已取消 / Create 失败，当前处理「已阻塞」= `dispatch_gates.status=blocked`）；加载更多 20→28 条且选中不丢；`?tab=history` 协调时间线、`?tab=flow` 权威流程图。本环境收件箱 open=0，未对照一张待决卡。
+
 - 2026-08-12 19:10 任务清理确认改平台弹窗；需求「执行中」孤儿收敛：① 清理任务不再用浏览器 `window.confirm`，改 `ConfirmDialog`；② 需求状态重算把 `blocked` 从「还有活」里拆出——上游已失败、下游只剩 blocked 时需求进 `failed`；③ 看门狗 `SweepStrandedBlockedProjectTasks` 取消前置已失败/取消的滞留下游（失败恢复未驳回时 `cancelFailureDownstream` 不会跑）。真实验证：control-plane pid=69587 启动扫 `cancelled downstream tasks count=1`，需求 `bdbc5376` executing→failed，任务 Verify `blocked`→`cancelled`；库内「失败且无 runnable 仍 executing」=0。定向单测 + vitest 29 绿。
 
 - 2026-08-12 18:57 决策 SoT 与收件箱投影分裂收敛：项目页读 `project_decision_requests.status_snapshot`、收件箱读 `inbox_items` 投影，创建路径非同事务时会出现「项目仍待处理、收件箱无卡」。① 看门狗新增 `SweepOrphanDecisionInboxProjections`（挂 stuck-task reconciler）：pending 且无 open inbox 时，仍可处理则补投影，关联任务/需求已终态或扩编审批上下文缺失则取消决策；② `RequestCastingExpansion` 在 inbox Upsert 失败后补偿取消决策，避免永久悬挂。真实验证：restart control-plane（pid=53954，cwd 本 checkout）启动扫一轮，截图孤儿 `c11a6b82…` 等 4 条 pending→`cancelled`，库内 `pending_missing_any_inbox=0`；定向单测 4/4 绿。

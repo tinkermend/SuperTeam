@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>方案 C · 需求卷宗透镜 · 项目页签布局</title>
+  <link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+  <div class="app">
+    <nav class="rail" aria-label="侧栏">
+      <div class="mark">炬</div>
+      <a href="../project-home-layout-v2/index.html">项</a>
+      <a class="on" href="#">详</a>
+      <a href="#">任</a>
+      <a href="#">审</a>
+    </nav>
+    <div class="main">
+      <div class="crumb">
+        <a href="index.html">← 三方案对照</a>
+        <span>/</span>
+        <span>项目管理</span>
+        <span>/</span>
+        <span>Q3 客户对账自动化</span>
+        <div class="switcher">
+          <a href="concept-a-master-detail.html">A 主从</a>
+          <a href="concept-b-status-lanes.html">B 河道</a>
+          <a class="on" href="concept-c-demand-lens.html">C 卷宗</a>
+        </div>
+      </div>
+
+      <header class="hero">
+        <div>
+          <h1>Q3 客户对账自动化 <span class="pill p-info"><span class="d"></span>执行中</span></h1>
+          <p class="meta">需求是业务事实脊柱。五个页签是同一单上的透镜，不是五份互不相干的清单。</p>
+        </div>
+        <div class="acts">
+          <button class="btn primary" type="button">提交需求</button>
+          <button class="btn ghost" type="button">看全项目</button>
+        </div>
+      </header>
+
+      <div class="dossier" style="margin-top:16px">
+        <aside class="d-list">
+          <h3>本项目需求</h3>
+          <div class="d-item on">
+            <div class="nm">对账自动化一期</div>
+            <div class="sm"><span class="pill p-info"><span class="d"></span>执行中</span> · 待你处理 1</div>
+          </div>
+          <div class="d-item">
+            <div class="nm">发票字段映射</div>
+            <div class="sm"><span class="pill p-ok"><span class="d"></span>已完成</span> · 昨天</div>
+          </div>
+        </aside>
+
+        <div class="d-mid">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+            <div>
+              <h2>对账自动化一期</h2>
+              <p style="margin:0;font-size:12.5px;color:var(--ink-2)">剧本 对账交付 · 拟收口 · 差异报表 · 接续链 2/2</p>
+            </div>
+            <span class="pill p-info"><span class="d"></span>执行中</span>
+          </div>
+
+          <div class="tabs" style="margin-top:12px">
+            <button class="on" data-tab="demands" type="button">需求</button>
+            <button data-tab="tasks" type="button">任务</button>
+            <button data-tab="flow" type="button">流程</button>
+            <button data-tab="decisions" type="button">决策 <span class="count">1</span></button>
+            <button data-tab="history" type="button">历史</button>
+          </div>
+
+          <section class="panel on" id="tab-demands">
+            <div class="sec">
+              <h4>意图</h4>
+              <p>把 Q3 客户对账单做成可验收的差异报表：自动抽取科目与金额，按已确认规则核对差异，并导出负责人可签署的报告。</p>
+            </div>
+            <div class="sec">
+              <h4>验收判据</h4>
+              <div class="check"><span class="pill p-ok"><span class="d"></span>满足</span> 字段映射覆盖率 ≥ 98%</div>
+              <div class="check"><span class="pill p-mute"><span class="d"></span>未满足</span> 差异报表可导出且含未匹配项清单</div>
+            </div>
+            <div class="callout">
+              <span>待你处理 · 下游放行「核对差异规则」</span>
+              <button class="btn ghost sm" type="button">去收件箱</button>
+            </div>
+          </section>
+
+          <section class="panel" id="tab-tasks">
+            <p style="margin:12px 0 8px;font-size:12.5px;color:var(--ink-2)">只列本单任务。全项目任务请点右上「看全项目」。</p>
+            <table class="dense">
+              <thead><tr><th>任务</th><th>状态</th><th>员工</th><th>更新</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="link">抽取对账单字段</td>
+                  <td><span class="pill p-info"><span class="d"></span>执行中</span></td>
+                  <td>数据分析员</td>
+                  <td class="num">3 分钟前</td>
+                </tr>
+                <tr>
+                  <td class="link">核对差异规则</td>
+                  <td><span class="pill p-warn"><span class="d"></span>等待人工</span></td>
+                  <td>规则审核员</td>
+                  <td class="num">18 分钟前</td>
+                </tr>
+                <tr>
+                  <td class="link">生成对账报告</td>
+                  <td><span class="pill p-mute"><span class="d"></span>排队</span></td>
+                  <td>未分派</td>
+                  <td class="num">1 小时前</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="panel" id="tab-flow">
+            <div class="canvas" style="height:280px;margin:12px 0">
+              <div class="node" style="left:16px;top:70px"><b>抽取字段</b><span class="pill p-info"><span class="d"></span>执行中</span></div>
+              <div class="edge" style="left:184px;top:98px;width:36px"></div>
+              <div class="node sel" style="left:220px;top:70px"><b>核对规则</b><span class="pill p-warn"><span class="d"></span>等人</span></div>
+              <div class="edge" style="left:388px;top:98px;width:36px"></div>
+              <div class="node" style="left:424px;top:70px"><b>生成报告</b><span class="pill p-mute"><span class="d"></span>排队</span></div>
+            </div>
+            <p class="note" style="margin:0">图只画这一单。切左侧需求，图与任务、决策、历史一起换。</p>
+          </section>
+
+          <section class="panel" id="tab-decisions">
+            <article class="card warn" style="margin-top:12px">
+              <h5>放行「核对差异规则」下游</h5>
+              <span class="pill p-warn"><span class="d"></span>待决</span>
+              <div class="facts">阶段放行 · 18 分钟前 · 处理仍走收件箱</div>
+              <div style="margin-top:10px"><button class="btn primary sm" type="button">在收件箱处理</button></div>
+            </article>
+            <article class="card ok" style="margin-top:8px">
+              <h5>确认计划修订 v3</h5>
+              <span class="pill p-ok"><span class="d"></span>已通过</span>
+              <div class="facts">昨天 · 林清</div>
+            </article>
+          </section>
+
+          <section class="panel" id="tab-history">
+            <div class="tl">
+              <div class="ev"><div class="dot"></div><div><b>14:05</b> 任务进展 · 抽取对账单字段 · 已识别 128 行</div></div>
+              <div class="ev"><div class="dot"></div><div><b>13:47</b> 决策待决 · 下游放行</div></div>
+              <div class="ev"><div class="dot"></div><div><b>11:20</b> 任务创建 · 生成对账报告</div></div>
+              <div class="ev"><div class="dot"></div><div><b>昨天 09:10</b> 需求已提交 · 对账自动化一期</div></div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="d-rail">
+          <h3 style="margin:0 0 10px;font-size:12px;color:var(--ink-3);font-weight:750">本单交付</h3>
+          <div class="slot"><b>工件</b>对账单解析草稿.xlsx</div>
+          <div class="slot"><b>证据</b>尚无核验证据</div>
+          <div class="slot"><b>判据</b>1 / 2 已满足</div>
+          <h3 style="margin:16px 0 8px;font-size:12px;color:var(--ink-3);font-weight:750">最近事件</h3>
+          <div class="tl">
+            <div class="ev"><div class="dot"></div><div>会话回写字段</div></div>
+            <div class="ev"><div class="dot"></div><div>下游放行待决</div></div>
+            <div class="ev"><div class="dot"></div><div>计划 v3 已确认</div></div>
+          </div>
+        </aside>
+      </div>
+      <p class="note">最贴产品模型：Project 是容器，Demand 是业务闭环，Task / 流程 / 决策都是这一单上的结构化对象。代价是「看全项目任务」变成二次动作。</p>
+    </div>
+  </div>
+  <script>
+    const tabs = document.querySelectorAll(".tabs button");
+    const panels = document.querySelectorAll(".panel");
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabs.forEach((b) => b.classList.remove("on"));
+        panels.forEach((p) => p.classList.remove("on"));
+        btn.classList.add("on");
+        document.getElementById("tab-" + btn.dataset.tab).classList.add("on");
+      });
+    });
+  </script>
+</body>
+</html>

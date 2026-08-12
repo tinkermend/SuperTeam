@@ -5,14 +5,16 @@ import {
 } from "./project-detail-section";
 
 describe("project-detail-section", () => {
-  it("normalizes legacy tabs onto workbench / demands / tasks / approval / assets", () => {
-    expect(normalizeProjectDetailSection(undefined)).toBe("workbench");
-    expect(normalizeProjectDetailSection("overview")).toBe("workbench");
-    expect(normalizeProjectDetailSection("config")).toBe("workbench");
-    expect(normalizeProjectDetailSection("workbench")).toBe("workbench");
-    expect(normalizeProjectDetailSection("trace")).toBe("workbench");
-    expect(normalizeProjectDetailSection("demands")).toBe("demands");
+  it("normalizes legacy tabs onto tasks / flow / approval / history / assets", () => {
+    expect(normalizeProjectDetailSection(undefined)).toBe("tasks");
+    expect(normalizeProjectDetailSection("overview")).toBe("tasks");
+    expect(normalizeProjectDetailSection("config")).toBe("tasks");
+    expect(normalizeProjectDetailSection("workbench")).toBe("tasks");
     expect(normalizeProjectDetailSection("tasks")).toBe("tasks");
+    expect(normalizeProjectDetailSection("demands")).toBe("tasks");
+    expect(normalizeProjectDetailSection("trace")).toBe("history");
+    expect(normalizeProjectDetailSection("history")).toBe("history");
+    expect(normalizeProjectDetailSection("flow")).toBe("flow");
     expect(normalizeProjectDetailSection("approval")).toBe("approval");
     expect(normalizeProjectDetailSection("assets")).toBe("assets");
     expect(normalizeProjectDetailSection("artifacts")).toBe("assets");

@@ -2714,7 +2714,7 @@ func (s *Service) ListProjectDemands(ctx context.Context, tenantID, projectID uu
 		return nil, ErrInvalidProject
 	}
 	limit, offset = normalizePagination(limit, offset)
-	return s.repository.ListProjectDemands(ctx, tenantID, projectID, limit, offset)
+	return s.repository.ListProjectDemandsForConsole(ctx, tenantID, projectID, limit, offset)
 }
 
 // demandLaunchFacts 是一条需求的只读事实底座:demand/project 本体 + 协调 job、

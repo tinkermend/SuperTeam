@@ -946,6 +946,21 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 ORDER BY created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListProjectDemandsForConsole :many
+-- Console 左轨专用：最近更新优先，同时间非终态先于终态。
+-- 不得替换 ListProjectDemands（结项文案 / sibling_pending / 协调线程仍按 created_at）。
+SELECT * FROM project_demands
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+ORDER BY
+  updated_at DESC,
+  CASE
+    WHEN status IN ('completed', 'failed', 'cancelled', 'planning_failed') THEN 1
+    ELSE 0
+  END ASC,
+  created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
 -- name: CreateProjectConfigRevision :one
 INSERT INTO project_config_revisions (
     tenant_id,

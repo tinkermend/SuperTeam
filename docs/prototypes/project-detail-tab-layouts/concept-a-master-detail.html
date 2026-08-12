@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>方案 A · 主从工作台 · 项目页签布局</title>
+  <link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+  <div class="app">
+    <nav class="rail" aria-label="侧栏">
+      <div class="mark">炬</div>
+      <a href="../project-home-layout-v2/index.html">项</a>
+      <a class="on" href="#">详</a>
+      <a href="#">任</a>
+      <a href="#">审</a>
+    </nav>
+    <div class="main">
+      <div class="crumb">
+        <a href="index.html">← 三方案对照</a>
+        <span>/</span>
+        <span>项目管理</span>
+        <span>/</span>
+        <span>Q3 客户对账自动化</span>
+        <div class="switcher">
+          <a class="on" href="concept-a-master-detail.html">A 主从</a>
+          <a href="concept-b-status-lanes.html">B 河道</a>
+          <a href="concept-c-demand-lens.html">C 卷宗</a>
+        </div>
+      </div>
+
+      <header class="hero">
+        <div>
+          <h1>Q3 客户对账自动化 <span class="pill p-info"><span class="d"></span>执行中</span></h1>
+          <p class="meta">负责人 林清 · 阻塞 1 · 执行中 1 · 需求「对账自动化一期」</p>
+        </div>
+        <div class="acts">
+          <button class="btn primary" type="button">提交需求</button>
+          <button class="btn ghost" type="button">配置</button>
+        </div>
+      </header>
+
+      <div class="tabs" role="tablist" aria-label="项目工作区段">
+        <button class="on" data-tab="tasks" type="button">任务</button>
+        <button data-tab="demands" type="button">需求</button>
+        <button data-tab="flow" type="button">流程</button>
+        <button data-tab="decisions" type="button">决策 <span class="count">1</span></button>
+        <button data-tab="history" type="button">历史</button>
+      </div>
+
+      <section class="panel on" id="tab-tasks">
+        <div class="shell split">
+          <div class="master">
+            <div class="toolbar">
+              <div>
+                <h3>项目任务</h3>
+                <p>逐行扫读、比较、下钻。选中一行打开右侧详情。</p>
+              </div>
+              <div class="filters">
+                <input aria-label="搜索任务" placeholder="搜索任务…" />
+                <select aria-label="任务状态"><option>全部状态</option><option>执行中</option><option>等待人工</option></select>
+                <select aria-label="执行员工"><option>全部员工</option><option>数据分析员</option></select>
+              </div>
+            </div>
+            <table class="dense">
+              <thead>
+                <tr><th>任务</th><th>状态</th><th>员工</th><th>所属需求</th><th>更新</th></tr>
+              </thead>
+              <tbody>
+                <tr class="sel">
+                  <td><span class="link">抽取对账单字段</span><p class="sub">从客户对账单解析科目与金额</p></td>
+                  <td><span class="pill p-info"><span class="d"></span>执行中</span></td>
+                  <td>数据分析员</td>
+                  <td class="link">对账自动化一期</td>
+                  <td class="num">3 分钟前</td>
+                </tr>
+                <tr>
+                  <td><span class="link">核对差异规则</span><p class="sub">下游放行待负责人确认</p></td>
+                  <td><span class="pill p-warn"><span class="d"></span>等待人工</span></td>
+                  <td>规则审核员</td>
+                  <td class="link">对账自动化一期</td>
+                  <td class="num">18 分钟前</td>
+                </tr>
+                <tr>
+                  <td><span class="link">生成对账报告</span><p class="sub">依赖上游完成</p></td>
+                  <td><span class="pill p-mute"><span class="d"></span>排队</span></td>
+                  <td>未分派</td>
+                  <td class="link">对账自动化一期</td>
+                  <td class="num">1 小时前</td>
+                </tr>
+                <tr>
+                  <td><span class="link">发票字段映射巡检</span></td>
+                  <td><span class="pill p-ok"><span class="d"></span>已完成</span></td>
+                  <td>数据分析员</td>
+                  <td class="link">发票字段映射</td>
+                  <td class="num">昨天</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <aside class="detail">
+            <div class="detail-h">
+              <h4>抽取对账单字段</h4>
+              <p>整行可选中 · 详情与列表共存</p>
+            </div>
+            <div class="kv">
+              <div class="row"><span class="k">状态</span><span class="v"><span class="pill p-info"><span class="d"></span>执行中</span></span></div>
+              <div class="row"><span class="k">执行员工</span><span class="v">数据分析员</span></div>
+              <div class="row"><span class="k">所属需求</span><span class="v link">对账自动化一期</span></div>
+              <div class="row"><span class="k">Runtime</span><span class="v">本机节点-04</span></div>
+            </div>
+            <div class="log">
+              <div><span class="t">14:02</span>会话已建立，开始解析附件</div>
+              <div><span class="t">14:04</span>已识别 128 行科目</div>
+              <div><span class="t">14:05</span>正在回写结构化字段</div>
+            </div>
+            <div style="padding:0 16px 16px;display:flex;gap:8px">
+              <button class="btn ghost sm" type="button">查看流程节点</button>
+              <button class="btn ghost sm" type="button">打开执行轨迹</button>
+            </div>
+          </aside>
+        </div>
+        <p class="note">适合：任务是可比较的工作对象。用脆数据表扫读，主从详情承接原因 / 证据 / 动作。不要把任务做成展示卡墙。</p>
+      </section>
+
+      <section class="panel" id="tab-demands">
+        <div class="shell split">
+          <div class="master">
+            <div class="toolbar">
+              <div>
+                <h3>项目需求</h3>
+                <p>身份型对象：先识别，再读意图与收口。</p>
+              </div>
+              <button class="btn primary sm" type="button">提交需求</button>
+            </div>
+            <table class="dense">
+              <thead><tr><th>需求</th><th>状态</th><th>收口</th><th>更新</th></tr></thead>
+              <tbody>
+                <tr class="sel">
+                  <td><span class="link">对账自动化一期</span><p class="sub">把 Q3 客户对账单做成可验收的差异报表</p></td>
+                  <td><span class="pill p-info"><span class="d"></span>执行中</span></td>
+                  <td>拟收口 · 差异报表</td>
+                  <td class="num">3 分钟前</td>
+                </tr>
+                <tr>
+                  <td><span class="link">发票字段映射</span><p class="sub">历史需求 · 已验收</p></td>
+                  <td><span class="pill p-ok"><span class="d"></span>已完成</span></td>
+                  <td>收口 · 映射表</td>
+                  <td class="num">昨天</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <aside class="detail">
+            <div class="detail-h">
+              <h4>对账自动化一期</h4>
+              <p>剧本 对账交付 · 链 2/2</p>
+            </div>
+            <div class="kv">
+              <div class="row"><span class="k">待你处理</span><span class="v">下游放行 1</span></div>
+              <div class="row"><span class="k">活跃任务</span><span class="v">2</span></div>
+              <div class="row"><span class="k">验收判据</span><span class="v">1/2 已满足</span></div>
+            </div>
+            <div style="padding:0 16px 16px">
+              <button class="btn primary sm" type="button">打开卷宗</button>
+            </div>
+          </aside>
+        </div>
+        <p class="note">需求条数通常远少于任务。主从表能扫，但真正读一单时应进入卷宗，而不是把意图塞进表格单元格。</p>
+      </section>
+
+      <section class="panel" id="tab-flow">
+        <div class="shell split">
+          <div class="master">
+            <div class="toolbar">
+              <div>
+                <h3>协调流程</h3>
+                <p>当前需求的任务图。节点 = 可打开的任务对象。</p>
+              </div>
+              <div class="filters">
+                <select aria-label="需求"><option>对账自动化一期</option><option>发票字段映射</option></select>
+                <button class="btn ghost sm" type="button">回放</button>
+              </div>
+            </div>
+            <div class="canvas" aria-label="流程图">
+              <div class="node" style="left:32px;top:80px"><b>抽取对账单字段</b><span class="pill p-info"><span class="d"></span>执行中</span></div>
+              <div class="edge" style="left:200px;top:108px;width:48px"></div>
+              <div class="node sel" style="left:248px;top:80px"><b>核对差异规则</b><span class="pill p-warn"><span class="d"></span>等待人工</span></div>
+              <div class="edge" style="left:416px;top:108px;width:48px"></div>
+              <div class="node" style="left:464px;top:80px"><b>生成对账报告</b><span class="pill p-mute"><span class="d"></span>排队</span></div>
+              <div class="node" style="left:248px;top:220px"><b>人工放行</b><span class="pill p-warn"><span class="d"></span>待决</span></div>
+            </div>
+          </div>
+          <aside class="detail">
+            <div class="detail-h">
+              <h4>核对差异规则</h4>
+              <p>选中节点 · 检查器</p>
+            </div>
+            <div class="kv">
+              <div class="row"><span class="k">阻塞原因</span><span class="v">下游放行</span></div>
+              <div class="row"><span class="k">决策</span><span class="v">待收件箱处理</span></div>
+              <div class="row"><span class="k">上游</span><span class="v">抽取对账单字段</span></div>
+            </div>
+            <div style="padding:0 16px 16px">
+              <button class="btn primary sm" type="button">去收件箱处理</button>
+            </div>
+          </aside>
+        </div>
+        <p class="note">流程是图，不是表。画布占主区，检查器只解释选中节点。不要在流程页再堆一张全量任务表。</p>
+      </section>
+
+      <section class="panel" id="tab-decisions">
+        <div class="shell split">
+          <div class="master">
+            <div class="toolbar">
+              <div>
+                <h3>项目决策</h3>
+                <p>待决在上、已决在下。写入口仍在收件箱。</p>
+              </div>
+              <div class="filters">
+                <select aria-label="决策状态"><option>待决优先</option><option>全部</option><option>仅已决</option></select>
+              </div>
+            </div>
+            <table class="dense">
+              <thead><tr><th>决策</th><th>类型</th><th>状态</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr class="sel">
+                  <td><span class="link">放行「核对差异规则」下游</span><p class="sub">高风险动作完成，需负责人确认后继续</p></td>
+                  <td>阶段放行</td>
+                  <td><span class="pill p-warn"><span class="d"></span>待决</span></td>
+                  <td class="num">18 分钟前</td>
+                </tr>
+                <tr>
+                  <td><span class="link">确认计划修订 v3</span></td>
+                  <td>计划确认</td>
+                  <td><span class="pill p-ok"><span class="d"></span>已通过</span></td>
+                  <td class="num">昨天</td>
+                </tr>
+                <tr>
+                  <td><span class="link">发票字段映射验收</span></td>
+                  <td>需求验收</td>
+                  <td><span class="pill p-ok"><span class="d"></span>已通过</span></td>
+                  <td class="num">昨天</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <aside class="detail">
+            <div class="detail-h">
+              <h4>放行「核对差异规则」下游</h4>
+              <p>项目内只读 · 处理去收件箱</p>
+            </div>
+            <div class="kv">
+              <div class="row"><span class="k">关联任务</span><span class="v">核对差异规则</span></div>
+              <div class="row"><span class="k">负责人</span><span class="v">林清 · any-of-N</span></div>
+              <div class="row"><span class="k">等待</span><span class="v">18 分钟</span></div>
+            </div>
+            <div style="padding:0 16px 16px">
+              <button class="btn primary sm" type="button">在收件箱处理</button>
+            </div>
+          </aside>
+        </div>
+        <p class="note">决策是稀疏、高赌注对象。列表要让待决跳出来；不要和审计流水混成同一张表。</p>
+      </section>
+
+      <section class="panel" id="tab-history">
+        <div class="shell">
+          <div class="toolbar">
+            <div>
+              <h3>项目历史</h3>
+              <p>只增不改的事件流。按类型过滤，点开看载荷。</p>
+            </div>
+            <div class="filters">
+              <select aria-label="事件类型"><option>全部类型</option><option>任务</option><option>决策</option><option>需求</option></select>
+              <input aria-label="搜索历史" placeholder="搜索事件…" />
+            </div>
+          </div>
+          <table class="dense">
+            <thead><tr><th>时间</th><th>事件</th><th>对象</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="num">14:05</td>
+                <td>任务进展</td>
+                <td class="link">抽取对账单字段</td>
+                <td>已识别 128 行科目</td>
+              </tr>
+              <tr>
+                <td class="num">13:47</td>
+                <td>决策待决</td>
+                <td class="link">下游放行</td>
+                <td>核对差异规则等待负责人</td>
+              </tr>
+              <tr>
+                <td class="num">11:20</td>
+                <td>任务创建</td>
+                <td class="link">生成对账报告</td>
+                <td>已进入项目推进队列</td>
+              </tr>
+              <tr>
+                <td class="num">昨天 16:02</td>
+                <td>需求验收</td>
+                <td class="link">发票字段映射</td>
+                <td>通过并关闭</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">历史必须是实底脆数据面：可过滤、可定位、可审计。不要做成装饰性时间轴动画。</p>
+      </section>
+    </div>
+  </div>
+  <script>
+    const tabs = document.querySelectorAll(".tabs button");
+    const panels = document.querySelectorAll(".panel");
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabs.forEach((b) => b.classList.remove("on"));
+        panels.forEach((p) => p.classList.remove("on"));
+        btn.classList.add("on");
+        document.getElementById("tab-" + btn.dataset.tab).classList.add("on");
+      });
+    });
+  </script>
+</body>
+</html>

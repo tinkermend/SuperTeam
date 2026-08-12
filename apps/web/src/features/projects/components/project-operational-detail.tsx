@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Activity,
   AlertTriangle,
@@ -91,11 +92,19 @@ import {
 import { attentionTone } from "../lib/project-ops-home";
 import { compareIsoDesc, formatDateTime as formatAbsoluteDateTime, formatRelativeTime } from "@/lib/format-time";
 import type { ApiClientOptions } from "@/lib/api/client";
+import {
+  getProjectDemandDossier,
+  listProjectDemands,
+} from "@/lib/api/projects";
 import { ProjectExecutionTracePanel } from "./project-execution-trace-panel";
 import { ProjectAssetsPanel } from "./project-assets-panel";
+import { DemandProcessRail } from "./demand-process-rail";
+import { DemandStageRiver } from "./demand-stage-river";
+import { DemandTaskTable } from "./demand-task-table";
+import { DemandContinueDialog } from "./demand-continue-dialog";
+import { demandDossierExitText } from "./demand-dossier-header";
 import { ProjectDemandsSection } from "./project-demands-section";
 import { ProjectGovernanceTabs } from "./project-governance-tabs";
-import { ProjectOpsHome } from "./project-ops-home";
 import { ProjectTaskDetailDialog } from "./project-task-detail-dialog";
 import { ProjectOwnerAvatarStack } from "./project-owner-avatar-stack";
 import {
@@ -118,6 +127,8 @@ type ProjectOperationalDetailProps = {
   coordinationJobs: ProjectCoordinationJob[];
   decisionRequests: ProjectDecisionRequest[];
   demands: ProjectDemand[];
+  /** 左轨第一页是否还有下一截（limit+1）。 */
+  demandsHasMore?: boolean;
   dispatchGateTaskTitle?: string;
   dispatchGates?: DispatchGateResult[];
   evidence?: ProjectEvidenceRef[];
@@ -203,10 +214,11 @@ export function ProjectOperationalDetail({
   coordinationJobs,
   decisionRequests,
   demands,
+  demandsHasMore = false,
   dispatchGateTaskTitle,
   dispatchGates,
   evidence,
-  events,
+  events: _events,
   executionTrace,
   executionTraceErrorMessage,
   executionTraceIsError,
@@ -219,7 +231,7 @@ export function ProjectOperationalDetail({
   initialDemandId,
   demandView,
   onDemandViewChange,
-  initialTab = "workbench",
+  initialTab = "tasks",
   detailTaskIdFromUrl,
   onClearDetailTaskUrl,
   isArchived,
@@ -234,8 +246,8 @@ export function ProjectOperationalDetail({
   onPatchEvidence,
   onRetryExecutionTrace,
   onResolveDecision,
-  onDismissTask,
-  dismissTaskPending,
+  onDismissTask: _onDismissTask,
+  dismissTaskPending: _dismissTaskPending,
   onSubmitDemand: _onSubmitDemand,
   overview,
   planRevisions,
@@ -251,6 +263,14 @@ export function ProjectOperationalDetail({
   transferRequests
 }: ProjectOperationalDetailProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [continueOpen, setContinueOpen] = useState(false);
+  const [demandSearch, setDemandSearch] = useState("");
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [extraDemands, setExtraDemands] = useState<ProjectDemand[]>([]);
+  const [loadMorePending, setLoadMorePending] = useState(false);
+  const [loadedHasMore, setLoadedHasMore] = useState<boolean | undefined>();
   // 双源：URL 有 ?tab=tasks&task= 时以 URL 为准；页内点击走内部 state。
   const [internalDetailTaskId, setInternalDetailTaskId] = useState<
     string | undefined
@@ -311,10 +331,6 @@ export function ProjectOperationalDetail({
   // 它才知道列表何时渲染完；此处不再重复 querySelector 同一个 id。
   useEffect(() => {
     if (!focusEvidenceId && governanceInitialTab !== "evidence") return;
-    const section = normalizeProjectDetailSection(
-      typeof initialTab === "string" ? initialTab : undefined,
-    );
-    if (section !== "workbench") return;
     setAdvancedOpen(true);
     const timer = window.setTimeout(() => {
       document
@@ -323,6 +339,30 @@ export function ProjectOperationalDetail({
     }, 200);
     return () => window.clearTimeout(timer);
   }, [focusEvidenceId, governanceInitialTab, initialTab]);
+
+  useEffect(() => {
+    setExtraDemands([]);
+    setLoadedHasMore(undefined);
+    setDemandSearch("");
+  }, [project?.id]);
+
+  const loadedDemands = useMemo(() => {
+    const seen = new Set(demands.map((demand) => demand.id));
+    return [...demands, ...extraDemands.filter((demand) => !seen.has(demand.id))];
+  }, [demands, extraDemands]);
+  const requestedDemandId = initialDemandId ?? loadedDemands[0]?.id;
+  const dossierQuery = useQuery({
+    enabled: Boolean(apiOptions && requestedDemandId),
+    placeholderData: keepPreviousData,
+    queryFn: () =>
+      getProjectDemandDossier(apiOptions!, requestedDemandId!, { siblingPending: true }),
+    queryKey: ["demand-dossier", apiBaseUrl, requestedDemandId],
+  });
+  const graphQuery = useQuery({
+    enabled: Boolean(fetchTaskGraph && requestedDemandId),
+    queryFn: () => fetchTaskGraph!(requestedDemandId!),
+    queryKey: ["project-task-graph", project?.id, requestedDemandId],
+  });
 
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
   // 执行轨迹面板任务过滤下拉的显示名：任务 id → 标题（技术区兜底 mono id）。
@@ -386,6 +426,48 @@ export function ProjectOperationalDetail({
     Boolean(onRecloneWorkspace) &&
     Boolean(project.repo_binding && project.repo_binding.status === "bound");
   const showMarkReady = canManageWorkspace && Boolean(onMarkWorkspaceReady);
+  const dossier =
+    requestedDemandId && dossierQuery.data?.demand?.id === requestedDemandId
+      ? dossierQuery.data
+      : undefined;
+  const selectedDemand =
+    loadedDemands.find((demand) => demand.id === requestedDemandId) ??
+    (requestedDemandId && dossier?.demand?.id === requestedDemandId
+      ? dossier.demand
+      : undefined) ??
+    loadedDemands[0];
+  const railDemands =
+    selectedDemand && !loadedDemands.some((demand) => demand.id === selectedDemand.id)
+      ? [selectedDemand, ...loadedDemands]
+      : loadedDemands;
+  const selectedGraph = graphQuery.data ?? (fetchTaskGraph ? undefined : taskGraph);
+  const pendingByDemand = new Map(
+    (dossier?.sibling_pending ?? []).map((item) => [item.demand_id, item.open_decisions]),
+  );
+  const hasMoreDemands = loadedHasMore ?? demandsHasMore;
+  const handleLoadMoreDemands = () => {
+    if (!apiOptions || loadMorePending) {
+      return;
+    }
+    setLoadMorePending(true);
+    void listProjectDemands(apiOptions, project.id, {
+      limit: 21,
+      offset: railDemands.length,
+    })
+      .then((rows) => {
+        setExtraDemands((prev) => [...prev, ...rows.slice(0, 20)]);
+        setLoadedHasMore(rows.length > 20);
+      })
+      .finally(() => setLoadMorePending(false));
+  };
+  const demandNodeIds = new Set((selectedGraph?.nodes ?? []).map((node) => node.id));
+  const demandDecisions = [
+    ...(selectedGraph?.decision_requests ?? []),
+    ...decisionRequests.filter(
+      (decision) =>
+        !decision.project_task_id || demandNodeIds.has(decision.project_task_id),
+    ),
+  ].filter((decision, index, list) => list.findIndex((item) => item.id === decision.id) === index);
 
   return (
     <div className="grid min-w-0 gap-4">
@@ -430,15 +512,21 @@ export function ProjectOperationalDetail({
                   : ""}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-2">
-                <HeroFactLink
-                  label={`阻塞 ${pendingOwnerDecisions.length}`}
-                  targetId="project-overview-pending"
-                />
+                <button
+                  className="rounded-sm font-medium underline-offset-2 transition-colors hover:text-ink hover:underline"
+                  type="button"
+                  onClick={() => setActiveSection("approval")}
+                >
+                  {`阻塞 ${pendingOwnerDecisions.length}`}
+                </button>
                 <span aria-hidden className="text-ink-3">·</span>
-                <HeroFactLink
-                  label={`执行中 ${activeTaskCount}`}
-                  targetId="project-overview-execution"
-                />
+                <button
+                  className="rounded-sm font-medium underline-offset-2 transition-colors hover:text-ink hover:underline"
+                  type="button"
+                  onClick={() => setActiveSection("tasks")}
+                >
+                  {`执行中 ${activeTaskCount}`}
+                </button>
                 {latestDemand ? (
                   <>
                     <span aria-hidden className="text-ink-3">·</span>
@@ -526,233 +614,307 @@ export function ProjectOperationalDetail({
             </DropdownMenu>
           </div>
         </div>
+        {runtimePlacementPanel ? (
+          <div className="mt-4 border-t border-line pt-3">
+            {runtimePlacementPanel}
+          </div>
+        ) : null}
       </SoftCard>
 
-      <SoftTabs
-        className="grid min-w-0 gap-3"
-        value={activeSection}
-        onValueChange={(value) => setActiveSection(value as ProjectDetailSection)}
+      <SoftCard
+        className="@container/dossier overflow-hidden p-0"
+        data-testid="project-dossier-shell"
       >
-        <div className="min-w-0 w-full border-b border-line">
-          <SoftTabsList
-            aria-label="项目工作区段"
-            className="flex h-auto w-full min-w-0 max-w-none justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 text-ink shadow-none"
-          >
-            <SoftTabsTrigger className={sectionTriggerClass} value="workbench">
-              工作台
-            </SoftTabsTrigger>
-            <SoftTabsTrigger className={sectionTriggerClass} value="demands">
-              需求流程
-            </SoftTabsTrigger>
-            <SoftTabsTrigger className={sectionTriggerClass} value="tasks">
-              任务
-            </SoftTabsTrigger>
-            <SoftTabsTrigger className={sectionTriggerClass} value="approval">
-              决策历史
-            </SoftTabsTrigger>
-            <SoftTabsTrigger className={sectionTriggerClass} value="assets">
-              资产
-            </SoftTabsTrigger>
-          </SoftTabsList>
-        </div>
-
-        <SoftTabsContent className="m-0 grid min-w-0 gap-4" value="workbench">
-          <ProjectStagePipeline
-            acceptance={acceptance}
-            artifactsCount={artifacts?.length}
-            demands={demands}
-            latestPlanReviewDecision={latestPlanReviewDecision}
-            latestPlanRevision={latestPlanRevision}
-            principalNamesById={principalNamesById}
-            servicePool={servicePool}
-            taskSummary={overview?.task_summary}
-            tasks={tasks}
-          />
-
-          <ProjectOpsHome
-            artifactsCount={artifacts?.length}
-            budgetSummary={budgetSummary}
-            decisionRequests={decisionRequests}
-            demands={demands}
-            events={events}
-            isArchived={isArchived}
-            onOpenTask={setDetailTaskId}
-            onResolveDecision={onResolveDecision}
-            onShowAllTasks={() => setActiveSection("tasks")}
-            overview={overview}
-            planRevisions={planRevisions}
-            principalNamesById={principalNamesById}
-            project={project}
-            runtimePlacementPanel={runtimePlacementPanel}
-            taskGraph={taskGraph}
-            tasks={tasks}
-          />
-
-          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <div
-              className={cn(
-                "overflow-hidden rounded-[12px] border border-dashed border-line",
-                advancedOpen ? "border-solid bg-card shadow-card" : "bg-transparent",
-              )}
-            >
-              <CollapsibleTrigger asChild>
-                <button
-                  aria-label={advancedOpen ? "收起高级项目事实" : "展开高级项目事实"}
-                  className={cn(
-                    "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left",
-                    advancedOpen && "border-b border-line",
-                  )}
-                  type="button"
-                >
-                  <span className="min-w-0">
-                    <span className="block text-[12.5px] font-semibold text-ink-2">
-                      高级项目事实
-                    </span>
-                    {!advancedOpen ? (
-                      <span className="mt-0.5 block text-[11px] text-ink-3">
-                        需求 · 执行记录 · 治理
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] font-semibold text-ink-3">
-                    {advancedOpen ? "收起" : "展开"}
-                    <ChevronDown
-                      className={cn("size-3.5 transition-transform", advancedOpen && "rotate-180")}
-                    />
-                  </span>
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <MasterDetailLayout
-                  className="p-4"
-                  narrowDetail="stack"
-                  rail="md"
-                  master={
-                    <section className="grid min-w-0 gap-4">
-                      {/* 执行图撤除（2026-07-27）：此处曾渲染仅覆盖最新需求的
-                          FlowGraphCanvas，已被需求流程区（可切需求+血缘+回放）
-                          完全取代，只留深链避免旧路径落空。 */}
-                      <div
-                        className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[14px] border border-line bg-card-soft px-3.5 py-2.5"
-                        data-testid="execution-graph-deeplink"
-                      >
-                        <p className="text-xs text-ink-2">执行图已迁入需求流程区</p>
-                        <Link
-                          className="shrink-0 text-xs font-semibold text-brand-deep hover:text-brand"
-                          from="/projects/$projectId"
-                          search={{ tab: "demands" }}
-                          to="."
-                        >
-                          前往需求流程 →
-                        </Link>
-                      </div>
-                      <DispatchGateSummary
-                        gates={dispatchGates ?? []}
-                        taskTitle={dispatchGateTaskTitle}
-                      />
-                      <AdvancedRouteDecisions routeDecisions={routeDecisions} />
-                      <div className="scroll-mt-20" id="project-execution-trace">
-                        <ProjectExecutionTracePanel
-                          errorMessage={executionTraceErrorMessage}
-                          focusTaskId={traceTaskId}
-                          isError={executionTraceIsError}
-                          isLoading={executionTraceIsLoading}
-                          onRetry={onRetryExecutionTrace}
-                          taskTitlesById={taskTitlesById}
-                          trace={executionTrace}
-                        />
-                      </div>
-                      <div className="scroll-mt-20" id="project-governance-evidence">
-                        <ProjectGovernanceTabs
-                          acceptance={acceptance}
-                          archivePreview={archivePreview}
-                          archiveSnapshots={archiveSnapshots}
-                          artifacts={artifacts}
-                          budgetLedger={budgetLedger}
-                          budgetSummary={budgetSummary}
-                          decisionRequestCount={decisionRequests.length}
-                          demandCount={demands.length}
-                          evidence={evidence}
-                          executionSummaryCount={executionSummaries.length}
-                          focusEvidenceId={focusEvidenceId}
-                          initialTab={governanceInitialTab ?? "evidence"}
-                          onCreateArchiveSnapshot={onCreateArchiveSnapshot}
-                          onCreateEvidence={onCreateEvidence}
-                          onPatchEvidence={onPatchEvidence}
-                          reports={reports}
-                          routeDecisionCount={routeDecisions.length}
-                          taskCount={tasks.length}
-                        />
-                      </div>
-                    </section>
-                  }
-                  detail={
-                    <aside className="grid min-w-0 gap-4">
-                      <AdvancedCoordinationJobs coordinationJobs={coordinationJobs} />
-                      <AdvancedExecutionSummaries executionSummaries={executionSummaries} />
-                      <AdvancedTransferRequests transferRequests={transferRequests} />
-                      <AdvancedWorkflow project={project} overview={overview} />
-                      <AdvancedDemands
-                        blockingFact={taskGraph?.blocking_facts?.[0]}
-                        demands={demands}
-                      />
-                    </aside>
-                  }
-                />
-              </CollapsibleContent>
-            </div>
-          </Collapsible>
-        </SoftTabsContent>
-
-        <SoftTabsContent className="m-0 min-w-0" value="demands">
-          {apiBaseUrl && apiOptions ? (
-            <ProjectDemandsSection
-              apiBaseUrl={apiBaseUrl}
-              apiOptions={apiOptions}
-              demands={demands}
-              detailTaskId={detailTaskId}
-              fetchTaskGraph={fetchTaskGraph}
-              onClearTask={() => setDetailTaskId(undefined)}
-              onOpenTask={setDetailTaskId}
-              onViewChange={onDemandViewChange}
-              projectId={project.id}
-              selectedDemandId={initialDemandId}
-              view={demandView}
-            />
-          ) : null}
-        </SoftTabsContent>
-
-        <SoftTabsContent className="m-0" value="tasks">
-          <ProjectTasksPanel
-            decisionRequests={decisionRequests}
-            demands={demands}
-            dismissTaskPending={dismissTaskPending}
-            onDismissTask={onDismissTask}
-            onOpenTask={setDetailTaskId}
-            principalNamesById={principalNamesById}
-            tasks={tasks}
-          />
-        </SoftTabsContent>
-
-        <SoftTabsContent className="m-0 grid min-w-0 gap-4" value="approval">
-          <ProjectApprovalPanel
-            decisionRequests={decisionRequests}
-            focusDecisionId={focusDecisionId}
+        <div className="grid min-h-0 grid-cols-1 @3xl/dossier:grid-cols-[228px_minmax(0,1fr)]">
+          <DemandProcessRail
+            currentTab={activeSection}
+            demands={railDemands}
+            embedded
+            hasMore={hasMoreDemands}
+            loadMorePending={loadMorePending}
+            onLoadMore={handleLoadMoreDemands}
+            onSearchQueryChange={setDemandSearch}
+            pendingByDemand={pendingByDemand}
             projectId={project.id}
+            searchQuery={demandSearch}
+            selectedDemandId={selectedDemand?.id}
           />
-        </SoftTabsContent>
+          <div className="flex min-h-[28rem] min-w-0 flex-col">
+            <DemandStageRiver
+              acceptance={dossier?.acceptance}
+              continueAction={
+                dossier?.lineage?.continue_demand
+                  ? {
+                      available: Boolean(dossier.lineage.continue_demand.available),
+                      onContinue: () => setContinueOpen(true),
+                      reasonMessage: dossier.lineage.continue_demand.reason_message,
+                    }
+                  : undefined
+              }
+              demand={selectedDemand}
+              exitLabel={
+                dossier
+                  ? demandDossierExitText(dossier.effective_playbook)?.text ?? null
+                  : null
+              }
+              graph={selectedGraph}
+              onPlanClick={() => setPlanOpen((value) => !value)}
+              planOpen={planOpen}
+              playbookName={
+                dossier?.effective_playbook.source !== "none"
+                  ? dossier?.effective_playbook.name?.trim() || null
+                  : null
+              }
+            />
+            {planOpen ? (
+              <div className="border-b border-line p-3">
+                <PlanConfirmationCard
+                  latestPlanReviewDecision={latestPlanReviewDecision}
+                  latestPlanRevision={latestPlanRevision}
+                  principalNamesById={principalNamesById}
+                  servicePool={servicePool}
+                />
+              </div>
+            ) : null}
 
-        <SoftTabsContent className="m-0" value="assets">
-          <ProjectAssetsPanel
-            acceptance={acceptance}
-            artifacts={artifacts}
-            budgetLedger={budgetLedger}
-            budgetSummary={budgetSummary}
-            initialTab={assetsInitial}
-            reports={reports}
-          />
-        </SoftTabsContent>
-      </SoftTabs>
+            <SoftTabs
+              className="grid min-w-0 gap-0"
+              value={activeSection}
+              onValueChange={(value) => setActiveSection(value as ProjectDetailSection)}
+            >
+            <div className="min-w-0 w-full border-b border-line">
+              <SoftTabsList
+                aria-label="项目工作区段"
+                className="flex h-auto w-full min-w-0 max-w-none justify-start gap-0.5 overflow-x-auto rounded-none bg-transparent p-0 text-ink shadow-none"
+              >
+                <SoftTabsTrigger className={sectionTriggerClass} value="tasks">
+                  任务
+                </SoftTabsTrigger>
+                <SoftTabsTrigger className={sectionTriggerClass} value="flow">
+                  流程
+                </SoftTabsTrigger>
+                <SoftTabsTrigger className={sectionTriggerClass} value="approval">
+                  决策
+                </SoftTabsTrigger>
+                <SoftTabsTrigger className={sectionTriggerClass} value="history">
+                  历史
+                </SoftTabsTrigger>
+                <SoftTabsTrigger className={sectionTriggerClass} value="assets">
+                  资产
+                </SoftTabsTrigger>
+              </SoftTabsList>
+            </div>
+
+            <SoftTabsContent className="m-0 min-w-0" value="tasks">
+              <DemandTaskTable
+                demand={selectedDemand}
+                dossier={dossier}
+                graph={selectedGraph}
+                onOpenTask={setDetailTaskId}
+                principalNamesById={principalNamesById}
+                selectedTaskId={detailTaskId}
+              />
+            </SoftTabsContent>
+
+            <SoftTabsContent className="m-0 min-w-0 p-3" value="flow">
+              {apiBaseUrl && apiOptions ? (
+                <ProjectDemandsSection
+                  apiBaseUrl={apiBaseUrl}
+                  apiOptions={apiOptions}
+                  demands={railDemands}
+                  detailTaskId={detailTaskId}
+                  fetchTaskGraph={fetchTaskGraph}
+                  hideList
+                  listTab={activeSection}
+                  onClearTask={() => setDetailTaskId(undefined)}
+                  onOpenTask={setDetailTaskId}
+                  onViewChange={onDemandViewChange}
+                  pane="graph"
+                  projectId={project.id}
+                  selectedDemandId={selectedDemand?.id}
+                  view="graph"
+                />
+              ) : null}
+            </SoftTabsContent>
+
+            <SoftTabsContent className="m-0 grid min-w-0 gap-4 p-3" value="approval">
+              <ProjectApprovalPanel
+                decisionRequests={demandDecisions}
+                focusDecisionId={focusDecisionId}
+                projectId={project.id}
+              />
+            </SoftTabsContent>
+
+            <SoftTabsContent className="m-0 min-w-0 p-3" value="history">
+              {apiBaseUrl && apiOptions ? (
+                <ProjectDemandsSection
+                  apiBaseUrl={apiBaseUrl}
+                  apiOptions={apiOptions}
+                  demands={railDemands}
+                  detailTaskId={detailTaskId}
+                  fetchTaskGraph={fetchTaskGraph}
+                  hideList
+                  listTab={activeSection}
+                  onClearTask={() => setDetailTaskId(undefined)}
+                  onOpenTask={setDetailTaskId}
+                  onViewChange={onDemandViewChange}
+                  pane="timeline"
+                  projectId={project.id}
+                  selectedDemandId={selectedDemand?.id}
+                  view="timeline"
+                />
+              ) : null}
+            </SoftTabsContent>
+
+            <SoftTabsContent className="m-0 p-3" value="assets">
+              <ProjectAssetsPanel
+                acceptance={acceptance}
+                artifacts={artifacts}
+                budgetLedger={budgetLedger}
+                budgetSummary={budgetSummary}
+                initialTab={assetsInitial}
+                reports={reports}
+              />
+            </SoftTabsContent>
+          </SoftTabs>
+          </div>
+        </div>
+      </SoftCard>
+
+      {selectedDemand && apiOptions ? (
+        <DemandContinueDialog
+          apiOptions={apiOptions}
+          demandId={selectedDemand.id}
+          demandTitle={selectedDemand.title}
+          onContinued={(created) => {
+            void queryClient.invalidateQueries({
+              queryKey: ["project-demands", project.id],
+            });
+            void navigate({
+              params: { projectId: project.id },
+              search: (prev) => ({
+                ...prev,
+                demand: created.id,
+                tab: "tasks",
+              }),
+              to: "/projects/$projectId",
+            });
+          }}
+          onOpenChange={setContinueOpen}
+          open={continueOpen}
+        />
+      ) : null}
+
+      <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+        <div
+          className={cn(
+            "overflow-hidden rounded-[12px] border border-dashed border-line",
+            advancedOpen ? "border-solid bg-card shadow-card" : "bg-transparent",
+          )}
+        >
+          <CollapsibleTrigger asChild>
+            <button
+              aria-label={advancedOpen ? "收起高级项目事实" : "展开高级项目事实"}
+              className={cn(
+                "flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left",
+                advancedOpen && "border-b border-line",
+              )}
+              type="button"
+            >
+              <span className="min-w-0">
+                <span className="block text-[12.5px] font-semibold text-ink-2">
+                  高级项目事实
+                </span>
+                {!advancedOpen ? (
+                  <span className="mt-0.5 block text-[11px] text-ink-3">
+                    执行轨迹 · 治理 · 技术详情
+                  </span>
+                ) : null}
+              </span>
+              <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] font-semibold text-ink-3">
+                {advancedOpen ? "收起" : "展开"}
+                <ChevronDown
+                  className={cn("size-3.5 transition-transform", advancedOpen && "rotate-180")}
+                />
+              </span>
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <MasterDetailLayout
+              className="p-4"
+              narrowDetail="stack"
+              rail="md"
+              master={
+                <section className="grid min-w-0 gap-4">
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-[14px] border border-line bg-card-soft px-3.5 py-2.5"
+                    data-testid="execution-graph-deeplink"
+                  >
+                    <p className="text-xs text-ink-2">执行图已迁入流程页签</p>
+                    <button
+                      className="shrink-0 text-xs font-semibold text-brand-deep hover:text-brand"
+                      onClick={() => setActiveSection("flow")}
+                      type="button"
+                    >
+                      前往流程 →
+                    </button>
+                  </div>
+                  <DispatchGateSummary
+                    gates={dispatchGates ?? []}
+                    taskTitle={dispatchGateTaskTitle}
+                  />
+                  <AdvancedRouteDecisions routeDecisions={routeDecisions} />
+                  <div className="scroll-mt-20" id="project-execution-trace">
+                    <ProjectExecutionTracePanel
+                      errorMessage={executionTraceErrorMessage}
+                      focusTaskId={traceTaskId}
+                      isError={executionTraceIsError}
+                      isLoading={executionTraceIsLoading}
+                      onRetry={onRetryExecutionTrace}
+                      taskTitlesById={taskTitlesById}
+                      trace={executionTrace}
+                    />
+                  </div>
+                  <div className="scroll-mt-20" id="project-governance-evidence">
+                    <ProjectGovernanceTabs
+                      acceptance={acceptance}
+                      archivePreview={archivePreview}
+                      archiveSnapshots={archiveSnapshots}
+                      artifacts={artifacts}
+                      budgetLedger={budgetLedger}
+                      budgetSummary={budgetSummary}
+                      decisionRequestCount={decisionRequests.length}
+                      demandCount={demands.length}
+                      evidence={evidence}
+                      executionSummaryCount={executionSummaries.length}
+                      focusEvidenceId={focusEvidenceId}
+                      initialTab={governanceInitialTab ?? "evidence"}
+                      onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+                      onCreateEvidence={onCreateEvidence}
+                      onPatchEvidence={onPatchEvidence}
+                      reports={reports}
+                      routeDecisionCount={routeDecisions.length}
+                      taskCount={tasks.length}
+                    />
+                  </div>
+                </section>
+              }
+              detail={
+                <aside className="grid min-w-0 gap-4">
+                  <AdvancedCoordinationJobs coordinationJobs={coordinationJobs} />
+                  <AdvancedExecutionSummaries executionSummaries={executionSummaries} />
+                  <AdvancedTransferRequests transferRequests={transferRequests} />
+                  <AdvancedWorkflow project={project} overview={overview} />
+                  <AdvancedDemands
+                    blockingFact={selectedGraph?.blocking_facts?.[0] ?? taskGraph?.blocking_facts?.[0]}
+                    demands={railDemands}
+                  />
+                </aside>
+              }
+            />
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
 
       <ProjectTaskDetailDialog
         apiOptions={apiOptions}
@@ -767,7 +929,7 @@ export function ProjectOperationalDetail({
         overview={overview}
         principalNamesById={principalNamesById}
         projectId={project.id}
-        taskGraph={taskGraph}
+        taskGraph={selectedGraph ?? taskGraph}
         taskId={detailTaskId}
         tasks={tasks}
       />
@@ -782,11 +944,11 @@ const pipelineStageCellClass =
  * 推进管道（IA Phase 2 P2a-2）：把概览里分散的需求状态、计划确认、执行进度、
  * 结果验收收敛为「需求→计划→执行→结果」四阶段横排格。纯布局与导航重构——
  * 数据全部来自页面已加载的 queries，不新增接口；三格深链到对应区
- * （?tab=demands / ?tab=tasks / ?tab=acceptance），计划格就地展开计划确认卡。
+ * （?tab=tasks / ?tab=flow / ?tab=acceptance），计划格就地展开计划确认卡。
  * 状态色用盯守面 attentionTone（与流程图的权威状态色刻意分工，见 lib 注释）。
  * 窄视口经 grid 断点降级为纵向堆叠。
  */
-function ProjectStagePipeline({
+export function ProjectStagePipeline({
   acceptance,
   artifactsCount,
   demands,
@@ -856,7 +1018,7 @@ function ProjectStagePipeline({
             className={pipelineStageCellClass}
             data-testid="pipeline-stage-demands"
             from="/projects/$projectId"
-            search={{ tab: "demands" }}
+            search={{ tab: "tasks" }}
             to="."
           >
             <PipelineStageCellBody
@@ -1543,7 +1705,7 @@ function countRunningTasks(tasks: ProjectTask[]): number {
   ).length;
 }
 
-function HeroFactLink({
+export function HeroFactLink({
   className,
   label,
   targetId
@@ -1687,7 +1849,7 @@ function DemandFailureDiagnosis({
       <Link
         className="text-xs font-semibold text-brand-deep hover:text-brand"
         from="/projects/$projectId"
-        search={{ demand: demandId, tab: "demands" }}
+        search={{ demand: demandId, tab: "tasks" }}
         to="."
       >
         查看缺口处理 →
@@ -1730,7 +1892,7 @@ function ProjectTaskLink({
   return <p className="min-w-0 truncate text-sm font-medium">{task.title}</p>;
 }
 
-function ProjectTasksPanel({
+export function ProjectTasksPanel({
   decisionRequests,
   demands,
   dismissTaskPending,
@@ -1901,7 +2063,7 @@ function ProjectTasksPanel({
                         !demandTitlesById.get(task.demand_id) && "font-mono",
                       )}
                       from="/projects/$projectId"
-                      search={{ demand: task.demand_id, tab: "demands" }}
+                      search={{ demand: task.demand_id, tab: "tasks" }}
                       to="."
                     >
                       {demandTitlesById.get(task.demand_id) ??

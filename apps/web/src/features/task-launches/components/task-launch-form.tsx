@@ -461,7 +461,7 @@ function SubmitSuccessPanel({
             <Link
               className="tl-btn-secondary"
               params={{ projectId: result.projectId }}
-              search={{ demand: result.demandId, tab: "demands" }}
+              search={{ demand: result.demandId, tab: "tasks" }}
               to="/projects/$projectId"
             >
               查看需求卷宗

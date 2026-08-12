@@ -596,7 +596,7 @@ describe("InboxView", () => {
     // 不再多绕 /workflows/{id} 那一跳。
     await expect
       .element(screen.getByRole("link", { name: /关联需求 · 帮我分析 Claude Code/ }))
-      .toHaveAttribute("href", `/projects/project-1?demand=${demandId}&tab=demands`);
+      .toHaveAttribute("href", `/projects/project-1?demand=${demandId}&tab=tasks`);
     // 列表 meta 与详情「关联对象」同文案，取详情区内可见的那份即可。
     await expect
       .element(

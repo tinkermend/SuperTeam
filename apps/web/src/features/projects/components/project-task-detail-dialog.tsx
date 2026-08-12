@@ -336,7 +336,7 @@ export function ProjectTaskDetailDialog({
                   aria-label="查看该任务所在需求流程"
                   className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
                   params={{ projectId }}
-                  search={{ demand: task.demand_id, tab: "demands" }}
+                  search={{ demand: task.demand_id, tab: "tasks" }}
                   to="/projects/$projectId"
                 >
                   查看需求流程

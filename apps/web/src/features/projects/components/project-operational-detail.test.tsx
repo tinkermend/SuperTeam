@@ -19,7 +19,9 @@ vi.mock("@tanstack/react-router", () => {
   type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
     children: ReactNode;
     params?: Record<string, string>;
-    search?: Record<string, string>;
+    search?:
+      | Record<string, string>
+      | ((prev: Record<string, unknown>) => Record<string, unknown>);
     to: string;
   };
 
@@ -31,7 +33,17 @@ vi.mock("@tanstack/react-router", () => {
           href = href.replace(`$${key}`, encodeURIComponent(value));
         }
       }
-      const query = search ? `?${new URLSearchParams(search).toString()}` : "";
+      const resolvedSearch =
+        typeof search === "function" ? search({}) : search;
+      const query = resolvedSearch
+        ? `?${new URLSearchParams(
+            Object.fromEntries(
+              Object.entries(resolvedSearch).filter(
+                (entry): entry is [string, string] => typeof entry[1] === "string",
+              ),
+            ),
+          ).toString()}`
+        : "";
       return (
         <a {...props} data-router-link="true" href={`${href}${query}`}>
           {children}
@@ -201,6 +213,30 @@ const planRevisions: ProjectPlanRevision[] = [
 },
 ];
 
+const defaultTaskGraph: ProjectTaskGraph = {
+  blocking_facts: [],
+  decision_requests: [],
+  edges: [],
+  employees: [
+    {
+      digital_employee_id: "employee-1",
+      display_name: "验收执行员工",
+      project_role: "executor",
+      status: "active"
+},
+  ],
+  execution_summaries: [],
+  nodes: overviewTasks.map((task) => ({
+    ...task,
+    expected_outputs: [],
+    handoff_contract: {},
+    input_requirements: {},
+    planner_metadata: {}
+})),
+  recent_events: [],
+  runs: []
+};
+
 function detailElement(
   props: Partial<React.ComponentProps<typeof ProjectOperationalDetail>> = {},
 ) {
@@ -231,6 +267,7 @@ function detailElement(
       reports={[]}
       routeDecisions={[]}
       runtimePlacementPanel={<div>Runtime placement</div>}
+      taskGraph={defaultTaskGraph}
       tasks={overviewTasks}
       transferRequests={[]}
       {...props}
@@ -253,14 +290,16 @@ function renderDetail(
 }
 
 describe("ProjectOperationalDetail", () => {
-  it("renders section nav with workbench default and navigable project context", async () => {
+  it("renders section nav with tasks default and navigable project context", async () => {
     const screen = await renderDetail();
 
-    await expect.element(screen.getByRole("tab", { name: "工作台" })).toBeVisible();
-    await expect.element(screen.getByRole("tab", { name: "需求流程" })).toBeVisible();
-    await expect.element(screen.getByRole("tab", { name: "任务" })).toBeVisible();
-    await expect.element(screen.getByRole("tab", { name: "决策历史" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "任务", selected: true })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "流程" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "决策" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "历史" })).toBeVisible();
     await expect.element(screen.getByRole("tab", { name: "资产" })).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "需求" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("tab", { name: "工作台" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "概览" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("tab", { name: "配置" })).not.toBeInTheDocument();
     await expect.element(screen.getByRole("heading", { name: "客户接入验收" })).toBeVisible();
@@ -272,7 +311,13 @@ describe("ProjectOperationalDetail", () => {
       "href",
       "/task-launches?mode=plan&project=project-1",
     );
-    await expect.element(screen.getByTestId("project-ops-home")).toBeVisible();
+    await expect.element(screen.getByTestId("project-dossier-shell")).toBeVisible();
+    await expect.element(screen.getByTestId("demand-process-rail")).toBeVisible();
+    await expect.element(screen.getByTestId("demand-stage-river")).toBeVisible();
+    expect(
+      screen.getByTestId("demand-stage-river").element().querySelector("section")?.className,
+    ).toContain("grid-cols-4");
+    await expect.element(screen.getByTestId("demand-task-table")).toBeVisible();
     await expect.element(screen.getByRole("link", { name: /验收执行员工/ })).toHaveAttribute(
       "href",
       "/employees/employee-1",
@@ -287,37 +332,17 @@ describe("ProjectOperationalDetail", () => {
     );
   });
 
-  it("renders the stage pipeline with deep links and per-stage status", async () => {
+  it("renders the demand stage river for the selected demand", async () => {
     const screen = await renderDetail({ planRevisions });
 
-    // 头部事实条的「执行中」与执行格同判据（运行中/等待人工），不是任务总数。
     await expect.element(screen.getByRole("button", { name: "执行中 1" })).toBeVisible();
 
-    const pipeline = screen.getByTestId("project-stage-pipeline");
-    await expect.element(pipeline).toBeVisible();
+    const river = screen.getByTestId("demand-stage-river");
+    await expect.element(river).toBeVisible();
+    await expect.element(river.getByText("补充上线验收说明")).toBeVisible();
+    await expect.element(screen.getByTestId("demand-river-plan")).toBeVisible();
 
-    // 需求格：状态 + 计数 + 深链 ?tab=demands
-    const demandCell = screen.getByTestId("pipeline-stage-demands");
-    await expect.element(demandCell).toHaveAttribute("href", ".?tab=demands");
-    await expect.element(demandCell.getByText("待计划")).toBeVisible();
-    await expect.element(demandCell.getByText("共 1 条")).toBeVisible();
-
-    // 执行格：任务计数 + 深链任务区
-    const executionCell = screen.getByTestId("pipeline-stage-execution");
-    await expect.element(executionCell).toHaveAttribute("href", ".?tab=tasks");
-    await expect
-      .element(executionCell.getByText("执行中 1 · 共 1 项"))
-      .toBeVisible();
-
-    // 结果格：验收/工件深链（?tab=acceptance 映射资产区验收页签）
-    const resultsCell = screen.getByTestId("pipeline-stage-results");
-    await expect.element(resultsCell).toHaveAttribute("href", ".?tab=acceptance");
-    await expect.element(resultsCell.getByText("未验收")).toBeVisible();
-    await expect.element(resultsCell.getByText("工件 0 项")).toBeVisible();
-
-    // 计划格：就地展开/收起计划确认卡
-    const planCell = screen.getByTestId("pipeline-stage-plan");
-    await expect.element(planCell.getByText("计划 v1")).toBeVisible();
+    const planCell = screen.getByTestId("demand-river-plan");
     await expect.element(planCell).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(planCell);
     await expect.element(planCell).toHaveAttribute("aria-expanded", "true");
@@ -327,7 +352,7 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByText("调度顺序")).not.toBeInTheDocument();
   });
 
-  it("surfaces failed demand and failed task counts as pipeline pending actions", async () => {
+  it("maps failed demand status onto the selected-demand river", async () => {
     const failedTask: ProjectTask = {
       id: "task-failed",
       project_id: "project-1",
@@ -338,7 +363,6 @@ describe("ProjectOperationalDetail", () => {
 };
     const screen = await renderDetail({
       demands: [{ ...demands[0], status: "failed" }],
-      // 计数以服务端聚合为权威，夹具的任务列表与 task_summary 必须自洽。
       overview: {
         ...overview,
         task_summary: {
@@ -354,10 +378,8 @@ describe("ProjectOperationalDetail", () => {
       tasks: [failedTask]
 });
 
-    const demandCell = screen.getByTestId("pipeline-stage-demands");
-    await expect.element(demandCell.getByText("1 条失败待处理 →")).toBeVisible();
-    const executionCell = screen.getByTestId("pipeline-stage-execution");
-    await expect.element(executionCell.getByText("1 项失败待处理 →")).toBeVisible();
+    const river = screen.getByTestId("demand-stage-river");
+    await expect.element(river.getByText("已失败")).toBeVisible();
   });
 
   it("maps legacy tab deep links onto sections and assets sub-tabs", async () => {
@@ -376,12 +398,12 @@ describe("ProjectOperationalDetail", () => {
 
     const overviewScreen = await renderDetail({ initialTab: "overview" });
     await expect
-      .element(overviewScreen.getByRole("tab", { name: "工作台", selected: true }))
+      .element(overviewScreen.getByRole("tab", { name: "任务", selected: true }))
       .toBeVisible();
-    await expect.element(overviewScreen.getByTestId("project-ops-home")).toBeVisible();
+    await expect.element(overviewScreen.getByTestId("demand-task-table")).toBeVisible();
   });
 
-  it("opens the demands section from ?tab=demands with the demand switcher", async () => {
+  it("maps ?tab=demands onto the tasks section and keeps the demand rail selection", async () => {
     // 需求处所直连卷宗/血缘 API：给最小 stub 响应即可。
     const fetcher: typeof fetch = async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -419,19 +441,154 @@ describe("ProjectOperationalDetail", () => {
     const screen = await renderDetail({
       apiBaseUrl: "http://cp.test",
       apiOptions: { baseUrl: "http://cp.test", fetcher },
+      initialDemandId: "demand-1",
       initialTab: "demands"
 });
 
     await expect
-      .element(screen.getByRole("tab", { name: "需求流程", selected: true }))
+      .element(screen.getByRole("tab", { name: "任务", selected: true }))
       .toBeVisible();
-    await expect.element(screen.getByTestId("project-demands-section")).toBeVisible();
-    const header = screen.getByTestId("demand-dossier-header");
-    await expect.element(header.getByText("补充上线验收说明")).toBeVisible();
-    await expect.element(header.getByText("待计划")).toBeVisible();
+    await expect.element(screen.getByRole("tab", { name: "需求" })).not.toBeInTheDocument();
+    await expect.element(screen.getByTestId("demand-task-table")).toBeVisible();
     await expect
       .element(screen.getByTestId("demand-list-item-demand-1"))
-      .toHaveAttribute("href", "/projects/project-1?demand=demand-1&tab=demands");
+      .toHaveAttribute("href", "/projects/project-1?demand=demand-1&tab=tasks");
+  });
+
+  it("surfaces 继续这一单 on the stage river when the server allows continuation", async () => {
+    const fetcher: typeof fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.includes("/dossier")) {
+        return new Response(JSON.stringify({ criteria: [], demand_status: "completed" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+});
+      }
+      return new Response(
+        JSON.stringify({
+          demand: {
+            id: "demand-1",
+            status: "completed",
+            title: "补充上线验收说明"
+},
+          effective_playbook: { name: "软件交付", produce_kinds: [], source: "project" },
+          handoff_summary: {
+            assessments: [],
+            fulfilled: 0,
+            partial: 0,
+            unfulfilled: 0,
+            unknown: 0
+},
+          lineage: {
+            chain: [
+              {
+                created_at: "2026-07-25T08:00:00Z",
+                demand_id: "demand-1",
+                is_current: true,
+                status: "completed",
+                title: "补充上线验收说明"
+},
+            ],
+            chain_length: 1,
+            chain_position: 1,
+            continue_demand: { available: true, reason_code: "ok" }
+},
+          pending_actions: [],
+          project: { id: "project-1", name: "项目一" },
+          rail: { slots: [] },
+          signals: {
+            active_task_count: 0,
+            demand_terminal: true,
+            has_open_decisions: false
+},
+          timeline: { items: [], truncated: false }
+}),
+        {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+},
+      );
+    };
+    const screen = await renderDetail({
+      apiBaseUrl: "http://cp.test",
+      apiOptions: { baseUrl: "http://cp.test", fetcher },
+      demands: [{ ...demands[0], status: "completed" }],
+      initialDemandId: "demand-1"
+});
+
+    await expect.element(screen.getByTestId("demand-river-continue")).toBeVisible();
+    await expect.element(screen.getByText("剧本 · 软件交付")).toBeVisible();
+  });
+
+  it("explains blocked continuation on the stage river instead of a dead button", async () => {
+    const fetcher: typeof fetch = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (!url.includes("/dossier")) {
+        return new Response(JSON.stringify({ criteria: [], demand_status: "executing" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+});
+      }
+      return new Response(
+        JSON.stringify({
+          demand: {
+            id: "demand-1",
+            status: "executing",
+            title: "补充上线验收说明"
+},
+          effective_playbook: { produce_kinds: [], source: "none" },
+          handoff_summary: {
+            assessments: [],
+            fulfilled: 0,
+            partial: 0,
+            unfulfilled: 0,
+            unknown: 0
+},
+          lineage: {
+            chain: [
+              {
+                created_at: "2026-07-25T08:00:00Z",
+                demand_id: "demand-1",
+                is_current: true,
+                status: "executing",
+                title: "补充上线验收说明"
+},
+            ],
+            chain_length: 1,
+            chain_position: 1,
+            continue_demand: {
+              available: false,
+              reason_code: "demand_not_settled",
+              reason_message: "这一单还在进行中，结束后才能接续"
+}
+},
+          pending_actions: [],
+          project: { id: "project-1", name: "项目一" },
+          rail: { slots: [] },
+          signals: {
+            active_task_count: 1,
+            demand_terminal: false,
+            has_open_decisions: false
+},
+          timeline: { items: [], truncated: false }
+}),
+        {
+          headers: { "Content-Type": "application/json" },
+          status: 200
+},
+      );
+    };
+    const screen = await renderDetail({
+      apiBaseUrl: "http://cp.test",
+      apiOptions: { baseUrl: "http://cp.test", fetcher },
+      initialDemandId: "demand-1"
+});
+
+    await expect.element(screen.getByTestId("demand-river-continue-blocked")).toBeVisible();
+    await expect.element(screen.getByText("这一单还在进行中，结束后才能接续")).toBeVisible();
+    expect(
+      screen.container.querySelector('[data-testid="demand-river-continue"]'),
+    ).toBeNull();
   });
 
   it("reports zero running tasks in the hero facts once every task is completed", async () => {
@@ -475,13 +632,10 @@ describe("ProjectOperationalDetail", () => {
       },
     });
 
-    // 执行中 = running + waiting_human = 9，来自聚合而非已加载的 1 条任务。
     await expect.element(screen.getByRole("button", { name: "执行中 9" })).toBeVisible();
-    const executionCell = screen.getByTestId("pipeline-stage-execution");
-    await expect.element(executionCell.getByText("执行中 9 · 共 44 项")).toBeVisible();
   });
 
-  it("shows week pulse calendar with centered empty copy when project has no activity", async () => {
+  it("shows an empty demand rail and task table when the project has no demands", async () => {
     const emptyOverview: ProjectOverview = {
       ...overview,
       digital_employee_pool: [],
@@ -493,19 +647,25 @@ describe("ProjectOperationalDetail", () => {
       events: [],
       overview: emptyOverview,
       planRevisions: [],
+      taskGraph: {
+        blocking_facts: [],
+        decision_requests: [],
+        edges: [],
+        employees: [],
+        execution_summaries: [],
+        nodes: [],
+        recent_events: [],
+        runs: []
+},
       tasks: []
 });
 
-    await expect.element(screen.getByTestId("project-ops-pulse")).toBeVisible();
-    await expect.element(screen.getByTestId("project-ops-pulse-empty")).toBeVisible();
-    await expect.element(screen.getByText("本周暂无任务活动")).toBeVisible();
-    await expect.element(screen.getByTestId("project-ops-rail")).toBeVisible();
-    await expect.element(screen.getByText("当前无阻塞")).toBeVisible();
-    await expect.element(screen.getByTestId("project-ops-running")).not.toBeInTheDocument();
-    await expect.element(screen.getByTestId("project-ops-startup")).not.toBeInTheDocument();
+    await expect.element(screen.getByTestId("demand-process-rail")).toBeVisible();
+    await expect.element(screen.getByText("没有匹配的需求流程。")).toBeVisible();
+    await expect.element(screen.getByText("暂无需求流程")).toBeVisible();
   });
 
-  it("opens project task detail dialog from pulse chip and resolves decision inline", async () => {
+  it("opens project task detail dialog from the demand task table and resolves decision inline", async () => {
     const onResolveDecision = vi.fn();
     const nowIso = new Date().toISOString();
     const weekTask: ProjectTask = {
@@ -528,31 +688,38 @@ describe("ProjectOperationalDetail", () => {
     const screen = await renderDetail({
       decisionRequests: [taskDecision],
       onResolveDecision,
+      taskGraph: {
+        ...defaultTaskGraph,
+        decision_requests: [taskDecision],
+        nodes: [
+          {
+            ...weekTask,
+            expected_outputs: [],
+            handoff_contract: {},
+            input_requirements: {},
+            planner_metadata: {}
+},
+        ]
+},
       tasks: [weekTask]
 });
 
-    // 脉搏芯片(带 title 的按钮)点击应打开任务详情弹层
-    await userEvent.click(screen.getByTitle("整理接入证据"));
+    await userEvent.click(screen.getByRole("button", { name: "整理接入证据" }));
     const dialog = screen.getByTestId("project-task-detail-dialog");
     await expect.element(dialog).toBeVisible();
 
-    // 任务自身事实 + 编排降级 + 运行空态
     await expect.element(dialog.getByText("整理客户接入证据")).toBeVisible();
     await expect.element(dialog.getByText("验收执行员工")).toBeVisible();
-    await expect.element(dialog.getByText(/当前执行图未包含该任务/)).toBeVisible();
-    await expect.element(dialog.getByText("暂无运行记录")).toBeVisible();
 
-    // 待决事项就地处理,走与工作台同一条 onResolveDecision 出口
     await expect
       .element(dialog.getByText("确认上线风险", { exact: true }))
       .toBeVisible();
     await userEvent.click(dialog.getByRole("button", { name: "批准" }));
     expect(onResolveDecision).toHaveBeenCalledWith("decision-1", "approved");
 
-    // 编排深链（流程编排页已退役，指向本项目需求流程区）
     await expect
       .element(dialog.getByRole("link", { name: "查看该任务所在需求流程" }))
-      .toHaveAttribute("href", "/projects/project-1?demand=demand-1&tab=demands");
+      .toHaveAttribute("href", "/projects/project-1?demand=demand-1&tab=tasks");
   });
 
   it("lazily fetches the task's demand graph when it is missing from the preloaded graph", async () => {
@@ -621,11 +788,11 @@ describe("ProjectOperationalDetail", () => {
 };
     const fetchTaskGraph = vi.fn().mockResolvedValue(lazyGraph);
     const screen = await renderDetail({
+      detailTaskIdFromUrl: "task-old",
       fetchTaskGraph,
       tasks: [historicalTask]
 });
 
-    await userEvent.click(screen.getByTitle("历史任务"));
     const dialog = screen.getByTestId("project-task-detail-dialog");
     await expect.element(dialog).toBeVisible();
 
@@ -646,46 +813,13 @@ describe("ProjectOperationalDetail", () => {
   it("opens the same task detail dialog from the tasks tab title", async () => {
     const screen = await renderDetail();
 
-    await userEvent.click(screen.getByRole("tab", { name: "任务" }));
     await userEvent.click(screen.getByRole("button", { name: "整理接入证据" }));
     await expect
       .element(screen.getByTestId("project-task-detail-dialog"))
       .toBeVisible();
   });
 
-  it("confirms task cleanup with the platform dialog instead of window.confirm", async () => {
-    const onDismissTask = vi.fn();
-    const confirmSpy = vi.spyOn(window, "confirm");
-    const failedTask: ProjectTask = {
-      ...overviewTasks[0],
-      id: "task-failed-1",
-      status: "failed",
-      title: "创建文件 p4-error-code.txt",
-    };
-    const screen = await renderDetail({
-      onDismissTask,
-      tasks: [...overviewTasks, failedTask],
-    });
-
-    await userEvent.click(screen.getByRole("tab", { name: "任务" }));
-    await userEvent.click(screen.getByRole("button", { name: "清理任务" }));
-
-    const dialog = screen.getByRole("alertdialog", {
-      name: "确认清理任务「创建文件 p4-error-code.txt」？",
-    });
-    await expect.element(dialog).toBeVisible();
-    await expect
-      .element(dialog.getByText("清理后不再出现在待处理与风险中，历史与审计仍保留。"))
-      .toBeVisible();
-    expect(confirmSpy).not.toHaveBeenCalled();
-
-    await userEvent.click(dialog.getByRole("button", { name: "清理任务" }));
-    expect(onDismissTask).toHaveBeenCalledWith("task-failed-1");
-    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
-    confirmSpy.mockRestore();
-  });
-
-  it("resolves owner and service-pool names when membership snapshots are empty", async () => {
+  it("resolves owner names when membership snapshots are empty", async () => {
     const unnamedOverview: ProjectOverview = {
       ...overview,
       digital_employee_pool: [
@@ -715,6 +849,27 @@ describe("ProjectOperationalDetail", () => {
       project: {
         ...project,
         human_owner_user_id: "human-owner-unnamed-1"
+},
+      taskGraph: {
+        ...defaultTaskGraph,
+        employees: [
+          {
+            digital_employee_id: "employee-unnamed-1",
+            display_name: "运维检索员工",
+            project_role: "executor",
+            status: "active"
+},
+        ],
+        nodes: [
+          {
+            ...overviewTasks[0],
+            assigned_digital_employee_id: "employee-unnamed-1",
+            expected_outputs: [],
+            handoff_contract: {},
+            input_requirements: {},
+            planner_metadata: {}
+},
+        ]
 }
 });
 
@@ -761,7 +916,7 @@ describe("ProjectOperationalDetail", () => {
       .toBeVisible();
     await expect.element(screen.getByRole("link", { name: "查看缺口处理 →" })).toHaveAttribute(
       "href",
-      ".?demand=demand-1&tab=demands",
+      ".?demand=demand-1&tab=tasks",
     );
   });
 
@@ -794,61 +949,33 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByText("当前执行图")).not.toBeInTheDocument();
     const deeplink = screen.getByTestId("execution-graph-deeplink");
     await expect
-      .element(deeplink.getByText("执行图已迁入需求流程区"))
+      .element(deeplink.getByText("执行图已迁入流程页签"))
       .toBeVisible();
     await expect
-      .element(deeplink.getByRole("link", { name: "前往需求流程 →" }))
-      .toHaveAttribute("href", ".?tab=demands");
+      .element(deeplink.getByRole("button", { name: "前往流程 →" }))
+      .toBeVisible();
   });
 
-  it("shows the owning demand column with deep link and fallbacks in the tasks tab", async () => {
-    const demandTask: ProjectTask = {
-      ...overviewTasks[0],
-      demand_id: "demand-1"
-};
-    const unknownDemandTask: ProjectTask = {
-      id: "task-unknown-demand",
-      demand_id: "demand-gone-1234567890",
-      project_id: "project-1",
-      requires_human_approval: false,
-      status: "running",
-      tenant_id: "tenant-1",
-      title: "历史需求任务"
-};
-    const noDemandTask: ProjectTask = {
-      id: "task-no-demand",
-      project_id: "project-1",
-      requires_human_approval: false,
-      status: "running",
-      tenant_id: "tenant-1",
-      title: "无需求任务"
-};
+  it("shows this-demand task rows from the graph rather than the project task window", async () => {
     const screen = await renderDetail({
-      tasks: [demandTask, unknownDemandTask, noDemandTask]
+      taskGraph: {
+        ...defaultTaskGraph,
+        nodes: [
+          {
+            ...overviewTasks[0],
+            demand_id: "demand-1",
+            expected_outputs: [],
+            handoff_contract: {},
+            input_requirements: {},
+            planner_metadata: {}
+},
+        ]
+}
 });
 
-    await userEvent.click(screen.getByRole("tab", { name: "任务" }));
-    await expect.element(screen.getByText("所属需求")).toBeVisible();
-
-    // 有需求且能解析标题：显示需求名称并深链需求流程区
-    const demandCell = screen.getByTestId("task-demand-cell-task-1");
-    await expect
-      .element(demandCell.getByRole("link", { name: "补充上线验收说明" }))
-      .toHaveAttribute("href", ".?demand=demand-1&tab=demands");
-
-    // demand_id 解析不到标题：回退 8 位短 id（mono），不裸整段 UUID
-    const unknownCell = screen.getByTestId("task-demand-cell-task-unknown-demand");
-    const unknownLink = unknownCell.getByRole("link", { name: "demand-g" });
-    await expect
-      .element(unknownLink)
-      .toHaveAttribute("href", ".?demand=demand-gone-1234567890&tab=demands");
-    expect(unknownCell.query()?.textContent).not.toContain("demand-gone-1234567890");
-    expect(unknownLink.query()?.className).toContain("font-mono");
-
-    // 无 demand_id：显示占位 —
-    expect(
-      screen.getByTestId("task-demand-cell-task-no-demand").query()?.textContent,
-    ).toBe("—");
+    await expect.element(screen.getByTestId("demand-task-row-task-1")).toBeVisible();
+    await expect.element(screen.getByText("需求流程 · 1 条子任务")).toBeVisible();
+    await expect.element(screen.getByText("所属需求")).not.toBeInTheDocument();
   });
 
   it("does not show a diagnosis line for a non-failed demand", async () => {
@@ -869,7 +996,7 @@ describe("ProjectOperationalDetail", () => {
 });
 
     await expect
-      .element(screen.getByRole("tab", { name: "决策历史", selected: true }))
+      .element(screen.getByRole("tab", { name: "决策", selected: true }))
       .toBeVisible();
     const focusedDecision = screen.container.querySelector("[data-focused-decision='true']");
     expect(focusedDecision?.textContent).toContain("确认上线风险");
@@ -881,7 +1008,7 @@ describe("ProjectOperationalDetail", () => {
 
   it("shows dispatch order and acceptance criteria from the latest plan revision", async () => {
     const screen = await renderDetail({ planRevisions });
-    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
+    await userEvent.click(screen.getByTestId("demand-river-plan"));
     const dispatchOrder = screen.getByTestId("plan-dispatch-order");
     const acceptanceCriteria = screen.getByTestId("plan-acceptance-criteria");
 
@@ -925,7 +1052,7 @@ describe("ProjectOperationalDetail", () => {
 
   it("defaults to automated-verification badge and no ambiguity warning for legacy criteria payload", async () => {
     const screen = await renderDetail({ planRevisions });
-    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
+    await userEvent.click(screen.getByTestId("demand-river-plan"));
 
     expect(
       screen.container.querySelector(
@@ -984,7 +1111,7 @@ describe("ProjectOperationalDetail", () => {
 }
 };
     const screen = await renderDetail({ planRevisions: [semanticCriteriaRevision] });
-    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
+    await userEvent.click(screen.getByTestId("demand-river-plan"));
 
     expect(
       screen.container.querySelector(
@@ -1055,7 +1182,7 @@ describe("ProjectOperationalDetail", () => {
 }
 };
     const screen = await renderDetail({ planRevisions: [templatedRevision] });
-    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
+    await userEvent.click(screen.getByTestId("demand-river-plan"));
 
     await expect.element(screen.getByText("software_delivery@v2")).toBeVisible();
     await expect.element(screen.getByText("审查通过并合入")).toBeVisible();
@@ -1081,7 +1208,7 @@ describe("ProjectOperationalDetail", () => {
 }
 };
     const screen = await renderDetail({ planRevisions: [unboundRevision] });
-    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
+    await userEvent.click(screen.getByTestId("demand-river-plan"));
 
     await expect.element(screen.getByText("调度顺序")).toBeVisible();
     await expect.element(screen.getByText("tech_risk_analysis")).not.toBeInTheDocument();
@@ -1123,10 +1250,7 @@ describe("ProjectOperationalDetail", () => {
       planRevisions: [templatedRevision]
 });
 
-    const planCell = screen.getByTestId("pipeline-stage-plan");
-    await expect
-      .element(planCell.getByText("待收件箱确认 · 点击查看详情"))
-      .toBeVisible();
+    const planCell = screen.getByTestId("demand-river-plan");
     await userEvent.click(planCell);
     await expect
       .element(screen.getByTestId("plan-review-inbox-only"))
@@ -1199,7 +1323,7 @@ describe("ProjectOperationalDetail", () => {
       </QueryClientProvider>,
     );
 
-    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
+    await userEvent.click(screen.getByTestId("demand-river-plan"));
     await expect
       .element(screen.getByTestId("plan-review-inbox-only"))
       .toBeVisible();
@@ -1246,7 +1370,7 @@ describe("ProjectOperationalDetail", () => {
 }
 };
     const screen = await renderDetail({ planRevisions: [blockedByKeysRevision] });
-    await userEvent.click(screen.getByTestId("pipeline-stage-plan"));
+    await userEvent.click(screen.getByTestId("demand-river-plan"));
     const dispatchOrderText =
       screen.container.querySelector("[data-testid='plan-dispatch-order']")?.textContent ?? "";
     expect(dispatchOrderText.indexOf("收集接入证据")).toBeLessThan(
@@ -1295,28 +1419,16 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByRole("menuitem", { name: "删除项目" })).not.toBeInTheDocument();
   });
 
-  it("shows relative timestamps on the event stream", async () => {
+  it("keeps relative timestamps on the demand rail", async () => {
     const screen = await renderDetail({
-      overview: {
-        ...overview,
-        recent_events: [
-          {
-            actor_id: "system",
-            actor_type: "system",
-            created_at: "2026-07-20T01:00:00Z",
-            event_type: "project_task.completed",
-            id: "event-completed",
-            payload: {},
-            project_id: "project-1",
-            sequence_number: 1,
-            summary: "接入证据整理完成",
-            tenant_id: "tenant-1"
-},
-        ]
-}
-});
+      demands: [
+        {
+          ...demands[0],
+          updated_at: "2026-07-20T01:00:00Z",
+        },
+      ],
+    });
 
-    await expect.element(screen.getByText("接入证据整理完成")).toBeVisible();
     const time = screen.container.querySelector('time[datetime="2026-07-20T01:00:00Z"]');
     expect(time).not.toBeNull();
     expect(time?.textContent ?? "").toMatch(/\d+\s*天前/);

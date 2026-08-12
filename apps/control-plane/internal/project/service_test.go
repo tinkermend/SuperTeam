@@ -13819,6 +13819,33 @@ func (r *memoryRepository) ListProjectDemands(ctx context.Context, tenantID, pro
 	return filtered, nil
 }
 
+func (r *memoryRepository) ListProjectDemandsForConsole(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error) {
+	filtered, err := r.ListProjectDemands(ctx, tenantID, projectID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if !filtered[i].UpdatedAt.Equal(filtered[j].UpdatedAt) {
+			return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt)
+		}
+		ri, rj := consoleDemandStatusRank(filtered[i].Status), consoleDemandStatusRank(filtered[j].Status)
+		if ri != rj {
+			return ri < rj
+		}
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	return filtered, nil
+}
+
+func consoleDemandStatusRank(status ProjectDemandStatus) int {
+	switch status {
+	case ProjectDemandStatusCompleted, ProjectDemandStatusFailed, ProjectDemandStatusCancelled, ProjectDemandStatusPlanningFailed:
+		return 1
+	default:
+		return 0
+	}
+}
+
 func (r *memoryRepository) CreateConfigRevision(ctx context.Context, req UpdateProjectConfigRequest, project Project, eventID uuid.UUID) (ProjectConfigRevision, error) {
 	revision := ProjectConfigRevision{
 		ID:              uuid.New(),

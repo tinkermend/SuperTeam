@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_authenticated/workflows/$demandId")({
 
 /**
  * 流程编排详情页已退役（IA Phase 2 P2c），需求流程的权威落点是项目详情
- * `?tab=demands&demand=`。本壳只做 demand→project 解析后重定向，保住飞书卡片
+ * `?tab=tasks&demand=`。本壳只做 demand→project 解析后重定向，保住飞书卡片
  * `deep_link=/workflows/{demand}` 等历史深链；404 给明确空态，不劫持到别的需求
  * （沿用 Phase 1 直链保护语义）。
  */
@@ -35,7 +35,7 @@ function WorkflowDemandRedirect() {
     void navigate({
       params: { projectId },
       replace: true,
-      search: { demand: demandId, tab: "demands" },
+      search: { demand: demandId, tab: "tasks" },
       to: "/projects/$projectId"
 });
   }, [demandId, navigate, projectId]);

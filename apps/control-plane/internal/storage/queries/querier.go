@@ -638,6 +638,9 @@ type Querier interface {
 	// depth 上限由调用方传入（spec §5.2 D3：数据被手工改出环时必须能停）。
 	ListProjectDemandContinuationChain(ctx context.Context, arg ListProjectDemandContinuationChainParams) ([]ListProjectDemandContinuationChainRow, error)
 	ListProjectDemands(ctx context.Context, arg ListProjectDemandsParams) ([]ProjectDemand, error)
+	// Console 左轨专用：最近更新优先，同时间非终态先于终态。
+	// 不得替换 ListProjectDemands（结项文案 / sibling_pending / 协调线程仍按 created_at）。
+	ListProjectDemandsForConsole(ctx context.Context, arg ListProjectDemandsForConsoleParams) ([]ProjectDemand, error)
 	ListProjectEvents(ctx context.Context, arg ListProjectEventsParams) ([]ProjectEvent, error)
 	ListProjectEvidenceRefs(ctx context.Context, arg ListProjectEvidenceRefsParams) ([]ProjectEvidenceRef, error)
 	// 一单卷宗右轨(spec 2026-07-29 R2 §5.3-5):按任务批量取证据,走

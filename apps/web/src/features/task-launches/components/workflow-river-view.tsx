@@ -461,7 +461,7 @@ function RiverLane({
       onClick={() =>
         void navigate({
           params: { projectId: instance.project_id },
-          search: { demand: instance.demand_id, tab: "demands" },
+          search: { demand: instance.demand_id, tab: "tasks" },
           to: "/projects/$projectId"
 })
       }
@@ -482,7 +482,7 @@ function RiverLane({
           className="block min-w-0 truncate text-[13px] font-bold text-ink outline-none hover:text-brand-deep focus-visible:ring-2 focus-visible:ring-brand/60"
           onClick={(event) => event.stopPropagation()}
           params={{ projectId: instance.project_id }}
-          search={{ demand: instance.demand_id, tab: "demands" }}
+          search={{ demand: instance.demand_id, tab: "tasks" }}
           to="/projects/$projectId"
         >
           {instance.title}

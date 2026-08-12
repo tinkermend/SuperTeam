@@ -671,9 +671,13 @@ export function ProjectsView({
   const demandsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
     queryKey: ["project-demands", effectiveProjectId],
-    queryFn: () => listProjectDemands(apiOptions, effectiveProjectId as string, { limit: 20 }),
+    queryFn: () =>
+      listProjectDemands(apiOptions, effectiveProjectId as string, { limit: 21 }),
     placeholderData: keepPreviousData
 });
+  const demandPage = demandsQuery.data ?? [];
+  const demandsHasMore = demandPage.length > 20;
+  const firstDemandPage = demandPage.slice(0, 20);
 
   const routeDecisionsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
@@ -698,7 +702,7 @@ export function ProjectsView({
   const currentProjectRuntimeReadiness =
     runtimeReadinessQuery.isSuccess ? runtimeReadinessQuery.data : undefined;
 
-  const latestDemandId = demandsQuery.data?.[0]?.id;
+  const latestDemandId = firstDemandPage[0]?.id;
   const planRevisionsQuery = useQuery({
     enabled: Boolean(effectiveProjectId) && Boolean(latestDemandId),
     queryKey: ["project-plan-revisions", effectiveProjectId, latestDemandId],
@@ -1168,7 +1172,7 @@ export function ProjectsView({
   const projectEvents = (eventsQuery.data ?? []).filter(
     (event) => event.project_id === effectiveProjectId,
   );
-  const projectDemands = (demandsQuery.data ?? []).filter(
+  const projectDemands = firstDemandPage.filter(
     (demand) => demand.project_id === effectiveProjectId,
   );
   const projectEvidence = (evidenceQuery.data ?? []).filter(
@@ -1390,6 +1394,7 @@ export function ProjectsView({
                     coordinationJobs={projectCoordinationJobs}
                     decisionRequests={projectDecisionRequests}
                     demands={projectDemands}
+                    demandsHasMore={demandsHasMore}
                     dispatchGateTaskTitle={dispatchGateTask?.title}
                     dispatchGates={projectDispatchGates}
                     evidence={projectEvidence}
@@ -1509,6 +1514,7 @@ export function ProjectsView({
                     routeDecisions={projectRouteDecisions}
                     runtimePlacementPanel={
                       <ProjectRuntimePlacementPanel
+                        embedded
                         bindings={projectRuntimeBindingsQuery.data}
                         isBinding={bindRuntimePlacementMutation.isPending}
                         isReadinessLoading={

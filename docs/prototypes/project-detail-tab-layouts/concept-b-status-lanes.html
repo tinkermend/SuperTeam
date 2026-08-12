@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>方案 B · 状态河道 · 项目页签布局</title>
+  <link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+  <div class="app">
+    <nav class="rail" aria-label="侧栏">
+      <div class="mark">炬</div>
+      <a href="../project-home-layout-v2/index.html">项</a>
+      <a class="on" href="#">详</a>
+      <a href="#">任</a>
+      <a href="#">审</a>
+    </nav>
+    <div class="main">
+      <div class="crumb">
+        <a href="index.html">← 三方案对照</a>
+        <span>/</span>
+        <span>项目管理</span>
+        <span>/</span>
+        <span>Q3 客户对账自动化</span>
+        <div class="switcher">
+          <a href="concept-a-master-detail.html">A 主从</a>
+          <a class="on" href="concept-b-status-lanes.html">B 河道</a>
+          <a href="concept-c-demand-lens.html">C 卷宗</a>
+        </div>
+      </div>
+
+      <header class="hero">
+        <div>
+          <h1>Q3 客户对账自动化 <span class="pill p-info"><span class="d"></span>执行中</span></h1>
+          <p class="meta">按状态空间化：一眼看到球在哪一列，而不是先读表。</p>
+        </div>
+        <div class="acts">
+          <button class="btn primary" type="button">提交需求</button>
+          <button class="btn ghost" type="button">配置</button>
+        </div>
+      </header>
+
+      <div class="tabs" role="tablist">
+        <button class="on" data-tab="tasks" type="button">任务</button>
+        <button data-tab="demands" type="button">需求</button>
+        <button data-tab="flow" type="button">流程</button>
+        <button data-tab="decisions" type="button">决策 <span class="count">1</span></button>
+        <button data-tab="history" type="button">历史</button>
+      </div>
+
+      <section class="panel on" id="tab-tasks">
+        <div class="lanes">
+          <div class="lane">
+            <div class="lane-h">等人 <span class="oc" style="background:var(--warn-soft);color:var(--warn)">1</span></div>
+            <article class="card warn">
+              <h5>核对差异规则</h5>
+              <span class="pill p-warn"><span class="d"></span>等待人工</span>
+              <div class="facts">规则审核员 · 18 分钟前<br>下游放行待负责人确认</div>
+            </article>
+          </div>
+          <div class="lane">
+            <div class="lane-h">执行中 <span class="oc" style="background:var(--info-soft);color:var(--info)">1</span></div>
+            <article class="card info">
+              <h5>抽取对账单字段</h5>
+              <span class="pill p-info"><span class="d"></span>执行中</span>
+              <div class="facts">数据分析员 · 3 分钟前<br>已识别 128 行科目</div>
+            </article>
+          </div>
+          <div class="lane">
+            <div class="lane-h">排队 <span class="oc">1</span></div>
+            <article class="card mute">
+              <h5>生成对账报告</h5>
+              <span class="pill p-mute"><span class="d"></span>排队</span>
+              <div class="facts">未分派 · 1 小时前<br>依赖上游完成</div>
+            </article>
+          </div>
+          <div class="lane">
+            <div class="lane-h">已完成 <span class="oc" style="background:var(--ok-soft);color:var(--ok)">1</span></div>
+            <article class="card ok">
+              <h5>发票字段映射巡检</h5>
+              <span class="pill p-ok"><span class="d"></span>已完成</span>
+              <div class="facts">数据分析员 · 昨天<br>需求「发票字段映射」</div>
+            </article>
+          </div>
+        </div>
+        <p class="note">适合工作台扫一眼「球权在谁手里」。任务一多列会撑爆；失败/清理/比较字段会变弱。更像概览，不像处理面。</p>
+      </section>
+
+      <section class="panel" id="tab-demands">
+        <div class="lanes">
+          <div class="lane">
+            <div class="lane-h">受理</div>
+            <p style="font-size:12px;color:var(--ink-3);padding:8px">空列也要保留，说明漏斗位置。</p>
+          </div>
+          <div class="lane">
+            <div class="lane-h">规划</div>
+          </div>
+          <div class="lane">
+            <div class="lane-h">执行 <span class="oc" style="background:var(--info-soft);color:var(--info)">1</span></div>
+            <article class="card info">
+              <h5>对账自动化一期</h5>
+              <span class="pill p-info"><span class="d"></span>执行中</span>
+              <div class="facts">待你处理 1 · 活跃任务 2<br>拟收口 · 差异报表</div>
+            </article>
+          </div>
+          <div class="lane">
+            <div class="lane-h">验收 / 完成 <span class="oc" style="background:var(--ok-soft);color:var(--ok)">1</span></div>
+            <article class="card ok">
+              <h5>发票字段映射</h5>
+              <span class="pill p-ok"><span class="d"></span>已完成</span>
+              <div class="facts">收口 · 映射表 · 昨天</div>
+            </article>
+          </div>
+        </div>
+        <p class="note">需求生命周期是真序列，用列表达阶段说得通。但一单的意图、判据、接续链读不完——点进去仍需要卷宗。</p>
+      </section>
+
+      <section class="panel" id="tab-flow">
+        <div class="shell" style="padding:16px 18px 20px">
+          <div class="toolbar" style="border:0;padding:0 0 12px">
+            <div>
+              <h3>阶段河</h3>
+              <p>需求 → 计划 → 执行 → 结果。节点沿河道排布，不是自由画布。</p>
+            </div>
+            <select aria-label="需求"><option>对账自动化一期</option></select>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+            <div>
+              <div class="lane-h">1 · 需求</div>
+              <article class="card ok"><h5>需求已受理</h5><div class="facts">对账自动化一期</div></article>
+            </div>
+            <div>
+              <div class="lane-h">2 · 计划</div>
+              <article class="card ok"><h5>计划修订 v3</h5><div class="facts">已确认 · 昨天</div></article>
+            </div>
+            <div>
+              <div class="lane-h">3 · 执行</div>
+              <article class="card info"><h5>抽取对账单字段</h5><div class="facts">执行中</div></article>
+              <article class="card warn" style="margin-top:8px"><h5>核对差异规则</h5><div class="facts">等待人工</div></article>
+              <article class="card mute" style="margin-top:8px"><h5>生成对账报告</h5><div class="facts">排队</div></article>
+            </div>
+            <div>
+              <div class="lane-h">4 · 结果</div>
+              <article class="card mute"><h5>验收未开始</h5><div class="facts">判据 1/2</div></article>
+            </div>
+          </div>
+        </div>
+        <p class="note">对「协调在哪一步」很友好，对依赖/分叉/重试不友好。复杂图仍需要真正的流程图。</p>
+      </section>
+
+      <section class="panel" id="tab-decisions">
+        <div class="lanes" style="grid-template-columns:1.2fr 1fr 1fr">
+          <div class="lane">
+            <div class="lane-h">待你处理 <span class="oc" style="background:var(--warn-soft);color:var(--warn)">1</span></div>
+            <article class="card warn">
+              <h5>放行「核对差异规则」下游</h5>
+              <span class="pill p-warn"><span class="d"></span>待决</span>
+              <div class="facts">阶段放行 · 18 分钟前<br>any-of-N · 林清</div>
+              <div style="margin-top:10px"><button class="btn primary sm" type="button">去收件箱</button></div>
+            </article>
+          </div>
+          <div class="lane">
+            <div class="lane-h">等待他人</div>
+            <p style="font-size:12px;color:var(--ink-3);padding:8px">无</p>
+          </div>
+          <div class="lane">
+            <div class="lane-h">已决议</div>
+            <article class="card ok"><h5>确认计划修订 v3</h5><div class="facts">已通过 · 昨天</div></article>
+            <article class="card ok"><h5>发票字段映射验收</h5><div class="facts">已通过 · 昨天</div></article>
+          </div>
+        </div>
+        <p class="note">待决卡堆最接近收件箱心智。已决列会迅速变长，需要折进「历史」或分页，否则河道失去扫读优势。</p>
+      </section>
+
+      <section class="panel" id="tab-history">
+        <div class="shell">
+          <div class="toolbar">
+            <div>
+              <h3>事件河</h3>
+              <p>按日分组的垂直时间河，强调叙事顺序。</p>
+            </div>
+          </div>
+          <div class="river">
+            <div class="day">今天</div>
+            <div class="ev-row">
+              <div class="time">14:05</div><div class="dot info"></div>
+              <div><div class="ttl">抽取对账单字段 · 进展</div><div class="desc">已识别 128 行科目</div></div>
+            </div>
+            <div class="ev-row">
+              <div class="time">13:47</div><div class="dot warn"></div>
+              <div><div class="ttl">下游放行 · 待决</div><div class="desc">核对差异规则等待负责人</div></div>
+            </div>
+            <div class="ev-row">
+              <div class="time">11:20</div><div class="dot"></div>
+              <div><div class="ttl">生成对账报告 · 已创建</div><div class="desc">进入推进队列</div></div>
+            </div>
+            <div class="day">昨天</div>
+            <div class="ev-row">
+              <div class="time">16:02</div><div class="dot ok"></div>
+              <div><div class="ttl">发票字段映射 · 验收通过</div><div class="desc">需求关闭</div></div>
+            </div>
+          </div>
+        </div>
+        <p class="note">叙事好看，检索弱。审计场景仍应提供表格/过滤；河适合作为默认阅读，不是唯一形态。</p>
+      </section>
+    </div>
+  </div>
+  <script>
+    const tabs = document.querySelectorAll(".tabs button");
+    const panels = document.querySelectorAll(".panel");
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabs.forEach((b) => b.classList.remove("on"));
+        panels.forEach((p) => p.classList.remove("on"));
+        btn.classList.add("on");
+        document.getElementById("tab-" + btn.dataset.tab).classList.add("on");
+      });
+    });
+  </script>
+</body>
+</html>

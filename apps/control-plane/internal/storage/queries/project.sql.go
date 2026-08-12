@@ -6067,6 +6067,73 @@ func (q *Queries) ListProjectDemands(ctx context.Context, arg ListProjectDemands
 	return items, nil
 }
 
+const ListProjectDemandsForConsole = `-- name: ListProjectDemandsForConsole :many
+SELECT id, tenant_id, project_id, submitted_by_user_id, title, content, source_type, source_refs, attachments, priority, risk_level, status, created_event_id, created_at, updated_at, coordination_mode, scenario_template_key, continues_demand_id FROM project_demands
+WHERE tenant_id = $1::uuid
+  AND project_id = $2::uuid
+ORDER BY
+  updated_at DESC,
+  CASE
+    WHEN status IN ('completed', 'failed', 'cancelled', 'planning_failed') THEN 1
+    ELSE 0
+  END ASC,
+  created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListProjectDemandsForConsoleParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	Offset    int32     `json:"offset"`
+	Limit     int32     `json:"limit"`
+}
+
+// Console 左轨专用：最近更新优先，同时间非终态先于终态。
+// 不得替换 ListProjectDemands（结项文案 / sibling_pending / 协调线程仍按 created_at）。
+func (q *Queries) ListProjectDemandsForConsole(ctx context.Context, arg ListProjectDemandsForConsoleParams) ([]ProjectDemand, error) {
+	rows, err := q.db.Query(ctx, ListProjectDemandsForConsole,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ProjectDemand{}
+	for rows.Next() {
+		var i ProjectDemand
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.ProjectID,
+			&i.SubmittedByUserID,
+			&i.Title,
+			&i.Content,
+			&i.SourceType,
+			&i.SourceRefs,
+			&i.Attachments,
+			&i.Priority,
+			&i.RiskLevel,
+			&i.Status,
+			&i.CreatedEventID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CoordinationMode,
+			&i.ScenarioTemplateKey,
+			&i.ContinuesDemandID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListProjectEvents = `-- name: ListProjectEvents :many
 SELECT id, tenant_id, project_id, sequence_number, event_type, actor_type, actor_id, resource_type, resource_id, summary, payload, created_at FROM project_events
 WHERE tenant_id = $1::uuid

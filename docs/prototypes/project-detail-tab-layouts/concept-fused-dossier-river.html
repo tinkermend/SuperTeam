@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>融合方案 · 卷宗 + 河道 · 主/子任务关联表</title>
+  <link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+  <div class="app">
+    <nav class="rail" aria-label="侧栏">
+      <div class="mark">炬</div>
+      <a href="index.html">项</a>
+      <a class="on" href="#">详</a>
+    </nav>
+    <div class="main">
+      <div class="crumb">
+        <a href="index.html">← 三方案对照</a>
+        <span>/</span>
+        <span>Q3 客户对账自动化</span>
+        <div class="switcher">
+          <a href="concept-a-master-detail.html">A</a>
+          <a href="concept-b-status-lanes.html">B</a>
+          <a href="concept-c-demand-lens.html">C</a>
+          <a class="on" href="concept-fused-dossier-river.html">融合</a>
+        </div>
+      </div>
+
+      <header class="hero">
+        <div>
+          <h1>Q3 客户对账自动化 <span class="pill p-info"><span class="d"></span>执行中</span></h1>
+          <p class="meta">一次对话 = 一条需求流程。任务表按这条主线展开子任务，并带上挂着的决策与资产。</p>
+        </div>
+        <div class="acts">
+          <button class="btn primary" type="button">提交需求</button>
+          <button class="btn ghost" type="button">配置</button>
+        </div>
+      </header>
+
+      <div class="fused">
+        <aside class="fused-list">
+          <h3>需求流程</h3>
+          <p class="sort-hint">级联排序：最近更新 → 执行中先于已完成。左轨用加载更多，不用翻页。</p>
+          <input class="rail-search" id="rail-search" type="search" placeholder="搜索需求流程…" aria-label="搜索需求流程" />
+          <div class="list-scroll" id="demand-list"></div>
+          <button class="load-more" id="load-more" type="button">加载更多 · 还有 6 条</button>
+        </aside>
+
+        <div class="fused-body">
+          <div class="river-strip" aria-label="本单阶段河">
+            <div class="river-step">
+              <div class="st">1 · 需求</div>
+              <div class="nm">已受理</div>
+              <div class="sub">对账自动化一期</div>
+            </div>
+            <div class="river-step">
+              <div class="st">2 · 计划</div>
+              <div class="nm">计划 v3 已确认</div>
+              <div class="sub">昨天通过</div>
+            </div>
+            <div class="river-step on warn" id="river-exec">
+              <div class="st">3 · 执行</div>
+              <div class="nm">2 进行 / 1 等人</div>
+              <div class="sub">球权在「核对差异规则」</div>
+            </div>
+            <div class="river-step">
+              <div class="st">4 · 结果</div>
+              <div class="nm">验收未开始</div>
+              <div class="sub">判据 1 / 2</div>
+            </div>
+          </div>
+
+          <div class="tabs" role="tablist" style="margin:0 16px">
+            <button class="on" data-tab="tasks" type="button">任务</button>
+            <button data-tab="demands" type="button">需求</button>
+            <button data-tab="flow" type="button">流程</button>
+            <button data-tab="decisions" type="button">决策 <span class="count">1</span></button>
+            <button data-tab="history" type="button">历史</button>
+          </div>
+
+          <section class="panel on" id="tab-tasks" style="margin:0">
+            <div class="fused-split">
+              <div class="master">
+                <div class="toolbar">
+                  <div>
+                    <h3>子任务流转</h3>
+                    <p>主行是需求流程，子行才是可执行任务。决策与资产挂在子行上，不是另一张表。</p>
+                  </div>
+                  <div class="filters">
+                    <div class="seg" role="group" aria-label="范围">
+                      <button class="on" data-scope="one" type="button">这一单</button>
+                      <button data-scope="all" type="button">全项目</button>
+                    </div>
+                    <select aria-label="子任务状态">
+                      <option>全部状态</option>
+                      <option>等待人工</option>
+                      <option>执行中</option>
+                    </select>
+                  </div>
+                </div>
+                <table class="dense" id="task-table">
+                  <thead>
+                    <tr>
+                      <th>子任务</th>
+                      <th>状态</th>
+                      <th>员工</th>
+                      <th>当前处理</th>
+                      <th>关联</th>
+                      <th>更新</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="group-row" data-group="d1">
+                      <td colspan="6">
+                        对账自动化一期
+                        <span class="gmeta">需求流程 · 3 子任务 · 待决 1</span>
+                        <span class="pill p-info" style="margin-left:8px"><span class="d"></span>执行中</span>
+                      </td>
+                    </tr>
+                    <tr class="child sel" data-group="d1" data-task="t1">
+                      <td><span class="indent">↳</span><span class="link">抽取对账单字段</span></td>
+                      <td><span class="pill p-info"><span class="d"></span>执行中</span></td>
+                      <td>数据分析员</td>
+                      <td style="color:var(--ink-3)">—</td>
+                      <td><span class="asset-chip">工件 1</span></td>
+                      <td class="num">3 分钟前</td>
+                    </tr>
+                    <tr class="child" data-group="d1" data-task="t2">
+                      <td><span class="indent">↳</span><span class="link">核对差异规则</span></td>
+                      <td><span class="pill p-warn"><span class="d"></span>等待人工</span></td>
+                      <td>规则审核员</td>
+                      <td><a class="gate-link" href="#decision">下游放行 · 待决</a></td>
+                      <td style="color:var(--ink-3)">—</td>
+                      <td class="num">18 分钟前</td>
+                    </tr>
+                    <tr class="child" data-group="d1" data-task="t3">
+                      <td><span class="indent">↳</span><span class="link">生成对账报告</span></td>
+                      <td><span class="pill p-mute"><span class="d"></span>排队</span></td>
+                      <td>未分派</td>
+                      <td style="color:var(--ink-3)">依赖上游</td>
+                      <td style="color:var(--ink-3)">—</td>
+                      <td class="num">1 小时前</td>
+                    </tr>
+                    <tr class="group-row hidden-group" data-group="d2">
+                      <td colspan="6">
+                        发票字段映射
+                        <span class="gmeta">需求流程 · 1 子任务</span>
+                        <span class="pill p-ok" style="margin-left:8px"><span class="d"></span>已完成</span>
+                      </td>
+                    </tr>
+                    <tr class="child hidden-group" data-group="d2" data-task="t4">
+                      <td><span class="indent">↳</span><span class="link">发票字段映射巡检</span></td>
+                      <td><span class="pill p-ok"><span class="d"></span>已完成</span></td>
+                      <td>数据分析员</td>
+                      <td>验收签署 · 已通过</td>
+                      <td><span class="asset-chip">报告 1</span></td>
+                      <td class="num">昨天</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="page-bar" id="task-page" hidden>
+                  <span>全项目子任务 · 1–20 / 36</span>
+                  <div class="pages">
+                    <button type="button" disabled>上一页</button>
+                    <button class="on" type="button">1</button>
+                    <button type="button">2</button>
+                    <button type="button">下一页</button>
+                  </div>
+                </div>
+              </div>
+              <aside class="detail" id="inspector">
+                <div class="detail-h">
+                  <h4 id="ins-title">抽取对账单字段</h4>
+                  <p>属于需求流程「对账自动化一期」</p>
+                </div>
+                <div class="kv" id="ins-kv">
+                  <div class="row"><span class="k">状态</span><span class="v"><span class="pill p-info"><span class="d"></span>执行中</span></span></div>
+                  <div class="row"><span class="k">执行员工</span><span class="v">数据分析员</span></div>
+                  <div class="row"><span class="k">当前处理</span><span class="v">无挂起决策</span></div>
+                  <div class="row"><span class="k">关联资产</span><span class="v">对账单解析草稿.xlsx</span></div>
+                </div>
+                <div class="log">
+                  <div><span class="t">14:02</span>会话已建立</div>
+                  <div><span class="t">14:04</span>已识别 128 行科目</div>
+                  <div><span class="t">14:05</span>正在回写结构化字段</div>
+                </div>
+              </aside>
+            </div>
+          </section>
+
+          <section class="panel" id="tab-demands" style="margin:0;padding:16px 18px 24px">
+            <div class="sec">
+              <h4>意图</h4>
+              <p>把 Q3 客户对账单做成可验收的差异报表：自动抽取科目与金额，按已确认规则核对差异，并导出负责人可签署的报告。</p>
+            </div>
+            <div class="sec">
+              <h4>验收判据</h4>
+              <div class="check"><span class="pill p-ok"><span class="d"></span>满足</span> 字段映射覆盖率 ≥ 98%</div>
+              <div class="check"><span class="pill p-mute"><span class="d"></span>未满足</span> 差异报表可导出且含未匹配项清单</div>
+            </div>
+            <p class="note">需求页只读这一单的意图与收口。子任务流转回到「任务」表，不再在这里铺第二张任务清单。</p>
+          </section>
+
+          <section class="panel" id="tab-flow" style="margin:0;padding:12px 16px 20px">
+            <div class="canvas" style="height:280px;margin:0" aria-label="本单流程图">
+              <div class="node" style="left:24px;top:70px"><b>抽取字段</b><span class="pill p-info"><span class="d"></span>执行中</span></div>
+              <div class="edge" style="left:192px;top:98px;width:40px"></div>
+              <div class="node sel" style="left:232px;top:70px"><b>核对规则</b><span class="pill p-warn"><span class="d"></span>等人</span></div>
+              <div class="edge" style="left:400px;top:98px;width:40px"></div>
+              <div class="node" style="left:440px;top:70px"><b>生成报告</b><span class="pill p-mute"><span class="d"></span>排队</span></div>
+            </div>
+            <p class="note">流程页是同一批子任务的图视图，不是另一份清单。点节点应落到任务表同一行。</p>
+          </section>
+
+          <section class="panel" id="tab-decisions" style="margin:0;padding:16px 18px 24px">
+            <article class="card warn">
+              <h5>下游放行 · 核对差异规则</h5>
+              <span class="pill p-warn"><span class="d"></span>待决</span>
+              <div class="facts">挂在子任务「核对差异规则」上 · 18 分钟前 · 处理走收件箱</div>
+              <div style="margin-top:10px;display:flex;gap:8px">
+                <button class="btn primary sm" type="button">在收件箱处理</button>
+                <button class="btn ghost sm" type="button">定位到任务表</button>
+              </div>
+            </article>
+            <p class="note">决策不是独立资产目录。它是子任务上的闸门。任务表「当前处理」列与本页是同一条记录的两种读法。</p>
+          </section>
+
+          <section class="panel" id="tab-history" style="margin:0">
+            <div class="river">
+              <div class="day">今天 · 对账自动化一期</div>
+              <div class="ev-row">
+                <div class="time">14:05</div><div class="dot info"></div>
+                <div><div class="ttl">抽取对账单字段 · 进展</div><div class="desc">已识别 128 行科目 · 回写工件</div></div>
+              </div>
+              <div class="ev-row">
+                <div class="time">13:47</div><div class="dot warn"></div>
+                <div><div class="ttl">核对差异规则 · 下游放行待决</div><div class="desc">子任务进入等待人工</div></div>
+              </div>
+              <div class="ev-row">
+                <div class="time">11:20</div><div class="dot"></div>
+                <div><div class="ttl">生成对账报告 · 已创建</div><div class="desc">排队，依赖上游</div></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <p class="note">
+        左轨是选择器，不是审计表：数据变多用「加载更多」+ 搜索，不要在 228px 里放页码。
+        默认级联：<code>updated_at DESC</code>，同时间则执行中（非终态）先于已完成。
+        任务表在「全项目」时才分页——那是脆数据面，和左轨不是同一套加载策略。
+      </p>
+    </div>
+  </div>
+  <script>
+    const inspectors = {
+      t1: {
+        title: "抽取对账单字段",
+        sub: "属于需求流程「对账自动化一期」",
+        kv: [
+          ["状态", "执行中"],
+          ["执行员工", "数据分析员"],
+          ["当前处理", "无挂起决策"],
+          ["关联资产", "对账单解析草稿.xlsx"],
+        ],
+        log: ["14:02 会话已建立", "14:04 已识别 128 行科目", "14:05 正在回写结构化字段"],
+      },
+      t2: {
+        title: "核对差异规则",
+        sub: "属于需求流程「对账自动化一期」",
+        kv: [
+          ["状态", "等待人工"],
+          ["执行员工", "规则审核员"],
+          ["当前处理", "下游放行 · 待决"],
+          ["关联资产", "尚无"],
+        ],
+        log: ["13:40 任务完成，产出差异规则草稿", "13:47 因存在下游依赖，打开阶段放行闸"],
+      },
+      t3: {
+        title: "生成对账报告",
+        sub: "属于需求流程「对账自动化一期」",
+        kv: [
+          ["状态", "排队"],
+          ["执行员工", "未分派"],
+          ["当前处理", "依赖上游「核对差异规则」"],
+          ["关联资产", "尚无"],
+        ],
+        log: ["11:20 已进入推进队列", "等待上游放行后派发"],
+      },
+      t4: {
+        title: "发票字段映射巡检",
+        sub: "属于需求流程「发票字段映射」",
+        kv: [
+          ["状态", "已完成"],
+          ["执行员工", "数据分析员"],
+          ["当前处理", "验收签署 · 已通过"],
+          ["关联资产", "映射覆盖报告.pdf"],
+        ],
+        log: ["昨天 16:02 需求验收通过并关闭"],
+      },
+    };
+
+    const PAGE = 8;
+    const demands = [
+      { id: "d1", title: "对账自动化一期", status: "执行中", tone: "p-info", meta: "3 子任务 · 待决 1", time: "3 分钟前", terminal: false },
+      { id: "d3", title: "供应商对账补丁", status: "已完成", tone: "p-ok", meta: "刚关闭 · 1 子任务", time: "12 分钟前", terminal: true },
+      { id: "d5", title: "月结差异复核", status: "执行中", tone: "p-info", meta: "2 子任务", time: "2 小时前", terminal: false },
+      { id: "d6", title: "税务口径确认", status: "规划中", tone: "p-mute", meta: "待计划确认", time: "3 小时前", terminal: false },
+      { id: "d2", title: "发票字段映射", status: "已完成", tone: "p-ok", meta: "1 子任务", time: "昨天", terminal: true },
+      { id: "d7", title: "客户主数据清洗", status: "已完成", tone: "p-ok", meta: "2 子任务", time: "2 天前", terminal: true },
+      { id: "d8", title: "Q2 对账归档", status: "已完成", tone: "p-ok", meta: "已归档", time: "5 天前", terminal: true },
+      { id: "d9", title: "试运行验收", status: "已完成", tone: "p-ok", meta: "接续链 2/2", time: "上周", terminal: true },
+      { id: "d10", title: "科目对照表导入", status: "已完成", tone: "p-ok", meta: "1 子任务", time: "2 周前", terminal: true },
+      { id: "d11", title: "历史差异抽检", status: "已取消", tone: "p-mute", meta: "业务取消", time: "3 周前", terminal: true },
+      { id: "d12", title: "开票规则对齐", status: "已完成", tone: "p-ok", meta: "1 子任务", time: "上月", terminal: true },
+      { id: "d13", title: "试点客户接入", status: "失败", tone: "p-danger", meta: "规划失败", time: "上月", terminal: true },
+      { id: "d14", title: "对账口径讨论", status: "已完成", tone: "p-ok", meta: "已关闭", time: "2 个月前", terminal: true },
+    ];
+
+    let visible = PAGE;
+    let query = "";
+    let demand = "d1";
+    let scope = "one";
+
+    function filtered() {
+      const q = query.trim();
+      return q ? demands.filter((d) => d.title.includes(q)) : demands;
+    }
+
+    function renderDemands() {
+      const rows = filtered();
+      const slice = query ? rows : rows.slice(0, visible);
+      const list = document.getElementById("demand-list");
+      list.innerHTML = slice
+        .map(
+          (d) => `
+        <div class="d-item${d.id === demand ? " on" : ""}" data-demand="${d.id}" role="button" tabindex="0">
+          <div class="nm">${d.title}</div>
+          <div class="sm"><span class="pill ${d.tone}"><span class="d"></span>${d.status}</span> · ${d.meta} · ${d.time}</div>
+        </div>`,
+        )
+        .join("");
+      const more = document.getElementById("load-more");
+      const remain = rows.length - slice.length;
+      more.hidden = Boolean(query) || remain <= 0;
+      more.textContent = remain > 0 ? `加载更多 · 还有 ${remain} 条` : "已全部加载";
+      list.querySelectorAll(".d-item").forEach((item) => {
+        item.addEventListener("click", () => selectDemand(item.dataset.demand));
+      });
+    }
+
+    function selectDemand(id) {
+      demand = id;
+      renderDemands();
+      if (scope === "one") setScope("one", demand);
+      const first = document.querySelector(".child:not(.hidden-group)");
+      if (first) first.click();
+    }
+
+    document.getElementById("load-more").addEventListener("click", () => {
+      visible = Math.min(visible + PAGE, demands.length);
+      renderDemands();
+    });
+    document.getElementById("rail-search").addEventListener("input", (event) => {
+      query = event.target.value;
+      renderDemands();
+    });
+
+    const tabs = document.querySelectorAll(".tabs button");
+    const panels = document.querySelectorAll(".panel");
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        tabs.forEach((b) => b.classList.remove("on"));
+        panels.forEach((p) => p.classList.remove("on"));
+        btn.classList.add("on");
+        document.getElementById("tab-" + btn.dataset.tab).classList.add("on");
+      });
+    });
+
+    function setScope(nextScope, nextDemand) {
+      document.querySelectorAll("[data-group]").forEach((row) => {
+        const show = nextScope === "all" || row.dataset.group === nextDemand;
+        row.classList.toggle("hidden-group", !show);
+      });
+      document.getElementById("task-page").hidden = nextScope !== "all";
+    }
+
+    document.querySelectorAll(".seg button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".seg button").forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+        scope = btn.dataset.scope;
+        setScope(scope, demand);
+      });
+    });
+
+    function renderInspector(id) {
+      const data = inspectors[id];
+      if (!data) return;
+      document.getElementById("ins-title").textContent = data.title;
+      document.querySelector("#inspector .detail-h p").textContent = data.sub;
+      document.getElementById("ins-kv").innerHTML = data.kv
+        .map(([k, v]) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`)
+        .join("");
+      document.querySelector("#inspector .log").innerHTML = data.log
+        .map((line) => {
+          const [t, ...rest] = line.split(" ");
+          return `<div><span class="t">${t}</span>${rest.join(" ")}</div>`;
+        })
+        .join("");
+    }
+
+    document.querySelectorAll("tr.child").forEach((row) => {
+      row.addEventListener("click", () => {
+        document.querySelectorAll("tr.child").forEach((r) => r.classList.remove("sel"));
+        row.classList.add("sel");
+        renderInspector(row.dataset.task);
+      });
+    });
+
+    renderDemands();
+  </script>
+</body>
+</html>

@@ -27,6 +27,8 @@ import type {
 import type { RuntimeNodeResponse } from "@/lib/api/runtime";
 
 export type ProjectRuntimePlacementPanelProps = {
+  /** 嵌进项目头卡时去掉外层 SoftCard，避免卡片套卡片。 */
+  embedded?: boolean;
   readiness?: ProjectRuntimePlacementReadiness;
   runtimeNodes: RuntimeNodeResponse[];
   /** 已绑定节点及其供给状态（spec 2026-08-12 §5.2）。 */
@@ -43,6 +45,7 @@ export type ProjectRuntimePlacementPanelProps = {
 };
 
 export function ProjectRuntimePlacementPanel({
+  embedded = false,
   readiness,
   runtimeNodes,
   bindings,
@@ -77,13 +80,14 @@ export function ProjectRuntimePlacementPanel({
   const [openOverride, setOpenOverride] = useState<boolean | null>(null);
   const open = openOverride ?? !isReady;
 
-  return (
-    <SoftCard className="overflow-hidden" data-testid="project-runtime-placement-panel">
+  const frame = (
       <Collapsible open={open} onOpenChange={setOpenOverride}>
         <div
           className={cn(
-            "flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between",
-            open && "border-b border-line",
+            "flex flex-col gap-2 @3xl/content:flex-row @3xl/content:items-center @3xl/content:justify-between",
+            embedded ? "gap-2 py-0" : "gap-3 p-4",
+            !embedded && open && "border-b border-line",
+            embedded && open && "border-b border-line pb-3",
           )}
         >
           <div className="flex min-w-0 items-center gap-3">
@@ -299,6 +303,19 @@ export function ProjectRuntimePlacementPanel({
           </div>
         </CollapsibleContent>
       </Collapsible>
+  );
+
+  if (embedded) {
+    return (
+      <div data-testid="project-runtime-placement-panel">
+        {frame}
+      </div>
+    );
+  }
+
+  return (
+    <SoftCard className="overflow-hidden" data-testid="project-runtime-placement-panel">
+      {frame}
     </SoftCard>
   );
 }

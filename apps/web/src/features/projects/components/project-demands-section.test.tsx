@@ -14,7 +14,9 @@ vi.mock("@tanstack/react-router", () => {
   type MockLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & {
     children: ReactNode;
     params?: Record<string, string>;
-    search?: Record<string, string>;
+    search?:
+      | Record<string, string>
+      | ((prev: Record<string, unknown>) => Record<string, unknown>);
     to: string;
   };
 
@@ -26,7 +28,17 @@ vi.mock("@tanstack/react-router", () => {
           href = href.replace(`$${key}`, encodeURIComponent(value));
         }
       }
-      const query = search ? `?${new URLSearchParams(search).toString()}` : "";
+      const resolvedSearch =
+        typeof search === "function" ? search({}) : search;
+      const query = resolvedSearch
+        ? `?${new URLSearchParams(
+            Object.fromEntries(
+              Object.entries(resolvedSearch).filter(
+                (entry): entry is [string, string] => typeof entry[1] === "string",
+              ),
+            ),
+          ).toString()}`
+        : "";
       return (
         <a {...props} data-router-link="true" href={`${href}${query}`}>
           {children}
@@ -259,17 +271,17 @@ describe("ProjectDemandsSection", () => {
       );
     const screen = await renderSection({ fetchTaskGraph });
 
-    // 左侧切换器：两条需求 + 中文状态 pill + ?tab=demands&demand= 深链。
+    // 左侧切换器：两条需求 + 中文状态 pill + ?tab=tasks&demand= 深链。
     await expect
       .element(screen.getByTestId("demand-list-item-demand-latest"))
-      .toHaveAttribute("href", "/projects/project-1?demand=demand-latest&tab=demands");
+      .toHaveAttribute("href", "/projects/project-1?demand=demand-latest&tab=tasks");
     await expect
       .element(screen.getByTestId("demand-list-item-demand-old"))
-      .toHaveAttribute("href", "/projects/project-1?demand=demand-old&tab=demands");
+      .toHaveAttribute("href", "/projects/project-1?demand=demand-old&tab=tasks");
     await expect
       .element(screen.getByTestId("demand-list-item-demand-latest"))
       .toHaveAttribute("aria-current", "true");
-    await expect.element(screen.getByText("已完成")).toBeVisible();
+    await expect.element(screen.getByTestId("demand-list-item-demand-old").getByText("已完成")).toBeVisible();
 
     // 状态 pill 旁的相对创建时间：有 created_at 渲染，缺值不渲染。
     const latestItem = screen.getByTestId("demand-list-item-demand-latest");
@@ -329,7 +341,7 @@ describe("ProjectDemandsSection", () => {
     expect(screen.container.querySelector("[data-testid=demand-dossier-timeline]")).toBeNull();
   });
 
-  it("collapses the timeline in inspect density and expands on demand", async () => {
+  it("collapses the timeline when signals imply inspect density and expands on demand", async () => {
     const manyItems = Array.from({ length: 6 }, (_, index) => ({
       id: `event-${index}`,
       kind: "task_completed",
@@ -348,7 +360,7 @@ describe("ProjectDemandsSection", () => {
 },
     });
 
-    // 终态且无待办 → 巡检态：只露最近 3 条。
+    // 终态且无待办 → 自动巡检密度：只露最近 3 条（无「驱动/巡检」人工切换）。
     await expect.element(screen.getByText("任务完成 · 任务0")).toBeVisible();
     expect(screen.container.textContent).not.toContain("任务完成 · 任务5");
 
@@ -426,7 +438,7 @@ describe("ProjectDemandsSection", () => {
     await expect.element(screen.getByText("剧本 · 软件交付")).toBeVisible();
   });
 
-  it("offers 继续这一单 only when the server says the demand can be continued", async () => {
+  it("keeps 继续这一单 out of the flow/history dossier pane (shell river owns it)", async () => {
     const screen = await renderSection({
       apiOptions: {
         baseUrl: "http://cp.test",
@@ -449,20 +461,13 @@ describe("ProjectDemandsSection", () => {
 },
     });
 
-    await expect.element(screen.getByTestId("demand-dossier-continue")).toBeVisible();
-  });
-
-  it("explains why instead of showing a dead disabled button when continuation is blocked", async () => {
-    const screen = await renderSection();
-
-    // 默认 stub 的 continue_demand.available=false（单还在进行中）。
-    await expect
-      .element(screen.getByTestId("demand-dossier-continue-blocked"))
-      .toBeVisible();
-    await expect.element(screen.getByText("这一单还在进行中，结束后才能接续")).toBeVisible();
     expect(
       screen.container.querySelector('[data-testid="demand-dossier-continue"]'),
     ).toBeNull();
+    expect(
+      screen.container.querySelector('[data-testid="demand-river-continue"]'),
+    ).toBeNull();
+    expect(screen.container.textContent).not.toContain("继续这一单");
   });
 
   it("folds a continuation chain into one queue row and shows the chain in the header", async () => {

@@ -1,11 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, CornerDownRight, Inbox } from "lucide-react";
 
-import { Button, Callout, Segmented, SoftCard, StatusPill } from "@/components/superteam";
-import { demandStatusLabel, decisionTypeLabel, dossierDensityLabel } from "@/lib/status-labels";
+import { Button, Callout, SoftCard, StatusPill } from "@/components/superteam";
+import { demandStatusLabel, decisionTypeLabel } from "@/lib/status-labels";
 import type { ProjectDemandDossier } from "@/lib/api/projects";
-
-import type { DossierDensity } from "./demand-dossier-density";
 
 export type DemandDossierView = "timeline" | "graph";
 
@@ -39,34 +37,25 @@ export function demandDossierExitText(playbook: {
 }
 
 /**
- * 一单卷宗单头：身份 + 有效剧本 + 本单收口 + 接续链 + 待你处理 + 视图/密度切换。
- *
- * 「继续这一单」在**能接续时才渲染**：不可用时给原因文案而不是禁用按钮——
- * 点不动的按钮只会让人反复试。能不能接续由服务端 lineage.continue_demand 判定，
- * 前端不自己算（散到前端就会两处不一致）。
+ * 一单卷宗单头：身份 + 有效剧本 + 本单收口 + 接续链 + 待你处理。
+ * 接续主按钮在阶段河；这里只保留链导航与待办提示。
+ * 「驱动/巡检」密度切换已退役——时间线疏密由 signals 自动推导。
  */
 export function DemandDossierHeader({
-  density,
   dossier,
-  onContinue,
-  onDensityChange,
+  hideViewToggle = false,
   onSelectDemand,
-  onViewChange,
-  view,
 }: {
-  density: DossierDensity;
   dossier: ProjectDemandDossier;
-  onContinue?: () => void;
-  onDensityChange: (density: DossierDensity) => void;
+  /** 时间线/流程图已拆成独立页签时关掉单头切换（遗留 prop，页签拆分后恒为 true）。 */
+  hideViewToggle?: boolean;
   onSelectDemand?: (demandId: string) => void;
-  onViewChange: (view: DemandDossierView) => void;
-  view: DemandDossierView;
 }) {
+  void hideViewToggle;
   const demand = dossier.demand;
   const lineage = dossier.lineage;
   const chainLength = lineage?.chain_length ?? 1;
   const chainPosition = lineage?.chain_position ?? 1;
-  const continueDemand = lineage?.continue_demand;
   const playbookName = dossier.effective_playbook.name?.trim();
   const showPlaybook =
     dossier.effective_playbook.source !== "none" && Boolean(playbookName);
@@ -134,47 +123,6 @@ export function DemandDossierHeader({
               {demand.content}
             </p>
           ) : null}
-        </div>
-
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {continueDemand?.available && onContinue ? (
-            <Button
-              data-testid="demand-dossier-continue"
-              onClick={onContinue}
-              size="sm"
-              variant="secondary"
-            >
-              <CornerDownRight className="size-3.5" />
-              继续这一单
-            </Button>
-          ) : continueDemand && !continueDemand.available && continueDemand.reason_message ? (
-            <span
-              className="text-[11.5px] text-ink-3"
-              data-testid="demand-dossier-continue-blocked"
-            >
-              {continueDemand.reason_message}
-            </span>
-          ) : null}
-          <Segmented
-            aria-label="切换视图"
-            data-testid="demand-dossier-view-toggle"
-            onChange={onViewChange}
-            options={[
-              { label: "时间线", value: "timeline" },
-              { label: "流程图", value: "graph" },
-            ]}
-            value={view}
-          />
-          <Segmented
-            aria-label="切换呈现密度"
-            data-testid="demand-dossier-density-toggle"
-            onChange={onDensityChange}
-            options={[
-              { label: dossierDensityLabel("drive"), value: "drive" },
-              { label: dossierDensityLabel("inspect"), value: "inspect" },
-            ]}
-            value={density}
-          />
         </div>
       </div>
 

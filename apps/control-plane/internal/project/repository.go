@@ -46,6 +46,8 @@ type Repository interface {
 	ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error)
 	CreateProjectDemand(ctx context.Context, req SubmitProjectDemandRequest, status ProjectDemandStatus, createdEventID *uuid.UUID) (ProjectDemand, error)
 	ListProjectDemands(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
+	// ListProjectDemandsForConsole 是 HTTP 列表专用序（最近更新 + 非终态优先）。
+	ListProjectDemandsForConsole(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectDemand, error)
 	CreateConfigRevision(ctx context.Context, req UpdateProjectConfigRequest, project Project, eventID uuid.UUID) (ProjectConfigRevision, error)
 	GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error)
 	GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error)

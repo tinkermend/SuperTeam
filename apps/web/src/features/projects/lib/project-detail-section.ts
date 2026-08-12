@@ -1,36 +1,37 @@
-/** 项目详情顶栏区段（工作台默认，无「概览」对等 Tab）。 */
+/** 项目详情顶栏区段（任务表默认；卷宗左轨始终可见）。 */
 export type ProjectDetailSection =
-  | "workbench"
-  | "demands"
   | "tasks"
+  | "flow"
   | "approval"
+  | "history"
   | "assets";
 
-/** 兼容旧 ?tab= 深链。 */
+/** 兼容旧 ?tab= 深链。`demands` 已退役，落到任务表并保留 ?demand=。 */
 export function normalizeProjectDetailSection(
   tab: string | undefined,
 ): ProjectDetailSection {
   switch (tab) {
-    // 需求流程区（IA Phase 2 P2a-1）：?tab=demands&demand=<id> 按需求查看权威图/血缘。
-    case "demands":
-      return "demands";
-    case "tasks":
-      return "tasks";
+    case "flow":
+      return "flow";
     case "approval":
       return "approval";
+    case "history":
+    // 执行轨迹深链：落在历史页签，由 ProjectOperationalDetail 展开高级事实区定位。
+    case "trace":
+      return "history";
     case "assets":
     case "artifacts":
     case "budget":
     case "acceptance":
     case "closure":
       return "assets";
+    case "demands":
+    case "tasks":
     case "overview":
     case "config":
     case "workbench":
-    // 执行轨迹深链：落在工作台，由 ProjectOperationalDetail 展开高级事实区定位。
-    case "trace":
     default:
-      return "workbench";
+      return "tasks";
   }
 }
 
@@ -55,6 +56,8 @@ export function isProjectDetailSectionQuery(value: string | undefined): boolean 
     value === "config" ||
     value === "assets" ||
     value === "trace" ||
-    value === "demands"
+    value === "demands" ||
+    value === "flow" ||
+    value === "history"
   );
 }
