@@ -38,16 +38,18 @@ func TestHealthOnlyRouterIsExplicit(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.Code)
 	}
 
-	var body map[string]string
+	// health 载荷自 a3e4d43a 起含嵌套的 provider_contract 指标，不再是纯 string map
+	// （与 internal/api/health_test.go 同口径）。
+	var body map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("expected JSON health response: %v", err)
 	}
 
 	if body["status"] != "ok" {
-		t.Fatalf("expected status ok, got %q", body["status"])
+		t.Fatalf("expected status ok, got %v", body["status"])
 	}
 	if body["service"] != "control-plane" {
-		t.Fatalf("expected service control-plane, got %q", body["service"])
+		t.Fatalf("expected service control-plane, got %v", body["service"])
 	}
 }
 

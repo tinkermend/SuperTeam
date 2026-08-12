@@ -1,7 +1,9 @@
 # 项目工作区供给模型：来源三态 · 绑定与供给分离 · 供给与撤销均经人工确认
 
 - 日期：2026-08-12
-- 状态：**已实施**（P0–P3 串行落地 2026-08-12）
+- 状态：**已实施**（P0–P3 串行落地 2026-08-12，入 main `0c1bde97`，含两块 Console：创建向导认领探测、项目配置页供给按钮）
+> 复核状态：契约 `verify:contracts` 通过；全量 `go test ./internal/...`、`cargo test --lib`、web 单测（projects/runtime/inbox）全绿；各期承重判据由 Go 16 例 + Rust 7 例守护。
+> **未做**：§9 第 4/5/9 条的两节点真实 E2E（跨节点漂移 → 不可用 → 确认供给 → 落备节点）——本地无双节点环境，人类拍板暂缓，等真实问题出现再补。其余判据以单测替代，不等价于真链路验证。
 - 上游前置：
   - `docs/superpowers/specs/2026-07-23-project-directory-workspace-design.md`——项目目录主链、工作区根、首启就绪、粘滞亲和。本 spec **有意推翻**其 §0.4 / §0.10 / §0.15 / §2 / §5.3 的若干条，逐条见 §3
   - `docs/superpowers/specs/2026-06-29-project-code-workspace-runtime-affinity-design.md`——项目锚定节点、员工漂浮；绝对路径非业务事实（**本 spec 不动这条**）
@@ -281,6 +283,17 @@ Web + Control Plane + DB + Runtime（+ Provider，涉执行的项）全链，不
 
 真实 E2E 期间须记录并复核 `control-plane` / `web` pid，`owner=` 异源则结论作废（CLAUDE.md）。
 
+### 9.1 实际验证状态（2026-08-12）
+
+| 判据 | 状态 |
+|---|---|
+| 1 / 2 / 3（删除确认队列、目录名并查） | 单测覆盖（`workspace_delete_queue_test.go` 6 例），**未走真实链路** |
+| 4 / 5 / 9（跨节点：不碰磁盘、漂移不可用、确认供给） | **阻塞——本地无双节点环境**，人类拍板暂缓（2026-08-12）。单测覆盖了判据逻辑（`node_resolver_test.go` 2 例 + `workspace_provision_test.go` 供给四态），但「真的漂过去」没验 |
+| 6 / 7（attach 正反路） | 单测覆盖 CP 与 Runtime 两侧（含探测四态、软链拒绝、attached 不 clone），**Provider 侧未走真实会话** |
+| 8（attached 禁 force reclone） | 单测覆盖（`TestRecloneRejectedForAttachedProject`） |
+
+按 CLAUDE.md「默认完成条件是真实端到端」，本 spec 的完成度应记为**单测级**，不得据此声称链路已验证。补 E2E 的触发条件：拿到第二个 Runtime 节点环境，或线上先出现相关故障。起第二节点的 env 清单见 §11.7。
+
 ---
 
 ## 10. 风险与接受项
@@ -471,6 +484,7 @@ RUNTIME_AGENT_RUN_LOG_DIR=<另一个日志目录>
 
 - 2026-08-12：初版。收录来源三态、绑定/供给分离、供给与撤销双向人工确认、平台不碰 git 工作树，以及对 `2026-07-23` spec 五条已拍板决策的推翻。
 - 2026-08-12（补）：§5.7 push/pull 归属改为「场景模板角色职责」（人类拍板），不再表述为平台缺口；新增 §11 施工交接。
+- 2026-08-12（收口）：P0–P3 全部落地并入 main `0c1bde97`。复查揪修 8 项（契约缺 probe 端点与 provision 字段、生成 Go 落后、删项目未按供给状态过滤、attach 死代码、探测未接线假成功、`provisioned ⇒ 磁盘就绪` 在创建路径不成立、resolver 重复查库、死分支）；补两块缺失 Console（创建向导认领探测、配置页供给按钮）与 23 例单测。**两节点真实 E2E 暂缓**（无环境，人类拍板），见 §9.1。
 - 2026-08-12（实施）：串行落地 P0→P1→P2→P3。
   - P0：`project_workspace_delete_requests` 队列、删项目/摘节点改入队、目录名占用并查、确认/拒绝端点、滞留催办、Console 队列区。
   - P1：`provision_status` 绑定/供给分离、创建仅主节点供给、加节点不碰盘、候选过滤、懒触发供给待办、`POST …/provision`。

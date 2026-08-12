@@ -2012,12 +2012,13 @@ func TestCompleteProjectTaskAttemptRetryableFailedResultContractQueuesRetry(t *t
 	retryable := true
 	contract := TaskResultContract{
 		Status:  TaskResultStatusFailed,
-		Summary: "Runtime 节点短暂不可用",
+		Summary: "Provider 中途退出",
 		Failure: &TaskResultFailure{
-			ErrorFamily:            FailureFamilyTransientRuntime,
+			// B 层(provider 真跑过)才允许自动重排;A 层平台启动类失败一律等人。
+			ErrorFamily:            FailureFamilyTransientProvider,
 			Retryable:              &retryable,
 			RecoveryRecommendation: "retry_original_attempt",
-			Message:                "runtime restarted",
+			Message:                "provider exited mid-run",
 		},
 	}
 
@@ -2029,12 +2030,12 @@ func TestCompleteProjectTaskAttemptRetryableFailedResultContractQueuesRetry(t *t
 
 	require.NoError(t, err)
 	require.Empty(t, repo.executionSummaries)
-	require.Equal(t, "Runtime 节点短暂不可用", summary.Conclusion)
+	require.Equal(t, "Provider 中途退出", summary.Conclusion)
 	require.Equal(t, ProjectTaskStatusQueued, repo.tasks[0].Status)
 	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
 	require.NotEqual(t, fixture.attemptID, *repo.tasks[0].CurrentAttemptID)
 	require.Equal(t, int32(2), repo.tasks[0].AttemptCount)
-	require.Equal(t, ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusFailed, repo.projectTaskAttempts[0].Status)
 	require.Len(t, repo.projectTaskAttempts, 2)
 	require.Equal(t, ProjectTaskAttemptStatusQueued, repo.projectTaskAttempts[1].Status)
 	require.Equal(t, 0, coordinator.completedSignals)
@@ -3223,12 +3224,13 @@ func TestSubmitProjectTaskAttemptResultRetryableFailedQueuesRetryAndKeepsLatestR
 	retryable := true
 	contract := TaskResultContract{
 		Status:  TaskResultStatusFailed,
-		Summary: "Runtime 节点短暂不可用",
+		Summary: "Provider 中途退出",
 		Failure: &TaskResultFailure{
-			ErrorFamily:            FailureFamilyTransientRuntime,
+			// B 层(provider 真跑过)才允许自动重排;A 层平台启动类失败一律等人。
+			ErrorFamily:            FailureFamilyTransientProvider,
 			Retryable:              &retryable,
 			RecoveryRecommendation: "retry_original_attempt",
-			Message:                "runtime restarted",
+			Message:                "provider exited mid-run",
 		},
 	}
 
@@ -3238,12 +3240,12 @@ func TestSubmitProjectTaskAttemptResultRetryableFailedQueuesRetryAndKeepsLatestR
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, "Runtime 节点短暂不可用", summary.Conclusion)
+	require.Equal(t, "Provider 中途退出", summary.Conclusion)
 	require.Equal(t, ProjectTaskStatusQueued, repo.tasks[0].Status)
 	require.NotNil(t, repo.tasks[0].CurrentAttemptID)
 	require.NotEqual(t, fixture.attemptID, *repo.tasks[0].CurrentAttemptID)
 	require.Equal(t, int32(2), repo.tasks[0].AttemptCount)
-	require.Equal(t, ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
+	require.Equal(t, ProjectTaskAttemptStatusFailed, repo.projectTaskAttempts[0].Status)
 	require.Len(t, repo.projectTaskAttempts, 2)
 	require.Equal(t, ProjectTaskAttemptStatusQueued, repo.projectTaskAttempts[1].Status)
 	require.Equal(t, 0, coordinator.completedSignals)
@@ -3692,7 +3694,7 @@ func TestFailProjectTaskAttemptWritesLedgerEvent(t *testing.T) {
 	require.True(t, *event.Retryable)
 }
 
-func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
+func TestFailProjectTaskAttemptTransientProviderSchedulesRetry(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
 	service, err := NewServiceWithCoordinator(repo, coordinator)
@@ -3712,8 +3714,8 @@ func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
 
 	task, err := service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
 		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("fail-transient-1"),
-		FailureSummary:                   "runtime node restarted",
-		FailureFamily:                    FailureFamilyTransientRuntime,
+		FailureSummary:                   "provider exited mid-run",
+		FailureFamily:                    FailureFamilyTransientProvider,
 		Retryable:                        &retryable,
 	})
 
@@ -3733,6 +3735,35 @@ func TestFailProjectTaskAttemptTransientRuntimeSchedulesRetry(t *testing.T) {
 	require.Equal(t, 1, coordinator.retrySignals, "requeue must wake coordinator for redispatch")
 	require.Equal(t, task.ID, coordinator.lastRetry.ProjectTaskID)
 	require.Equal(t, 0, coordinator.failedSignals, "must not open human-recovery signal on auto-retry")
+}
+
+// A 层(平台启动类:派发/拉起/租约/启动超时/runtime 短暂不可用)失败一律等人,
+// 系统绝不自愈重排——人在恢复卡上点了才重来。这条不成立时,节点抖动会让任务
+// 在一个可能仍然坏的落点上反复自动重跑。
+func TestFailProjectTaskAttemptTransientRuntimeWaitsForHumanInsteadOfAutoRetry(t *testing.T) {
+	repo := newMemoryRepository()
+	coordinator := &fakeCoordinatorSignalClient{}
+	service, err := NewServiceWithCoordinator(repo, coordinator)
+	require.NoError(t, err)
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	maxAttempts := int32(3)
+	repo.tasks[0].AttemptCount = 1
+	repo.tasks[0].MaxAttempts = &maxAttempts
+	retryable := true
+
+	task, err := service.FailProjectTaskAttempt(context.Background(), FailProjectTaskAttemptRequest{
+		ProjectTaskAttemptRuntimeRequest: fixture.runtimeRequest("fail-transient-runtime-1"),
+		FailureSummary:                   "runtime node restarted",
+		FailureFamily:                    FailureFamilyTransientRuntime,
+		Retryable:                        &retryable,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status,
+		"预算未用尽也不得自动重排:A 层失败要人来判断落点是否还能用")
+	require.Equal(t, int32(1), task.AttemptCount, "等人期间不得消耗重试预算")
+	require.Equal(t, 0, coordinator.retrySignals, "A 层失败不得唤醒协调线程重排")
+	require.Equal(t, ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
 }
 
 func TestFailProjectTaskAttemptWaitingHumanUsesPrimaryNonNoiseAttribution(t *testing.T) {
