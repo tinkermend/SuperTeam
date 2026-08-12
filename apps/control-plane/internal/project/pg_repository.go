@@ -106,6 +106,7 @@ func (r *PgRepository) CreateProject(ctx context.Context, req CreateProjectReque
 		ScenarioTemplateKey:    textFromStringPtr(req.ScenarioTemplateKey),
 		WorkspaceReadyStatus:   textOrNull(readyStatus),
 		WorkspaceReadyAt:       readyAt,
+		WorkspaceOwnership:     textOrNull(string(req.WorkspaceOwnership)),
 	})
 	if err != nil {
 		return Project{}, err
@@ -1250,6 +1251,18 @@ func (r *PgRepository) GetProjectDemand(ctx context.Context, tenantID, demandID 
 
 func (r *PgRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
 	return r.getProjectTaskWithQueries(ctx, r.q, tenantID, projectTaskID)
+}
+
+func (r *PgRepository) GetProjectTaskInProject(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.GetProjectTaskInProject(ctx, queries.GetProjectTaskInProjectParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		ID:        projectTaskID,
+	})
+	if err != nil {
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
 }
 
 func (r *PgRepository) getProjectTaskWithQueries(ctx context.Context, q *queries.Queries, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
@@ -7107,11 +7120,25 @@ func (r *PgRepository) GetConfigRevision(ctx context.Context, tenantID, projectI
 	return configRevisionFromRecord(row)
 }
 
-func (r *PgRepository) InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) (ProjectRuntimeNode, error) {
+func (r *PgRepository) InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID, provisioned bool, provisionSource string) (ProjectRuntimeNode, error) {
+	status := string(ProvisionStatusUnprovisioned)
+	var provisionedAt pgtype.Timestamptz
+	var source pgtype.Text
+	if provisioned {
+		status = string(ProvisionStatusProvisioned)
+		provisionedAt = pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+		source = textOrNull(strings.TrimSpace(provisionSource))
+		if !source.Valid {
+			source = textOrNull("create")
+		}
+	}
 	row, err := r.q.InsertProjectRuntimeNode(ctx, queries.InsertProjectRuntimeNodeParams{
-		TenantID:      tenantID,
-		ProjectID:     projectID,
-		RuntimeNodeID: runtimeNodeID,
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		RuntimeNodeID:   runtimeNodeID,
+		ProvisionStatus: status,
+		ProvisionedAt:   provisionedAt,
+		ProvisionSource: source,
 	})
 	if err != nil {
 		return ProjectRuntimeNode{}, err
@@ -7134,14 +7161,48 @@ func (r *PgRepository) ListProjectRuntimeNodes(ctx context.Context, tenantID, pr
 	return items, nil
 }
 
-func projectRuntimeNodeFromRecord(row queries.ProjectRuntimeNode) ProjectRuntimeNode {
-	return ProjectRuntimeNode{
-		ID:            row.ID,
-		TenantID:      row.TenantID,
-		ProjectID:     row.ProjectID,
-		RuntimeNodeID: row.RuntimeNodeID,
-		CreatedAt:     row.CreatedAt.Time,
+func (r *PgRepository) MarkProjectRuntimeNodeProvisioned(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID, provisionSource string) (ProjectRuntimeNode, error) {
+	source := strings.TrimSpace(provisionSource)
+	if source == "" {
+		source = "confirm"
 	}
+	row, err := r.q.MarkProjectRuntimeNodeProvisioned(ctx, queries.MarkProjectRuntimeNodeProvisionedParams{
+		ProvisionedAt:   pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		ProvisionSource: textOrNull(source),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		RuntimeNodeID:   runtimeNodeID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectRuntimeNode{}, ErrProjectNotFound
+		}
+		return ProjectRuntimeNode{}, projectRepositoryError(err)
+	}
+	return projectRuntimeNodeFromRecord(row), nil
+}
+
+func projectRuntimeNodeFromRecord(row queries.ProjectRuntimeNode) ProjectRuntimeNode {
+	item := ProjectRuntimeNode{
+		ID:              row.ID,
+		TenantID:        row.TenantID,
+		ProjectID:       row.ProjectID,
+		RuntimeNodeID:   row.RuntimeNodeID,
+		ProvisionStatus: ProvisionStatus(row.ProvisionStatus),
+		CreatedAt:       row.CreatedAt.Time,
+	}
+	if item.ProvisionStatus == "" {
+		item.ProvisionStatus = ProvisionStatusProvisioned
+	}
+	if row.ProvisionedAt.Valid {
+		t := row.ProvisionedAt.Time.UTC()
+		item.ProvisionedAt = &t
+	}
+	if row.ProvisionSource.Valid {
+		s := row.ProvisionSource.String
+		item.ProvisionSource = &s
+	}
+	return item
 }
 
 func (r *PgRepository) GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error) {
@@ -7225,12 +7286,22 @@ func projectFromRecord(row queries.Project) (Project, error) {
 		PrimaryRuntimeNodeID:   ptrUUID(row.PrimaryRuntimeNodeID),
 		WorkspaceReadyError:    ptrText(row.WorkspaceReadyError),
 		WorkspaceReadyAt:       ptrTime(row.WorkspaceReadyAt),
+		WorkspaceOwnership:     workspaceOwnershipFromRecord(row.WorkspaceOwnership),
 		BudgetTokenLimit:       ptrInt8(row.BudgetTokenLimit),
 		ArchivedAt:             ptrTime(row.ArchivedAt),
 		DeletedAt:              ptrTime(row.DeletedAt),
 		CreatedAt:              row.CreatedAt.Time,
 		UpdatedAt:              row.UpdatedAt.Time,
 	}, nil
+}
+
+func workspaceOwnershipFromRecord(value string) WorkspaceOwnership {
+	switch WorkspaceOwnership(strings.TrimSpace(value)) {
+	case WorkspaceOwnershipAttached:
+		return WorkspaceOwnershipAttached
+	default:
+		return WorkspaceOwnershipPlatformManaged
+	}
 }
 
 func workspaceReadyStatusFromRecord(value string) WorkspaceReadyStatus {
@@ -9130,4 +9201,194 @@ func (r *PgRepository) LookupMemberDisplayNames(ctx context.Context, tenantID uu
 		}
 	}
 	return users, employees, nil
+}
+
+// --- Workspace delete confirmation queue (spec 2026-08-12 P0) ---
+
+func (r *PgRepository) EnqueueWorkspaceDeleteRequest(ctx context.Context, params EnqueueWorkspaceDeleteRequestParams) (WorkspaceDeleteRequest, error) {
+	if params.TenantID == uuid.Nil || params.ProjectID == uuid.Nil || params.RuntimeNodeID == uuid.Nil {
+		return WorkspaceDeleteRequest{}, ErrInvalidProject
+	}
+	ownership := string(params.Ownership)
+	if ownership == "" {
+		ownership = string(WorkspaceOwnershipPlatformManaged)
+	}
+	var repoSummary []byte
+	if params.RepoSummary != nil {
+		raw, err := json.Marshal(params.RepoSummary)
+		if err != nil {
+			return WorkspaceDeleteRequest{}, fmt.Errorf("marshal repo_summary: %w", err)
+		}
+		repoSummary = raw
+	}
+	now := time.Now().UTC()
+	row, err := r.q.InsertProjectWorkspaceDeleteRequest(ctx, queries.InsertProjectWorkspaceDeleteRequestParams{
+		ID:             uuid.New(),
+		TenantID:       params.TenantID,
+		ProjectID:      params.ProjectID,
+		RuntimeNodeID:  params.RuntimeNodeID,
+		DirectoryName:  params.DirectoryName,
+		NodeIDSnapshot: params.NodeIDSnapshot,
+		Ownership:      ownership,
+		RepoSummary:    repoSummary,
+		RequestedBy:    params.RequestedBy,
+		RequestedAt:    pgtype.Timestamptz{Time: now, Valid: true},
+		Reason:         textOrNull(strings.TrimSpace(params.Reason)),
+	})
+	if err != nil {
+		return WorkspaceDeleteRequest{}, projectRepositoryError(err)
+	}
+	return workspaceDeleteRequestFromRow(row)
+}
+
+func (r *PgRepository) GetWorkspaceDeleteRequest(ctx context.Context, tenantID, requestID uuid.UUID) (WorkspaceDeleteRequest, error) {
+	row, err := r.q.GetProjectWorkspaceDeleteRequest(ctx, queries.GetProjectWorkspaceDeleteRequestParams{
+		TenantID: tenantID,
+		ID:       requestID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WorkspaceDeleteRequest{}, ErrProjectWorkspaceDeleteRequestNotFound
+		}
+		return WorkspaceDeleteRequest{}, projectRepositoryError(err)
+	}
+	return workspaceDeleteRequestFromRow(row)
+}
+
+func (r *PgRepository) ListPendingWorkspaceDeleteRequests(ctx context.Context, tenantID uuid.UUID) ([]WorkspaceDeleteRequest, error) {
+	rows, err := r.q.ListPendingProjectWorkspaceDeleteRequests(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WorkspaceDeleteRequest, 0, len(rows))
+	for _, row := range rows {
+		item, err := workspaceDeleteRequestFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (r *PgRepository) ListStalePendingWorkspaceDeleteRequests(ctx context.Context, staleBefore time.Time) ([]WorkspaceDeleteRequest, error) {
+	rows, err := r.q.ListStalePendingProjectWorkspaceDeleteRequests(ctx, pgtype.Timestamptz{Time: staleBefore.UTC(), Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]WorkspaceDeleteRequest, 0, len(rows))
+	for _, row := range rows {
+		item, err := workspaceDeleteRequestFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (r *PgRepository) CountPendingWorkspaceDeleteByDirectoryName(ctx context.Context, directoryName string) (int32, error) {
+	return r.q.CountPendingProjectWorkspaceDeleteByDirectoryName(ctx, directoryName)
+}
+
+func (r *PgRepository) ConfirmWorkspaceDeleteRequest(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID) (WorkspaceDeleteRequest, error) {
+	row, err := r.q.ConfirmProjectWorkspaceDeleteRequest(ctx, queries.ConfirmProjectWorkspaceDeleteRequestParams{
+		ResolvedBy: actorUserID,
+		ResolvedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		TenantID:   tenantID,
+		ID:         requestID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WorkspaceDeleteRequest{}, ErrProjectWorkspaceDeleteRequestNotFound
+		}
+		return WorkspaceDeleteRequest{}, projectRepositoryError(err)
+	}
+	return workspaceDeleteRequestFromRow(row)
+}
+
+func (r *PgRepository) RejectWorkspaceDeleteRequest(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID, reason string) (WorkspaceDeleteRequest, error) {
+	row, err := r.q.RejectProjectWorkspaceDeleteRequest(ctx, queries.RejectProjectWorkspaceDeleteRequestParams{
+		ResolvedBy: actorUserID,
+		ResolvedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		Reason:     textOrNull(strings.TrimSpace(reason)),
+		TenantID:   tenantID,
+		ID:         requestID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WorkspaceDeleteRequest{}, ErrProjectWorkspaceDeleteRequestNotFound
+		}
+		return WorkspaceDeleteRequest{}, projectRepositoryError(err)
+	}
+	return workspaceDeleteRequestFromRow(row)
+}
+
+func (r *PgRepository) ResolveOrphanWorkspaceDeleteReminders(ctx context.Context) error {
+	return r.q.ResolveOrphanProjectWorkspaceDeleteReminders(ctx)
+}
+
+func (r *PgRepository) CreateWorkspaceDeleteAuditEvent(ctx context.Context, tenantID, actorUserID uuid.UUID, action string, request WorkspaceDeleteRequest, extra map[string]any) error {
+	details := map[string]any{
+		"request_id":      request.ID.String(),
+		"project_id":      request.ProjectID.String(),
+		"runtime_node_id": request.RuntimeNodeID.String(),
+		"directory_name":  request.DirectoryName,
+		"node_id":         request.NodeIDSnapshot,
+		"ownership":       string(request.Ownership),
+		"status":          string(request.Status),
+	}
+	for k, v := range extra {
+		details[k] = v
+	}
+	raw, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	_, err = r.q.CreateAuditEvent(ctx, queries.CreateAuditEventParams{
+		TenantID:     uuid.NullUUID{UUID: tenantID, Valid: tenantID != uuid.Nil},
+		EventType:    "project_management",
+		ActorType:    "user",
+		ActorID:      actorUserID.String(),
+		ResourceType: pgtype.Text{String: "project_workspace_delete_request", Valid: true},
+		ResourceID:   pgtype.Text{String: request.ID.String(), Valid: true},
+		Action:       action,
+		Details:      raw,
+	})
+	return err
+}
+
+func workspaceDeleteRequestFromRow(row queries.ProjectWorkspaceDeleteRequest) (WorkspaceDeleteRequest, error) {
+	item := WorkspaceDeleteRequest{
+		ID:             row.ID,
+		TenantID:       row.TenantID,
+		ProjectID:      row.ProjectID,
+		RuntimeNodeID:  row.RuntimeNodeID,
+		DirectoryName:  row.DirectoryName,
+		NodeIDSnapshot: row.NodeIDSnapshot,
+		Ownership:      WorkspaceOwnership(row.Ownership),
+		Status:         WorkspaceDeleteRequestStatus(row.Status),
+		RequestedBy:    row.RequestedBy,
+		RequestedAt:    timeFromSQL(row.RequestedAt),
+	}
+	if row.ResolvedBy.Valid {
+		id := row.ResolvedBy.UUID
+		item.ResolvedBy = &id
+	}
+	if row.ResolvedAt.Valid {
+		t := row.ResolvedAt.Time.UTC()
+		item.ResolvedAt = &t
+	}
+	if row.Reason.Valid {
+		s := row.Reason.String
+		item.Reason = &s
+	}
+	if len(row.RepoSummary) > 0 {
+		var summary map[string]any
+		if err := json.Unmarshal(row.RepoSummary, &summary); err != nil {
+			return WorkspaceDeleteRequest{}, fmt.Errorf("unmarshal repo_summary: %w", err)
+		}
+		item.RepoSummary = summary
+	}
+	return item, nil
 }

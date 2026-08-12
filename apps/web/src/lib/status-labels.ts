@@ -54,6 +54,16 @@ const STATUS_LABELS: Record<string, string> = {
   passed: "已通过",
   pending: "待处理",
   pending_review: "待复核",
+  // workspace delete confirmation queue (spec 2026-08-12 P0)
+  confirmed: "已确认删除",
+  // reject already maps to 已拒绝; queue uses same key with contextual label helpers
+  platform_managed: "平台创建",
+  attached: "认领已有目录",
+  project_workspace_pending_delete: "工作区目录待删除确认",
+  project_workspace_provision_pending: "工作区待供给确认",
+  workspace_unavailable: "工作区不可用",
+  provisioned: "已供给",
+  unprovisioned: "已绑定未供给",
   plan: "计划",
   planned: "已计划",
   platform_keychain: "系统钥匙串",

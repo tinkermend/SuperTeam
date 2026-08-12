@@ -65,6 +65,10 @@ const (
 	ItemTypeProjectDecision ItemType = "project_decision"
 	// 团队待确认删除滞留催办(生命周期收敛 P2:永不自动物理删,超时提醒管理员处理)。
 	ItemTypeTeamPendingDelete ItemType = "team_pending_delete"
+	// 项目工作区目录删除确认滞留催办(spec 2026-08-12 P0)。
+	ItemTypeProjectWorkspacePendingDelete ItemType = "project_workspace_pending_delete"
+	// 项目工作区供给确认(spec 2026-08-12 P1:主节点不可用时懒触发备节点供给)。
+	ItemTypeProjectWorkspaceProvisionPending ItemType = "project_workspace_provision_pending"
 	// 飞书通道失联告警(接入管理 P1:只进 Console 收件箱,不推飞书,防自指)。
 	ItemTypeChannelAlert ItemType = "channel_alert"
 	// 自动化规则 fire 失败告警（收口批：无人值守失败必须推到人）。
@@ -76,12 +80,14 @@ const (
 type SourceType string
 
 const (
-	SourceTypeApprovalRequest        SourceType = "approval_request"
-	SourceTypeProjectDecisionRequest SourceType = "project_decision_request"
-	SourceTypeTeamPendingDelete      SourceType = "team_pending_delete"
-	SourceTypeChannelAlert           SourceType = "feishu_channel"
-	SourceTypeAutomationRule         SourceType = "automation_rule"
-	SourceTypeProjectCasting         SourceType = "project_casting"
+	SourceTypeApprovalRequest               SourceType = "approval_request"
+	SourceTypeProjectDecisionRequest        SourceType = "project_decision_request"
+	SourceTypeTeamPendingDelete             SourceType = "team_pending_delete"
+	SourceTypeProjectWorkspacePendingDelete     SourceType = "project_workspace_pending_delete"
+	SourceTypeProjectWorkspaceProvisionPending  SourceType = "project_workspace_provision_pending"
+	SourceTypeChannelAlert                      SourceType = "feishu_channel"
+	SourceTypeAutomationRule                SourceType = "automation_rule"
+	SourceTypeProjectCasting                SourceType = "project_casting"
 )
 
 type Action struct {

@@ -25,7 +25,7 @@ func TestEffectiveProjectTaskMaxAttempts(t *testing.T) {
 
 func TestProjectTaskFailureActionUsesEffectiveMaxAttempts(t *testing.T) {
 	task := ProjectTask{AttemptCount: 1}
-	// platform default 3: first failure should retry
+	// B-layer (provider actually ran): first failure may auto-requeue within attempt budget
 	require.Equal(t, ProjectTaskStatusQueued, projectTaskFailureAction(task, FailureFamilyTransientProvider, nil, 3))
 	task.AttemptCount = 3
 	require.Equal(t, ProjectTaskStatusWaitingHuman, projectTaskFailureAction(task, FailureFamilyTransientProvider, nil, 3))
@@ -33,6 +33,10 @@ func TestProjectTaskFailureActionUsesEffectiveMaxAttempts(t *testing.T) {
 	task.AttemptCount = 1
 	task.MaxAttempts = nil
 	require.Equal(t, ProjectTaskStatusQueued, projectTaskFailureAction(task, FailureFamilyTransientProvider, nil, 0))
+	// A-layer (never started / runtime drop): never auto-requeue — human only
+	require.Equal(t, ProjectTaskStatusWaitingHuman, projectTaskFailureAction(task, FailureFamilyTransientRuntime, nil, 3))
+	require.Equal(t, ProjectTaskStatusWaitingHuman, projectTaskFailureAction(task, FailureFamilyDispatchTransient, nil, 3))
+	require.Equal(t, ProjectTaskStatusWaitingHuman, projectTaskFailureAction(task, FailureFamilyRuntimeStartTimeout, nil, 3))
 }
 
 func TestProjectTaskFailureActionBudgetFuseWaitsHuman(t *testing.T) {

@@ -90,7 +90,7 @@ export function ProjectBasicsStep({
         <div className="grid gap-1">
           <Label>源码来源 *</Label>
           <p className="text-xs text-ink-3">
-            Git：填写仓库地址，目录名默认由 URL 推导；非 Git：手填 Runtime 工作区下的目录名。
+            Git：填写仓库地址，目录名默认由 URL 推导；非 Git：手填空目录名；认领已有目录：只填目录名，须先在节点上存在该目录。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -98,6 +98,7 @@ export function ProjectBasicsStep({
             [
               { id: "directory", label: "非 Git（空目录）" },
               { id: "git", label: "Git 仓库" },
+              { id: "attach", label: "认领已有目录" },
             ] as Array<{ id: ProjectSourceKind; label: string }>
           ).map((option) => {
             const active = draft.sourceKind === option.id;
@@ -113,7 +114,7 @@ export function ProjectBasicsStep({
                   onChange({
                     ...draft,
                     sourceKind: option.id,
-                    ...(option.id === "directory"
+                    ...(option.id !== "git"
                       ? { repoUrl: "", repoDefaultBranch: "main" }
                       : {})
 })
@@ -125,6 +126,11 @@ export function ProjectBasicsStep({
             );
           })}
         </div>
+        {draft.sourceKind === "attach" ? (
+          <p className="text-xs text-ink-3">
+            认领路径：目录须已在所选 Runtime 节点的工作区根下存在；平台不创建、不填充、不改 git 状态。提交前请在「可运行节点」中选定主节点。
+          </p>
+        ) : null}
 
         {draft.sourceKind === "git" ? (
           <div className="grid gap-3">

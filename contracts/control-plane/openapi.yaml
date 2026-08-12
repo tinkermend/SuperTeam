@@ -1140,6 +1140,166 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+  /api/v1/projects/workspace/probe:
+    post:
+      operationId: probeProjectDirectory
+      summary: Probe an existing directory under a runtime node workspace root
+      description: >-
+        认领已有目录前的探测(spec 2026-08-12 §5.1 / P2):项目尚未创建,故不挂在
+        {projectId} 下。只读——不创建目录、不改 git 状态;软链与不存在均判失败。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - runtime_node_id
+                - directory_name
+              properties:
+                runtime_node_id:
+                  type: string
+                  format: uuid
+                directory_name:
+                  type: string
+                  description: Workspace-root-relative ASCII directory name
+      responses:
+        "200":
+          description: Probe facts for the directory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDirectoryProbeFacts"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/workspace-delete-requests:
+    get:
+      operationId: listWorkspaceDeleteRequests
+      summary: List pending workspace directory delete confirmations
+      description: >-
+        工作区目录删除确认队列(spec 2026-08-12 P0):删项目/摘节点后不直接删盘,
+        每 (项目,节点) 一条待办;确认后级联删目录,拒绝则平台放手。
+      responses:
+        "200":
+          description: Pending workspace delete requests ordered by oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WorkspaceDeleteRequest"
+        "403":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/workspace-delete-requests/{requestId}/confirm:
+    post:
+      operationId: confirmWorkspaceDelete
+      summary: Confirm and delete workspace directory on the target node
+      description: 确认删除:向该节点下发 remove_project_directory;节点离线则保持 pending 可重试。
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Delete request confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDeleteRequest"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/workspace-delete-requests/{requestId}/reject:
+    post:
+      operationId: rejectWorkspaceDelete
+      summary: Reject workspace directory delete (platform hands off)
+      description: 拒绝删除:关闭队列项、写审计、不再管理该目录;不留悬挂待办。
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Delete request rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceDeleteRequest"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId}/provision:
+    post:
+      operationId: provisionProjectRuntimeNode
+      summary: Provision project workspace on a bound runtime node
+      description: >-
+        供给确认(spec 2026-08-12 P1):对已绑定未供给节点执行 mkdir/clone。
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: runtimeNodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Node provisioned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runtime_node_id]
+                properties:
+                  runtime_node_id:
+                    type: string
+                    format: uuid
+                  provision_status:
+                    type: string
+                    enum: [provisioned, unprovisioned]
+                  provisioned_at:
+                    type: string
+                    format: date-time
+                  provision_source:
+                    type: string
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /api/v1/projects/{projectId}:
     get:
       operationId: getProject
@@ -1710,6 +1870,27 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ProjectTask"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/projects/{projectId}/tasks/{taskId}:
+    get:
+      operationId: getProjectTask
+      summary: Get a single project task
+      description: >
+        Fetch one project task by id within a project. Used for deep-link
+        detail dialogs when the task is outside the list pagination window.
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Project task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectTask"
         "400":
           $ref: "#/components/responses/Error"
         "404":
@@ -2686,6 +2867,8 @@ paths:
               - approval
               - project_decision
               - team_pending_delete
+              - project_workspace_pending_delete
+              - project_workspace_provision_pending
               - channel_alert
         - name: risk_level
           in: query
@@ -6817,6 +7000,8 @@ components:
                 - approval
                 - project_decision
                 - team_pending_delete
+                - project_workspace_pending_delete
+                - project_workspace_provision_pending
                 - channel_alert
             source_type:
               type: string
@@ -6824,6 +7009,8 @@ components:
                 - approval_request
                 - project_decision_request
                 - team_pending_delete
+                - project_workspace_pending_delete
+                - project_workspace_provision_pending
                 - feishu_channel
             source_id:
               type: string
@@ -8633,6 +8820,20 @@ components:
         runtime_node_id:
           type: string
           format: uuid
+        provision_status:
+          type: string
+          description: >-
+            绑定 ≠ 供给(spec 2026-08-12 §5.2):unprovisioned 只是派发候选资格,
+            provisioned 才表示该节点磁盘上已有可用工作区。
+          enum:
+            - unprovisioned
+            - provisioned
+        provisioned_at:
+          type: string
+          format: date-time
+        provision_source:
+          type: string
+          description: create | confirm | attach_probe | clone | legacy_backfill
     ProjectWorkspaceManualActionRequest:
       type: object
       properties:
@@ -12049,6 +12250,39 @@ components:
         missing_context_refs:
           type: array
           items: {}
+    ProjectDirectoryProbeFacts:
+      type: object
+      description: >-
+        Read-only facts about a directory under the runtime workspace root
+        (spec 2026-08-12 §6). Git fields are observational only — the platform
+        never fetches/pulls/pushes or touches the worktree.
+      required:
+        - exists
+        - is_dir
+        - is_symlink
+        - is_git_repo
+      properties:
+        exists:
+          type: boolean
+        is_dir:
+          type: boolean
+        is_symlink:
+          type: boolean
+        is_git_repo:
+          type: boolean
+        origin_url:
+          type: string
+        current_branch:
+          type: string
+        detached:
+          type: boolean
+        dirty:
+          type: boolean
+        head_commit:
+          type: string
+        raw:
+          type: object
+          additionalProperties: true
     ProjectTaskAttemptRuntimeFields:
       type: object
       required:
@@ -12696,7 +12930,66 @@ components:
       enum:
         - active
         - pending_delete
+    WorkspaceDeleteRequest:
+      type: object
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - runtime_node_id
+        - directory_name
+        - node_id_snapshot
+        - ownership
+        - status
+        - requested_by
+        - requested_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        runtime_node_id:
+          type: string
+          format: uuid
+        directory_name:
+          type: string
+        node_id_snapshot:
+          type: string
+        ownership:
+          type: string
+          enum:
+            - platform_managed
+            - attached
+        repo_summary:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum:
+            - pending
+            - confirmed
+            - rejected
+        requested_by:
+          type: string
+          format: uuid
+        requested_at:
+          type: string
+          format: date-time
+        resolved_by:
+          type: string
+          format: uuid
+        resolved_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
     PendingDeleteTeam:
+
       allOf:
         - $ref: "#/components/schemas/Team"
         - type: object

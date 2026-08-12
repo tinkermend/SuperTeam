@@ -651,6 +651,69 @@ func TestServiceRoutesProjectDecisionActions(t *testing.T) {
 	}
 }
 
+// Open project-decision cards with empty action_schema (source already terminal,
+// projection left the card open) must still forward the action so ResolveDecision
+// can re-project and close the zombie.
+func TestServiceForwardsActionWhenProjectDecisionSchemaEmpty(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	actorUserID := uuid.New()
+	decisionID := uuid.New()
+	projectID := uuid.New()
+	resolver := &fakeProjectDecisionResolver{
+		result: SourceActionResult{
+			SourceType: string(SourceTypeProjectDecisionRequest),
+			SourceID:   decisionID,
+			Status:     "approved",
+		},
+	}
+	service.SetProjectDecisionActionResolver(resolver)
+	item, err := service.UpsertItem(context.Background(), UpsertItemRequest{
+		TenantID:        tenantID,
+		TargetUserID:    actorUserID,
+		Scope:           "personal",
+		ItemType:        ItemTypeProjectDecision,
+		SourceType:      SourceTypeProjectDecisionRequest,
+		SourceID:        decisionID,
+		SourceProjectID: &projectID,
+		Title:           "确认项目计划版本",
+		Actions:         []Action{{Key: "approved", Label: "同意"}},
+	})
+	if err != nil {
+		t.Fatalf("upsert item: %v", err)
+	}
+	// Simulate corrupt open card: actions wiped while status still open.
+	stored, ok := repo.itemsByID[item.ID]
+	if !ok {
+		t.Fatalf("item missing from memory repo")
+	}
+	stored.Actions = nil
+	repo.itemsByID[item.ID] = stored
+	resolver.onResolve = func(req SourceActionRequest) {
+		repo.resolveItem(t, tenantID, item.ID, req.Action)
+	}
+
+	updated, _, err := service.ExecuteAction(context.Background(), ExecuteActionRequest{
+		TenantID:    tenantID,
+		ActorUserID: actorUserID,
+		ItemID:      item.ID,
+		Action:      "approved",
+	})
+	if err != nil {
+		t.Fatalf("empty-schema execute: %v", err)
+	}
+	if updated.Status != StatusResolved {
+		t.Fatalf("expected resolved after empty-schema heal, got %s", updated.Status)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("expected source resolve once, got %d", resolver.calls)
+	}
+}
+
 func TestServiceDetectsProjectionNotAppliedAfterResolverSuccess(t *testing.T) {
 	repo := newMemoryRepository()
 	service, err := NewService(repo)

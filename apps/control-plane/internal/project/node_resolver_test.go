@@ -60,7 +60,7 @@ func seedEligibility(t *testing.T, repo *memoryRepository, tenantID, projectID u
 		WorkspaceReadyStatus: WorkspaceReadyStatusReady,
 	}
 	for _, id := range nodeIDs {
-		_, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, id)
+		_, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, id, true, "create")
 		require.NoError(t, err)
 	}
 }
@@ -202,4 +202,68 @@ func TestResolveNode_NoEligibleOnlineBlocks(t *testing.T) {
 	require.Equal(t, NodeResolutionReasonNoEligibleOnlineNode, resolution.Reason)
 	require.Equal(t, uuid.Nil, resolution.NodeID)
 	require.False(t, resolution.Paused)
+}
+
+// 绑定 ≠ 供给：未供给的节点只是候选资格，不能被派发选中(spec 2026-08-12 §5.2)。
+// 这条不成立时，漂移会静默落到一个没有工作区的节点上。
+func TestResolveNode_SkipsUnprovisionedBindings(t *testing.T) {
+	ctx := context.Background()
+	tenantID, projectID, employeeID := uuid.New(), uuid.New(), uuid.New()
+	supplied, boundOnly := uuid.New(), uuid.New()
+
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:                   projectID,
+		TenantID:             tenantID,
+		Name:                 "resolver-provision-project",
+		Status:               ProjectStatusRunning,
+		WorkspaceReadyStatus: WorkspaceReadyStatusReady,
+	}
+	_, err := repo.InsertProjectRuntimeNode(ctx, tenantID, projectID, supplied, true, "create")
+	require.NoError(t, err)
+	_, err = repo.InsertProjectRuntimeNode(ctx, tenantID, projectID, boundOnly, false, "")
+	require.NoError(t, err)
+
+	// 未供给节点负载更低：只有供给状态能解释「为什么没选它」。
+	service := newResolverService(t, repo,
+		onlineNode(supplied, tenantID, "node-supplied", 3, 4),
+		onlineNode(boundOnly, tenantID, "node-bound-only", 0, 4),
+	)
+
+	resolution, err := service.ResolveProjectTaskNode(ctx, ResolveProjectTaskNodeInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, supplied, resolution.NodeID)
+}
+
+// 全部节点未供给 → 明确的「工作区不可用」，而不是静默挑一个。
+func TestResolveNode_AllUnprovisionedReportsWorkspaceUnavailable(t *testing.T) {
+	ctx := context.Background()
+	tenantID, projectID, employeeID := uuid.New(), uuid.New(), uuid.New()
+	boundOnly := uuid.New()
+
+	repo := newMemoryRepository()
+	repo.projects[projectID] = Project{
+		ID:                   projectID,
+		TenantID:             tenantID,
+		Name:                 "resolver-unprovisioned-project",
+		Status:               ProjectStatusRunning,
+		WorkspaceReadyStatus: WorkspaceReadyStatusReady,
+	}
+	_, err := repo.InsertProjectRuntimeNode(ctx, tenantID, projectID, boundOnly, false, "")
+	require.NoError(t, err)
+
+	service := newResolverService(t, repo, onlineNode(boundOnly, tenantID, "node-bound-only", 0, 4))
+
+	resolution, err := service.ResolveProjectTaskNode(ctx, ResolveProjectTaskNodeInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DigitalEmployeeID: employeeID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, uuid.Nil, resolution.NodeID)
+	require.Equal(t, NodeResolutionReasonWorkspaceUnavailable, resolution.Reason)
 }

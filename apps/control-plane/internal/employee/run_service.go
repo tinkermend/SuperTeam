@@ -1664,6 +1664,9 @@ func (s *DigitalEmployeeRunService) attachProjectNameMetadata(ctx context.Contex
 	if name := strings.TrimSpace(facts.Name); name != "" {
 		metadata["project_name"] = name
 	}
+	if ownership := strings.TrimSpace(facts.WorkspaceOwnership); ownership != "" {
+		metadata["workspace_ownership"] = ownership
+	}
 	return nil
 }
 

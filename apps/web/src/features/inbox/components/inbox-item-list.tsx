@@ -52,6 +52,8 @@ const itemTypeLabel: Record<string, string> = {
   approval: "审批",
   project_decision: "项目决策",
   team_pending_delete: "团队待删",
+  project_workspace_pending_delete: "工作区待删",
+  project_workspace_provision_pending: "工作区待供给",
   channel_alert: "通道告警",
   automation_alert: "自动化告警",
   casting_invalidated: "编制失效",
@@ -63,6 +65,8 @@ const sourceTypeLabel: Record<string, string> = {
   approval_request: "审批请求",
   project_decision_request: "项目决策请求",
   team_pending_delete: "团队待删",
+  project_workspace_pending_delete: "工作区待删",
+  project_workspace_provision_pending: "工作区待供给",
   feishu_channel: "飞书通道",
   automation_rule: "自动化规则",
   project_casting: "项目编制",
@@ -349,6 +353,7 @@ export function InboxItemList({
               tabIndex={isRovingFocus ? 0 : -1}
               aria-label={`打开事项：${identityTitle}`}
               aria-selected={isSelected}
+              data-inbox-item-id={item.id}
               className={cn(
                 // overflow-hidden：防止绝对子元素（查看上下文）在窄列下画到邻行/详情区
                 "group relative flex cursor-pointer items-start gap-2 overflow-hidden border-b border-line px-4 py-2 transition-colors",

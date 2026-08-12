@@ -1,6 +1,19 @@
 -- name: InsertProjectRuntimeNode :one
-INSERT INTO project_runtime_nodes (tenant_id, project_id, runtime_node_id)
-VALUES (sqlc.arg('tenant_id')::uuid, sqlc.arg('project_id')::uuid, sqlc.arg('runtime_node_id')::uuid)
+INSERT INTO project_runtime_nodes (
+    tenant_id,
+    project_id,
+    runtime_node_id,
+    provision_status,
+    provisioned_at,
+    provision_source
+) VALUES (
+    sqlc.arg('tenant_id')::uuid,
+    sqlc.arg('project_id')::uuid,
+    sqlc.arg('runtime_node_id')::uuid,
+    sqlc.arg('provision_status'),
+    sqlc.narg('provisioned_at'),
+    sqlc.narg('provision_source')
+)
 ON CONFLICT (project_id, runtime_node_id)
 DO UPDATE SET runtime_node_id = EXCLUDED.runtime_node_id
 RETURNING *;
@@ -9,6 +22,16 @@ RETURNING *;
 SELECT * FROM project_runtime_nodes
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid AND project_id = sqlc.arg('project_id')::uuid
 ORDER BY created_at ASC;
+
+-- name: MarkProjectRuntimeNodeProvisioned :one
+UPDATE project_runtime_nodes
+SET provision_status = 'provisioned',
+    provisioned_at = sqlc.arg('provisioned_at'),
+    provision_source = sqlc.arg('provision_source')
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND runtime_node_id = sqlc.arg('runtime_node_id')::uuid
+RETURNING *;
 
 -- name: RemoveProjectRuntimeNode :exec
 DELETE FROM project_runtime_nodes

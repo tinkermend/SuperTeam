@@ -20,30 +20,40 @@ import {
   type Tone
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
-import type { ProjectRuntimePlacementReadiness } from "@/lib/api/projects";
+import type {
+  ProjectRuntimeNodeBinding,
+  ProjectRuntimePlacementReadiness
+} from "@/lib/api/projects";
 import type { RuntimeNodeResponse } from "@/lib/api/runtime";
 
 export type ProjectRuntimePlacementPanelProps = {
   readiness?: ProjectRuntimePlacementReadiness;
   runtimeNodes: RuntimeNodeResponse[];
+  /** 已绑定节点及其供给状态（spec 2026-08-12 §5.2）。 */
+  bindings?: ProjectRuntimeNodeBinding[];
   selectedRuntimeNodeId: string;
   onSelectedRuntimeNodeIdChange: (nodeId: string) => void;
   onBindRuntime: () => void;
   onReleaseRuntime: () => void;
+  onProvisionRuntimeNode?: (runtimeNodeId: string) => void;
   isBinding: boolean;
   isReleasing: boolean;
+  provisioningNodeId?: string | null;
   isReadinessLoading?: boolean;
 };
 
 export function ProjectRuntimePlacementPanel({
   readiness,
   runtimeNodes,
+  bindings,
   selectedRuntimeNodeId,
   onSelectedRuntimeNodeIdChange,
   onBindRuntime,
   onReleaseRuntime,
+  onProvisionRuntimeNode,
   isBinding,
   isReleasing,
+  provisioningNodeId,
   isReadinessLoading
 }: ProjectRuntimePlacementPanelProps) {
   const sortedNodes = [...runtimeNodes].sort((left, right) => {
@@ -201,6 +211,55 @@ export function ProjectRuntimePlacementPanel({
             </div>
 
             <div className="grid min-w-0 gap-3">
+              <div>
+                <p className="text-xs font-semibold text-ink-2">已绑定节点</p>
+                {bindings && bindings.length > 0 ? (
+                  <ul className="mt-2 grid gap-2" data-testid="project-runtime-bindings">
+                    {bindings.map((binding) => {
+                      const supplied = binding.provision_status !== "unprovisioned";
+                      const boundNode = runtimeNodes.find(
+                        (node) => runtimeNodeValue(node) === binding.runtime_node_id,
+                      );
+                      // 名称查不到时退回 id，别显示成「未绑定」。
+                      const label = boundNode
+                        ? runtimeNodeLabel(boundNode)
+                        : binding.runtime_node_id;
+                      const isProvisioning = provisioningNodeId === binding.runtime_node_id;
+                      return (
+                        <li
+                          className="flex flex-wrap items-center gap-2 rounded-inner border border-line bg-card px-3 py-2 text-xs"
+                          key={binding.runtime_node_id}
+                        >
+                          <span className="min-w-0 flex-1 truncate text-ink">{label}</span>
+                          <StatusPill tone={supplied ? "ok" : "warn"}>
+                            {supplied ? "已供给" : "已绑定未供给"}
+                          </StatusPill>
+                          {!supplied && onProvisionRuntimeNode ? (
+                            <Button
+                              disabled={isProvisioning}
+                              size="sm"
+                              type="button"
+                              variant="outline"
+                              onClick={() => onProvisionRuntimeNode(binding.runtime_node_id)}
+                            >
+                              {isProvisioning ? "供给中" : "供给工作区"}
+                            </Button>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-xs text-ink-2">尚未绑定运行节点。</p>
+                )}
+                {bindings?.some((binding) => binding.provision_status === "unprovisioned") ? (
+                  <p className="mt-2 text-[11px] leading-4 text-ink-3">
+                    未供给的节点不进派发候选。供给会在该节点建目录或 clone 仓库；
+                    <strong>主节点上未推送的改动不会跟过去</strong>。
+                  </p>
+                ) : null}
+              </div>
+
               <div>
                 <p className="text-xs font-semibold text-ink-2">Provider 能力</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">

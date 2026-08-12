@@ -38,6 +38,52 @@ func (s *Service) enqueueProjectGitClone(ctx context.Context, tenantID, projectI
 	return s.dispatchProjectGitClones(ctx, tenantID, projectID, projectName, runtimeNodeIDs, false)
 }
 
+// cloneProjectRepositoryOnNodeSync waits for clone_project_repository to finish
+// on one node. Used by admin provision confirm so provisioned ⇒ disk ready.
+func (s *Service) cloneProjectRepositoryOnNodeSync(
+	ctx context.Context,
+	tenantID, projectID uuid.UUID,
+	projectName string,
+	runtimeNodeID uuid.UUID,
+	force bool,
+) error {
+	if s.workspaceCommander == nil {
+		return fmt.Errorf("%w: workspace commander not configured", ErrProjectWorkspaceProvision)
+	}
+	project, err := s.repository.GetProject(ctx, tenantID, projectID)
+	if err != nil {
+		return err
+	}
+	if project.RepoBinding.Status != ProjectRepoBindingStatusBound {
+		return fmt.Errorf("%w: project has no bound repository", ErrInvalidProject)
+	}
+	repoURL := strings.TrimSpace(project.RepoBinding.URL)
+	if repoURL == "" {
+		return fmt.Errorf("%w: bound project missing repo_url", ErrInvalidProject)
+	}
+	payload := map[string]any{
+		"project_id":                     projectID.String(),
+		"project_name":                   projectName,
+		"repo_url":                       repoURL,
+		workspaceCloneAttemptPayloadKey: uuid.NewString(),
+		"force":                          force,
+	}
+	if branch := strings.TrimSpace(project.RepoBinding.DefaultBranch); branch != "" {
+		payload["default_branch"] = branch
+	}
+	// Longer timeout than mkdir: clone can pull large repos.
+	return s.dispatchProjectWorkspaceCommand(
+		ctx,
+		tenantID,
+		projectID,
+		runtimeNodeID,
+		runtimeCommandCloneProjectRepository,
+		payload,
+		defaultWorkspaceProvisionTimeout*4,
+		true,
+	)
+}
+
 func (s *Service) dispatchProjectGitClones(
 	ctx context.Context,
 	tenantID, projectID uuid.UUID,
@@ -174,6 +220,16 @@ func (s *Service) HandleCloneCommandTerminal(ctx context.Context, req CloneComma
 			updated, setErr := s.repository.SetProjectWorkspaceReady(ctx, req.TenantID, req.ProjectID, WorkspaceReadyStatusReady, &primary, nil)
 			if setErr != nil {
 				return ignoreWorkspaceReadyCASConflict(setErr)
+			}
+			// The clone landed: this node's disk is now a usable workspace, which
+			// is exactly what `provisioned` means (spec §5.2). Create/reclone both
+			// arrive here, so this is the single place Git supply is confirmed.
+			if _, markErr := s.repository.MarkProjectRuntimeNodeProvisioned(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID, "clone"); markErr != nil {
+				slog.Default().Warn("mark node provisioned after clone success failed",
+					"project_id", req.ProjectID.String(),
+					"runtime_node_id", req.RuntimeNodeID.String(),
+					"error", markErr.Error(),
+				)
 			}
 			_, _ = s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 				TenantID:  req.TenantID,
@@ -320,6 +376,10 @@ func (s *Service) RecloneProjectWorkspace(ctx context.Context, req WorkspaceManu
 	if err != nil {
 		return nil, err
 	}
+	// attached projects never force-delete + reclone (spec 2026-08-12 §5.5 / P2).
+	if project.WorkspaceOwnership == WorkspaceOwnershipAttached {
+		return nil, fmt.Errorf("%w: 认领目录项目禁止重新 clone（平台不会 force 清空该目录）", ErrInvalidProject)
+	}
 	if project.RepoBinding.Status != ProjectRepoBindingStatusBound {
 		return nil, fmt.Errorf("%w: project has no bound repository", ErrInvalidProject)
 	}
@@ -335,9 +395,15 @@ func (s *Service) RecloneProjectWorkspace(ctx context.Context, req WorkspaceManu
 	if len(nodes) == 0 {
 		return nil, ErrProjectRuntimeNodesRequired
 	}
+	// Only reclone already-provisioned nodes (unprovisioned have no disk to replace).
 	runtimeNodeIDs := make([]uuid.UUID, 0, len(nodes))
 	for _, node := range nodes {
-		runtimeNodeIDs = append(runtimeNodeIDs, node.RuntimeNodeID)
+		if node.IsProvisioned() {
+			runtimeNodeIDs = append(runtimeNodeIDs, node.RuntimeNodeID)
+		}
+	}
+	if len(runtimeNodeIDs) == 0 {
+		return nil, fmt.Errorf("%w: no provisioned runtime node to reclone", ErrInvalidProject)
 	}
 	updated, err := s.repository.SetProjectWorkspaceReady(ctx, req.TenantID, req.ProjectID, WorkspaceReadyStatusPending, project.PrimaryRuntimeNodeID, nil)
 	if err != nil {

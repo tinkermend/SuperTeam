@@ -454,7 +454,16 @@ func (s *Service) ExecuteAction(ctx context.Context, req ExecuteActionRequest) (
 	}
 	action, ok := findAction(item.Actions, req.Action)
 	if !ok {
-		return item, SourceActionResult{}, ErrInvalidAction
+		// Open card with empty/stale action_schema: typically the source decision is
+		// already terminal but inbox projection never closed the card (actions were
+		// cleared on a partial write, or historical zombie). For project decisions,
+		// still forward the action so ResolveDecision's terminal self-heal can
+		// re-project and close the card. Non-empty schemas that simply lack this
+		// key remain invalid (wrong button / vocabulary).
+		if item.SourceType != SourceTypeProjectDecisionRequest || len(item.Actions) != 0 {
+			return item, SourceActionResult{}, ErrInvalidAction
+		}
+		action = Action{Key: req.Action, RequiresComment: false}
 	}
 	if action.RequiresComment && req.Comment == "" {
 		return item, SourceActionResult{}, ErrInvalidAction
@@ -538,6 +547,14 @@ func normalizeUpsert(req UpsertItemRequest) (UpsertItemRequest, error) {
 		}
 	case ItemTypeTeamPendingDelete:
 		if req.SourceType != SourceTypeTeamPendingDelete {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
+	case ItemTypeProjectWorkspacePendingDelete:
+		if req.SourceType != SourceTypeProjectWorkspacePendingDelete {
+			return UpsertItemRequest{}, ErrInvalidItem
+		}
+	case ItemTypeProjectWorkspaceProvisionPending:
+		if req.SourceType != SourceTypeProjectWorkspaceProvisionPending {
 			return UpsertItemRequest{}, ErrInvalidItem
 		}
 	case ItemTypeChannelAlert:
@@ -625,8 +642,8 @@ func normalizeActions(actions []Action) ([]Action, error) {
 }
 
 func DefaultActions(itemType ItemType) []Action {
-	if itemType == ItemTypeChannelAlert || itemType == ItemTypeAutomationAlert || itemType == ItemTypeCastingInvalidated {
-		// 告警类由系统自动 resolve,无人类裁决动词。
+	if itemType == ItemTypeChannelAlert || itemType == ItemTypeAutomationAlert || itemType == ItemTypeCastingInvalidated || itemType == ItemTypeProjectWorkspacePendingDelete || itemType == ItemTypeProjectWorkspaceProvisionPending {
+		// 告警/催办类：真实动作在管理页，收件箱无裁决动词。
 		return nil
 	}
 	actions := []Action{
@@ -692,7 +709,7 @@ func validScope(scope string) bool {
 
 func validItemType(itemType ItemType) bool {
 	switch itemType {
-	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete, ItemTypeChannelAlert, ItemTypeAutomationAlert, ItemTypeCastingInvalidated:
+	case ItemTypeApproval, ItemTypeProjectDecision, ItemTypeTeamPendingDelete, ItemTypeProjectWorkspacePendingDelete, ItemTypeProjectWorkspaceProvisionPending, ItemTypeChannelAlert, ItemTypeAutomationAlert, ItemTypeCastingInvalidated:
 		return true
 	default:
 		return false
@@ -701,7 +718,7 @@ func validItemType(itemType ItemType) bool {
 
 func validSourceType(sourceType SourceType) bool {
 	switch sourceType {
-	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete, SourceTypeChannelAlert, SourceTypeAutomationRule, SourceTypeProjectCasting:
+	case SourceTypeApprovalRequest, SourceTypeProjectDecisionRequest, SourceTypeTeamPendingDelete, SourceTypeProjectWorkspacePendingDelete, SourceTypeProjectWorkspaceProvisionPending, SourceTypeChannelAlert, SourceTypeAutomationRule, SourceTypeProjectCasting:
 		return true
 	default:
 		return false

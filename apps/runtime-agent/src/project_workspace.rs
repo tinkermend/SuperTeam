@@ -27,6 +27,9 @@ pub struct ProjectWorkspaceRequest {
     pub workspace_mode: String,
     pub project_git: Option<RuntimeProjectGitPayload>,
     pub base_ref: Option<String>,
+    /// platform_managed | attached (spec 2026-08-12). Attached forbids
+    /// defensive mkdir and git write operations.
+    pub workspace_ownership: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,11 +57,30 @@ pub fn resolve_project_workspace(
             anyhow::bail!("project_git is required for workspace_mode={mode}");
         }
         let workspace_path = base_dir.join(project_name);
-        // 防御性:创建路径已 mkdir;派发时再确保一次。
-        std::fs::create_dir_all(&workspace_path).context("create stable project directory")?;
+        // Platform-managed paths may defensive-mkdir; attached ownership must
+        // not invent empty dirs (spec 2026-08-12 §5.4 / P1+P2).
+        let is_attached = request.workspace_ownership.as_deref() == Some("attached");
+        if is_attached {
+            let meta = std::fs::symlink_metadata(&workspace_path).with_context(|| {
+                format!(
+                    "attached project directory missing (will not create): {}",
+                    workspace_path.display()
+                )
+            })?;
+            if !meta.is_dir() || meta.file_type().is_symlink() {
+                anyhow::bail!(
+                    "attached project path is not a real directory: {}",
+                    workspace_path.display()
+                );
+            }
+        } else {
+            // 防御性:创建路径已 mkdir;派发时再确保一次。
+            std::fs::create_dir_all(&workspace_path).context("create stable project directory")?;
+        }
 
         let repo_path = if let Some(git) = &request.project_git {
-            if mode != "none" {
+            if mode != "none" && !is_attached {
+                // attached: never clone / sparse / shield — observational only (P2/P3).
                 ensure_git_in_stable_project_dir(
                     &workspace_path,
                     git,
@@ -146,6 +168,10 @@ pub fn resolve_project_workspace(
 
 /// 创建项目时在节点上独占创建 `{base}/{project_name}`;已存在非空目录则失败(不认领)。
 /// 空目录视为上一轮半成功残留,允许回收(控制平面崩溃后可重建)。
+///
+/// 认领已有目录(attach)**不走这里**:Control Plane 的 attach 路径只下发
+/// `probe_project_directory`,从不下发 ensure(spec 2026-08-12 §5.1)。派发期对
+/// attached 的存在性/软链校验在 `resolve_project_workspace` 里。
 pub fn ensure_stable_project_directory(base_dir: &Path, project_name: &str) -> Result<PathBuf> {
     validate_project_directory_name(project_name)?;
     let base = absolutize_base_dir(base_dir)?;
@@ -168,6 +194,99 @@ pub fn ensure_stable_project_directory(base_dir: &Path, project_name: &str) -> R
             format!("create exclusive project directory {}", path.display())
         })?,
     }
+}
+
+/// Probe facts for attach wizard (spec 2026-08-12 §6). Uses symlink_metadata.
+pub fn probe_project_directory(
+    base_dir: &Path,
+    project_name: &str,
+) -> Result<std::collections::HashMap<String, serde_json::Value>> {
+    use std::collections::HashMap;
+    validate_project_directory_name(project_name)?;
+    let base = absolutize_base_dir(base_dir)?;
+    let path = base.join(project_name);
+    let mut facts: HashMap<String, serde_json::Value> = HashMap::new();
+
+    let meta = match std::fs::symlink_metadata(&path) {
+        Ok(m) => m,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            facts.insert("exists".into(), serde_json::Value::Bool(false));
+            facts.insert("is_dir".into(), serde_json::Value::Bool(false));
+            facts.insert("is_symlink".into(), serde_json::Value::Bool(false));
+            facts.insert("is_git_repo".into(), serde_json::Value::Bool(false));
+            return Ok(facts);
+        }
+        Err(err) => {
+            return Err(err).with_context(|| format!("probe metadata {}", path.display()));
+        }
+    };
+    let is_symlink = meta.file_type().is_symlink();
+    let is_dir = meta.is_dir() && !is_symlink;
+    facts.insert("exists".into(), serde_json::Value::Bool(true));
+    facts.insert("is_dir".into(), serde_json::Value::Bool(is_dir));
+    facts.insert("is_symlink".into(), serde_json::Value::Bool(is_symlink));
+
+    if is_symlink || !is_dir {
+        facts.insert("is_git_repo".into(), serde_json::Value::Bool(false));
+        return Ok(facts);
+    }
+
+    let is_git = path.join(".git").exists();
+    facts.insert("is_git_repo".into(), serde_json::Value::Bool(is_git));
+    if !is_git {
+        return Ok(facts);
+    }
+
+    if let Ok(origin) = run_git_stdout(
+        &path,
+        [
+            OsString::from("config"),
+            OsString::from("--get"),
+            OsString::from("remote.origin.url"),
+        ],
+    ) {
+        facts.insert(
+            "origin_url".into(),
+            serde_json::Value::String(origin.trim().to_string()),
+        );
+    }
+    if let Ok(branch) = run_git_stdout(
+        &path,
+        [
+            OsString::from("rev-parse"),
+            OsString::from("--abbrev-ref"),
+            OsString::from("HEAD"),
+        ],
+    ) {
+        let branch = branch.trim().to_string();
+        let detached = branch == "HEAD";
+        facts.insert("detached".into(), serde_json::Value::Bool(detached));
+        if !detached {
+            facts.insert("current_branch".into(), serde_json::Value::String(branch));
+        }
+    }
+    if let Ok(head) = run_git_stdout(
+        &path,
+        [OsString::from("rev-parse"), OsString::from("HEAD")],
+    ) {
+        facts.insert(
+            "head_commit".into(),
+            serde_json::Value::String(head.trim().to_string()),
+        );
+    }
+    if let Ok(status) = run_git_stdout(
+        &path,
+        [
+            OsString::from("status"),
+            OsString::from("--porcelain"),
+        ],
+    ) {
+        facts.insert(
+            "dirty".into(),
+            serde_json::Value::Bool(!status.trim().is_empty()),
+        );
+    }
+    Ok(facts)
 }
 
 /// 删除项目时移除 `{base}/{project_name}`;缺失视为成功(幂等)。
@@ -444,34 +563,39 @@ fn ensure_git_in_stable_project_dir(
         anyhow::bail!("project_git.url is required");
     }
 
-    if !workspace_path.join(".git").exists() {
-        let parent = workspace_path
-            .parent()
-            .context("stable project directory parent")?;
-        match run_git(
-            parent,
-            [
-                OsString::from("clone"),
-                OsString::from(git.url.as_str()),
-                workspace_path.as_os_str().to_os_string(),
-            ],
-        ) {
-            Ok(()) => {}
-            Err(err) if workspace_path.join(".git").exists() => {
-                // 并发会话已完成 clone;接受竞态后的落盘结果。
-                eprintln!(
-                    "git clone raced on {}; adopting existing .git ({err})",
-                    workspace_path.display()
-                );
-            }
-            Err(err) => return Err(err),
+    // First-clone only: scope/shield apply once. Subsequent dispatches must not
+    // re-touch the git worktree (spec 2026-08-12 §5.7 / P3).
+    if workspace_path.join(".git").exists() {
+        return Ok(());
+    }
+
+    let parent = workspace_path
+        .parent()
+        .context("stable project directory parent")?;
+    match run_git(
+        parent,
+        [
+            OsString::from("clone"),
+            OsString::from(git.url.as_str()),
+            workspace_path.as_os_str().to_os_string(),
+        ],
+    ) {
+        Ok(()) => {}
+        Err(err) if workspace_path.join(".git").exists() => {
+            // 并发会话已完成 clone;接受竞态后的落盘结果。
+            eprintln!(
+                "git clone raced on {}; adopting existing .git ({err})",
+                workspace_path.display()
+            );
+            return Ok(());
         }
-        if let Some(base_ref) = base_ref.map(str::trim).filter(|value| !value.is_empty()) {
-            run_git(
-                workspace_path,
-                [OsString::from("checkout"), OsString::from(base_ref)],
-            )?;
-        }
+        Err(err) => return Err(err),
+    }
+    if let Some(base_ref) = base_ref.map(str::trim).filter(|value| !value.is_empty()) {
+        run_git(
+            workspace_path,
+            [OsString::from("checkout"), OsString::from(base_ref)],
+        )?;
     }
 
     apply_sparse_scope(workspace_path, &git.scope)?;
@@ -777,6 +901,15 @@ where
     I: IntoIterator<Item = S>,
     S: Into<OsString>,
 {
+    let _ = run_git_stdout(cwd, args)?;
+    Ok(())
+}
+
+fn run_git_stdout<I, S>(cwd: &Path, args: I) -> Result<String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
     let args: Vec<OsString> = args.into_iter().map(Into::into).collect();
     let output = Command::new("git")
         .current_dir(cwd)
@@ -784,7 +917,7 @@ where
         .output()
         .with_context(|| format!("run git in {}", cwd.display()))?;
     if output.status.success() {
-        return Ok(());
+        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -873,6 +1006,7 @@ mod tests {
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
+            workspace_ownership: None,
         };
 
         let resolved = resolve_project_workspace(request).unwrap();
@@ -899,6 +1033,7 @@ mod tests {
             workspace_mode: "branch".to_string(),
             project_git: None,
             base_ref: Some("main".to_string()),
+            workspace_ownership: None,
         };
 
         let err = resolve_project_workspace(request).unwrap_err().to_string();
@@ -920,6 +1055,7 @@ mod tests {
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
+            workspace_ownership: None,
         };
 
         let err = resolve_project_workspace(request).unwrap_err().to_string();
@@ -957,6 +1093,7 @@ mod tests {
                 scope: vec!["apps/web".to_string()],
             }),
             base_ref: Some("main".to_string()),
+            workspace_ownership: None,
         };
 
         let resolved = resolve_project_workspace(request).unwrap();
@@ -1011,6 +1148,7 @@ mod tests {
                 scope: Vec::new(),
             }),
             base_ref: Some("main".to_string()),
+            workspace_ownership: None,
         });
         std::env::set_current_dir(previous_dir).unwrap();
 
@@ -1047,6 +1185,7 @@ mod tests {
                 scope: Vec::new(),
             }),
             base_ref: Some("main".to_string()),
+            workspace_ownership: None,
         };
 
         let first = resolve_project_workspace(request.clone()).unwrap();
@@ -1070,6 +1209,7 @@ mod tests {
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
+            workspace_ownership: None,
         };
 
         let first = resolve_project_workspace(request.clone()).unwrap();
@@ -1095,6 +1235,7 @@ mod tests {
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
+            workspace_ownership: None,
         };
 
         let err = resolve_project_workspace(request).unwrap_err().to_string();
@@ -1130,6 +1271,7 @@ mod tests {
                 scope: Vec::new(),
             }),
             base_ref: Some("main".to_string()),
+            workspace_ownership: None,
         };
 
         let first = resolve_project_workspace(request.clone()).unwrap();
@@ -1244,6 +1386,7 @@ mod tests {
                 scope: Vec::new(),
             }),
             base_ref: Some("main".to_string()),
+            workspace_ownership: None,
         };
 
         // opencode:仓库原生配置被屏蔽,且 git 状态保持干净(证据链不污染)。
@@ -1309,6 +1452,7 @@ mod tests {
                 scope: Vec::new(),
             }),
             base_ref: Some("main".to_string()),
+            workspace_ownership: None,
         };
 
         // 第一次 attempt 建立仓库缓存。
@@ -1434,6 +1578,7 @@ mod tests {
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
+            workspace_ownership: None,
         };
 
         let resolved = resolve_project_workspace(request).unwrap();
@@ -1471,6 +1616,7 @@ mod tests {
                 scope: Vec::new(),
             }),
             base_ref: Some("main".to_string()),
+            workspace_ownership: None,
         };
 
         let resolved = resolve_project_workspace(request).unwrap();
@@ -1501,6 +1647,7 @@ mod tests {
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
+            workspace_ownership: None,
         };
         let resolved = resolve_project_workspace(request).unwrap();
         assert!(
@@ -1527,6 +1674,7 @@ mod tests {
             workspace_mode: "none".to_string(),
             project_git: None,
             base_ref: None,
+            workspace_ownership: None,
         };
         let resolved = resolve_project_workspace(request).unwrap();
         assert!(
@@ -1614,6 +1762,225 @@ mod tests {
         assert!(
             !porcelain.contains(".superteam"),
             "superteam projection path must be excluded: {porcelain}"
+        );
+    }
+
+    /// 探测是只读的：目录不存在时如实报告，不得顺手创建（spec 2026-08-12 §5.1）。
+    #[test]
+    fn probe_reports_missing_directory_without_creating_it() {
+        let temp = TempDir::new().unwrap();
+        let facts = probe_project_directory(temp.path(), "never-created").unwrap();
+
+        assert_eq!(facts["exists"], serde_json::Value::Bool(false));
+        assert_eq!(facts["is_dir"], serde_json::Value::Bool(false));
+        assert_eq!(facts["is_git_repo"], serde_json::Value::Bool(false));
+        assert!(
+            !temp.path().join("never-created").exists(),
+            "probe must never create the directory it was asked about"
+        );
+    }
+
+    #[test]
+    fn probe_reports_plain_directory_as_non_git() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join("knowledge-base")).unwrap();
+        std::fs::write(temp.path().join("knowledge-base/notes.md"), "hi\n").unwrap();
+
+        let facts = probe_project_directory(temp.path(), "knowledge-base").unwrap();
+        assert_eq!(facts["exists"], serde_json::Value::Bool(true));
+        assert_eq!(facts["is_dir"], serde_json::Value::Bool(true));
+        assert_eq!(facts["is_symlink"], serde_json::Value::Bool(false));
+        assert_eq!(facts["is_git_repo"], serde_json::Value::Bool(false));
+        assert!(facts.get("origin_url").is_none());
+    }
+
+    /// git 事实是「观测值」：origin / 分支 / HEAD / 是否脏，全部照实读出来给人看。
+    #[test]
+    fn probe_reports_git_facts_including_dirty_worktree() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().join("legacy-erp");
+        std::fs::create_dir_all(&repo).unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "legacy-erp"]);
+        run_test_git(&repo, ["config", "user.email", "test@example.com"]);
+        run_test_git(&repo, ["config", "user.name", "Test User"]);
+        run_test_git(&repo, ["remote", "add", "origin", "git@example.com:acme/legacy.git"]);
+        std::fs::write(repo.join("README.md"), "hello\n").unwrap();
+        run_test_git(&repo, ["add", "."]);
+        run_test_git(&repo, ["commit", "-m", "initial"]);
+
+        let clean = probe_project_directory(temp.path(), "legacy-erp").unwrap();
+        assert_eq!(clean["is_git_repo"], serde_json::Value::Bool(true));
+        assert_eq!(
+            clean["origin_url"],
+            serde_json::Value::String("git@example.com:acme/legacy.git".to_string())
+        );
+        assert_eq!(
+            clean["current_branch"],
+            serde_json::Value::String("main".to_string())
+        );
+        assert_eq!(clean["dirty"], serde_json::Value::Bool(false));
+        assert!(clean.get("head_commit").is_some());
+
+        std::fs::write(repo.join("README.md"), "changed\n").unwrap();
+        let dirty = probe_project_directory(temp.path(), "legacy-erp").unwrap();
+        assert_eq!(
+            dirty["dirty"],
+            serde_json::Value::Bool(true),
+            "未提交改动必须如实报给人看,否则认领的是一份看不见的现场"
+        );
+    }
+
+    /// 软链是逃逸面：探测必须标出来，且不得把它当成目录。
+    #[test]
+    fn probe_flags_symlinked_directory() {
+        let temp = TempDir::new().unwrap();
+        let real = temp.path().join("real-target");
+        std::fs::create_dir_all(&real).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, temp.path().join("linked")).unwrap();
+
+        #[cfg(unix)]
+        {
+            let facts = probe_project_directory(temp.path(), "linked").unwrap();
+            assert_eq!(facts["exists"], serde_json::Value::Bool(true));
+            assert_eq!(facts["is_symlink"], serde_json::Value::Bool(true));
+            assert_eq!(
+                facts["is_dir"],
+                serde_json::Value::Bool(false),
+                "软链不得被当作可认领的真实目录"
+            );
+        }
+    }
+
+    /// attached 的核心不变量：平台不凭空造目录。缺失即失败，不走防御性 mkdir。
+    #[test]
+    fn attached_workspace_fails_when_directory_missing_and_never_creates_it() {
+        let temp = TempDir::new().unwrap();
+        let base = temp.path().join("runtime");
+        let request = ProjectWorkspaceRequest {
+            base_dir: base.clone(),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
+            attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
+            project_name: Some("attached-proj".to_string()),
+            provider_type: None,
+            workspace_mode: "none".to_string(),
+            project_git: None,
+            base_ref: None,
+            workspace_ownership: Some("attached".to_string()),
+        };
+
+        let err = resolve_project_workspace(request).unwrap_err().to_string();
+        assert!(
+            err.contains("attached project directory missing"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !base.join("attached-proj").exists(),
+            "attached ownership must never defensively mkdir the project directory"
+        );
+    }
+
+    /// attached + 有 repo 绑定时也绝不 clone：repo_binding 对 attached 只是观测值。
+    #[test]
+    fn attached_workspace_never_clones_even_with_git_binding() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("README.md"), "hello\n").unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "source"]);
+        run_test_git(&source, ["config", "user.email", "test@example.com"]);
+        run_test_git(&source, ["config", "user.name", "Test User"]);
+        run_test_git(&source, ["add", "."]);
+        run_test_git(&source, ["commit", "-m", "initial"]);
+
+        let base = temp.path().join("runtime");
+        let claimed = base.join("attached-proj");
+        std::fs::create_dir_all(&claimed).unwrap();
+        std::fs::write(claimed.join("human-notes.md"), "人放进去的内容\n").unwrap();
+
+        let request = ProjectWorkspaceRequest {
+            base_dir: base.clone(),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
+            attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
+            project_name: Some("attached-proj".to_string()),
+            provider_type: None,
+            workspace_mode: "readonly".to_string(),
+            project_git: Some(RuntimeProjectGitPayload {
+                url: source.to_string_lossy().to_string(),
+                default_branch: Some("main".to_string()),
+                git_credential_ref: None,
+                scope: vec!["apps/web".to_string()],
+            }),
+            base_ref: Some("main".to_string()),
+            workspace_ownership: Some("attached".to_string()),
+        };
+
+        let resolved = resolve_project_workspace(request).unwrap();
+        assert_eq!(resolved.workspace_path, claimed);
+        assert!(
+            !claimed.join(".git").exists(),
+            "attached must not clone into the claimed directory"
+        );
+        assert!(
+            !claimed.join("README.md").exists(),
+            "attached must not pull remote content into the claimed directory"
+        );
+        assert!(
+            claimed.join("human-notes.md").exists(),
+            "human content must survive untouched"
+        );
+    }
+
+    /// P3：scope/shield 只在首次 clone 生效。已有 .git 后再派发不得重新动工作树,
+    /// 否则用户自己恢复的 provider 配置会被平台反复删掉。
+    #[test]
+    fn repo_config_is_not_re_shielded_after_first_clone() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("opencode.json"), "{}\n").unwrap();
+        run_test_git(temp.path(), ["init", "-b", "main", "source"]);
+        run_test_git(&source, ["config", "user.email", "test@example.com"]);
+        run_test_git(&source, ["config", "user.name", "Test User"]);
+        run_test_git(&source, ["add", "."]);
+        run_test_git(&source, ["commit", "-m", "initial"]);
+
+        let request = ProjectWorkspaceRequest {
+            base_dir: temp.path().join("runtime"),
+            project_id: Some("11111111-1111-4111-8111-111111111111".to_string()),
+            project_task_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
+            attempt_id: Some("33333333-3333-4333-8333-333333333333".to_string()),
+            chat_thread_id: None,
+            project_name: Some("shield-proj".to_string()),
+            provider_type: Some("opencode".to_string()),
+            workspace_mode: "readonly".to_string(),
+            project_git: Some(RuntimeProjectGitPayload {
+                url: source.to_string_lossy().to_string(),
+                default_branch: Some("main".to_string()),
+                git_credential_ref: None,
+                scope: Vec::new(),
+            }),
+            base_ref: Some("main".to_string()),
+            workspace_ownership: None,
+        };
+
+        let first = resolve_project_workspace(request.clone()).unwrap();
+        assert!(
+            !first.workspace_path.join("opencode.json").exists(),
+            "first clone still shields the repo-native provider config"
+        );
+
+        // 人把它放回来：第二次派发不该再删。
+        std::fs::write(first.workspace_path.join("opencode.json"), "{\"restored\":true}\n").unwrap();
+        let second = resolve_project_workspace(request).unwrap();
+        assert_eq!(second.workspace_path, first.workspace_path);
+        assert!(
+            second.workspace_path.join("opencode.json").exists(),
+            "已有 .git 后再派发不得重放 shield/scope,平台不碰 git 工作树"
         );
     }
 

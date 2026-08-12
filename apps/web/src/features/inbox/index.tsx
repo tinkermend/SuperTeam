@@ -37,6 +37,10 @@ type InboxPageProps = {
   fetcher?: typeof fetch;
   /** 路由 search 中的 sort（URL 为事实源）；测试可不传。 */
   initialSort?: InboxSortMode;
+  /** ?project= 深链：按项目过滤列表。 */
+  initialProjectId?: string;
+  /** ?source= 深链：按 source_id 定位条目。 */
+  initialSourceId?: string;
   /** 排序变更写回 URL；测试可不传。 */
   onSortChange?: (sort: InboxSortMode) => void;
 };
@@ -45,6 +49,8 @@ type InboxViewProps = {
   apiBaseUrl: string;
   fetcher?: typeof fetch;
   initialSort?: InboxSortMode;
+  initialProjectId?: string;
+  initialSourceId?: string;
   onSortChange?: (sort: InboxSortMode) => void;
 };
 
@@ -69,6 +75,8 @@ const INBOX_ITEM_TYPES = [
   "approval",
   "project_decision",
   "team_pending_delete",
+  "project_workspace_pending_delete",
+  "project_workspace_provision_pending",
   "channel_alert",
   "automation_alert",
   "casting_invalidated",
@@ -77,13 +85,17 @@ const INBOX_ITEM_TYPES = [
 export function InboxPage({
   fetcher,
   initialSort,
+  initialProjectId,
+  initialSourceId,
   onSortChange,
 }: InboxPageProps = {}) {
   return (
     <InboxView
       apiBaseUrl={resolveControlPlaneUrl()}
       fetcher={fetcher}
+      initialProjectId={initialProjectId}
       initialSort={initialSort}
+      initialSourceId={initialSourceId}
       onSortChange={onSortChange}
     />
   );
@@ -93,6 +105,8 @@ export function InboxView({
   apiBaseUrl,
   fetcher,
   initialSort,
+  initialProjectId,
+  initialSourceId,
   onSortChange,
 }: InboxViewProps) {
   const queryClient = useQueryClient();
@@ -105,9 +119,11 @@ export function InboxView({
   const [filters, setFilters] = useState<InboxListFilters>(() => ({
     ...DEFAULT_INBOX_LIST_FILTERS,
     ...(sortFromRoute(initialSort) ? { sort: sortFromRoute(initialSort) } : {}),
+    ...(initialProjectId ? { project_id: initialProjectId } : {}),
   }));
   const [selectedAction, setSelectedAction] = useState<SelectedAction | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [sourceDeepLinkMiss, setSourceDeepLinkMiss] = useState(false);
   // 弹窗关闭（取消或提交完成）后递增，触发列表把焦点还给选中行。
   const [refocusToken, setRefocusToken] = useState(0);
   // 提交按事项并行:记录在飞事项 id,弹窗仅在"当前事项在飞"时置提交中,不同事项互不阻塞。
@@ -136,6 +152,19 @@ export function InboxView({
     });
   }, [initialSort]);
 
+  // 深链 project 过滤：URL 变更时同步。
+  useEffect(() => {
+    setFilters((current) => {
+      const nextProject = initialProjectId || undefined;
+      if ((current.project_id || undefined) === nextProject) return current;
+      if (nextProject) {
+        return { ...current, project_id: nextProject, offset: 0 };
+      }
+      const { project_id: _drop, ...rest } = current;
+      return { ...rest, offset: 0 };
+    });
+  }, [initialProjectId]);
+
   const handleFilterChange = <Key extends InboxFilterKey>(
     key: Key,
     value: InboxFilterChangeValue<Key>,
@@ -156,6 +185,33 @@ export function InboxView({
     refetchOnWindowFocus: true,
   });
   itemsSnapshotRef.current = inboxQuery.data?.items ?? [];
+
+  // 深链 source：列表加载后按 source_id 定位；未命中显式提示（不静默）。
+  useEffect(() => {
+    if (!initialSourceId) {
+      setSourceDeepLinkMiss(false);
+      return;
+    }
+    if (inboxQuery.isLoading || inboxQuery.isFetching) return;
+    const items = inboxQuery.data?.items ?? [];
+    const hit = items.find((item) => item.source_id === initialSourceId);
+    if (hit) {
+      setSourceDeepLinkMiss(false);
+      setSelectedItemId(hit.id);
+      window.setTimeout(() => {
+        document
+          .querySelector(`[data-inbox-item-id="${hit.id}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 80);
+      return;
+    }
+    setSourceDeepLinkMiss(true);
+  }, [
+    initialSourceId,
+    inboxQuery.data?.items,
+    inboxQuery.isLoading,
+    inboxQuery.isFetching,
+  ]);
 
   const actionMutation = useMutation({
     mutationFn: ({
@@ -220,6 +276,15 @@ export function InboxView({
 
   return (
     <>
+      {sourceDeepLinkMiss ? (
+        <div
+          className="mx-auto mb-3 w-full max-w-[1600px] rounded-[12px] border border-warn/30 bg-warn-soft px-4 py-2.5 text-[13px] text-warn-text"
+          data-testid="inbox-source-deeplink-miss"
+          role="status"
+        >
+          该待办可能已处理或不在当前视图。可调整筛选（含已处理）或返回项目继续查看。
+        </div>
+      ) : null}
       <InboxShell
         apiBaseUrl={apiBaseUrl}
         data={inboxQuery.data}

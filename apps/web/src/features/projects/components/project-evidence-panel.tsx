@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { FileSearch } from "lucide-react";
 import {
   IconTile,
@@ -13,6 +13,7 @@ import {
   WorkSurface,
   type Tone
 } from "@/components/superteam";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +26,7 @@ import { evidenceStatusLabel } from "@/lib/status-labels";
 
 type ProjectEvidencePanelProps = {
   evidence?: ProjectEvidenceRef[];
+  focusEvidenceId?: string;
   onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
   onPatchEvidence: (
     evidenceId: string,
@@ -34,12 +36,23 @@ type ProjectEvidencePanelProps = {
 
 export function ProjectEvidencePanel({
   evidence = [],
+  focusEvidenceId,
   onCreateEvidence,
   onPatchEvidence
 }: ProjectEvidencePanelProps) {
   const [title, setTitle] = useState("");
   const [sourceRef, setSourceRef] = useState("");
   const [summary, setSummary] = useState("");
+
+  useEffect(() => {
+    if (!focusEvidenceId) return;
+    const timer = window.setTimeout(() => {
+      document
+        .getElementById(`evidence-${focusEvidenceId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, [focusEvidenceId, evidence.length]);
 
   function submitEvidence() {
     const nextTitle = title.trim();
@@ -137,7 +150,17 @@ export function ProjectEvidencePanel({
               </Tr>
             ) : (
               evidence.map((item) => (
-                <Tr key={item.id}>
+                <Tr
+                  className={cn(
+                    item.id === focusEvidenceId &&
+                      "bg-brand-soft shadow-[inset_3px_0_0_var(--brand)]",
+                  )}
+                  data-focused-evidence={
+                    item.id === focusEvidenceId ? "true" : undefined
+                  }
+                  id={`evidence-${item.id}`}
+                  key={item.id}
+                >
                   <Td className="max-w-[280px] whitespace-normal">
                     <div className="grid gap-1">
                       <span className="line-clamp-2 font-medium text-ink">

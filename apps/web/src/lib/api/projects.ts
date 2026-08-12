@@ -1217,6 +1217,8 @@ export type CreateProjectInput = {
   /** 可选：绑定 Git 仓库，创建后异步 clone 到项目目录。 */
   repo_binding?: ProjectRepoBinding;
   scenario_template_key?: string;
+  /** none | git | attach (spec 2026-08-12). */
+  source_kind?: "none" | "git" | "attach";
 };
 
 export type CreateProjectResponse = {
@@ -1669,6 +1671,85 @@ export function deleteProject(
   return deleteJson(options, projectPath(projectId), "delete project");
 }
 
+/** Workspace directory delete confirmation queue (spec 2026-08-12 P0). */
+export type WorkspaceDeleteRequestStatus = "pending" | "confirmed" | "rejected";
+export type WorkspaceOwnership = "platform_managed" | "attached";
+
+export type WorkspaceDeleteRequest = {
+  id: string;
+  tenant_id: string;
+  project_id: string;
+  runtime_node_id: string;
+  directory_name: string;
+  node_id_snapshot: string;
+  ownership: WorkspaceOwnership;
+  repo_summary?: Record<string, unknown>;
+  status: WorkspaceDeleteRequestStatus;
+  requested_by: string;
+  requested_at: string;
+  resolved_by?: string;
+  resolved_at?: string;
+  reason?: string;
+};
+
+export type ProjectDirectoryProbeFacts = {
+  exists: boolean;
+  is_dir: boolean;
+  is_symlink: boolean;
+  is_git_repo: boolean;
+  origin_url?: string;
+  current_branch?: string;
+  detached?: boolean;
+  dirty?: boolean;
+  head_commit?: string;
+};
+
+export function probeProjectDirectory(
+  options: ApiClientOptions,
+  input: { runtime_node_id: string; directory_name: string },
+): Promise<ProjectDirectoryProbeFacts> {
+  return postJson<ProjectDirectoryProbeFacts>(
+    options,
+    "/api/v1/projects/workspace/probe",
+    input,
+    "probe project directory",
+  );
+}
+
+export function listWorkspaceDeleteRequests(
+  options: ApiClientOptions,
+): Promise<WorkspaceDeleteRequest[]> {
+  return getJson<WorkspaceDeleteRequest[]>(
+    options,
+    "/api/v1/projects/workspace-delete-requests",
+    "workspace delete requests",
+  );
+}
+
+export function confirmWorkspaceDelete(
+  options: ApiClientOptions,
+  requestId: string,
+): Promise<WorkspaceDeleteRequest> {
+  return postJsonWithoutBody<WorkspaceDeleteRequest>(
+    options,
+    `/api/v1/projects/workspace-delete-requests/${requestId}/confirm`,
+    "confirm workspace delete",
+  );
+}
+
+export function rejectWorkspaceDelete(
+  options: ApiClientOptions,
+  requestId: string,
+  reason?: string,
+): Promise<WorkspaceDeleteRequest> {
+  return postJson<WorkspaceDeleteRequest>(
+    options,
+    `/api/v1/projects/workspace-delete-requests/${requestId}/reject`,
+    reason ? { reason } : {},
+    "reject workspace delete",
+  );
+}
+
 export function getProjectOverview(
   options: ApiClientOptions,
   projectId: string,
@@ -1693,7 +1774,22 @@ export function getProjectConfig(
 
 export type ProjectRuntimeNodeBinding = {
   runtime_node_id: string;
+  provision_status?: "provisioned" | "unprovisioned";
+  provisioned_at?: string;
+  provision_source?: string;
 };
+
+/** 项目已绑定的 Runtime 节点集合（含供给状态）。 */
+export function listProjectRuntimeNodes(
+  options: ApiClientOptions,
+  projectId: string,
+): Promise<ProjectRuntimeNodeBinding[]> {
+  return getJson<ProjectRuntimeNodeBinding[]>(
+    options,
+    projectPath(projectId, "/runtime-nodes"),
+    "project runtime nodes",
+  );
+}
 
 export function addProjectRuntimeNode(
   options: ApiClientOptions,
@@ -1718,6 +1814,21 @@ export function removeProjectRuntimeNode(
     options,
     projectPath(projectId, `/runtime-nodes/${encodeURIComponent(runtimeNodeId)}`),
     "project runtime node",
+  );
+}
+
+/** Admin-confirmed workspace supply on a bound node (spec 2026-08-12 P1). */
+export function provisionProjectRuntimeNode(
+  options: ApiClientOptions,
+  projectId: string,
+  runtimeNodeId: string,
+  input?: { reason?: string },
+): Promise<ProjectRuntimeNodeBinding> {
+  return postJson<ProjectRuntimeNodeBinding>(
+    options,
+    projectPath(projectId, `/runtime-nodes/${encodeURIComponent(runtimeNodeId)}/provision`),
+    input ?? {},
+    "provision project runtime node",
   );
 }
 
@@ -1778,6 +1889,19 @@ export function listProjectTasks(
     options,
     projectPath(projectId, `/tasks${taskQuery(filters)}`),
     "project tasks",
+  );
+}
+
+/** 单任务深链：缺页弹层回落（任务不在 list 的 20 条窗口内时）。 */
+export function getProjectTask(
+  options: ApiClientOptions,
+  projectId: string,
+  taskId: string,
+): Promise<ProjectTask> {
+  return getJson<ProjectTask>(
+    options,
+    projectPath(projectId, `/tasks/${encodeURIComponent(taskId)}`),
+    "project task",
   );
 }
 

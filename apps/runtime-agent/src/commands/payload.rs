@@ -98,6 +98,8 @@ pub struct RuntimeProjectWorkspacePayload {
     pub workspace_mode: Option<String>,
     pub base_ref: Option<String>,
     pub project_git: Option<RuntimeProjectGitPayload>,
+    /// platform_managed | attached (spec 2026-08-12).
+    pub workspace_ownership: Option<String>,
     pub capability_manifest_version: Option<String>,
     pub provider_auth_mode: String,
     pub attestation_policy: Option<serde_json::Value>,
@@ -272,6 +274,7 @@ impl RuntimeSessionCommandPayload {
             workspace_mode: metadata_string(&self.metadata, "workspace_mode"),
             base_ref: metadata_string(&self.metadata, "base_ref"),
             project_git: project_git_metadata(&self.metadata),
+            workspace_ownership: metadata_string(&self.metadata, "workspace_ownership"),
             capability_manifest_version: metadata_string(
                 &self.metadata,
                 "capability_manifest_version",

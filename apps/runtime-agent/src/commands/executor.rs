@@ -272,6 +272,9 @@ impl RuntimeCommandExecutor {
             RuntimeCommandType::ValidateProjectWorkspace => {
                 self.handle_validate_project_workspace(command).await
             }
+            RuntimeCommandType::ProbeProjectDirectory => {
+                self.handle_probe_project_directory(command).await
+            }
             RuntimeCommandType::ReadProviderNativeConfig => {
                 self.handle_read_provider_native_config(command).await
             }
@@ -941,6 +944,60 @@ impl RuntimeCommandExecutor {
         }
     }
 
+    async fn handle_probe_project_directory(
+        &self,
+        command: RuntimeCommand,
+    ) -> anyhow::Result<RuntimeCommandOutcome> {
+        use crate::controlplane::ProbeProjectDirectoryCommand;
+        let request: ProbeProjectDirectoryCommand =
+            match serde_json::from_value(command.payload.clone()) {
+                Ok(request) => request,
+                Err(error) => {
+                    let message =
+                        format!("invalid probe_project_directory command payload: {error}");
+                    self.write_command_failure(&command.id, message.clone())
+                        .await?;
+                    return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
+                }
+            };
+        match crate::project_workspace::probe_project_directory(
+            &self.config.workspace_base_dir(),
+            &request.project_name,
+        ) {
+            Ok(facts) => {
+                let mut result = facts;
+                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                {
+                    result.insert(
+                        "project_id".to_string(),
+                        serde_json::Value::String(project_id),
+                    );
+                }
+                result.insert(
+                    "project_name".to_string(),
+                    serde_json::Value::String(request.project_name),
+                );
+                self.write_command_completed(
+                    &command.id,
+                    Some("probed project directory".to_string()),
+                    Some(result),
+                )
+                .await?;
+                Ok(RuntimeCommandOutcome {
+                    command_id: command.id,
+                    accepted: true,
+                    run_id: None,
+                })
+            }
+            Err(error) => {
+                let message = error.to_string();
+                self.write_command_failure(&command.id, message.clone())
+                    .await?;
+                Err(self.recorded_error(&command.id, anyhow::anyhow!(message)))
+            }
+        }
+    }
+
     async fn handle_read_provider_native_config(
         &self,
         command: RuntimeCommand,
@@ -1421,6 +1478,7 @@ impl RuntimeCommandExecutor {
                     .unwrap_or_else(|| "none".to_string()),
                 project_git: project_workspace.project_git,
                 base_ref: project_workspace.base_ref,
+                workspace_ownership: project_workspace.workspace_ownership,
             },
         )?;
 

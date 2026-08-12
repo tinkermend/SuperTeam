@@ -113,14 +113,27 @@ function IconTile({
   );
 }
 
-/** 状态胶囊：文字用 text 层（过 AA），圆点用 solid。tone 表达紧迫度/状态，类别请用图标+文字。 */
+/**
+ * 状态胶囊：文字用 text 层（过 AA），圆点用 solid。
+ * tone 表达紧迫度/状态，类别请用图标+文字。
+ *
+ * @param dotClassName 可选：覆盖圆点颜色。仅允许传 `bg-phase-*`（项目生命周期分类色），
+ *   不得用来绕过 tone 传语义色（ok/warn/danger 等）。阶段轴与紧迫度轴分家见
+ *   docs/superpowers/specs/2026-08-11-projects-home-status-color-and-drilldown-remediation.md §5。
+ */
 function StatusPill({
   className,
   tone = "mute",
   showDot = true,
+  dotClassName,
   children,
   ...props
-}: ComponentProps<"span"> & { tone?: Tone; showDot?: boolean }) {
+}: ComponentProps<"span"> & {
+  tone?: Tone;
+  showDot?: boolean;
+  /** 仅允许 `bg-phase-*`，不得传语义色 class。 */
+  dotClassName?: string;
+}) {
   return (
     <span
       data-slot="status-pill"
@@ -133,7 +146,12 @@ function StatusPill({
       )}
       {...props}
     >
-      {showDot ? <span aria-hidden className={cn("size-1.5 rounded-full", toneSolidBg[tone])} /> : null}
+      {showDot ? (
+        <span
+          aria-hidden
+          className={cn("size-1.5 rounded-full", dotClassName ?? toneSolidBg[tone])}
+        />
+      ) : null}
       {children}
     </span>
   );

@@ -1485,6 +1485,21 @@ func (s *routeProjectService) AddProjectRuntimeNode(ctx context.Context, req pro
 	}, nil
 }
 
+func (s *routeProjectService) ProvisionWorkspaceOnNode(ctx context.Context, req project.ModifyProjectRuntimeNodeRequest) (*project.ProjectRuntimeNode, error) {
+	return &project.ProjectRuntimeNode{
+		ID:              uuid.New(),
+		TenantID:        req.TenantID,
+		ProjectID:       req.ProjectID,
+		RuntimeNodeID:   req.RuntimeNodeID,
+		ProvisionStatus: project.ProvisionStatusProvisioned,
+	}, nil
+}
+
+
+func (s *routeProjectService) ProbeProjectDirectory(ctx context.Context, req project.ProbeProjectDirectoryRequest) (*project.ProbeProjectDirectoryFacts, error) {
+	return &project.ProbeProjectDirectoryFacts{Exists: true, IsDir: true}, nil
+}
+
 func (s *routeProjectService) RemoveProjectRuntimeNode(ctx context.Context, req project.ModifyProjectRuntimeNodeRequest) error {
 	s.removeRuntimeNodeReq = req
 	return nil
@@ -1591,6 +1606,19 @@ func (s *routeProjectService) DeleteProject(ctx context.Context, req project.Del
 	return s.deleteErr
 }
 
+func (s *routeProjectService) ListPendingWorkspaceDeleteRequests(ctx context.Context, tenantID uuid.UUID) ([]project.WorkspaceDeleteRequest, error) {
+	return nil, nil
+}
+
+func (s *routeProjectService) ConfirmWorkspaceDelete(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID) (*project.WorkspaceDeleteRequest, error) {
+	return nil, project.ErrProjectWorkspaceDeleteRequestNotFound
+}
+
+func (s *routeProjectService) RejectWorkspaceDelete(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID, reason string) (*project.WorkspaceDeleteRequest, error) {
+	return nil, project.ErrProjectWorkspaceDeleteRequestNotFound
+}
+
+
 func (s *routeProjectService) ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []project.ProjectMemberInput) ([]project.ProjectMember, error) {
 	return nil, nil
 }
@@ -1625,6 +1653,10 @@ func (s *routeProjectService) ListProjectRuntimeNodes(ctx context.Context, tenan
 
 func (s *routeProjectService) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]project.ProjectTask, error) {
 	return nil, nil
+}
+
+func (s *routeProjectService) GetProjectTask(ctx context.Context, tenantID, projectID, taskID uuid.UUID) (*project.ProjectTask, error) {
+	return &project.ProjectTask{ID: taskID, TenantID: tenantID, ProjectID: projectID, Title: "task", Status: "failed"}, nil
 }
 
 func (s *routeProjectService) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (*project.ProjectTask, error) {

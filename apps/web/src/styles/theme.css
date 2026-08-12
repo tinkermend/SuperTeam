@@ -96,6 +96,14 @@
   --mute: #64748b;
   --mute-text: #4d586b;
   --mute-soft: #eef1f4;
+  /* 项目生命周期阶段色（分类色，非紧迫度）。浅色端 oklch(0.60 0.08 H)，
+     彩度低于语义色（C=0.15），保证视觉层级永远压在 ok/warn/danger 之下。 */
+  --phase-ready: #697fb1;
+  --phase-acceptance: #3f8c9e;
+  --phase-configuring: #a37e53;
+  --phase-draft: #a68d71;
+  --phase-paused: #7d8088;
+  --phase-archived: #8f9299;
   --token-radius-card: 1.375rem;
   --token-radius-inner: 0.875rem;
   --token-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 30px rgba(16, 24, 40, 0.055);
@@ -228,6 +236,13 @@
   --mute: #94a3b8;
   --mute-text: #aab4c2;
   --mute-soft: rgba(148, 163, 184, 0.14);
+  /* 深色端阶段色：oklch(0.75 0.06 H)，与浅色同色相、更低彩度。 */
+  --phase-ready: #9baed5;
+  --phase-acceptance: #82b8c6;
+  --phase-configuring: #c8ac8c;
+  --phase-draft: #a9947e;
+  --phase-paused: #a1a5ab;
+  --phase-archived: #727479;
   --token-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 14px 36px rgba(0, 0, 0, 0.4);
   --token-shadow-pop: 0 14px 48px rgba(0, 0, 0, 0.5);
   /* 沉浸极光玻璃 · 深色端（受控特例，见 DESIGN.md）。 */
@@ -334,6 +349,12 @@
   --color-mute: var(--mute);
   --color-mute-text: var(--mute-text);
   --color-mute-soft: var(--mute-soft);
+  --color-phase-ready: var(--phase-ready);
+  --color-phase-acceptance: var(--phase-acceptance);
+  --color-phase-configuring: var(--phase-configuring);
+  --color-phase-draft: var(--phase-draft);
+  --color-phase-paused: var(--phase-paused);
+  --color-phase-archived: var(--phase-archived);
   --radius-card: var(--token-radius-card);
   --radius-inner: var(--token-radius-inner);
   --shadow-card: var(--token-shadow-card);

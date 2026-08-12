@@ -37,6 +37,8 @@ import {
 import { deleteBlockerTypeLabel, statusLabel, archiveReadinessCodeLabel } from "@/lib/status-labels";
 import {
   addProjectRuntimeNode,
+  listProjectRuntimeNodes,
+  provisionProjectRuntimeNode,
   markProjectWorkspaceReady,
   recloneProjectWorkspace,
   archiveProject,
@@ -110,6 +112,7 @@ import {
   ProjectTriagePanel
 } from "./components/project-risk-home";
 import {
+  PORTFOLIO_DEFAULT_PAGE_SIZE,
   ProjectPortfolioGrid,
   type ProjectPortfolioToolbarFilters,
 } from "./components/project-portfolio-grid";
@@ -188,7 +191,7 @@ function listSearchFromFilters(
   if (filters.sort !== "attention") next.sort = filters.sort;
   if (filters.mineOnly) next.mine_only = true;
   if (page !== 1) next.page = page;
-  if (pageSize !== 12) next.page_size = pageSize;
+  if (pageSize !== PORTFOLIO_DEFAULT_PAGE_SIZE) next.page_size = pageSize;
   return next;
 }
 
@@ -344,10 +347,19 @@ export function ProjectsView({
     demand?: string;
     focus?: string;
     tab?: string;
-    /** 执行轨迹面板按任务过滤（?tab=trace&task=<id>）。 */
+    /**
+     * `task` 参数两种消费靠 tab 判别（切勿拆成两个参数名）：
+     * - `?tab=trace&task=<id>` → 执行轨迹面板过滤（traceTaskId）
+     * - `?tab=tasks&task=<id>` → 打开该任务详情弹层（detailTaskId）
+     * 其他 tab 下的 task 忽略。
+     */
     task?: string;
     /** 一单卷宗中栏视图（?tab=demands&demand=<id>&view=timeline|graph）。 */
     view?: string;
+    /** 工作台治理子 tab（?governance=evidence）。 */
+    governance?: string;
+    /** 证据深链 id（?evidence=<id>）。 */
+    evidence?: string;
   };
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
@@ -358,7 +370,9 @@ export function ProjectsView({
     () => filtersFromListSearch(listSearch),
   );
   const [localPage, setLocalPage] = useState(listSearch?.page ?? 1);
-  const [localPageSize, setLocalPageSize] = useState(listSearch?.page_size ?? 12);
+  const [localPageSize, setLocalPageSize] = useState(
+    listSearch?.page_size ?? PORTFOLIO_DEFAULT_PAGE_SIZE,
+  );
   const filters = listSearch ? filtersFromListSearch(listSearch) : localFilters;
   const projectListPage = listSearch?.page ?? localPage;
   const projectListPageSize = listSearch?.page_size ?? localPageSize;
@@ -747,9 +761,10 @@ export function ProjectsView({
 
   const decisionRequestsQuery = useQuery({
     enabled: Boolean(effectiveProjectId),
-    queryKey: ["project-decisions", effectiveProjectId],
+    // 深链 focus 可能落在首页 20 条之外；提升到 50，仍未命中则审批面板显式提示。
+    queryKey: ["project-decisions", effectiveProjectId, 50],
     queryFn: () =>
-      listProjectDecisionRequests(apiOptions, effectiveProjectId as string, { limit: 20 }),
+      listProjectDecisionRequests(apiOptions, effectiveProjectId as string, { limit: 50 }),
     placeholderData: keepPreviousData
 });
 
@@ -861,11 +876,29 @@ export function ProjectsView({
     }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["project-runtime-readiness", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["project-runtime-bindings", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["project-task-graph", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["project-events", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["project-overview", projectId] }),
     ]);
   };
+
+  // 已绑定节点及供给状态：供给按钮与「未供给」标记的数据源（spec 2026-08-12 §5.2）。
+  const projectRuntimeBindingsQuery = useQuery({
+    enabled: Boolean(effectiveProjectId),
+    queryFn: () => listProjectRuntimeNodes(apiOptions, effectiveProjectId as string),
+    queryKey: ["project-runtime-bindings", effectiveProjectId],
+  });
+
+  const provisionRuntimeNodeMutation = useMutation({
+    mutationFn: (runtimeNodeId: string) =>
+      provisionProjectRuntimeNode(apiOptions, effectiveProjectId as string, runtimeNodeId, {
+        reason: "project_runtime_placement_panel"
+      }),
+    onSuccess: async () => {
+      await invalidateRuntimePlacementSurfaces(effectiveProjectId);
+    }
+  });
 
   const bindRuntimePlacementMutation = useMutation({
     mutationFn: (runtimeNodeId: string) =>
@@ -1387,7 +1420,27 @@ export function ProjectsView({
                       });
                     }}
                     initialTab={isProjectOperationalTab(search.tab) ? search.tab : undefined}
-                    traceTaskId={search.task}
+                    // tab=trace：执行轨迹过滤；tab=tasks：开弹层。见上方 search.task 注释。
+                    traceTaskId={search.tab === "trace" ? search.task : undefined}
+                    detailTaskIdFromUrl={
+                      search.tab === "tasks" ? search.task : undefined
+                    }
+                    focusEvidenceId={search.evidence}
+                    governanceInitialTab={
+                      search.governance === "evidence" ? "evidence" : undefined
+                    }
+                    onClearDetailTaskUrl={() => {
+                      void navigate({
+                        params: { projectId: effectiveProjectId as string },
+                        search: (prev: Record<string, unknown>) => {
+                          const next = { ...prev };
+                          delete next.task;
+                          return next;
+                        },
+                        to: "/projects/$projectId",
+                        replace: true,
+                      });
+                    }}
                     isArchived={isArchived}
                     onArchiveProject={() => {
                       archiveMutation.reset();
@@ -1456,14 +1509,25 @@ export function ProjectsView({
                     routeDecisions={projectRouteDecisions}
                     runtimePlacementPanel={
                       <ProjectRuntimePlacementPanel
+                        bindings={projectRuntimeBindingsQuery.data}
                         isBinding={bindRuntimePlacementMutation.isPending}
                         isReadinessLoading={
                           runtimeReadinessQuery.isLoading || runtimeReadinessQuery.isFetching
                         }
                         isReleasing={releaseRuntimePlacementMutation.isPending}
+                        provisioningNodeId={
+                          provisionRuntimeNodeMutation.isPending
+                            ? provisionRuntimeNodeMutation.variables ?? null
+                            : null
+                        }
                         readiness={currentProjectRuntimeReadiness}
                         runtimeNodes={projectRuntimeNodes}
                         selectedRuntimeNodeId={selectedRuntimeNodeId}
+                        onProvisionRuntimeNode={(runtimeNodeId) => {
+                          if (effectiveProjectId) {
+                            provisionRuntimeNodeMutation.mutate(runtimeNodeId);
+                          }
+                        }}
                         onBindRuntime={() => {
                           if (effectiveProjectId && selectedRuntimeNodeId) {
                             bindRuntimePlacementMutation.mutate(selectedRuntimeNodeId);

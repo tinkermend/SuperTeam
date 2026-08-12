@@ -46,6 +46,8 @@ type Service struct {
 	castingGapDiscoverer CastingGapDiscoverer
 	// 收口批：编制级联解除后通知项目负责人（可选）
 	castingInvalidationNotifier CastingInvalidationNotifier
+	// P1: lazy workspace provision confirm inbox (optional)
+	workspaceProvisionInbox WorkspaceProvisionInbox
 }
 
 // AutomationActorRemover disables automation rules when a human actor loses
@@ -66,6 +68,10 @@ func (s *Service) SetAutomationActorRemover(remover AutomationActorRemover) {
 
 func (s *Service) SetAutomationProjectCascade(cascade AutomationProjectCascade) {
 	s.automationProjectCascade = cascade
+}
+
+func (s *Service) SetWorkspaceProvisionInbox(upserter WorkspaceProvisionInbox) {
+	s.workspaceProvisionInbox = upserter
 }
 
 // ScenarioTemplateResolver is the narrow view of the scenario template
@@ -286,6 +292,11 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 	if err := ValidateProjectDirectoryName(req.DirectoryName); err != nil {
 		return nil, err
 	}
+	// Soft-deleted projects free the unique index immediately, but disk may still
+	// sit in the workspace delete confirmation queue — block name reuse (§5.5).
+	if err := s.ensureDirectoryNameNotPendingDelete(ctx, req.DirectoryName); err != nil {
+		return nil, err
+	}
 
 	runtimeNodeIDs, err := s.validateRuntimeNodeIDs(ctx, req.TenantID, req.RuntimeNodeIDs)
 	if err != nil {
@@ -309,9 +320,30 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 		}
 	}
 
-	// 非 Git:mkdir 成功后即可 ready;Git:先 pending,异步 clone 成功后转 ready(P1)。
+	// Resolve source kind: attach | git | none (legacy from repo binding).
+	sourceKind := req.SourceKind
+	if sourceKind == "" {
+		if repoBinding.Status == ProjectRepoBindingStatusBound {
+			sourceKind = ProjectSourceKindGit
+		} else {
+			sourceKind = ProjectSourceKindNone
+		}
+	}
+	switch sourceKind {
+	case ProjectSourceKindNone, ProjectSourceKindGit, ProjectSourceKindAttach:
+	default:
+		return nil, fmt.Errorf("%w: unknown source_kind %q", ErrInvalidProject, sourceKind)
+	}
+	req.SourceKind = sourceKind
+	if sourceKind == ProjectSourceKindAttach {
+		req.WorkspaceOwnership = WorkspaceOwnershipAttached
+	} else if req.WorkspaceOwnership == "" {
+		req.WorkspaceOwnership = WorkspaceOwnershipPlatformManaged
+	}
+
+	// 非 Git/attach: 就绪;Git: 先 pending,异步 clone 成功后转 ready。
 	initialReady := WorkspaceReadyStatusReady
-	if repoBinding.Status == ProjectRepoBindingStatusBound {
+	if sourceKind == ProjectSourceKindGit {
 		initialReady = WorkspaceReadyStatusPending
 	}
 
@@ -327,34 +359,72 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 	}
 	dirName := project.WorkspaceDirectoryName()
 
+	// Bind every node as a candidate only; provisioning is a separate act
+	// (spec 2026-08-12 §5.2 / P1). `provisioned` must mean "disk is ready", so
+	// the mark is written only after the supply action actually succeeds — for
+	// Git that is the async clone writeback, not here.
+	primaryNodeID := uuid.Nil
+	if len(runtimeNodeIDs) > 0 {
+		primaryNodeID = runtimeNodeIDs[0]
+	}
 	for _, runtimeNodeID := range runtimeNodeIDs {
-		if _, err := s.repository.InsertProjectRuntimeNode(ctx, req.TenantID, project.ID, runtimeNodeID); err != nil {
+		// Bind rows fail before any disk write — nothing to compensate.
+		if _, err := s.repository.InsertProjectRuntimeNode(ctx, req.TenantID, project.ID, runtimeNodeID, false, ""); err != nil {
 			_ = s.rollbackCreatedProject(ctx, req.TenantID, project.ID, dirName, nil)
 			return nil, err
 		}
 	}
 
-	if err := s.ensureProjectDirectoriesOnNodes(ctx, req.TenantID, project.ID, dirName, runtimeNodeIDs); err != nil {
-		_ = s.rollbackCreatedProject(ctx, req.TenantID, project.ID, dirName, runtimeNodeIDs)
-		return nil, err
+	// Provision disk only on the primary node (attach = probe only, no write).
+	var provisionNodeIDs []uuid.UUID
+	if primaryNodeID != uuid.Nil {
+		provisionNodeIDs = []uuid.UUID{primaryNodeID}
+	}
+	switch sourceKind {
+	case ProjectSourceKindAttach:
+		// Probe-only supply: directory must already exist; no mkdir (spec §5.1).
+		if primaryNodeID == uuid.Nil {
+			_ = s.rollbackCreatedProject(ctx, req.TenantID, project.ID, dirName, nil)
+			return nil, ErrProjectRuntimeNodesRequired
+		}
+		if _, err := s.probeProjectDirectoryOnNode(ctx, req.TenantID, primaryNodeID, dirName); err != nil {
+			_ = s.rollbackCreatedProject(ctx, req.TenantID, project.ID, dirName, nil)
+			return nil, fmt.Errorf("%w: attach 探测失败: %v", ErrProjectWorkspaceProvision, err)
+		}
+		// Probe passed ⇒ the human-placed directory is there: primary is supplied.
+		if _, markErr := s.repository.MarkProjectRuntimeNodeProvisioned(ctx, req.TenantID, project.ID, primaryNodeID, "attach_probe"); markErr != nil {
+			slog.Default().Warn("attach: mark primary provisioned failed", "project_id", project.ID.String(), "error", markErr.Error())
+		}
+	default:
+		if err := s.ensureProjectDirectoriesOnNodes(ctx, req.TenantID, project.ID, dirName, provisionNodeIDs); err != nil {
+			_ = s.rollbackCreatedProject(ctx, req.TenantID, project.ID, dirName, provisionNodeIDs)
+			return nil, err
+		}
+		// Git: mkdir alone is not a usable workspace — HandleCloneCommandTerminal
+		// marks the node provisioned once the clone actually lands.
+		if sourceKind != ProjectSourceKindGit && primaryNodeID != uuid.Nil {
+			if _, markErr := s.repository.MarkProjectRuntimeNodeProvisioned(ctx, req.TenantID, project.ID, primaryNodeID, "create"); markErr != nil {
+				slog.Default().Warn("mark primary provisioned after mkdir failed", "project_id", project.ID.String(), "error", markErr.Error())
+			}
+		}
 	}
 
-	// 非 Git:mkdir 成功即可 ready,并把首个关联节点记为主节点(粘滞亲和入口)。
-	if initialReady == WorkspaceReadyStatusReady && len(runtimeNodeIDs) > 0 {
-		primary := runtimeNodeIDs[0]
+	// 非 Git/attach: 就绪后记主节点。
+	if initialReady == WorkspaceReadyStatusReady && primaryNodeID != uuid.Nil {
+		primary := primaryNodeID
 		if updated, setErr := s.repository.SetProjectWorkspaceReady(ctx, req.TenantID, project.ID, WorkspaceReadyStatusReady, &primary, nil); setErr == nil {
 			project = updated
 		} else {
-			slog.Default().Warn("set primary runtime node after mkdir failed",
+			slog.Default().Warn("set primary runtime node after provision failed",
 				"project_id", project.ID.String(),
 				"error", setErr.Error(),
 			)
 		}
 	}
 
-	// Git: mkdir 成功后入队异步 clone(P1);门禁钩子已就位——pending 挡派发。
-	if repoBinding.Status == ProjectRepoBindingStatusBound {
-		if err := s.enqueueProjectGitClone(ctx, req.TenantID, project.ID, dirName, runtimeNodeIDs); err != nil {
+	// Git: only primary gets async clone; secondary wait for admin provision confirm.
+	if sourceKind == ProjectSourceKindGit && primaryNodeID != uuid.Nil {
+		if err := s.enqueueProjectGitClone(ctx, req.TenantID, project.ID, dirName, []uuid.UUID{primaryNodeID}); err != nil {
 			slog.Default().Warn("project git clone enqueue deferred/failed",
 				"project_id", project.ID.String(),
 				"error", err.Error(),
@@ -555,39 +625,22 @@ func (s *Service) requireActiveProject(ctx context.Context, tenantID, projectID 
 }
 
 // AddProjectRuntimeNode adds one runtime node to the project's eligibility set
-// (project_runtime_nodes) — the node-selection authority consulted by dispatch
-// and readiness. Idempotent on (project, node). Also mkdir (+ async clone) on the
-// new node; does not downgrade an already-ready project to pending.
+// (project_runtime_nodes). Binding only — does not mkdir/clone on disk
+// (spec 2026-08-12 §5.2 / P1). Provision requires a separate admin confirm.
 func (s *Service) AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error) {
 	req.Reason = strings.TrimSpace(req.Reason)
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.RuntimeNodeID == uuid.Nil || req.ActorUserID == uuid.Nil {
 		return nil, ErrInvalidProject
 	}
-	project, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID)
-	if err != nil {
+	if _, err := s.requireActiveProject(ctx, req.TenantID, req.ProjectID); err != nil {
 		return nil, err
 	}
 	if err := s.requireRuntimeNodeForTenant(ctx, req.TenantID, req.RuntimeNodeID); err != nil {
 		return nil, err
 	}
-	node, err := s.repository.InsertProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID)
+	node, err := s.repository.InsertProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID, false, "")
 	if err != nil {
 		return nil, err
-	}
-	if err := s.ensureProjectDirectoriesOnNodes(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), []uuid.UUID{req.RuntimeNodeID}); err != nil {
-		_ = s.repository.RemoveProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID)
-		_ = s.compensateProjectDirectories(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), []uuid.UUID{req.RuntimeNodeID})
-		return nil, err
-	}
-	if project.RepoBinding.Status == ProjectRepoBindingStatusBound {
-		// 不加回 pending:新节点 clone 失败只影响故障转移可用性。
-		if cloneErr := s.dispatchProjectGitClones(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), []uuid.UUID{req.RuntimeNodeID}, false); cloneErr != nil {
-			slog.Default().Warn("add runtime node: git clone enqueue failed",
-				"project_id", req.ProjectID.String(),
-				"runtime_node_id", req.RuntimeNodeID.String(),
-				"error", cloneErr.Error(),
-			)
-		}
 	}
 	if _, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:  req.TenantID,
@@ -595,10 +648,11 @@ func (s *Service) AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRu
 		EventType: ProjectEventRuntimePlacementUpdated,
 		ActorType: "human_user",
 		ActorID:   req.ActorUserID.String(),
-		Summary:   "项目 Runtime 绑定已更新",
+		Summary:   "项目 Runtime 已绑定（未供给）",
 		Payload: map[string]any{
-			"runtime_node_id": node.RuntimeNodeID.String(),
-			"reason":          req.Reason,
+			"runtime_node_id":  node.RuntimeNodeID.String(),
+			"provision_status": string(node.ProvisionStatus),
+			"reason":           req.Reason,
 		},
 	}); err != nil {
 		return nil, err
@@ -609,7 +663,8 @@ func (s *Service) AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRu
 // RemoveProjectRuntimeNode removes one runtime node from the project's
 // eligibility set. Removing the last node leaves the project undispatchable
 // until a node is bound again — readiness surfaces that as blocking.
-// Also deletes the project directory on that node (best-effort).
+// Disk cleanup is deferred to the workspace delete confirmation queue
+// (spec 2026-08-12 §5.5); create-failure rollback still deletes immediately.
 func (s *Service) RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) error {
 	req.Reason = strings.TrimSpace(req.Reason)
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.RuntimeNodeID == uuid.Nil || req.ActorUserID == uuid.Nil {
@@ -619,15 +674,42 @@ func (s *Service) RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjec
 	if err != nil {
 		return err
 	}
+	// Capture provision status before row delete: only provisioned nodes ever
+	// touched disk — unprovisioned binds must not spam the delete queue.
+	wasProvisioned := false
+	if nodes, listErr := s.repository.ListProjectRuntimeNodes(ctx, req.TenantID, req.ProjectID); listErr == nil {
+		for _, n := range nodes {
+			if n.RuntimeNodeID == req.RuntimeNodeID && n.IsProvisioned() {
+				wasProvisioned = true
+				break
+			}
+		}
+	}
 	if err := s.repository.RemoveProjectRuntimeNode(ctx, req.TenantID, req.ProjectID, req.RuntimeNodeID); err != nil {
 		return err
 	}
-	if err := s.removeProjectDirectoriesOnNodes(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), []uuid.UUID{req.RuntimeNodeID}); err != nil {
-		slog.Default().Error("remove runtime node: project directory cleanup incomplete",
-			"project_id", req.ProjectID.String(),
-			"runtime_node_id", req.RuntimeNodeID.String(),
-			"error", err.Error(),
-		)
+	if wasProvisioned {
+		reason := req.Reason
+		if reason == "" {
+			reason = "remove_runtime_node"
+		}
+		if err := s.enqueueWorkspaceDeleteOnNodes(
+			ctx,
+			req.TenantID,
+			req.ProjectID,
+			req.ActorUserID,
+			project.WorkspaceDirectoryName(),
+			projectWorkspaceOwnership(project),
+			projectRepoSummary(project),
+			[]uuid.UUID{req.RuntimeNodeID},
+			reason,
+		); err != nil {
+			slog.Default().Error("remove runtime node: workspace delete enqueue incomplete",
+				"project_id", req.ProjectID.String(),
+				"runtime_node_id", req.RuntimeNodeID.String(),
+				"error", err.Error(),
+			)
+		}
 	}
 	if project.PrimaryRuntimeNodeID != nil && *project.PrimaryRuntimeNodeID == req.RuntimeNodeID {
 		_, _ = s.repository.SetProjectWorkspaceReady(ctx, req.TenantID, req.ProjectID, project.WorkspaceReadyStatus, nil, project.WorkspaceReadyError)
@@ -692,12 +774,33 @@ func (s *Service) GetProjectRuntimeReadiness(ctx context.Context, tenantID, proj
 		return readiness, nil
 	}
 
-	// Set-level readiness: ≥1 eligible node online + connected + with capacity.
+	// Only provisioned bindings can satisfy dispatch readiness (§5.2).
+	provisionedBindings := make([]ProjectRuntimeNode, 0, len(eligibleNodes))
+	unprovisionedCount := 0
+	for _, n := range eligibleNodes {
+		if n.IsProvisioned() {
+			provisionedBindings = append(provisionedBindings, n)
+		} else {
+			unprovisionedCount++
+		}
+	}
+	if len(provisionedBindings) == 0 {
+		readiness.PlacementStatus = ProjectRuntimePlacementStatusWorkspacePending
+		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{
+			Code:    "workspace_unprovisioned",
+			Message: "bound runtime nodes are not yet provisioned; confirm supply before dispatch",
+		})
+		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "provision_workspace", Label: "供给工作区到节点"})
+		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "workspace_unprovisioned", "no provisioned runtime node")
+		return readiness, nil
+	}
+
+	// Set-level readiness: ≥1 provisioned eligible node online + connected + with capacity.
 	// Unlike the old single-placement model, individual nodes in the set can be
 	// offline/disconnected/full without blocking dispatch as long as at least
 	// one usable node remains — so those per-node conditions collapse into one
 	// blocking reason here rather than the old node-by-node cascade.
-	usableNodes, err := s.usableEligibleNodes(ctx, tenantID, eligibleNodes)
+	usableNodes, err := s.usableEligibleNodes(ctx, tenantID, provisionedBindings)
 	if err != nil {
 		return nil, err
 	}
@@ -705,6 +808,9 @@ func (s *Service) GetProjectRuntimeReadiness(ctx context.Context, tenantID, proj
 		readiness.PlacementStatus = ProjectRuntimePlacementStatusRuntimeOffline
 		readiness.BlockingReasons = append(readiness.BlockingReasons, ProjectReadinessReason{Code: "runtime_no_eligible_online_node", Message: "no eligible runtime node is online, connected, and has capacity"})
 		readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "start_runtime", Label: "Start runtime"})
+		if unprovisionedCount > 0 {
+			readiness.NextActions = append(readiness.NextActions, ProjectReadinessAction{Code: "provision_workspace", Label: "供给工作区到备节点"})
+		}
 		markEmployeesNotDispatchable(readiness.EmployeeReadiness, "runtime_no_eligible_online_node", "no eligible runtime node is online, connected, and has capacity")
 		return readiness, nil
 	}
@@ -1542,25 +1648,43 @@ func (s *Service) DeleteProject(ctx context.Context, req DeleteProjectRequest) e
 	}); err != nil {
 		return err
 	}
+	// Disk directory removal is deferred to the admin confirmation queue
+	// (spec 2026-08-12 §5.5). Soft-delete still proceeds; confirm/reject is separate.
 	runtimeNodes, listErr := s.repository.ListProjectRuntimeNodes(ctx, req.TenantID, req.ProjectID)
 	if listErr != nil {
-		slog.Default().Error("project delete: list runtime nodes failed; skipping directory cleanup",
+		slog.Default().Error("project delete: list runtime nodes failed; skipping workspace delete enqueue",
 			"project_id", req.ProjectID.String(),
 			"error", listErr.Error(),
 		)
 		runtimeNodes = nil
 	}
+	// Only provisioned nodes ever had a directory — queueing unprovisioned binds
+	// would mint admin cards for disks that never existed (same rule as
+	// RemoveProjectRuntimeNode).
 	runtimeNodeIDs := make([]uuid.UUID, 0, len(runtimeNodes))
 	for _, node := range runtimeNodes {
+		if !node.IsProvisioned() {
+			continue
+		}
 		runtimeNodeIDs = append(runtimeNodeIDs, node.RuntimeNodeID)
 	}
-	if err := s.removeProjectDirectoriesOnNodes(ctx, req.TenantID, req.ProjectID, project.WorkspaceDirectoryName(), runtimeNodeIDs); err != nil {
-		slog.Default().Error("project delete: directory cleanup incomplete",
+	if err := s.enqueueWorkspaceDeleteOnNodes(
+		ctx,
+		req.TenantID,
+		req.ProjectID,
+		req.ActorUserID,
+		project.WorkspaceDirectoryName(),
+		projectWorkspaceOwnership(project),
+		projectRepoSummary(project),
+		runtimeNodeIDs,
+		"project_delete",
+	); err != nil {
+		slog.Default().Error("project delete: workspace delete enqueue incomplete",
 			"project_id", req.ProjectID.String(),
 			"directory_name", project.WorkspaceDirectoryName(),
 			"error", err.Error(),
 		)
-		// 目录回滚不净不挡软删;人工收尾(spec §0.4)。
+		// 队列写入不净不挡软删;人工收尾。
 	}
 	if s.automationProjectCascade != nil {
 		if cascadeErr := s.automationProjectCascade.CascadeForProjectDeleted(ctx, req.TenantID, req.ProjectID); cascadeErr != nil {
@@ -1732,6 +1856,19 @@ func (s *Service) ListProjectTasks(ctx context.Context, tenantID, projectID uuid
 	}
 	limit, offset = normalizePagination(limit, offset)
 	return s.repository.ListProjectTasks(ctx, tenantID, projectID, status, limit, offset)
+}
+
+// GetProjectTask returns one project task scoped by project (deep-link detail).
+// Isolation matches dismiss: tenant + project + task; wrong project → not found.
+func (s *Service) GetProjectTask(ctx context.Context, tenantID, projectID, taskID uuid.UUID) (*ProjectTask, error) {
+	if tenantID == uuid.Nil || projectID == uuid.Nil || taskID == uuid.Nil {
+		return nil, ErrInvalidProject
+	}
+	task, err := s.repository.GetProjectTaskInProject(ctx, tenantID, projectID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
 }
 
 // DismissProjectTask soft-dismisses a terminal failed/cancelled task so it leaves
@@ -5982,10 +6119,22 @@ func projectTaskFailureAction(task ProjectTask, failureFamily string, retryable 
 		if failureFamily == FailureFamilyBusinessCancelled || failureFamily == FailureFamilyPlanInvalid || failureFamily == FailureFamilyRequirementChanged {
 			return ProjectTaskStatusCancelled
 		}
+		// Platform launch / config failures: never silent-fail away without a
+		// human card when the envelope says non-retryable but family is A-layer.
+		if isPlatformLaunchFailureFamily(failureFamily) {
+			return ProjectTaskStatusWaitingHuman
+		}
 		return ProjectTaskStatusFailed
 	}
+	// A-layer (dispatch / spawn / lease / start timeout): no automatic requeue.
+	// Human must click 同意/重试 on a recovery card; system never self-retries.
+	if isPlatformLaunchFailureFamily(failureFamily) {
+		return ProjectTaskStatusWaitingHuman
+	}
 	switch failureFamily {
-	case FailureFamilyTransientRuntime, FailureFamilyTransientProvider, FailureFamilyTimeout:
+	case FailureFamilyTransientProvider, FailureFamilyTimeout:
+		// B-layer: provider actually ran (or timed out mid-run). Auto-retry still
+		// bounded by attempt budget; not the same as "never started".
 		maxAttempts := EffectiveProjectTaskMaxAttempts(task.MaxAttempts, platformDefaultMaxAttempts)
 		if task.AttemptCount < maxAttempts {
 			return ProjectTaskStatusQueued
@@ -6042,7 +6191,8 @@ func (s *Service) RecoverProjectTaskDispatchFailure(ctx context.Context, req Rec
 	if err != nil {
 		return nil, err
 	}
-	action := projectTaskDispatchRecoveryAction(task, event, dispatchFailureCount, s.platformDefaultMaxAttempts(ctx, req.TenantID))
+	humanRecoveryApprovals := s.countTaskHumanRecoveryApprovals(ctx, task)
+	action := projectTaskDispatchRecoveryAction(task, event, dispatchFailureCount, humanRecoveryApprovals, s.platformDefaultMaxAttempts(ctx, req.TenantID))
 	result, err := repository.RecoverProjectTaskDispatchFailure(ctx, RecoverProjectTaskDispatchFailureWritebackRequest{
 		TenantID:       req.TenantID,
 		ProjectID:      req.ProjectID,
@@ -6622,10 +6772,14 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 	// immediately re-queue against a Runtime that may still be down. Retries
 	// stay bounded independently: ScheduleProjectTaskRetry increments
 	// attempt_count, so projectTaskFailureAction escalates to waiting-human
-	// once max_attempts is reached.
+	// once max_attempts is reached. After one human recovery approval, do not
+	// mint another recovery card — fail the task (dedup / human redispatch budget).
 	retryAt := now.Add(defaultDispatchRecoveryBackoff)
 	retryable := true
 	action := projectTaskFailureAction(task, recoveryFailureFamilyForAction(req.FailureFamily), &retryable, s.platformDefaultMaxAttempts(ctx, req.TenantID))
+	if action == ProjectTaskStatusWaitingHuman && s.countTaskHumanRecoveryApprovals(ctx, task) >= MaxHumanRecoveryRedispatches {
+		action = ProjectTaskStatusFailed
+	}
 	writebackReq := RecoverProjectTaskAttemptFailureWritebackRequest{
 		Task:                  task,
 		Attempt:               attempt,
@@ -6699,7 +6853,19 @@ func uuidValue(value *uuid.UUID) uuid.UUID {
 	return *value
 }
 
-func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dispatchFailureCount int64, platformDefaultMaxAttempts int32) ProjectTaskRecoveryAction {
+// MaxDispatchAutoRetries is the automatic (system) re-dispatch budget after a
+// pure dispatch_failed / platform-launch failure. Product policy (2026-08-11):
+// A-layer failures never self-retry — human must click 同意/重试. Keep the
+// constant and helper for tests/docs; value is 0 by design.
+const MaxDispatchAutoRetries int64 = 0
+
+// MaxHumanRecoveryRedispatches is how many times a human may approve a task
+// recovery/wait card and send the task back to dispatch. After that budget is
+// used, further dispatch/attempt failures mark the task failed instead of minting
+// another recovery card (stops the self-sustaining recovery-card loop).
+const MaxHumanRecoveryRedispatches int64 = 1
+
+func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dispatchFailureCount, humanRecoveryApprovals int64, platformDefaultMaxAttempts int32) ProjectTaskRecoveryAction {
 	retryable := boolPayload(event.Payload, "retryable", true)
 	failureFamily := dispatchRecoveryFailureFamily(event, retryable)
 	waitingReason := humanWaitReasonForFailureFamily(failureFamily)
@@ -6707,29 +6873,79 @@ func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dis
 	case FailureFamilyDispatchTransient, FailureFamilyRuntimeStartTimeout, FailureFamilyRuntimeLeaseLost, FailureFamilyProviderStart, FailureFamilyTransientRuntime, FailureFamilyTransientProvider:
 		waitingReason = HumanWaitReasonRuntimeRecovery
 	}
-	if !retryable {
+	// After a prior human redispatch was already spent, fail terminal (no infinite cards).
+	if humanRecoveryApprovals >= MaxHumanRecoveryRedispatches {
+		return ProjectTaskRecoveryAction{
+			Action:         ProjectTaskRecoveryActionFailed,
+			FailureFamily:  failureFamily,
+			Retryable:      retryable,
+			WaitingReason:  waitingReason,
+			TerminalReason: "人类恢复再派发预算已用尽（最多 1 次），任务标记失败",
+		}
+	}
+	// A-layer / pure dispatch: never auto-schedule. Open human recovery card.
+	// (projectTaskDispatchRetryAvailable is always false while MaxDispatchAutoRetries=0;
+	// left in place so a future non-zero budget is one constant change.)
+	if !retryable || !projectTaskDispatchRetryAvailable(task, dispatchFailureCount, platformDefaultMaxAttempts) {
 		return ProjectTaskRecoveryAction{
 			Action:        ProjectTaskRecoveryActionWaitingHuman,
 			FailureFamily: failureFamily,
-			Retryable:     false,
+			Retryable:     retryable,
 			WaitingReason: waitingReason,
 		}
 	}
-	if projectTaskDispatchRetryAvailable(task, dispatchFailureCount, platformDefaultMaxAttempts) {
-		retryAt := time.Now().UTC().Add(defaultDispatchRecoveryBackoff)
-		return ProjectTaskRecoveryAction{
-			Action:         ProjectTaskRecoveryActionRetryScheduled,
-			FailureFamily:  failureFamily,
-			Retryable:      true,
-			RetryNotBefore: &retryAt,
-			WaitingReason:  waitingReason,
+	retryAt := time.Now().UTC().Add(defaultDispatchRecoveryBackoff)
+	return ProjectTaskRecoveryAction{
+		Action:         ProjectTaskRecoveryActionRetryScheduled,
+		FailureFamily:  failureFamily,
+		Retryable:      true,
+		RetryNotBefore: &retryAt,
+		WaitingReason:  waitingReason,
+	}
+}
+
+// countTaskHumanRecoveryApprovals counts settled recovery/wait decisions for the
+// task that a human already approved (re-dispatch). Best-effort: list errors
+// return 0 so recovery still degrades to opening a card rather than blocking.
+func (s *Service) countTaskHumanRecoveryApprovals(ctx context.Context, task ProjectTask) int64 {
+	if s == nil || s.repository == nil || task.ID == uuid.Nil {
+		return 0
+	}
+	decisions, err := s.repository.ListDemandLaunchDecisionRequests(ctx, task.TenantID, task.ProjectID, nil, []uuid.UUID{task.ID}, 100)
+	if err != nil {
+		return 0
+	}
+	return countApprovedTaskHumanWaitRedispatches(decisions)
+}
+
+func countApprovedTaskHumanWaitRedispatches(decisions []DecisionRequest) int64 {
+	var n int64
+	for _, d := range decisions {
+		if !isTaskHumanWaitRedispatchDecisionType(d.DecisionType) {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(d.StatusSnapshot), "approved") {
+			n++
 		}
 	}
-	return ProjectTaskRecoveryAction{
-		Action:        ProjectTaskRecoveryActionWaitingHuman,
-		FailureFamily: failureFamily,
-		Retryable:     true,
-		WaitingReason: waitingReason,
+	return n
+}
+
+// isTaskHumanWaitRedispatchDecisionType matches wait-family cards whose
+// approved resolution re-dispatches the task (applyTaskHumanWaitRelease).
+func isTaskHumanWaitRedispatchDecisionType(decisionType string) bool {
+	switch strings.TrimSpace(decisionType) {
+	case "project_task_recovery",
+		"project_task_runtime_recovery",
+		"project_task_clarification",
+		"project_task_missing_context",
+		"project_task_permission",
+		"project_task_plan_invalid",
+		"project_task_budget_approval",
+		"project_task_human_wait":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -6790,13 +7006,38 @@ func stringPayload(payload map[string]any, key string) string {
 	return ""
 }
 
-// projectTaskDispatchRetryAvailable bounds dispatch retries by the number of
-// recorded dispatch_failed events. attempt_count cannot be used here: it only
-// increments when an attempt is queued, so it stays 0 for pure dispatch
+// projectTaskDispatchRetryAvailable bounds *automatic* dispatch retries by the
+// number of recorded dispatch_failed events. attempt_count cannot be used here:
+// it only increments when an attempt is queued, so it stays 0 for pure dispatch
 // failures and would allow unlimited dispatch retries.
+//
+// Policy (2026-08-11): MaxDispatchAutoRetries=0 — A-layer (never started /
+// platform launch) failures do not self-retry; only human 同意/重试 re-dispatches.
 func projectTaskDispatchRetryAvailable(task ProjectTask, dispatchFailureCount int64, platformDefaultMaxAttempts int32) bool {
-	maxAttempts := int64(EffectiveProjectTaskMaxAttempts(task.MaxAttempts, platformDefaultMaxAttempts))
-	return dispatchFailureCount < maxAttempts
+	_ = task
+	_ = platformDefaultMaxAttempts
+	if MaxDispatchAutoRetries <= 0 {
+		return false
+	}
+	return dispatchFailureCount <= MaxDispatchAutoRetries
+}
+
+// isPlatformLaunchFailureFamily is the A-layer set: platform can tell that
+// execution was not cleanly started or the runtime/dispatch side dropped the
+// work — not "Claude did the wrong business thing". These must open a human
+// recovery path rather than auto-requeue.
+func isPlatformLaunchFailureFamily(family string) bool {
+	switch strings.TrimSpace(family) {
+	case FailureFamilyDispatchTransient,
+		FailureFamilyRuntimeStartTimeout,
+		FailureFamilyRuntimeLeaseLost,
+		FailureFamilyTransientRuntime,
+		FailureFamilyProviderStart,
+		FailureFamilyProviderConfig:
+		return true
+	default:
+		return false
+	}
 }
 
 func projectTaskAttemptFailureStatus(failureFamily string) string {
@@ -7229,7 +7470,21 @@ func (s *Service) ResolveDecision(ctx context.Context, req ResolveDecisionReques
 			_ = s.repository.EnsureDecisionCardsTerminal(ctx, decision, req.DecidedByUserID, req.Comment)
 			return &decision, nil
 		}
-		return nil, ErrInvalidProject
+		// Terminal under a *different* verb (e.g. status_snapshot=cancelled while
+		// the human taps approved/rejected on a stale open inbox card). Still
+		// re-project the real terminal snapshot so zombie open cards close; do
+		// not re-run business side effects for a decision that already settled.
+		// Returning success (not ErrInvalidProject) is intentional: the card is
+		// already dead on the source side, and the only useful outcome of the
+		// click is to converge the read model. See 2026-08-11 inbox zombie
+		// mass-cancel of project_task_recovery without inbox projection.
+		if s.inbox != nil {
+			if err := s.inbox.ResolveProjectDecisionRequest(ctx, decision); err != nil {
+				return nil, err
+			}
+		}
+		_ = s.repository.EnsureDecisionCardsTerminal(ctx, decision, req.DecidedByUserID, req.Comment)
+		return &decision, nil
 	}
 	// exempted persists a first-class DemandConstraintExemption record before any
 	// approval/signal side effect — the constraint_kind/roles come from the
@@ -7739,9 +7994,21 @@ func (s *Service) closeDemandFromPlanningFailedDecision(ctx context.Context, req
 // this decision idempotently via SignDemandCriterionVerdict. Anything else is
 // invalid vocabulary for this kind. This is the F1 fix: the inbox 同意 button now
 // writes real business facts instead of resolving into the dead-end gate.
+//
+// Orphan cases (demand already terminal, or this card points at a superseded
+// plan revision) never reach a clean sign kernel: reconcileTerminalDemandSignOff
+// only looks up pending demand_acceptance by the *current effective* revision, so
+// a stale card on an old revision is invisible to it. Without an explicit close
+// here the inbox action would return success-ish while leaving the decision
+// pending and the open card → "inbox projection not applied" (2026-08-11 B3).
 func (s *Service) resolveDemandAcceptanceDecision(ctx context.Context, req ResolveDecisionRequest, decision DecisionRequest) (*DecisionRequest, error) {
-	// Already resolved: idempotent success (a concurrent sign / double-submit).
+	// Already resolved: idempotent success + re-project so a zombie open card closes.
 	if !isPendingDecisionStatus(decision.StatusSnapshot) {
+		if s.inbox != nil {
+			if err := s.inbox.ResolveProjectDecisionRequest(ctx, decision); err != nil {
+				return nil, err
+			}
+		}
 		return &decision, nil
 	}
 	if decision.PlanRevisionID == nil {
@@ -7754,6 +8021,32 @@ func (s *Service) resolveDemandAcceptanceDecision(ctx context.Context, req Resol
 	demandID := revision.DemandID
 	if demandID == uuid.Nil {
 		return nil, ErrInvalidProject
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, req.TenantID, demandID)
+	if err != nil {
+		return nil, err
+	}
+	// Stale card: demand already finished, or this decision's plan was superseded
+	// out from under it. Close without re-running sign-off (which would either
+	// 409 or silently miss this revision in GetPendingDemandAcceptanceDecisionByPlanRevision).
+	if demand.Status == ProjectDemandStatusCompleted ||
+		demand.Status == ProjectDemandStatusFailed ||
+		demand.Status == ProjectDemandStatusCancelled ||
+		revision.Status == PlanRevisionStatusSuperseded {
+		resolution := req.Decision
+		if resolution != "approved" && resolution != "rejected" {
+			resolution = "cancelled"
+		}
+		// Prefer a resolution that matches demand terminal when known.
+		if demand.Status == ProjectDemandStatusFailed || demand.Status == ProjectDemandStatusCancelled {
+			resolution = "rejected"
+		} else if demand.Status == ProjectDemandStatusCompleted {
+			resolution = "approved"
+		} else if revision.Status == PlanRevisionStatusSuperseded {
+			// Demand may still be in flight on a newer plan; this card is just stale.
+			resolution = "cancelled"
+		}
+		return s.closeOrphanDemandAcceptanceDecision(ctx, req, decision, resolution)
 	}
 	switch req.Decision {
 	case "approved":
@@ -7771,9 +8064,91 @@ func (s *Service) resolveDemandAcceptanceDecision(ctx context.Context, req Resol
 	if err != nil {
 		return nil, err
 	}
+	// Sign kernel resolves via current-effective revision only. If *this* card
+	// is still pending (wrong revision / missed reconcile), force-close it.
+	if isPendingDecisionStatus(resolved.StatusSnapshot) {
+		resolution := req.Decision
+		if resolution != "approved" && resolution != "rejected" {
+			resolution = "cancelled"
+		}
+		return s.closeOrphanDemandAcceptanceDecision(ctx, req, decision, resolution)
+	}
 	// Sign kernel already stamped resolution via req.Channel; re-attach for
 	// callers that only got back the reloaded decision without the in-memory map.
 	s.attachDecisionResolution(ctx, &resolved, req)
+	// Always re-project: resolveDemandAcceptanceDecisionIfPending projects the
+	// decision it found by current revision, which may not be this decision id
+	// when multiple cards exist. Closing *this* card is the inbox contract.
+	if s.inbox != nil {
+		if err := s.inbox.ResolveProjectDecisionRequest(ctx, resolved); err != nil {
+			return nil, err
+		}
+	}
+	return &resolved, nil
+}
+
+// closeOrphanDemandAcceptanceDecision force-resolves a still-pending
+// demand_acceptance card that can no longer drive sign-off (demand terminal or
+// superseded plan), then projects the inbox card closed.
+func (s *Service) closeOrphanDemandAcceptanceDecision(ctx context.Context, req ResolveDecisionRequest, decision DecisionRequest, resolution string) (*DecisionRequest, error) {
+	resolution = strings.TrimSpace(resolution)
+	if resolution == "" {
+		resolution = "cancelled"
+	}
+	comment := strings.TrimSpace(req.Comment)
+	if comment == "" {
+		comment = "系统收敛：验收决策已过期（需求已终态或计划修订已作废）"
+	}
+	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
+		TenantID:     req.TenantID,
+		ProjectID:    req.ProjectID,
+		EventType:    ProjectEventDecisionSubmitted,
+		ActorType:    "human_user",
+		ActorID:      req.DecidedByUserID.String(),
+		ResourceType: strPtr("decision_request"),
+		ResourceID:   strPtr(decision.ID.String()),
+		Summary:      "过期验收决策已收口",
+		Payload: map[string]any{
+			"decision":            resolution,
+			"comment":             comment,
+			"orphan_acceptance":   true,
+			"decision_request_id": decision.ID.String(),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := s.repository.ResolveDecisionRequest(ctx, ResolveDecisionRequestRepositoryRequest{
+		TenantID:          req.TenantID,
+		ProjectID:         req.ProjectID,
+		ID:                decision.ID,
+		StatusSnapshot:    resolution,
+		ResolvedEventID:   &event.ID,
+		ResolvedByUserID:  req.DecidedByUserID,
+		ResolutionComment: comment,
+	})
+	if err != nil {
+		return nil, err
+	}
+	closeReq := req
+	closeReq.Decision = resolution
+	closeReq.Comment = comment
+	s.attachDecisionResolution(ctx, &resolved, closeReq)
+	if s.inbox != nil {
+		if err := s.inbox.ResolveProjectDecisionRequest(ctx, resolved); err != nil {
+			return nil, err
+		}
+	}
+	if s.approvals != nil && decision.ApprovalRequestID != uuid.Nil {
+		// Best-effort: approval may already be cancelled/resolved.
+		_ = s.approvals.ResolveApproval(ctx, ResolveApprovalRequest{
+			TenantID:          req.TenantID,
+			ApprovalRequestID: decision.ApprovalRequestID,
+			DecidedByUserID:   req.DecidedByUserID,
+			Decision:          resolution,
+			Comment:           comment,
+		})
+	}
 	return &resolved, nil
 }
 

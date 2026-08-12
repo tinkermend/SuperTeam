@@ -825,6 +825,8 @@ type Project struct {
 	DirectoryName string `json:"directory_name"`
 	// 项目 token 预算上限;NULL 表示不限。已消耗达到此值后,派发前闸阻止开启新任务(运行中任务不打断)。
 	BudgetTokenLimit pgtype.Int8 `json:"budget_token_limit"`
+	// platform_managed = platform mkdir/clone; attached = claimed existing dir under workspace root
+	WorkspaceOwnership string `json:"workspace_ownership"`
 }
 
 // 项目验收记录表，保存人类验收结论、证据引用和未解决风险
@@ -1481,6 +1483,11 @@ type ProjectRuntimeNode struct {
 	ProjectID     uuid.UUID          `json:"project_id"`
 	RuntimeNodeID uuid.UUID          `json:"runtime_node_id"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	// unprovisioned = bound candidate only; provisioned = disk ready for dispatch
+	ProvisionStatus string             `json:"provision_status"`
+	ProvisionedAt   pgtype.Timestamptz `json:"provisioned_at"`
+	// How provision happened: create | confirm | attach_probe | legacy_backfill
+	ProvisionSource pgtype.Text `json:"provision_source"`
 }
 
 // 项目技能绑定：同时表达场地限定与场地供给（见能力供给三层模型 §4.2）
@@ -1833,6 +1840,27 @@ type ProjectTransferRequest struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	// 转派请求更新时间
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Per-(project, runtime node) workspace directory delete confirmation queue. Confirm → remove_project_directory; reject → platform hands off.
+type ProjectWorkspaceDeleteRequest struct {
+	ID            uuid.UUID `json:"id"`
+	TenantID      uuid.UUID `json:"tenant_id"`
+	ProjectID     uuid.UUID `json:"project_id"`
+	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	// Snapshot of projects.directory_name at enqueue time.
+	DirectoryName string `json:"directory_name"`
+	// Snapshot of runtime_nodes.node_id at enqueue time (string node identity).
+	NodeIDSnapshot string `json:"node_id_snapshot"`
+	// Snapshot of workspace ownership for admin judgment (platform_managed | attached).
+	Ownership   string             `json:"ownership"`
+	RepoSummary []byte             `json:"repo_summary"`
+	Status      string             `json:"status"`
+	RequestedBy uuid.UUID          `json:"requested_by"`
+	RequestedAt pgtype.Timestamptz `json:"requested_at"`
+	ResolvedBy  uuid.NullUUID      `json:"resolved_by"`
+	ResolvedAt  pgtype.Timestamptz `json:"resolved_at"`
+	Reason      pgtype.Text        `json:"reason"`
 }
 
 // Provider 会话映射表

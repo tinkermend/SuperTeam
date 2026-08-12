@@ -1001,10 +1001,12 @@ func (e HumanTaskLayer) Valid() bool {
 
 // Defines values for InboxItemItemType.
 const (
-	InboxItemItemTypeApproval          InboxItemItemType = "approval"
-	InboxItemItemTypeChannelAlert      InboxItemItemType = "channel_alert"
-	InboxItemItemTypeProjectDecision   InboxItemItemType = "project_decision"
-	InboxItemItemTypeTeamPendingDelete InboxItemItemType = "team_pending_delete"
+	InboxItemItemTypeApproval                         InboxItemItemType = "approval"
+	InboxItemItemTypeChannelAlert                     InboxItemItemType = "channel_alert"
+	InboxItemItemTypeProjectDecision                  InboxItemItemType = "project_decision"
+	InboxItemItemTypeProjectWorkspacePendingDelete    InboxItemItemType = "project_workspace_pending_delete"
+	InboxItemItemTypeProjectWorkspaceProvisionPending InboxItemItemType = "project_workspace_provision_pending"
+	InboxItemItemTypeTeamPendingDelete                InboxItemItemType = "team_pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the InboxItemItemType enum.
@@ -1015,6 +1017,10 @@ func (e InboxItemItemType) Valid() bool {
 	case InboxItemItemTypeChannelAlert:
 		return true
 	case InboxItemItemTypeProjectDecision:
+		return true
+	case InboxItemItemTypeProjectWorkspacePendingDelete:
+		return true
+	case InboxItemItemTypeProjectWorkspaceProvisionPending:
 		return true
 	case InboxItemItemTypeTeamPendingDelete:
 		return true
@@ -1046,10 +1052,12 @@ func (e InboxItemLayer) Valid() bool {
 
 // Defines values for InboxItemSourceType.
 const (
-	InboxItemSourceTypeApprovalRequest        InboxItemSourceType = "approval_request"
-	InboxItemSourceTypeFeishuChannel          InboxItemSourceType = "feishu_channel"
-	InboxItemSourceTypeProjectDecisionRequest InboxItemSourceType = "project_decision_request"
-	InboxItemSourceTypeTeamPendingDelete      InboxItemSourceType = "team_pending_delete"
+	InboxItemSourceTypeApprovalRequest                  InboxItemSourceType = "approval_request"
+	InboxItemSourceTypeFeishuChannel                    InboxItemSourceType = "feishu_channel"
+	InboxItemSourceTypeProjectDecisionRequest           InboxItemSourceType = "project_decision_request"
+	InboxItemSourceTypeProjectWorkspacePendingDelete    InboxItemSourceType = "project_workspace_pending_delete"
+	InboxItemSourceTypeProjectWorkspaceProvisionPending InboxItemSourceType = "project_workspace_provision_pending"
+	InboxItemSourceTypeTeamPendingDelete                InboxItemSourceType = "team_pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the InboxItemSourceType enum.
@@ -1060,6 +1068,10 @@ func (e InboxItemSourceType) Valid() bool {
 	case InboxItemSourceTypeFeishuChannel:
 		return true
 	case InboxItemSourceTypeProjectDecisionRequest:
+		return true
+	case InboxItemSourceTypeProjectWorkspacePendingDelete:
+		return true
+	case InboxItemSourceTypeProjectWorkspaceProvisionPending:
 		return true
 	case InboxItemSourceTypeTeamPendingDelete:
 		return true
@@ -1983,6 +1995,24 @@ func (e ProjectRole) Valid() bool {
 	case ProjectRoleOwner:
 		return true
 	case ProjectRoleReviewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectRuntimeNodeProvisionStatus.
+const (
+	ProjectRuntimeNodeProvisionStatusProvisioned   ProjectRuntimeNodeProvisionStatus = "provisioned"
+	ProjectRuntimeNodeProvisionStatusUnprovisioned ProjectRuntimeNodeProvisionStatus = "unprovisioned"
+)
+
+// Valid indicates whether the value is a known member of the ProjectRuntimeNodeProvisionStatus enum.
+func (e ProjectRuntimeNodeProvisionStatus) Valid() bool {
+	switch e {
+	case ProjectRuntimeNodeProvisionStatusProvisioned:
+		return true
+	case ProjectRuntimeNodeProvisionStatusUnprovisioned:
 		return true
 	default:
 		return false
@@ -2994,6 +3024,45 @@ func (e WorkflowInstanceStatus) Valid() bool {
 	}
 }
 
+// Defines values for WorkspaceDeleteRequestOwnership.
+const (
+	Attached        WorkspaceDeleteRequestOwnership = "attached"
+	PlatformManaged WorkspaceDeleteRequestOwnership = "platform_managed"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceDeleteRequestOwnership enum.
+func (e WorkspaceDeleteRequestOwnership) Valid() bool {
+	switch e {
+	case Attached:
+		return true
+	case PlatformManaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkspaceDeleteRequestStatus.
+const (
+	WorkspaceDeleteRequestStatusConfirmed WorkspaceDeleteRequestStatus = "confirmed"
+	WorkspaceDeleteRequestStatusPending   WorkspaceDeleteRequestStatus = "pending"
+	WorkspaceDeleteRequestStatusRejected  WorkspaceDeleteRequestStatus = "rejected"
+)
+
+// Valid indicates whether the value is a known member of the WorkspaceDeleteRequestStatus enum.
+func (e WorkspaceDeleteRequestStatus) Valid() bool {
+	switch e {
+	case WorkspaceDeleteRequestStatusConfirmed:
+		return true
+	case WorkspaceDeleteRequestStatusPending:
+		return true
+	case WorkspaceDeleteRequestStatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetArtifactContentParamsFormat.
 const (
 	Json GetArtifactContentParamsFormat = "json"
@@ -3098,10 +3167,12 @@ func (e ListInboxItemsParamsStatus) Valid() bool {
 
 // Defines values for ListInboxItemsParamsItemType.
 const (
-	Approval          ListInboxItemsParamsItemType = "approval"
-	ChannelAlert      ListInboxItemsParamsItemType = "channel_alert"
-	ProjectDecision   ListInboxItemsParamsItemType = "project_decision"
-	TeamPendingDelete ListInboxItemsParamsItemType = "team_pending_delete"
+	Approval                         ListInboxItemsParamsItemType = "approval"
+	ChannelAlert                     ListInboxItemsParamsItemType = "channel_alert"
+	ProjectDecision                  ListInboxItemsParamsItemType = "project_decision"
+	ProjectWorkspacePendingDelete    ListInboxItemsParamsItemType = "project_workspace_pending_delete"
+	ProjectWorkspaceProvisionPending ListInboxItemsParamsItemType = "project_workspace_provision_pending"
+	TeamPendingDelete                ListInboxItemsParamsItemType = "team_pending_delete"
 )
 
 // Valid indicates whether the value is a known member of the ListInboxItemsParamsItemType enum.
@@ -3112,6 +3183,10 @@ func (e ListInboxItemsParamsItemType) Valid() bool {
 	case ChannelAlert:
 		return true
 	case ProjectDecision:
+		return true
+	case ProjectWorkspacePendingDelete:
+		return true
+	case ProjectWorkspaceProvisionPending:
 		return true
 	case TeamPendingDelete:
 		return true
@@ -3185,37 +3260,37 @@ func (e ListPermissionApprovalsParamsStatus) Valid() bool {
 
 // Defines values for GetProjectPortfolioParamsTaskState.
 const (
-	Blocked      GetProjectPortfolioParamsTaskState = "blocked"
-	Cancelled    GetProjectPortfolioParamsTaskState = "cancelled"
-	Completed    GetProjectPortfolioParamsTaskState = "completed"
-	Failed       GetProjectPortfolioParamsTaskState = "failed"
-	Other        GetProjectPortfolioParamsTaskState = "other"
-	Pending      GetProjectPortfolioParamsTaskState = "pending"
-	Queued       GetProjectPortfolioParamsTaskState = "queued"
-	Running      GetProjectPortfolioParamsTaskState = "running"
-	WaitingHuman GetProjectPortfolioParamsTaskState = "waiting_human"
+	GetProjectPortfolioParamsTaskStateBlocked      GetProjectPortfolioParamsTaskState = "blocked"
+	GetProjectPortfolioParamsTaskStateCancelled    GetProjectPortfolioParamsTaskState = "cancelled"
+	GetProjectPortfolioParamsTaskStateCompleted    GetProjectPortfolioParamsTaskState = "completed"
+	GetProjectPortfolioParamsTaskStateFailed       GetProjectPortfolioParamsTaskState = "failed"
+	GetProjectPortfolioParamsTaskStateOther        GetProjectPortfolioParamsTaskState = "other"
+	GetProjectPortfolioParamsTaskStatePending      GetProjectPortfolioParamsTaskState = "pending"
+	GetProjectPortfolioParamsTaskStateQueued       GetProjectPortfolioParamsTaskState = "queued"
+	GetProjectPortfolioParamsTaskStateRunning      GetProjectPortfolioParamsTaskState = "running"
+	GetProjectPortfolioParamsTaskStateWaitingHuman GetProjectPortfolioParamsTaskState = "waiting_human"
 )
 
 // Valid indicates whether the value is a known member of the GetProjectPortfolioParamsTaskState enum.
 func (e GetProjectPortfolioParamsTaskState) Valid() bool {
 	switch e {
-	case Blocked:
+	case GetProjectPortfolioParamsTaskStateBlocked:
 		return true
-	case Cancelled:
+	case GetProjectPortfolioParamsTaskStateCancelled:
 		return true
-	case Completed:
+	case GetProjectPortfolioParamsTaskStateCompleted:
 		return true
-	case Failed:
+	case GetProjectPortfolioParamsTaskStateFailed:
 		return true
-	case Other:
+	case GetProjectPortfolioParamsTaskStateOther:
 		return true
-	case Pending:
+	case GetProjectPortfolioParamsTaskStatePending:
 		return true
-	case Queued:
+	case GetProjectPortfolioParamsTaskStateQueued:
 		return true
-	case Running:
+	case GetProjectPortfolioParamsTaskStateRunning:
 		return true
-	case WaitingHuman:
+	case GetProjectPortfolioParamsTaskStateWaitingHuman:
 		return true
 	default:
 		return false
@@ -3237,6 +3312,24 @@ func (e GetProjectPortfolioParamsSort) Valid() bool {
 	case Created:
 		return true
 	case Recent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatus.
+const (
+	ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatusProvisioned   ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatus = "provisioned"
+	ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatusUnprovisioned ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatus = "unprovisioned"
+)
+
+// Valid indicates whether the value is a known member of the ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatus enum.
+func (e ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatus) Valid() bool {
+	switch e {
+	case ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatusProvisioned:
+		return true
+	case ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatusUnprovisioned:
 		return true
 	default:
 		return false
@@ -5941,6 +6034,20 @@ type ProjectDemandSourceType string
 // ProjectDemandStatus defines model for ProjectDemandStatus.
 type ProjectDemandStatus string
 
+// ProjectDirectoryProbeFacts Read-only facts about a directory under the runtime workspace root (spec 2026-08-12 §6). Git fields are observational only — the platform never fetches/pulls/pushes or touches the worktree.
+type ProjectDirectoryProbeFacts struct {
+	CurrentBranch *string                 `json:"current_branch,omitempty"`
+	Detached      *bool                   `json:"detached,omitempty"`
+	Dirty         *bool                   `json:"dirty,omitempty"`
+	Exists        bool                    `json:"exists"`
+	HeadCommit    *string                 `json:"head_commit,omitempty"`
+	IsDir         bool                    `json:"is_dir"`
+	IsGitRepo     bool                    `json:"is_git_repo"`
+	IsSymlink     bool                    `json:"is_symlink"`
+	OriginUrl     *string                 `json:"origin_url,omitempty"`
+	Raw           *map[string]interface{} `json:"raw,omitempty"`
+}
+
 // ProjectEmployeeReadiness defines model for ProjectEmployeeReadiness.
 type ProjectEmployeeReadiness struct {
 	CanDispatch       bool               `json:"can_dispatch"`
@@ -6321,8 +6428,17 @@ type ProjectRunSummaryResponse struct {
 
 // ProjectRuntimeNode defines model for ProjectRuntimeNode.
 type ProjectRuntimeNode struct {
-	RuntimeNodeId openapi_types.UUID `json:"runtime_node_id"`
+	// ProvisionSource create | confirm | attach_probe | clone | legacy_backfill
+	ProvisionSource *string `json:"provision_source,omitempty"`
+
+	// ProvisionStatus 绑定 ≠ 供给(spec 2026-08-12 §5.2):unprovisioned 只是派发候选资格, provisioned 才表示该节点磁盘上已有可用工作区。
+	ProvisionStatus *ProjectRuntimeNodeProvisionStatus `json:"provision_status,omitempty"`
+	ProvisionedAt   *time.Time                         `json:"provisioned_at,omitempty"`
+	RuntimeNodeId   openapi_types.UUID                 `json:"runtime_node_id"`
 }
+
+// ProjectRuntimeNodeProvisionStatus 绑定 ≠ 供给(spec 2026-08-12 §5.2):unprovisioned 只是派发候选资格, provisioned 才表示该节点磁盘上已有可用工作区。
+type ProjectRuntimeNodeProvisionStatus string
 
 // ProjectRuntimePlacementReadiness defines model for ProjectRuntimePlacementReadiness.
 type ProjectRuntimePlacementReadiness struct {
@@ -8153,6 +8269,30 @@ type WorkflowInstanceSummary struct {
 	UpdatedAt                 time.Time                       `json:"updated_at"`
 }
 
+// WorkspaceDeleteRequest defines model for WorkspaceDeleteRequest.
+type WorkspaceDeleteRequest struct {
+	DirectoryName  string                          `json:"directory_name"`
+	Id             openapi_types.UUID              `json:"id"`
+	NodeIdSnapshot string                          `json:"node_id_snapshot"`
+	Ownership      WorkspaceDeleteRequestOwnership `json:"ownership"`
+	ProjectId      openapi_types.UUID              `json:"project_id"`
+	Reason         *string                         `json:"reason,omitempty"`
+	RepoSummary    *map[string]interface{}         `json:"repo_summary,omitempty"`
+	RequestedAt    time.Time                       `json:"requested_at"`
+	RequestedBy    openapi_types.UUID              `json:"requested_by"`
+	ResolvedAt     *time.Time                      `json:"resolved_at,omitempty"`
+	ResolvedBy     *openapi_types.UUID             `json:"resolved_by,omitempty"`
+	RuntimeNodeId  openapi_types.UUID              `json:"runtime_node_id"`
+	Status         WorkspaceDeleteRequestStatus    `json:"status"`
+	TenantId       openapi_types.UUID              `json:"tenant_id"`
+}
+
+// WorkspaceDeleteRequestOwnership defines model for WorkspaceDeleteRequest.Ownership.
+type WorkspaceDeleteRequestOwnership string
+
+// WorkspaceDeleteRequestStatus defines model for WorkspaceDeleteRequest.Status.
+type WorkspaceDeleteRequestStatus string
+
 // BindingId defines model for BindingId.
 type BindingId = openapi_types.UUID
 
@@ -8487,6 +8627,18 @@ type ListProjectRunSummariesParams struct {
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// RejectWorkspaceDeleteJSONBody defines parameters for RejectWorkspaceDelete.
+type RejectWorkspaceDeleteJSONBody struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
+// ProbeProjectDirectoryJSONBody defines parameters for ProbeProjectDirectory.
+type ProbeProjectDirectoryJSONBody struct {
+	// DirectoryName Workspace-root-relative ASCII directory name
+	DirectoryName string             `json:"directory_name"`
+	RuntimeNodeId openapi_types.UUID `json:"runtime_node_id"`
+}
+
 // ListProjectArchiveSnapshotsParams defines parameters for ListProjectArchiveSnapshots.
 type ListProjectArchiveSnapshotsParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -8608,6 +8760,14 @@ type ListProjectRouteDecisionsParams struct {
 type AddProjectRuntimeNodeJSONBody struct {
 	Reason *string `json:"reason,omitempty"`
 }
+
+// ProvisionProjectRuntimeNodeJSONBody defines parameters for ProvisionProjectRuntimeNode.
+type ProvisionProjectRuntimeNodeJSONBody struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
+// ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatus defines parameters for ProvisionProjectRuntimeNode.
+type ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatus string
 
 // GetProjectTaskGraphParams defines parameters for GetProjectTaskGraph.
 type GetProjectTaskGraphParams struct {
@@ -8914,6 +9074,12 @@ type SignDemandCriterionVerdictJSONRequestBody = SignDemandCriterionVerdictReque
 // CreateProjectJSONRequestBody defines body for CreateProject for application/json ContentType.
 type CreateProjectJSONRequestBody = CreateProjectRequest
 
+// RejectWorkspaceDeleteJSONRequestBody defines body for RejectWorkspaceDelete for application/json ContentType.
+type RejectWorkspaceDeleteJSONRequestBody RejectWorkspaceDeleteJSONBody
+
+// ProbeProjectDirectoryJSONRequestBody defines body for ProbeProjectDirectory for application/json ContentType.
+type ProbeProjectDirectoryJSONRequestBody ProbeProjectDirectoryJSONBody
+
 // UpdateProjectJSONRequestBody defines body for UpdateProject for application/json ContentType.
 type UpdateProjectJSONRequestBody = UpdateProjectConfigRequest
 
@@ -8952,6 +9118,9 @@ type ReplaceProjectMembersJSONRequestBody = ReplaceProjectMembersRequest
 
 // AddProjectRuntimeNodeJSONRequestBody defines body for AddProjectRuntimeNode for application/json ContentType.
 type AddProjectRuntimeNodeJSONRequestBody AddProjectRuntimeNodeJSONBody
+
+// ProvisionProjectRuntimeNodeJSONRequestBody defines body for ProvisionProjectRuntimeNode for application/json ContentType.
+type ProvisionProjectRuntimeNodeJSONRequestBody ProvisionProjectRuntimeNodeJSONBody
 
 // PutProjectSkillBindingsJSONRequestBody defines body for PutProjectSkillBindings for application/json ContentType.
 type PutProjectSkillBindingsJSONRequestBody = PutProjectSkillBindingsRequest
@@ -10034,6 +10203,18 @@ type ServerInterface interface {
 	// List cross-project run summaries (run overview project band)
 	// (GET /api/v1/projects/run-summary)
 	ListProjectRunSummaries(w http.ResponseWriter, r *http.Request, params ListProjectRunSummariesParams)
+	// List pending workspace directory delete confirmations
+	// (GET /api/v1/projects/workspace-delete-requests)
+	ListWorkspaceDeleteRequests(w http.ResponseWriter, r *http.Request)
+	// Confirm and delete workspace directory on the target node
+	// (POST /api/v1/projects/workspace-delete-requests/{requestId}/confirm)
+	ConfirmWorkspaceDelete(w http.ResponseWriter, r *http.Request, requestId openapi_types.UUID)
+	// Reject workspace directory delete (platform hands off)
+	// (POST /api/v1/projects/workspace-delete-requests/{requestId}/reject)
+	RejectWorkspaceDelete(w http.ResponseWriter, r *http.Request, requestId openapi_types.UUID)
+	// Probe an existing directory under a runtime node workspace root
+	// (POST /api/v1/projects/workspace/probe)
+	ProbeProjectDirectory(w http.ResponseWriter, r *http.Request)
 	// Delete a project
 	// (DELETE /api/v1/projects/{projectId})
 	DeleteProject(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -10172,6 +10353,9 @@ type ServerInterface interface {
 	// Add a Runtime node to the project eligibility set
 	// (PUT /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId})
 	AddProjectRuntimeNode(w http.ResponseWriter, r *http.Request, projectId ProjectId, runtimeNodeId openapi_types.UUID)
+	// Provision project workspace on a bound runtime node
+	// (POST /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId}/provision)
+	ProvisionProjectRuntimeNode(w http.ResponseWriter, r *http.Request, projectId ProjectId, runtimeNodeId openapi_types.UUID)
 	// Get project Runtime execution readiness
 	// (GET /api/v1/projects/{projectId}/runtime-readiness)
 	GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId)
@@ -10187,6 +10371,9 @@ type ServerInterface interface {
 	// List project tasks
 	// (GET /api/v1/projects/{projectId}/tasks)
 	ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams)
+	// Get a single project task
+	// (GET /api/v1/projects/{projectId}/tasks/{taskId})
+	GetProjectTask(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId)
 	// Dismiss a terminal project task from active views
 	// (POST /api/v1/projects/{projectId}/tasks/{taskId}/dismiss)
 	DismissProjectTask(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId)
@@ -11105,6 +11292,30 @@ func (_ Unimplemented) ListProjectRunSummaries(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List pending workspace directory delete confirmations
+// (GET /api/v1/projects/workspace-delete-requests)
+func (_ Unimplemented) ListWorkspaceDeleteRequests(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Confirm and delete workspace directory on the target node
+// (POST /api/v1/projects/workspace-delete-requests/{requestId}/confirm)
+func (_ Unimplemented) ConfirmWorkspaceDelete(w http.ResponseWriter, r *http.Request, requestId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Reject workspace directory delete (platform hands off)
+// (POST /api/v1/projects/workspace-delete-requests/{requestId}/reject)
+func (_ Unimplemented) RejectWorkspaceDelete(w http.ResponseWriter, r *http.Request, requestId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Probe an existing directory under a runtime node workspace root
+// (POST /api/v1/projects/workspace/probe)
+func (_ Unimplemented) ProbeProjectDirectory(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Delete a project
 // (DELETE /api/v1/projects/{projectId})
 func (_ Unimplemented) DeleteProject(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
@@ -11381,6 +11592,12 @@ func (_ Unimplemented) AddProjectRuntimeNode(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Provision project workspace on a bound runtime node
+// (POST /api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId}/provision)
+func (_ Unimplemented) ProvisionProjectRuntimeNode(w http.ResponseWriter, r *http.Request, projectId ProjectId, runtimeNodeId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get project Runtime execution readiness
 // (GET /api/v1/projects/{projectId}/runtime-readiness)
 func (_ Unimplemented) GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request, projectId ProjectId) {
@@ -11408,6 +11625,12 @@ func (_ Unimplemented) GetProjectTaskGraph(w http.ResponseWriter, r *http.Reques
 // List project tasks
 // (GET /api/v1/projects/{projectId}/tasks)
 func (_ Unimplemented) ListProjectTasks(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectTasksParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a single project task
+// (GET /api/v1/projects/{projectId}/tasks/{taskId})
+func (_ Unimplemented) GetProjectTask(w http.ResponseWriter, r *http.Request, projectId ProjectId, taskId TaskId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -15415,6 +15638,86 @@ func (siw *ServerInterfaceWrapper) ListProjectRunSummaries(w http.ResponseWriter
 	handler.ServeHTTP(w, r)
 }
 
+// ListWorkspaceDeleteRequests operation middleware
+func (siw *ServerInterfaceWrapper) ListWorkspaceDeleteRequests(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListWorkspaceDeleteRequests(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmWorkspaceDelete operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmWorkspaceDelete(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "requestId" -------------
+	var requestId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmWorkspaceDelete(w, r, requestId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RejectWorkspaceDelete operation middleware
+func (siw *ServerInterfaceWrapper) RejectWorkspaceDelete(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "requestId" -------------
+	var requestId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "requestId", chi.URLParam(r, "requestId"), &requestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "requestId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RejectWorkspaceDelete(w, r, requestId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProbeProjectDirectory operation middleware
+func (siw *ServerInterfaceWrapper) ProbeProjectDirectory(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProbeProjectDirectory(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteProject operation middleware
 func (siw *ServerInterfaceWrapper) DeleteProject(w http.ResponseWriter, r *http.Request) {
 
@@ -17219,6 +17522,41 @@ func (siw *ServerInterfaceWrapper) AddProjectRuntimeNode(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// ProvisionProjectRuntimeNode operation middleware
+func (siw *ServerInterfaceWrapper) ProvisionProjectRuntimeNode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "runtimeNodeId" -------------
+	var runtimeNodeId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runtimeNodeId", chi.URLParam(r, "runtimeNodeId"), &runtimeNodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runtimeNodeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProvisionProjectRuntimeNode(w, r, projectId, runtimeNodeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetProjectRuntimeReadiness operation middleware
 func (siw *ServerInterfaceWrapper) GetProjectRuntimeReadiness(w http.ResponseWriter, r *http.Request) {
 
@@ -17411,6 +17749,41 @@ func (siw *ServerInterfaceWrapper) ListProjectTasks(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListProjectTasks(w, r, projectId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectTask operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "projectId" -------------
+	var projectId ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectId", chi.URLParam(r, "projectId"), &projectId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "taskId" -------------
+	var taskId TaskId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectTask(w, r, projectId, taskId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -21407,6 +21780,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/projects/run-summary", wrapper.ListProjectRunSummaries)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/workspace-delete-requests", wrapper.ListWorkspaceDeleteRequests)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/workspace-delete-requests/{requestId}/confirm", wrapper.ConfirmWorkspaceDelete)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/workspace-delete-requests/{requestId}/reject", wrapper.RejectWorkspaceDelete)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/workspace/probe", wrapper.ProbeProjectDirectory)
+	})
+	r.Group(func(r chi.Router) {
 		r.Delete(options.BaseURL+"/api/v1/projects/{projectId}", wrapper.DeleteProject)
 	})
 	r.Group(func(r chi.Router) {
@@ -21545,6 +21930,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId}", wrapper.AddProjectRuntimeNode)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/runtime-nodes/{runtimeNodeId}/provision", wrapper.ProvisionProjectRuntimeNode)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/runtime-readiness", wrapper.GetProjectRuntimeReadiness)
 	})
 	r.Group(func(r chi.Router) {
@@ -21558,6 +21946,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks", wrapper.ListProjectTasks)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/projects/{projectId}/tasks/{taskId}", wrapper.GetProjectTask)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/projects/{projectId}/tasks/{taskId}/dismiss", wrapper.DismissProjectTask)

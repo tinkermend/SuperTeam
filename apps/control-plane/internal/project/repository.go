@@ -49,6 +49,8 @@ type Repository interface {
 	CreateConfigRevision(ctx context.Context, req UpdateProjectConfigRequest, project Project, eventID uuid.UUID) (ProjectConfigRevision, error)
 	GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error)
 	GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error)
+	// GetProjectTaskInProject scopes by tenant+project+task (deep-link GET).
+	GetProjectTaskInProject(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (ProjectTask, error)
 	CreateCoordinationJob(ctx context.Context, req CreateCoordinationJobRequest) (CoordinationJob, error)
 	FinishCoordinationJob(ctx context.Context, req FinishCoordinationJobRequest) (CoordinationJob, error)
 	ListCoordinationJobs(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]CoordinationJob, error)
@@ -202,8 +204,11 @@ type Repository interface {
 	ListArchiveSnapshots(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectArchiveSnapshot, error)
 	ListConfigRevisions(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectConfigRevision, error)
 	GetConfigRevision(ctx context.Context, tenantID, projectID, revisionID uuid.UUID) (ProjectConfigRevision, error)
-	InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) (ProjectRuntimeNode, error)
+	// InsertProjectRuntimeNode binds a node. provisioned=true stamps provision_status
+	// (create primary path); false leaves unprovisioned (add-node / secondary create).
+	InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID, provisioned bool, provisionSource string) (ProjectRuntimeNode, error)
 	ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error)
+	MarkProjectRuntimeNodeProvisioned(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID, provisionSource string) (ProjectRuntimeNode, error)
 	RemoveProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) error
 	GetProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID uuid.UUID) (ProjectEmployeeNodeAffinity, error)
 	UpsertProjectEmployeeNodeAffinity(ctx context.Context, tenantID, projectID, digitalEmployeeID, runtimeNodeID uuid.UUID) (ProjectEmployeeNodeAffinity, error)
@@ -211,6 +216,18 @@ type Repository interface {
 	ListProjectDeleteBlockers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectDeleteBlocker, error)
 	GetProjectDeletePreviewCounts(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectDeleteWarnings, error)
 	SoftDeleteProjectCascade(ctx context.Context, params SoftDeleteProjectCascadeParams) (ProjectDeleteCascadeResult, error)
+
+	// Workspace delete confirmation queue (spec 2026-08-12 P0).
+	EnqueueWorkspaceDeleteRequest(ctx context.Context, params EnqueueWorkspaceDeleteRequestParams) (WorkspaceDeleteRequest, error)
+	GetWorkspaceDeleteRequest(ctx context.Context, tenantID, requestID uuid.UUID) (WorkspaceDeleteRequest, error)
+	ListPendingWorkspaceDeleteRequests(ctx context.Context, tenantID uuid.UUID) ([]WorkspaceDeleteRequest, error)
+	ListStalePendingWorkspaceDeleteRequests(ctx context.Context, staleBefore time.Time) ([]WorkspaceDeleteRequest, error)
+	CountPendingWorkspaceDeleteByDirectoryName(ctx context.Context, directoryName string) (int32, error)
+	ConfirmWorkspaceDeleteRequest(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID) (WorkspaceDeleteRequest, error)
+	RejectWorkspaceDeleteRequest(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID, reason string) (WorkspaceDeleteRequest, error)
+	ResolveOrphanWorkspaceDeleteReminders(ctx context.Context) error
+	// CreateWorkspaceDeleteAuditEvent records confirm/reject/enqueue audits.
+	CreateWorkspaceDeleteAuditEvent(ctx context.Context, tenantID, actorUserID uuid.UUID, action string, request WorkspaceDeleteRequest, extra map[string]any) error
 }
 
 type ProjectTaskRuntimeBindingRepository interface {

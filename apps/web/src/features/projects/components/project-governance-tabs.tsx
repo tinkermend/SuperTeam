@@ -39,6 +39,7 @@ type ProjectGovernanceTabsProps = {
   demandCount: number;
   evidence?: ProjectEvidenceRef[];
   executionSummaryCount: number;
+  focusEvidenceId?: string;
   initialTab?: "evidence" | "artifacts" | "budget" | "acceptance" | "archive";
   onCreateArchiveSnapshot: (input: CreateProjectArchiveSnapshotInput) => void;
   onCreateEvidence: (input: CreateProjectEvidenceInput) => void;
@@ -62,6 +63,7 @@ export function ProjectGovernanceTabs({
   demandCount,
   evidence = [],
   executionSummaryCount,
+  focusEvidenceId,
   initialTab = "evidence",
   onCreateArchiveSnapshot,
   onCreateEvidence,
@@ -73,7 +75,11 @@ export function ProjectGovernanceTabs({
   const unresolvedRiskCount = acceptance?.unresolved_risks.length ?? 0;
 
   return (
-    <SoftTabs className="flex w-full min-w-0 flex-col gap-3" defaultValue={initialTab}>
+    <SoftTabs
+      className="flex w-full min-w-0 flex-col gap-3"
+      defaultValue={initialTab}
+      key={initialTab}
+    >
       <div className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden pb-1 [-webkit-overflow-scrolling:touch]">
         <SoftTabsList
           aria-label="项目详情治理视图"
@@ -106,6 +112,7 @@ export function ProjectGovernanceTabs({
       <SoftTabsContent className="m-0" value="evidence">
         <ProjectEvidencePanel
           evidence={evidence}
+          focusEvidenceId={focusEvidenceId}
           onCreateEvidence={onCreateEvidence}
           onPatchEvidence={onPatchEvidence}
         />

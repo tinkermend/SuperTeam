@@ -23,6 +23,8 @@ type HandlerService interface {
 	GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (*Project, error)
 	AddProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error)
 	RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) error
+	ProvisionWorkspaceOnNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error)
+	ProbeProjectDirectory(ctx context.Context, req ProbeProjectDirectoryRequest) (*ProbeProjectDirectoryFacts, error)
 	RecloneProjectWorkspace(ctx context.Context, req WorkspaceManualActionRequest) (*Project, error)
 	MarkProjectWorkspaceReadyManually(ctx context.Context, req WorkspaceManualActionRequest) (*Project, error)
 	GetProjectRuntimeReadiness(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectRuntimePlacementReadiness, error)
@@ -35,6 +37,9 @@ type HandlerService interface {
 	UnarchiveProject(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID) (*Project, error)
 	GetProjectDeletePreview(ctx context.Context, tenantID, projectID uuid.UUID) (*ProjectDeletePreview, error)
 	DeleteProject(ctx context.Context, req DeleteProjectRequest) error
+	ListPendingWorkspaceDeleteRequests(ctx context.Context, tenantID uuid.UUID) ([]WorkspaceDeleteRequest, error)
+	ConfirmWorkspaceDelete(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID) (*WorkspaceDeleteRequest, error)
+	RejectWorkspaceDelete(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID, reason string) (*WorkspaceDeleteRequest, error)
 	ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error)
 	ListProjectMembers(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectMember, error)
 	ListCastings(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]CastingEntry, error)
@@ -43,6 +48,7 @@ type HandlerService interface {
 	ListRoleCandidates(ctx context.Context, tenantID, projectID uuid.UUID, roleKey string, requiredCapabilities []string) ([]RoleCandidate, error)
 	GetPlaybookReadiness(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]PlaybookReadiness, error)
 	ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error)
+	GetProjectTask(ctx context.Context, tenantID, projectID, taskID uuid.UUID) (*ProjectTask, error)
 	DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (*ProjectTask, error)
 	ListProjectEvents(ctx context.Context, tenantID, projectID uuid.UUID, limit, offset int32) ([]ProjectEvent, error)
 	RetryWorkflowSignal(ctx context.Context, req RetryWorkflowSignalRequest) (*ProjectEvent, error)
@@ -386,6 +392,7 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		RepoBinding:         req.RepoBinding,
 		RuntimeNodeIDs:      req.RuntimeNodeIDs,
 		ScenarioTemplateKey: req.ScenarioTemplateKey,
+		SourceKind:          ProjectSourceKind(strings.TrimSpace(req.SourceKind)),
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -457,7 +464,41 @@ func (h *HTTPHandler) AddProjectRuntimeNode(w http.ResponseWriter, r *http.Reque
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, projectRuntimeNodeResponse{RuntimeNodeID: node.RuntimeNodeID})
+	writeJSON(w, http.StatusOK, projectRuntimeNodeResponseFromDomain(*node))
+}
+
+func (h *HTTPHandler) ProvisionWorkspaceOnNode(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, projectID, ok := h.authorizeProjectScopedAction(w, r, authz.ActionProjectUpdate)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	runtimeNodeID, err := uuid.Parse(chi.URLParam(r, "runtimeNodeId"))
+	if err != nil || runtimeNodeID == uuid.Nil {
+		http.Error(w, "invalid runtime node id", http.StatusBadRequest)
+		return
+	}
+	var body workspaceManualActionBody
+	if r.Body != nil && r.Body != http.NoBody {
+		if !decodeOptionalJSONBody(w, r, &body) {
+			return
+		}
+	}
+	node, err := service.ProvisionWorkspaceOnNode(r.Context(), ModifyProjectRuntimeNodeRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+		ActorUserID:   actorID,
+		Reason:        body.Reason,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, projectRuntimeNodeResponseFromDomain(*node))
 }
 
 func (h *HTTPHandler) RecloneProjectWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -633,6 +674,172 @@ func (h *HTTPHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+
+func (h *HTTPHandler) ProbeProjectDirectory(w http.ResponseWriter, r *http.Request) {
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectCreate)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body struct {
+		RuntimeNodeID string `json:"runtime_node_id"`
+		DirectoryName string `json:"directory_name"`
+	}
+	if !decodeJSONBody(w, r, &body) {
+		return
+	}
+	runtimeNodeID, err := uuid.Parse(strings.TrimSpace(body.RuntimeNodeID))
+	if err != nil || runtimeNodeID == uuid.Nil {
+		http.Error(w, "invalid runtime_node_id", http.StatusBadRequest)
+		return
+	}
+	facts, err := service.ProbeProjectDirectory(r.Context(), ProbeProjectDirectoryRequest{
+		TenantID:      tenantID,
+		RuntimeNodeID: runtimeNodeID,
+		DirectoryName: strings.TrimSpace(body.DirectoryName),
+		ActorUserID:   actorID,
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, facts)
+}
+
+// ListWorkspaceDeleteRequests lists pending workspace directory delete
+// confirmations (admin queue; tenant-scoped).
+func (h *HTTPHandler) ListWorkspaceDeleteRequests(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDelete)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	items, err := service.ListPendingWorkspaceDeleteRequests(r.Context(), tenantID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, workspaceDeleteRequestResponses(items))
+}
+
+func (h *HTTPHandler) ConfirmWorkspaceDelete(w http.ResponseWriter, r *http.Request) {
+	requestID, ok := workspaceDeleteRequestIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDelete)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	item, err := service.ConfirmWorkspaceDelete(r.Context(), tenantID, requestID, actorID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, workspaceDeleteRequestResponseFromDomain(*item))
+}
+
+func (h *HTTPHandler) RejectWorkspaceDelete(w http.ResponseWriter, r *http.Request) {
+	requestID, ok := workspaceDeleteRequestIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, actorID, ok := h.authorizeProjectAction(w, r, authz.ActionProjectDelete)
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+	}
+	item, err := service.RejectWorkspaceDelete(r.Context(), tenantID, requestID, actorID, body.Reason)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, workspaceDeleteRequestResponseFromDomain(*item))
+}
+
+func workspaceDeleteRequestIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	raw := strings.TrimSpace(chi.URLParam(r, "requestId"))
+	id, err := uuid.Parse(raw)
+	if err != nil || id == uuid.Nil {
+		http.Error(w, "invalid requestId", http.StatusBadRequest)
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+type workspaceDeleteRequestResponse struct {
+	ID             string         `json:"id"`
+	TenantID       string         `json:"tenant_id"`
+	ProjectID      string         `json:"project_id"`
+	RuntimeNodeID  string         `json:"runtime_node_id"`
+	DirectoryName  string         `json:"directory_name"`
+	NodeIDSnapshot string         `json:"node_id_snapshot"`
+	Ownership      string         `json:"ownership"`
+	RepoSummary    map[string]any `json:"repo_summary,omitempty"`
+	Status         string         `json:"status"`
+	RequestedBy    string         `json:"requested_by"`
+	RequestedAt    string         `json:"requested_at"`
+	ResolvedBy     *string        `json:"resolved_by,omitempty"`
+	ResolvedAt     *string        `json:"resolved_at,omitempty"`
+	Reason         *string        `json:"reason,omitempty"`
+}
+
+func workspaceDeleteRequestResponseFromDomain(item WorkspaceDeleteRequest) workspaceDeleteRequestResponse {
+	resp := workspaceDeleteRequestResponse{
+		ID:             item.ID.String(),
+		TenantID:       item.TenantID.String(),
+		ProjectID:      item.ProjectID.String(),
+		RuntimeNodeID:  item.RuntimeNodeID.String(),
+		DirectoryName:  item.DirectoryName,
+		NodeIDSnapshot: item.NodeIDSnapshot,
+		Ownership:      string(item.Ownership),
+		RepoSummary:    item.RepoSummary,
+		Status:         string(item.Status),
+		RequestedBy:    item.RequestedBy.String(),
+		RequestedAt:    item.RequestedAt.UTC().Format(time.RFC3339Nano),
+		Reason:         item.Reason,
+	}
+	if item.ResolvedBy != nil {
+		s := item.ResolvedBy.String()
+		resp.ResolvedBy = &s
+	}
+	if item.ResolvedAt != nil {
+		s := item.ResolvedAt.UTC().Format(time.RFC3339Nano)
+		resp.ResolvedAt = &s
+	}
+	return resp
+}
+
+func workspaceDeleteRequestResponses(items []WorkspaceDeleteRequest) []workspaceDeleteRequestResponse {
+	out := make([]workspaceDeleteRequestResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, workspaceDeleteRequestResponseFromDomain(item))
+	}
+	return out
+}
+
 func (h *HTTPHandler) allowedProjectActions(ctx context.Context, tenantID, projectID uuid.UUID) []string {
 	if h == nil || h.authorizer == nil {
 		return nil
@@ -721,6 +928,23 @@ func (h *HTTPHandler) ListProjectTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, taskResponses(tasks))
+}
+
+func (h *HTTPHandler) GetProjectTask(w http.ResponseWriter, r *http.Request) {
+	tenantID, _, projectID, service, ok := h.projectRouteContext(w, r)
+	if !ok {
+		return
+	}
+	taskID, ok := taskIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	task, err := service.GetProjectTask(r.Context(), tenantID, projectID, taskID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, taskResponseFromDomain(*task))
 }
 
 func (h *HTTPHandler) DismissProjectTask(w http.ResponseWriter, r *http.Request) {
@@ -2055,11 +2279,11 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrTeamlessProjectMember):
 		http.Error(w, "数字员工必须先归属团队才能加入项目："+strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrTeamlessProjectMember.Error()+":")), http.StatusBadRequest)
-	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectName), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrProjectRequiresHumanOwner), errors.Is(err, ErrProjectRequiresDigitalEmployee), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode):
+	case errors.Is(err, ErrInvalidProject), errors.Is(err, ErrInvalidProjectName), errors.Is(err, ErrInvalidProjectMember), errors.Is(err, ErrProjectRequiresHumanOwner), errors.Is(err, ErrProjectRequiresDigitalEmployee), errors.Is(err, ErrInvalidProjectEvidence), errors.Is(err, ErrInvalidProjectAcceptance), errors.Is(err, ErrProjectRuntimeNodesRequired), errors.Is(err, ErrInvalidCoordinationMode), errors.Is(err, ErrProjectDirectoryNamePendingDelete):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProjectNameConflict), errors.Is(err, ErrProjectWorkspaceNotReady), errors.Is(err, ErrProjectWorkspaceProvision), errors.Is(err, ErrProjectWorkspaceUnavailable):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrProjectNotFound):
+	case errors.Is(err, ErrProjectNotFound), errors.Is(err, ErrProjectWorkspaceDeleteRequestNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrUnauthorizedProjectTeamScope):
 		http.Error(w, "当前用户无权使用该团队创建项目。", http.StatusForbidden)
@@ -2154,16 +2378,34 @@ type createProjectBody struct {
 	RepoBinding         *ProjectRepoBindingInput `json:"repo_binding"`
 	RuntimeNodeIDs      []uuid.UUID              `json:"runtime_node_ids"`
 	ScenarioTemplateKey *string                  `json:"scenario_template_key"`
+	// SourceKind: none | git | attach (spec 2026-08-12). Empty → infer from repo_binding.
+	SourceKind string `json:"source_kind"`
 }
 
 type projectRuntimeNodeResponse struct {
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	RuntimeNodeID   uuid.UUID `json:"runtime_node_id"`
+	ProvisionStatus string    `json:"provision_status,omitempty"`
+	ProvisionedAt   *string   `json:"provisioned_at,omitempty"`
+	ProvisionSource *string   `json:"provision_source,omitempty"`
+}
+
+func projectRuntimeNodeResponseFromDomain(node ProjectRuntimeNode) projectRuntimeNodeResponse {
+	resp := projectRuntimeNodeResponse{
+		RuntimeNodeID:   node.RuntimeNodeID,
+		ProvisionStatus: string(node.ProvisionStatus),
+		ProvisionSource: node.ProvisionSource,
+	}
+	if node.ProvisionedAt != nil {
+		s := node.ProvisionedAt.UTC().Format(time.RFC3339Nano)
+		resp.ProvisionedAt = &s
+	}
+	return resp
 }
 
 func projectRuntimeNodeResponses(nodes []ProjectRuntimeNode) []projectRuntimeNodeResponse {
 	responses := make([]projectRuntimeNodeResponse, 0, len(nodes))
 	for _, node := range nodes {
-		responses = append(responses, projectRuntimeNodeResponse{RuntimeNodeID: node.RuntimeNodeID})
+		responses = append(responses, projectRuntimeNodeResponseFromDomain(node))
 	}
 	return responses
 }
@@ -2497,6 +2739,7 @@ type projectResponse struct {
 	PrimaryRuntimeNodeID   *string                    `json:"primary_runtime_node_id,omitempty"`
 	WorkspaceReadyError    *string                    `json:"workspace_ready_error,omitempty"`
 	WorkspaceReadyAt       *string                    `json:"workspace_ready_at,omitempty"`
+	WorkspaceOwnership     string                     `json:"workspace_ownership,omitempty"`
 	ArchivedAt             *string                    `json:"archived_at,omitempty"`
 	AllowedActions         []string                   `json:"allowed_actions,omitempty"`
 	CreatedAt              string                     `json:"created_at,omitempty"`
@@ -3528,6 +3771,7 @@ func projectResponseFromDomain(project Project) projectResponse {
 		PrimaryRuntimeNodeID:   stringPtr(project.PrimaryRuntimeNodeID),
 		WorkspaceReadyError:    project.WorkspaceReadyError,
 		WorkspaceReadyAt:       timePtr(project.WorkspaceReadyAt),
+		WorkspaceOwnership:     string(projectWorkspaceOwnership(project)),
 		ArchivedAt:             timePtr(project.ArchivedAt),
 		CreatedAt:              timeValue(project.CreatedAt),
 		UpdatedAt:              timeValue(project.UpdatedAt),

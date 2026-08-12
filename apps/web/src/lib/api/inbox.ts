@@ -9,6 +9,8 @@ export type InboxItemType =
   | "approval"
   | "project_decision"
   | "team_pending_delete"
+  | "project_workspace_pending_delete"
+  | "project_workspace_provision_pending"
   | "channel_alert"
   | "automation_alert"
   | "casting_invalidated";
@@ -17,6 +19,8 @@ export type InboxSourceType =
   | "approval_request"
   | "project_decision_request"
   | "team_pending_delete"
+  | "project_workspace_pending_delete"
+  | "project_workspace_provision_pending"
   | "feishu_channel";
 
 export type InboxItemAction = {

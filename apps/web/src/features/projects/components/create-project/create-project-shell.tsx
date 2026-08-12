@@ -137,6 +137,11 @@ export function CreateProjectShell({
       setActiveStep("runtimeNodes");
       return;
     }
+    if (!validation.attachProbe) {
+      setLocalError("认领已有目录前请先探测目标目录，并确认这就是要认领的目录");
+      setActiveStep("runtimeNodes");
+      return;
+    }
     setLocalError("");
     onSubmit(buildProjectCreateInput(draft, currentUser));
   }
@@ -146,6 +151,7 @@ export function CreateProjectShell({
     validation.currentUser &&
     validation.teamAuthorized &&
     validation.runtimeNodes &&
+    validation.attachProbe &&
     !authorizationError &&
     !isAuthorizationLoading;
 

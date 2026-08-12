@@ -145,6 +145,7 @@ pub enum RuntimeCommandType {
     RemoveProjectDirectory,
     CloneProjectRepository,
     ValidateProjectWorkspace,
+    ProbeProjectDirectory,
     ReadProviderNativeConfig,
     WriteProviderNativeConfig,
     StartSession,
@@ -194,6 +195,13 @@ pub struct ValidateProjectWorkspaceCommand {
     pub project_id: Option<String>,
     #[serde(default)]
     pub require_git: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProbeProjectDirectoryCommand {
+    pub project_name: String,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -421,6 +429,7 @@ impl<'de> Deserialize<'de> for RuntimeCommandType {
             "remove_project_directory" => Self::RemoveProjectDirectory,
             "clone_project_repository" => Self::CloneProjectRepository,
             "validate_project_workspace" => Self::ValidateProjectWorkspace,
+            "probe_project_directory" => Self::ProbeProjectDirectory,
             "read_provider_native_config" => Self::ReadProviderNativeConfig,
             "write_provider_native_config" => Self::WriteProviderNativeConfig,
             "start_session" => Self::StartSession,

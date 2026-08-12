@@ -44,6 +44,7 @@ import {
   SoftTabsContent
 } from "@/components/superteam";
 import { cn } from "@/lib/utils";
+import { projectPhaseDotClass } from "../project-lifecycle-display";
 import type {
   Project,
   ProjectAcceptanceRecord,
@@ -69,7 +70,6 @@ import type {
   ProjectPlanRevision,
   ProjectReportRef,
   ProjectRouteDecision,
-  ProjectStatus,
   ProjectTask,
   ProjectTaskGraph,
   ProjectTaskGraphBlockingFact,
@@ -129,12 +129,22 @@ type ProjectOperationalDetailProps = {
   /** 任务详情弹层按 demand 懒查执行图（页面只预载最新 demand 的图）。 */
   fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
   focusDecisionId?: string;
+  /** ?evidence= 深链：工作台治理区定位到该证据。 */
+  focusEvidenceId?: string;
+  /** 工作台治理 SoftTabs 初始子 tab（如 evidence）。 */
+  governanceInitialTab?: "evidence" | "artifacts" | "budget" | "acceptance" | "archive";
   /** ?demand= 深链：需求流程区选中的需求 id；缺省默认最新需求。 */
   initialDemandId?: string;
   /** 一单卷宗中栏视图（?view=）与切换回调；由页面写回 URL。 */
   demandView?: "timeline" | "graph";
   onDemandViewChange?: (view: "timeline" | "graph") => void;
   initialTab?: ProjectDetailSection | string;
+  /**
+   * `?tab=tasks&task=<id>` 播种：URL 有 task 时打开弹层；关闭弹层时由
+   * onClearDetailTaskUrl 清掉 URL，避免关了又被拉开。
+   */
+  detailTaskIdFromUrl?: string;
+  onClearDetailTaskUrl?: () => void;
   isArchived?: boolean;
   onArchiveProject: () => void;
   onUnarchiveProject?: () => void;
@@ -169,7 +179,10 @@ type ProjectOperationalDetailProps = {
   runtimePlacementPanel?: ReactNode;
   taskGraph?: ProjectTaskGraph;
   tasks: ProjectTask[];
-  /** ?task= 深链：执行轨迹面板按该任务过滤定位（配合 ?tab=trace）。 */
+  /**
+   * `?tab=trace&task=<id>`：执行轨迹面板按该任务过滤。
+   * 与 `detailTaskIdFromUrl`（tab=tasks 开弹层）共用参数名、靠 tab 判别。
+   */
   traceTaskId?: string;
   transferRequests: ProjectTransferRequest[];
 };
@@ -200,10 +213,14 @@ export function ProjectOperationalDetail({
   executionSummaries,
   fetchTaskGraph,
   focusDecisionId,
+  focusEvidenceId,
+  governanceInitialTab,
   initialDemandId,
   demandView,
   onDemandViewChange,
   initialTab = "workbench",
+  detailTaskIdFromUrl,
+  onClearDetailTaskUrl,
   isArchived,
   onArchiveProject,
   onUnarchiveProject,
@@ -233,7 +250,17 @@ export function ProjectOperationalDetail({
   transferRequests
 }: ProjectOperationalDetailProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [detailTaskId, setDetailTaskId] = useState<string | undefined>();
+  // 双源：URL 有 ?tab=tasks&task= 时以 URL 为准；页内点击走内部 state。
+  const [internalDetailTaskId, setInternalDetailTaskId] = useState<
+    string | undefined
+  >();
+  const detailTaskId = detailTaskIdFromUrl ?? internalDetailTaskId;
+  const setDetailTaskId = (id: string | undefined) => {
+    setInternalDetailTaskId(id);
+    if (!id && detailTaskIdFromUrl) {
+      onClearDetailTaskUrl?.();
+    }
+  };
   const initialSection = normalizeProjectDetailSection(
     typeof initialTab === "string" ? initialTab : undefined,
   );
@@ -249,7 +276,7 @@ export function ProjectOperationalDetail({
         typeof initialTab === "string" ? initialTab : undefined,
       ),
     );
-  }, [initialTab, focusDecisionId]);
+  }, [initialTab, focusDecisionId, focusEvidenceId]);
 
   // ?tab=trace 深链（任务详情弹层「查看执行轨迹」）：落在工作台并展开高级项目
   // 事实区，再定位到执行轨迹面板。等 Collapsible 展开渲染后再滚动。
@@ -263,6 +290,38 @@ export function ProjectOperationalDetail({
     }, 150);
     return () => window.clearTimeout(timer);
   }, [initialTab]);
+
+  // 审批 tab：focus 决策行 scrollIntoView（与 ?tab=trace 同构）。
+  useEffect(() => {
+    if (!focusDecisionId) return;
+    if (normalizeProjectDetailSection(typeof initialTab === "string" ? initialTab : undefined) !== "approval") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      document
+        .querySelector(`[data-focused-decision="true"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [focusDecisionId, initialTab, decisionRequests.length]);
+
+  // 证据深链：展开高级区 + 切到治理 evidence 子 tab，滚到治理区容器为止。
+  // 行级定位（滚到 `evidence-<id>` 那一行并高亮）归 ProjectEvidencePanel 自己做——
+  // 它才知道列表何时渲染完；此处不再重复 querySelector 同一个 id。
+  useEffect(() => {
+    if (!focusEvidenceId && governanceInitialTab !== "evidence") return;
+    const section = normalizeProjectDetailSection(
+      typeof initialTab === "string" ? initialTab : undefined,
+    );
+    if (section !== "workbench") return;
+    setAdvancedOpen(true);
+    const timer = window.setTimeout(() => {
+      document
+        .getElementById("project-governance-evidence")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [focusEvidenceId, governanceInitialTab, initialTab]);
 
   const latestPlanRevision = selectLatestPlanRevision(planRevisions);
   // 执行轨迹面板任务过滤下拉的显示名：任务 id → 标题（技术区兜底 mono id）。
@@ -340,7 +399,10 @@ export function ProjectOperationalDetail({
                 <h2 className="truncate text-xl font-semibold tracking-normal text-ink">
                   {project.name}
                 </h2>
-                <StatusPill tone={projectStatusTone(project.status)}>
+                <StatusPill
+                  dotClassName={projectPhaseDotClass(project.status)}
+                  tone="mute"
+                >
                   {projectStatusLabel(project.status)}
                 </StatusPill>
                 {project.workspace_ready_status &&
@@ -599,24 +661,28 @@ export function ProjectOperationalDetail({
                           trace={executionTrace}
                         />
                       </div>
-                      <ProjectGovernanceTabs
-                        acceptance={acceptance}
-                        archivePreview={archivePreview}
-                        archiveSnapshots={archiveSnapshots}
-                        artifacts={artifacts}
-                        budgetLedger={budgetLedger}
-                        budgetSummary={budgetSummary}
-                        decisionRequestCount={decisionRequests.length}
-                        demandCount={demands.length}
-                        evidence={evidence}
-                        executionSummaryCount={executionSummaries.length}
-                        onCreateArchiveSnapshot={onCreateArchiveSnapshot}
-                        onCreateEvidence={onCreateEvidence}
-                        onPatchEvidence={onPatchEvidence}
-                        reports={reports}
-                        routeDecisionCount={routeDecisions.length}
-                        taskCount={tasks.length}
-                      />
+                      <div className="scroll-mt-20" id="project-governance-evidence">
+                        <ProjectGovernanceTabs
+                          acceptance={acceptance}
+                          archivePreview={archivePreview}
+                          archiveSnapshots={archiveSnapshots}
+                          artifacts={artifacts}
+                          budgetLedger={budgetLedger}
+                          budgetSummary={budgetSummary}
+                          decisionRequestCount={decisionRequests.length}
+                          demandCount={demands.length}
+                          evidence={evidence}
+                          executionSummaryCount={executionSummaries.length}
+                          focusEvidenceId={focusEvidenceId}
+                          initialTab={governanceInitialTab ?? "evidence"}
+                          onCreateArchiveSnapshot={onCreateArchiveSnapshot}
+                          onCreateEvidence={onCreateEvidence}
+                          onPatchEvidence={onPatchEvidence}
+                          reports={reports}
+                          routeDecisionCount={routeDecisions.length}
+                          taskCount={tasks.length}
+                        />
+                      </div>
                     </section>
                   }
                   detail={
@@ -671,6 +737,7 @@ export function ProjectOperationalDetail({
           <ProjectApprovalPanel
             decisionRequests={decisionRequests}
             focusDecisionId={focusDecisionId}
+            projectId={project.id}
           />
         </SoftTabsContent>
 
@@ -687,6 +754,7 @@ export function ProjectOperationalDetail({
       </SoftTabs>
 
       <ProjectTaskDetailDialog
+        apiOptions={apiOptions}
         decisionRequests={decisionRequests}
         demands={demands}
         executionTrace={executionTrace}
@@ -1884,10 +1952,12 @@ function ProjectTasksPanel({
 
 function ProjectApprovalPanel({
   decisionRequests,
-  focusDecisionId
+  focusDecisionId,
+  projectId,
 }: {
   decisionRequests: ProjectDecisionRequest[];
   focusDecisionId?: string;
+  projectId: string;
 }) {
   const orderedDecisions = useMemo(
     () =>
@@ -1896,6 +1966,9 @@ function ProjectApprovalPanel({
       ),
     [decisionRequests],
   );
+  const focusMissing =
+    Boolean(focusDecisionId) &&
+    !orderedDecisions.some((d) => d.id === focusDecisionId);
 
   return (
     <WorkSurface className="min-w-0">
@@ -1904,6 +1977,21 @@ function ProjectApprovalPanel({
         <p className="mt-1 text-xs text-ink-2">
           只读汇总本项目决策记录；待办请在收件箱处理。
         </p>
+        {focusMissing ? (
+          <div
+            className="mt-3 rounded-[10px] border border-warn/30 bg-warn-soft px-3 py-2 text-xs text-warn-text"
+            data-testid="decision-focus-missing"
+          >
+            该决策不在当前列表（可能已处理或超出近期记录）。
+            <Link
+              className="ml-2 font-semibold text-brand-deep hover:text-brand"
+              search={{ project: projectId, source: focusDecisionId }}
+              to="/inbox"
+            >
+              在收件箱查找 →
+            </Link>
+          </div>
+        ) : null}
       </div>
       <div className="divide-y divide-line">
         {orderedDecisions.length === 0 ? (
@@ -1951,6 +2039,15 @@ function ProjectApprovalPanel({
                     ) : null}
                     <span className="font-mono">{decision.id}</span>
                   </div>
+                  {!isResolved ? (
+                    <Link
+                      className="mt-2 inline-flex text-[12px] font-semibold text-brand-deep hover:text-brand"
+                      search={{ project: projectId, source: decision.id }}
+                      to="/inbox"
+                    >
+                      在收件箱处理 →
+                    </Link>
+                  ) : null}
                 </div>
                 <StatusPill tone={decisionTone(decision.status_snapshot)}>
                   {decisionStatusLabel(decision.status_snapshot)}
@@ -2232,14 +2329,6 @@ function ownerMembers(members: ProjectMember[], fallbackOwnerID: string) {
       tenant_id: ""
 },
   ];
-}
-
-function projectStatusTone(status: ProjectStatus | string): Tone {
-  if (status === "running") return "ok";
-  if (status === "archived") return "mute";
-  if (status === "paused" || status === "acceptance") return "warn";
-  if (status === "configuring" || status === "draft") return "info";
-  return "mute";
 }
 
 function workspaceReadyTone(status: WorkspaceReadyStatus | string | undefined): Tone {

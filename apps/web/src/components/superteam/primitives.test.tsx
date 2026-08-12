@@ -64,6 +64,28 @@ describe("v3 组件族 · 基础渲染", () => {
     await expect.element(pill).toHaveClass("bg-warn-soft");
   });
 
+  it("StatusPill.dotClassName 覆盖圆点为 phase 分类色，不占用 tone 语义底", async () => {
+    const { getByText, container } = await render(
+      <StatusPill tone="mute" dotClassName="bg-phase-acceptance">
+        验收中
+      </StatusPill>,
+    );
+    const pill = getByText("验收中");
+    await expect.element(pill).toHaveClass("bg-mute-soft");
+    await expect.element(pill).toHaveClass("text-mute-text");
+    const dot = container.querySelector('[data-slot="status-pill"] > span[aria-hidden]');
+    expect(dot?.className).toContain("bg-phase-acceptance");
+    // 圆点走了 dotClassName 就不再取 tone 的 solid 底（此处 tone=mute）。
+    expect(dot?.className).not.toContain("bg-mute");
+  });
+
+  it("dotClassName 缺省时圆点回落 tone 的 solid 底", async () => {
+    const { container } = await render(<StatusPill tone="danger">失败</StatusPill>);
+    const dot = container.querySelector('[data-slot="status-pill"] > span[aria-hidden]');
+    expect(dot?.className).toContain("bg-danger");
+    expect(dot?.className).not.toContain("bg-phase-");
+  });
+
   it("MetricCard 渲染标签、大数字；loud 时数值跟随 iconTone", async () => {
     const { getByText } = await render(
       <MetricCard label="待审批" value="4" loud iconTone="warn" meta="2 个高风险" />,

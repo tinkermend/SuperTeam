@@ -796,6 +796,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	employeeService.SetCastingImpactGateway(newEmployeeCastingImpactAdapter(projectService, q, stores.Postgres))
 	roleVocabularyService.SetCastingCascade(newRoleVocabCastingCascadeAdapter(projectService, q, stores.Postgres))
 	projectService.SetCastingInvalidationNotifier(newCastingInvalidationNotifier(inboxService))
+	projectService.SetWorkspaceProvisionInbox(newWorkspaceProvisionInboxAdapter(inboxService))
 	if coordinationStore != nil {
 		coordinationStore.WithScenarioTemplateSource(scenarioTemplateSourceAdapter{service: scenarioTemplateService})
 		// G9 coordinator path: after accepted task completion, propose casting_expansion
@@ -1062,6 +1063,10 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 	if container.TenantService != nil && container.InboxService != nil {
 		// 团队待确认删除滞留催办(生命周期收敛 P2:永不自动物理删,超时提醒)。
 		go startTeamPendingDeleteReminder(ctx, container.TenantService, container.InboxService)
+	}
+	if container.ProjectService != nil && container.InboxService != nil {
+		// 工作区目录删除确认滞留催办(spec 2026-08-12 P0)。
+		go startWorkspaceDeleteReminder(ctx, container.ProjectService, container.InboxService)
 	}
 	if container.InboxService != nil {
 		// 飞书通道失联看门狗(接入管理 P1:心跳超时→收件箱告警,恢复自动 resolve)。

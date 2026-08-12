@@ -14,9 +14,19 @@ export const projectCreateSteps: Array<{ id: ProjectCreateStep; label: string }>
 
 export type ProjectPolicyPreset = "standard" | "lightweight" | "highRisk";
 
-export type ProjectSourceKind = "git" | "directory";
+export type ProjectSourceKind = "git" | "directory" | "attach";
 
 export type ProjectCreateDraft = {
+  /**
+   * 认领已有目录时，人是否已经看过探测事实并确认「就是这个目录」。
+   * 只对 sourceKind=attach 有意义。
+   */
+  attachProbeConfirmed: boolean;
+  /**
+   * 被确认过的探测目标（主节点|目录名）。改了目录名或换了主节点后与当前目标不符，
+   * 确认自动失效——不靠 effect 清状态，靠比对，改不出「确认过旧目录再换新目录」的洞。
+   */
+  attachProbeKey: string;
   description: string;
   /** 非 Git：用户填写的 Runtime 目录名；Git：可空，由服务端从 URL 推导。 */
   directoryName: string;
@@ -39,6 +49,8 @@ export type ProjectCreateDraft = {
 };
 
 export const emptyProjectCreateDraft: ProjectCreateDraft = {
+  attachProbeConfirmed: false,
+  attachProbeKey: "",
   description: "",
   directoryName: "",
   goal: "",
@@ -168,6 +180,11 @@ export function directoryNameHintFromGitURL(raw: string): string | null {
   return candidate;
 }
 
+/** 探测目标标识：主节点(第一个绑定节点) + 目录名。 */
+export function attachProbeTarget(draft: ProjectCreateDraft): string {
+  return `${draft.runtimeNodeIds[0] ?? ""}|${draft.directoryName.trim()}`;
+}
+
 export function projectCreateValidation(
   draft: ProjectCreateDraft,
   currentUserId: string | undefined,
@@ -191,6 +208,8 @@ export function projectCreateValidation(
     } else if (!hint && draft.repoUrl.trim()) {
       directoryError = "无法从 URL 推导合法目录名，请手填项目目录名";
     }
+  } else if (draft.sourceKind === "attach") {
+    directoryError = validateProjectDirectoryName(draft.directoryName);
   } else {
     directoryError = validateProjectDirectoryName(draft.directoryName);
   }
@@ -200,7 +219,13 @@ export function projectCreateValidation(
     directoryError === null &&
     repoError === null;
 
+  // 认领已有目录不能盲签：必须先探测、看过事实、再确认（spec 2026-08-12 §7）。
+  const attachProbe =
+    draft.sourceKind !== "attach" ||
+    (draft.attachProbeConfirmed && draft.attachProbeKey === attachProbeTarget(draft));
+
   return {
+    attachProbe,
     basics,
     currentUser: Boolean(currentUserId),
     digitalEmployees: true,
@@ -241,9 +266,12 @@ export function buildProjectCreateInput(
   }
 
   const isGit = draft.sourceKind === "git";
+  const isAttach = draft.sourceKind === "attach";
   const repoUrl = draft.repoUrl.trim();
   const repoDefaultBranch = draft.repoDefaultBranch.trim() || "main";
   const directoryName = draft.directoryName.trim();
+  // Wire source_kind for CP (none|git|attach). Legacy "directory" maps to "none".
+  const sourceKind = isGit ? "git" : isAttach ? "attach" : "none";
 
   return {
     coordination_policy: {
@@ -258,6 +286,7 @@ export function buildProjectCreateInput(
     human_owner_user_ids: ownerIDs,
     members,
     name: draft.name.trim(),
+    source_kind: sourceKind,
     ...(isGit && repoUrl
       ? {
           repo_binding: {

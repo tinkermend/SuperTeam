@@ -26,8 +26,13 @@ func (a ProjectDispatchFactsAdapter) GetProjectDispatchFacts(ctx context.Context
 	if err != nil {
 		return employee.ProjectDispatchFacts{}, err
 	}
+	ownership := string(project.WorkspaceOwnership)
+	if ownership == "" {
+		ownership = string(WorkspaceOwnershipPlatformManaged)
+	}
 	return employee.ProjectDispatchFacts{
 		Name:                 project.WorkspaceDirectoryName(),
 		WorkspaceReadyStatus: string(project.WorkspaceReadyStatus),
+		WorkspaceOwnership:   ownership,
 	}, nil
 }

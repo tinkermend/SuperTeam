@@ -67,6 +67,11 @@ var (
 	// criterion verdict is neither the decision's TargetUserID nor the
 	// project's human_owner. See Service.SignDemandCriterionVerdict.
 	ErrProjectDecisionForbidden = errors.New("project decision forbidden")
+	// ErrProjectWorkspaceDeleteRequestNotFound:确认/拒绝队列项不存在或非 pending。
+	ErrProjectWorkspaceDeleteRequestNotFound = errors.New("project workspace delete request not found")
+	// ErrProjectDirectoryNamePendingDelete:目录名被未决工作区删除队列占用(软删后磁盘未确认清理)。
+	// 文案直接中文:handler 400 原样下发。
+	ErrProjectDirectoryNamePendingDelete = errors.New("项目目录名仍在工作区删除确认队列中，请先处理待删目录或更换目录名")
 )
 
 const ProjectDeleteBlockedCode = "project_delete_blocked"
@@ -497,6 +502,8 @@ type Project struct {
 	PrimaryRuntimeNodeID   *uuid.UUID
 	WorkspaceReadyError    *string
 	WorkspaceReadyAt       *time.Time
+	// WorkspaceOwnership: platform_managed | attached (spec 2026-08-12 P2).
+	WorkspaceOwnership WorkspaceOwnership
 	// BudgetTokenLimit 是项目 token 预算上限;nil = 不限。达到后派发前闸阻止开新任务
 	// (运行中任务不打断)。已消耗见 SumProjectConsumedTokens。
 	BudgetTokenLimit *int64
@@ -505,6 +512,15 @@ type Project struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
+
+// ProjectSourceKind is the create-time source discriminant (spec 2026-08-12 §5.1).
+type ProjectSourceKind string
+
+const (
+	ProjectSourceKindNone   ProjectSourceKind = "none"
+	ProjectSourceKindGit    ProjectSourceKind = "git"
+	ProjectSourceKindAttach ProjectSourceKind = "attach"
+)
 
 type ProjectRepoBindingStatus string
 
@@ -1734,16 +1750,97 @@ type CreateProjectRequest struct {
 	// WorkspaceReadyStatus is set by CreateProject before persistence; callers
 	// outside CreateProject leave it empty (repository defaults to ready).
 	WorkspaceReadyStatus WorkspaceReadyStatus
+	// SourceKind: none | git | attach. Empty defaults from RepoBinding (legacy).
+	SourceKind ProjectSourceKind
+	// WorkspaceOwnership set by CreateProject from SourceKind; callers outside
+	// leave empty for repository default platform_managed.
+	WorkspaceOwnership WorkspaceOwnership
 }
+
+// ProvisionStatus is bind vs provision state on a project_runtime_nodes row
+// (spec 2026-08-12 §5.2 / P1). Only provisioned nodes enter dispatch candidates.
+type ProvisionStatus string
+
+const (
+	ProvisionStatusUnprovisioned ProvisionStatus = "unprovisioned"
+	ProvisionStatusProvisioned   ProvisionStatus = "provisioned"
+)
 
 // ProjectRuntimeNode is a runtime node bound to a project's eligibility set —
 // the pool of nodes a task dispatched under this project may be placed on.
+// Binding alone does not touch disk; ProvisionStatus tracks whether the
+// workspace was supplied on that node.
 type ProjectRuntimeNode struct {
-	ID            uuid.UUID
-	TenantID      uuid.UUID
-	ProjectID     uuid.UUID
-	RuntimeNodeID uuid.UUID
-	CreatedAt     time.Time
+	ID              uuid.UUID
+	TenantID        uuid.UUID
+	ProjectID       uuid.UUID
+	RuntimeNodeID   uuid.UUID
+	ProvisionStatus ProvisionStatus
+	ProvisionedAt   *time.Time
+	ProvisionSource *string
+	CreatedAt       time.Time
+}
+
+// IsProvisioned reports whether this binding's workspace exists on disk.
+// The column is NOT NULL DEFAULT 'provisioned' and the migration backfills
+// existing rows, so an empty value only occurs in in-memory fixtures — treat it
+// as provisioned rather than silently dropping the node from dispatch or from
+// the delete-confirmation queue.
+func (n ProjectRuntimeNode) IsProvisioned() bool {
+	return n.ProvisionStatus != ProvisionStatusUnprovisioned
+}
+
+// WorkspaceOwnership records whether the project directory was created by the
+// platform or claimed (attached) from an existing directory under the workspace
+// root. P0 stores snapshots on delete requests; the projects column lands in P2.
+type WorkspaceOwnership string
+
+const (
+	WorkspaceOwnershipPlatformManaged WorkspaceOwnership = "platform_managed"
+	WorkspaceOwnershipAttached        WorkspaceOwnership = "attached"
+)
+
+// WorkspaceDeleteRequestStatus is the admin confirmation queue state for disk
+// directory removal (spec 2026-08-12 §5.5).
+type WorkspaceDeleteRequestStatus string
+
+const (
+	WorkspaceDeleteRequestStatusPending   WorkspaceDeleteRequestStatus = "pending"
+	WorkspaceDeleteRequestStatusConfirmed WorkspaceDeleteRequestStatus = "confirmed"
+	WorkspaceDeleteRequestStatusRejected  WorkspaceDeleteRequestStatus = "rejected"
+)
+
+// WorkspaceDeleteRequest is one (project, runtime node) directory delete
+// confirmation item. Snapshots are required because the project may already be
+// soft-deleted when the admin acts.
+type WorkspaceDeleteRequest struct {
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	RuntimeNodeID  uuid.UUID
+	DirectoryName  string
+	NodeIDSnapshot string
+	Ownership      WorkspaceOwnership
+	RepoSummary    map[string]any
+	Status         WorkspaceDeleteRequestStatus
+	RequestedBy    uuid.UUID
+	RequestedAt    time.Time
+	ResolvedBy     *uuid.UUID
+	ResolvedAt     *time.Time
+	Reason         *string
+}
+
+// EnqueueWorkspaceDeleteRequestParams writes one pending delete-queue row.
+type EnqueueWorkspaceDeleteRequestParams struct {
+	TenantID       uuid.UUID
+	ProjectID      uuid.UUID
+	RuntimeNodeID  uuid.UUID
+	DirectoryName  string
+	NodeIDSnapshot string
+	Ownership      WorkspaceOwnership
+	RepoSummary    map[string]any
+	RequestedBy    uuid.UUID
+	Reason         string
 }
 
 // ProjectEmployeeNodeAffinity records the soft, per-(project, digital employee)

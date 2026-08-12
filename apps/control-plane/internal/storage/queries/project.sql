@@ -20,7 +20,8 @@ INSERT INTO projects (
     repo_binding_status,
     scenario_template_key,
     workspace_ready_status,
-    workspace_ready_at
+    workspace_ready_at,
+    workspace_ownership
 ) VALUES (
     sqlc.arg('id')::uuid,
     sqlc.arg('tenant_id')::uuid,
@@ -42,7 +43,8 @@ INSERT INTO projects (
     COALESCE(sqlc.narg('repo_binding_status')::varchar, 'unbound'),
     sqlc.narg('scenario_template_key')::text,
     COALESCE(sqlc.narg('workspace_ready_status')::varchar, 'ready'),
-    sqlc.narg('workspace_ready_at')::timestamptz
+    sqlc.narg('workspace_ready_at')::timestamptz,
+    COALESCE(sqlc.narg('workspace_ownership')::varchar, 'platform_managed')
 ) RETURNING *;
 
 -- name: GetProject :one
@@ -1004,6 +1006,13 @@ SELECT * FROM project_tasks
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
+-- name: GetProjectTaskInProject :one
+-- 项目内单任务深链：按 tenant + project + task 三元隔离（与 dismiss 同判据）。
+SELECT * FROM project_tasks
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid;
+
 -- name: GetProjectTaskSessionLineage :one
 -- Minimal projection for resolving a task's session-lineage root (see
 -- employee.PgRunRepository.ResolveProjectTaskLineageRoot): only the two
@@ -1345,8 +1354,11 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
 
 -- name: CancelOpenPlanReviewDecisionsForDemandExceptRevision :many
 -- When a newer plan supersedes open revisions (casting expansion / replan),
--- cancel plan_review decisions still pointing at those superseded revisions so
--- humans cannot approve a dead plan (Accept would 409 and strand the demand).
+-- cancel plan_review *and* demand_acceptance decisions still pointing at those
+-- superseded revisions so humans cannot approve a dead plan (Accept would 409
+-- and strand the demand) and so stale acceptance cards do not linger open after
+-- replan (2026-08-11: demand_acceptance on superseded revision → inbox zombie +
+-- "projection not applied" on 同意).
 UPDATE project_decision_requests pdr
 SET status_snapshot = 'cancelled',
     resolved_at = COALESCE(pdr.resolved_at, NOW()),
@@ -1359,7 +1371,7 @@ WHERE pdr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND ppr.project_id = sqlc.arg('project_id')::uuid
   AND ppr.demand_id = sqlc.arg('demand_id')::uuid
   AND ppr.id <> sqlc.arg('except_revision_id')::uuid
-  AND pdr.decision_type = 'plan_review'
+  AND pdr.decision_type IN ('plan_review', 'demand_acceptance')
   AND pdr.status_snapshot IN ('pending', 'requested')
 RETURNING pdr.id, pdr.tenant_id, pdr.project_id, pdr.approval_request_id, pdr.coordination_job_id, pdr.project_task_id, pdr.plan_revision_id, pdr.dispatch_gate_result_id, pdr.target_user_id, pdr.decision_type, pdr.title_snapshot, pdr.summary_snapshot, pdr.risk_level_snapshot, pdr.status_snapshot, pdr.created_event_id, pdr.resolved_event_id, pdr.created_at, pdr.updated_at, pdr.resolved_at;
 

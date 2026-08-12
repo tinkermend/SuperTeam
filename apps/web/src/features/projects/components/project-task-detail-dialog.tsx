@@ -9,8 +9,10 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog";
-import { StatusPill, IconTile } from "@/components/superteam";
+import { StatusPill, IconTile, LoadingState, EmptyState } from "@/components/superteam";
 import { cn } from "@/lib/utils";
+import type { ApiClientOptions } from "@/lib/api/client";
+import { ApiRequestError } from "@/lib/api/client";
 import type {
   CapabilityProjectionSnapshot,
   ProjectDecisionRequest,
@@ -20,6 +22,7 @@ import type {
   ProjectTask,
   ProjectTaskGraph
 } from "@/lib/api/projects";
+import { getProjectTask } from "@/lib/api/projects";
 import { riskLevelLabel, runStatusLabel, taskStatusLabel } from "@/lib/status-labels";
 import { isAwaitingHumanApproval } from "@/lib/task-status";
 import { formatDateTime, formatRelativeTime, formatRunDuration } from "@/lib/format-time";
@@ -53,11 +56,16 @@ type ProjectTaskDetailDialogProps = {
    * 用任务自己的 demand_id 补一次查询（queryKey 与页面同族，最新 demand 直接命中缓存）。
    */
   fetchTaskGraph?: (demandId: string) => Promise<ProjectTaskGraph>;
+  /**
+   * 深链缺页回落：tasks 列表窗口内找不到时走 GET 单任务。
+   * 页内点击已在列表中时不会触发。
+   */
+  apiOptions?: ApiClientOptions;
 };
 
 /**
  * 项目视角的任务详情弹层：任务自身事实 + 当前执行图切片 + 该任务的待决事项。
- * 纯投影已加载的项目详情数据（tasks/overview/taskGraph/decisionRequests），不发新请求；
+ * 优先投影已加载的 tasks/taskGraph；深链到分页窗外时用 getProjectTask 单查回落。
  * 决策处理复用工作台同一条 onResolveDecision 出口，与收件箱 any-of-N 语义一致。
  */
 export function ProjectTaskDetailDialog({
@@ -72,21 +80,97 @@ export function ProjectTaskDetailDialog({
   principalNamesById,
   executionTrace,
   onResolveDecision,
-  fetchTaskGraph
+  fetchTaskGraph,
+  apiOptions,
 }: ProjectTaskDetailDialogProps) {
   const preloadedNode = taskGraph?.nodes.find((node) => node.id === taskId);
-  const task =
+  const listedTask =
     preloadedNode ?? tasks.find((item) => item.id === taskId);
-  const open = Boolean(taskId && task);
+  const needRemote = Boolean(taskId && !listedTask && apiOptions);
+  const remoteTaskQuery = useQuery({
+    enabled: needRemote,
+    queryKey: ["project-task", projectId, taskId],
+    queryFn: () => getProjectTask(apiOptions!, projectId, taskId as string),
+    retry: false,
+    staleTime: 30_000,
+  });
+  const task = listedTask ?? remoteTaskQuery.data;
+  const open = Boolean(taskId);
+  const isRemoteLoading = needRemote && remoteTaskQuery.isLoading;
+  const isRemoteNotFound =
+    needRemote &&
+    remoteTaskQuery.isError &&
+    remoteTaskQuery.error instanceof ApiRequestError &&
+    remoteTaskQuery.error.status === 404;
+  const isRemoteError = needRemote && remoteTaskQuery.isError && !isRemoteNotFound;
+
   const lazyDemandId = !preloadedNode ? task?.demand_id : undefined;
   const lazyGraphQuery = useQuery({
-    enabled: Boolean(open && lazyDemandId && fetchTaskGraph),
+    enabled: Boolean(open && task && lazyDemandId && fetchTaskGraph),
     // 与页面预载查询同 key 族：任务属最新 demand 时直接命中缓存，不发请求。
     queryKey: ["project-task-graph", projectId, lazyDemandId],
     queryFn: () => fetchTaskGraph!(lazyDemandId as string),
     staleTime: 30_000
 });
-  if (!task) return null;
+
+  if (!taskId) return null;
+
+  if (isRemoteLoading) {
+    return (
+      <Dialog onOpenChange={onOpenChange} open>
+        <DialogContent
+          className="flex max-h-[85vh] w-full flex-col gap-0 p-0 sm:max-w-xl"
+          data-testid="project-task-detail-dialog"
+        >
+          <DialogHeader className="shrink-0 border-b border-line px-5 py-4 text-left">
+            <DialogTitle className="text-[15px] font-bold text-ink">
+              加载任务详情
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              正在从服务端拉取任务
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-6">
+            <LoadingState />
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (!task) {
+    return (
+      <Dialog onOpenChange={onOpenChange} open>
+        <DialogContent
+          className="flex max-h-[85vh] w-full flex-col gap-0 p-0 sm:max-w-xl"
+          data-testid="project-task-detail-dialog"
+        >
+          <DialogHeader className="shrink-0 border-b border-line px-5 py-4 text-left">
+            <DialogTitle className="text-[15px] font-bold text-ink">
+              任务详情
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              任务不存在或无法加载
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-6" data-testid="project-task-detail-missing">
+            <EmptyState
+              description={
+                // 三态不得混说：404 才是「不存在」；无 apiOptions 是「查不了」，
+                // 说成不存在就是本方案在修的那类假话。
+                isRemoteNotFound
+                  ? "任务不存在或已被清理。"
+                  : isRemoteError
+                    ? "加载任务失败，请稍后重试。"
+                    : "任务不在当前列表，且此处无法单查。"
+              }
+              title="无法打开该任务"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const activeGraph = preloadedNode
     ? taskGraph
@@ -394,9 +478,15 @@ export function ProjectTaskDetailDialog({
               <Link
                 aria-label="前往收件箱处理"
                 className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
+                search={{
+                  project: projectId,
+                  ...(pendingDecisions[0]?.id
+                    ? { source: pendingDecisions[0].id }
+                    : {}),
+                }}
                 to="/inbox"
               >
-                收件箱
+                在收件箱处理 →
                 <ArrowUpRight className="size-3.5" />
               </Link>
             </div>
@@ -424,6 +514,7 @@ export function ProjectTaskDetailDialog({
                   </Link>
                   <Link
                     className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
+                    search={{ project: projectId }}
                     to="/inbox"
                   >
                     去收件箱核对
@@ -458,7 +549,14 @@ export function ProjectTaskDetailDialog({
                         {formatRelativeTime(decision.created_at)}
                       </time>
                     ) : null}
-                    <div className="mt-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Link
+                        className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand hover:opacity-80"
+                        search={{ project: projectId, source: decision.id }}
+                        to="/inbox"
+                      >
+                        在收件箱处理 →
+                      </Link>
                       <BlockerActions
                         decision={decision}
                         onResolveDecision={onResolveDecision}

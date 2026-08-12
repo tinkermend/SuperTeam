@@ -1060,6 +1060,8 @@ const itemTypeOptions = [
   { label: "审批", value: "approval" },
   { label: "项目决策", value: "project_decision" },
   { label: "团队待删", value: "team_pending_delete" },
+  { label: "工作区待删", value: "project_workspace_pending_delete" },
+  { label: "工作区待供给", value: "project_workspace_provision_pending" },
   { label: "通道告警", value: "channel_alert" },
   { label: "自动化告警", value: "automation_alert" },
   { label: "编制失效", value: "casting_invalidated" },

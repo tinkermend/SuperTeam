@@ -86,8 +86,9 @@ export const Route = createFileRoute("/_authenticated/projects/")({
     }
     const page = parsePositiveInt(search.page, 1, 10_000);
     if (page !== 1) out.page = page;
-    const pageSize = parsePositiveInt(search.page_size, 12, 50);
-    if (pageSize !== 12) out.page_size = pageSize;
+    // 默认 9（3×3 约 1.5 屏）；合法取值含 9/12/20/50。
+    const pageSize = parsePositiveInt(search.page_size, 9, 50);
+    if (pageSize !== 9) out.page_size = pageSize;
     return out;
   },
   component: ProjectsRoute,

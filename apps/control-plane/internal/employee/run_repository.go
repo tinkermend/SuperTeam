@@ -137,6 +137,8 @@ type ProjectTaskNodeResolver interface {
 type ProjectDispatchFacts struct {
 	Name                 string
 	WorkspaceReadyStatus string
+	// WorkspaceOwnership is platform_managed | attached (spec 2026-08-12).
+	WorkspaceOwnership string
 }
 
 // ProjectDispatchFactsReader loads project dispatch facts without importing

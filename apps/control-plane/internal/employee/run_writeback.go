@@ -262,9 +262,9 @@ func (s *DigitalEmployeeRunWritebackService) recordTerminalLocked(ctx context.Co
 		return false, nil, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 	}
 	if run == nil {
-		// project_workspace 命令(ensure/remove project directory)无关联 run:
-		// 只把回执置终态,供创建 fan-out 的同步等待解除阻塞。
-		if receipt.ResourceType == "project_workspace" {
+		// project_workspace / project_workspace_probe 命令无关联 run:
+		// 只把回执置终态,供创建 fan-out / attach 探测的同步等待解除阻塞。
+		if receipt.ResourceType == "project_workspace" || receipt.ResourceType == "project_workspace_probe" {
 			if isTerminalReceiptStatus(receipt.Status) && receipt.Status != string(spec.status) {
 				return false, nil, fmt.Errorf("%w: command receipt is already terminal with status %s", ErrConflict, receipt.Status)
 			}
@@ -452,7 +452,7 @@ func (s *DigitalEmployeeRunWritebackService) loadCommandRun(ctx context.Context,
 	if errors.Is(err, ErrNotFound) && receipt.ResourceType == "digital_employee_run" && receipt.ResourceID != uuid.Nil {
 		run, err = s.repository.GetRunByID(ctx, identity.TenantID, receipt.ResourceID)
 	}
-	if errors.Is(err, ErrNotFound) && (receipt.ResourceType == "digital_employee_execution_instance" || receipt.ResourceType == "digital_employee_workspace_sync" || receipt.ResourceType == "project_workspace" || receipt.ResourceType == "provider_native_config") {
+	if errors.Is(err, ErrNotFound) && (receipt.ResourceType == "digital_employee_execution_instance" || receipt.ResourceType == "digital_employee_workspace_sync" || receipt.ResourceType == "project_workspace" || receipt.ResourceType == "project_workspace_probe" || receipt.ResourceType == "provider_native_config") {
 		return receipt, nil, nil
 	}
 	if err != nil {

@@ -150,14 +150,44 @@ func (s *Service) ResolveProjectTaskNode(ctx context.Context, in ResolveProjectT
 		return NodeResolution{Reason: NodeResolutionReasonNoEligibleOnlineNode}, nil
 	}
 
+	// Only provisioned bindings are dispatch candidates (spec 2026-08-12 §5.2).
+	// eligibleNodes already carries ProvisionStatus — no second round-trip.
+	provisioned := make(map[uuid.UUID]struct{}, len(eligibleNodes))
+	for _, binding := range eligibleNodes {
+		if binding.IsProvisioned() {
+			provisioned[binding.RuntimeNodeID] = struct{}{}
+		}
+	}
+	filtered := make([]runtimepkg.NodeRecord, 0, len(candidates))
+	for _, record := range candidates {
+		if _, ok := provisioned[record.ID]; ok {
+			filtered = append(filtered, record)
+		}
+	}
+	candidates = filtered
+	inCandidates = make(map[uuid.UUID]struct{}, len(candidates))
+	for _, record := range candidates {
+		inCandidates[record.ID] = struct{}{}
+	}
+	if len(candidates) == 0 {
+		if !in.DryRun {
+			s.maybeOpenWorkspaceProvisionTodos(ctx, project, uuid.Nil)
+		}
+		return NodeResolution{Reason: NodeResolutionReasonWorkspaceUnavailable}, nil
+	}
+
 	requireGit := project.RepoBinding.Status == ProjectRepoBindingStatusBound
 	// 真实派发:对候选节点做工作区校验。DryRun(就绪探测)跳过,避免轮询拖垮 Runtime。
 	if !in.DryRun {
 		validated, validateErr := s.filterCandidatesByWorkspace(ctx, project, candidates, requireGit)
-		if validateErr != nil {
-			return NodeResolution{}, validateErr
-		}
-		if len(validated) == 0 {
+		if validateErr != nil || len(validated) == 0 {
+			// Primary disk missing / clone incomplete + standby unprovisioned:
+			// still open provision todos (spec §5.3 lazy trigger). Do not leak a
+			// raw error that skips the todo path.
+			s.maybeOpenWorkspaceProvisionTodos(ctx, project, uuid.Nil)
+			if validateErr != nil && !errors.Is(validateErr, ErrProjectWorkspaceUnavailable) {
+				return NodeResolution{}, validateErr
+			}
 			return NodeResolution{Reason: NodeResolutionReasonWorkspaceUnavailable}, nil
 		}
 		candidates = validated

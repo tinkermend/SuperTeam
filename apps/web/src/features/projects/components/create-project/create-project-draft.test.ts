@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  attachProbeTarget,
   buildProjectCreateInput,
   directoryNameHintFromGitURL,
   emptyProjectCreateDraft,
@@ -91,5 +92,53 @@ describe("create-project-draft name/directory split", () => {
     expect(input.name).toBe("客户接入");
     expect(input.directory_name).toBeUndefined();
     expect(input.repo_binding?.url).toContain("customer-onboarding");
+  });
+});
+
+describe("attach source requires a confirmed directory probe", () => {
+  const nodeId = "33333333-3333-3333-3333-333333333333";
+  const teams: UserProjectTeamScope[] = [];
+  const attachDraft = {
+    ...emptyProjectCreateDraft,
+    name: "存量资料库",
+    goal: "纳管已有目录",
+    sourceKind: "attach" as const,
+    directoryName: "legacy-erp",
+    runtimeNodeIds: [nodeId],
+  };
+
+  it("blocks submit until the human confirms what the probe found", () => {
+    expect(projectCreateValidation(attachDraft, currentUser.id, teams).attachProbe).toBe(false);
+
+    const confirmed = {
+      ...attachDraft,
+      attachProbeConfirmed: true,
+      attachProbeKey: attachProbeTarget(attachDraft),
+    };
+    expect(projectCreateValidation(confirmed, currentUser.id, teams).attachProbe).toBe(true);
+  });
+
+  it("invalidates the confirmation when the directory or primary node changes", () => {
+    const confirmed = {
+      ...attachDraft,
+      attachProbeConfirmed: true,
+      attachProbeKey: attachProbeTarget(attachDraft),
+    };
+
+    const renamedDirectory = { ...confirmed, directoryName: "some-other-dir" };
+    expect(
+      projectCreateValidation(renamedDirectory, currentUser.id, teams).attachProbe,
+    ).toBe(false);
+
+    const swappedPrimary = {
+      ...confirmed,
+      runtimeNodeIds: ["44444444-4444-4444-4444-444444444444", nodeId],
+    };
+    expect(projectCreateValidation(swappedPrimary, currentUser.id, teams).attachProbe).toBe(false);
+  });
+
+  it("leaves non-attach sources ungated", () => {
+    const nonGit = { ...attachDraft, sourceKind: "directory" as const };
+    expect(projectCreateValidation(nonGit, currentUser.id, teams).attachProbe).toBe(true);
   });
 });

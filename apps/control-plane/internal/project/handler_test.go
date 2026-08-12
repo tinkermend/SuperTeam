@@ -1720,6 +1720,35 @@ func TestGetProjectTaskGraphRejectsMissingFilter(t *testing.T) {
 	}
 }
 
+func TestGetProjectTaskReturnsTask(t *testing.T) {
+	tenantID := uuid.New()
+	actorID := uuid.New()
+	projectID := uuid.New()
+	taskID := uuid.New()
+	service := &handlerTestService{}
+	handler := newTestHandler(service)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID.String()+"/tasks/"+taskID.String(), nil)
+	req = withProjectRouteParams(req, map[string]string{"projectId": projectID.String(), "taskId": taskID.String()})
+	req = withConsoleContext(req, tenantID, actorID)
+	resp := httptest.NewRecorder()
+
+	handler.GetProjectTask(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected get project task 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode task response: %v", err)
+	}
+	if body["id"] != taskID.String() || body["project_id"] != projectID.String() {
+		t.Fatalf("unexpected task response: %#v", body)
+	}
+	if body["title"] != "task" {
+		t.Fatalf("expected stub title, got %#v", body["title"])
+	}
+}
+
 func TestGetProjectTaskLivenessReturnsNextAction(t *testing.T) {
 	tenantID := uuid.New()
 	actorID := uuid.New()
@@ -2404,6 +2433,15 @@ func (s *handlerTestService) AddProjectRuntimeNode(ctx context.Context, req Modi
 	}, nil
 }
 
+func (s *handlerTestService) ProvisionWorkspaceOnNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) (*ProjectRuntimeNode, error) {
+	return nil, ErrProjectNotFound
+}
+
+
+func (s *handlerTestService) ProbeProjectDirectory(ctx context.Context, req ProbeProjectDirectoryRequest) (*ProbeProjectDirectoryFacts, error) {
+	return &ProbeProjectDirectoryFacts{Exists: true, IsDir: true}, nil
+}
+
 func (s *handlerTestService) RemoveProjectRuntimeNode(ctx context.Context, req ModifyProjectRuntimeNodeRequest) error {
 	s.removeRuntimeNodeReq = req
 	return nil
@@ -2475,6 +2513,19 @@ func (s *handlerTestService) DeleteProject(ctx context.Context, req DeleteProjec
 	return nil
 }
 
+func (s *handlerTestService) ListPendingWorkspaceDeleteRequests(ctx context.Context, tenantID uuid.UUID) ([]WorkspaceDeleteRequest, error) {
+	return nil, nil
+}
+
+func (s *handlerTestService) ConfirmWorkspaceDelete(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID) (*WorkspaceDeleteRequest, error) {
+	return nil, ErrProjectWorkspaceDeleteRequestNotFound
+}
+
+func (s *handlerTestService) RejectWorkspaceDelete(ctx context.Context, tenantID, requestID, actorUserID uuid.UUID, reason string) (*WorkspaceDeleteRequest, error) {
+	return nil, ErrProjectWorkspaceDeleteRequestNotFound
+}
+
+
 func (s *handlerTestService) ReplaceProjectMembers(ctx context.Context, tenantID, projectID, actorUserID uuid.UUID, members []ProjectMemberInput) ([]ProjectMember, error) {
 	return nil, nil
 }
@@ -2504,6 +2555,10 @@ func (s *handlerTestService) ListProjectRuntimeNodes(ctx context.Context, tenant
 
 func (s *handlerTestService) ListProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, status *string, limit, offset int32) ([]ProjectTask, error) {
 	return nil, nil
+}
+
+func (s *handlerTestService) GetProjectTask(ctx context.Context, tenantID, projectID, taskID uuid.UUID) (*ProjectTask, error) {
+	return &ProjectTask{ID: taskID, TenantID: tenantID, ProjectID: projectID, Title: "task", Status: "failed"}, nil
 }
 
 func (s *handlerTestService) DismissProjectTask(ctx context.Context, tenantID, projectID, taskID, actorUserID uuid.UUID) (*ProjectTask, error) {

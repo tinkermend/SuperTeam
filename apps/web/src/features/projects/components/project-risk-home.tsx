@@ -17,13 +17,13 @@ import {
   StatusPill,
   IconButton,
   Button,
-  type Tone,
 } from "@/components/superteam";
-import type {
-  Project,
-  ProjectStatus,
-} from "@/lib/api/projects";
+import type { Project } from "@/lib/api/projects";
 import { projectStatusLabel } from "@/lib/status-labels";
+import {
+  projectPhaseColorVar,
+  projectPhaseDotClass,
+} from "../project-lifecycle-display";
 import {
   buildAttentionBreakdown,
   buildProjectPortfolioCounts,
@@ -43,14 +43,14 @@ import {
 } from "../project-risk";
 import { TaskCompositionBar } from "./project-portfolio-grid";
 
-/** 项目层环图色（与生命周期叙事对齐，CSS conic-gradient）。 */
+/** 项目层环图色：读 projectPhaseColorVar 单一事实源（禁止硬编码 hex）。 */
 const PROJECT_LAYER_COLORS: Array<{ key: string; label: string; color: string }> = [
-  { key: "running", label: projectStatusLabel("running"), color: "var(--brand)" },
-  { key: "acceptance", label: "验收中", color: "var(--info)" },
-  { key: "paused", label: projectStatusLabel("paused"), color: "var(--ink-4)" },
-  { key: "configuring", label: projectStatusLabel("configuring"), color: "var(--warn)" },
-  { key: "draft", label: projectStatusLabel("draft"), color: "#94a3b8" },
-  { key: "archived", label: "已归档", color: "#cbd5e1" },
+  { key: "running", label: projectStatusLabel("running"), color: projectPhaseColorVar("running") },
+  { key: "acceptance", label: "验收中", color: projectPhaseColorVar("acceptance") },
+  { key: "paused", label: projectStatusLabel("paused"), color: projectPhaseColorVar("paused") },
+  { key: "configuring", label: projectStatusLabel("configuring"), color: projectPhaseColorVar("configuring") },
+  { key: "draft", label: projectStatusLabel("draft"), color: projectPhaseColorVar("draft") },
+  { key: "archived", label: "已归档", color: projectPhaseColorVar("archived") },
 ];
 
 /**
@@ -216,7 +216,8 @@ const REASON_META: Record<
   waiting_human: { icon: UserCheck, tab: "tasks", action: "查看等人任务" },
   execution_failed: { icon: AlertTriangle, tab: "tasks", action: "查看失败任务" },
   runtime_or_coordination: { icon: PlayCircle, tab: "overview", action: "查看协调状态" },
-  evidence_required: { icon: FileWarning, tab: "assets", action: "查看证据核验" },
+  // 证据在工作台折叠高级区的治理 tabs（evidence 子 tab），不是 assets。
+  evidence_required: { icon: FileWarning, tab: "workbench", action: "查看证据核验" },
   sla_waiting: { icon: Clock3, tab: "overview", action: "查看等待原因" }
 };
 
@@ -268,7 +269,7 @@ export function ProjectTriagePanel({
       data-testid="project-selected-context-panel"
     >
       <div className="flex min-w-0 items-start gap-2.5">
-        <IconTile tone={projectStatusTone(project.status)} size="sm">
+        <IconTile tone="mute" size="sm">
           <FolderKanban />
         </IconTile>
         {onClose ? (
@@ -296,7 +297,10 @@ export function ProjectTriagePanel({
             负责人 <span className="truncate font-medium text-ink-2">{ownerLabel}</span>
           </p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <StatusPill tone={projectStatusTone(project.status)}>
+            <StatusPill
+              dotClassName={projectPhaseDotClass(project.status)}
+              tone="mute"
+            >
               {projectStatusLabel(project.status)}
             </StatusPill>
             <StatusPill tone={projectRiskLevelTone(resolvedSummary.level)}>
@@ -436,12 +440,28 @@ function ProjectTriageReasonRow({
 }) {
   const meta = REASON_META[reason.type];
   const Icon = meta.icon;
+  // 精确下钻：把 reason.sourceId 写进对应 search 参数，落点侧打开「那一条」。
   const focus =
     reason.type === "human_decision" && reason.source === "decisions"
       ? reason.sourceId
       : reason.type === "waiting_human" || reason.type === "execution_failed"
         ? reason.sourceId
-        : undefined;
+        : reason.type === "evidence_required"
+          ? reason.sourceId
+          : undefined;
+
+  const search =
+    reason.type === "waiting_human" || reason.type === "execution_failed"
+      ? reason.sourceId
+        ? { tab: meta.tab, task: reason.sourceId }
+        : { tab: meta.tab }
+      : reason.type === "evidence_required"
+        ? reason.sourceId
+          ? { tab: "workbench", governance: "evidence", evidence: reason.sourceId }
+          : { tab: "workbench", governance: "evidence" }
+        : focus
+          ? { focus, tab: meta.tab }
+          : { tab: meta.tab };
 
   return (
     <li className="flex min-w-0 items-start gap-2 rounded-[8px] bg-card px-2.5 py-2">
@@ -467,15 +487,7 @@ function ProjectTriageReasonRow({
       <Button asChild className="shrink-0" size="sm" variant="outline">
         <Link
           params={{ projectId }}
-          search={
-            reason.type === "waiting_human" || reason.type === "execution_failed"
-              ? reason.sourceId
-                ? { tab: meta.tab, task: reason.sourceId }
-                : { tab: meta.tab }
-              : focus
-                ? { focus, tab: meta.tab }
-                : { tab: meta.tab }
-          }
+          search={search}
           to="/projects/$projectId"
         >
           {meta.action}
@@ -484,16 +496,6 @@ function ProjectTriageReasonRow({
     </li>
   );
 }
-
-function projectStatusTone(status: ProjectStatus | string): Tone {
-  if (status === "running") return "ok";
-  if (status === "archived") return "mute";
-  if (status === "acceptance") return "brand";
-  if (status === "paused") return "mute";
-  if (status === "configuring" || status === "draft") return "info";
-  return "mute";
-}
-
 
 /**
  * 未选中时的右栏：项目组合透视（方案 C）。

@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const DeleteProjectEmployeeNodeAffinitiesForDelete = `-- name: DeleteProjectEmployeeNodeAffinitiesForDelete :many
@@ -104,21 +105,44 @@ func (q *Queries) GetProjectEmployeeNodeAffinity(ctx context.Context, arg GetPro
 }
 
 const InsertProjectRuntimeNode = `-- name: InsertProjectRuntimeNode :one
-INSERT INTO project_runtime_nodes (tenant_id, project_id, runtime_node_id)
-VALUES ($1::uuid, $2::uuid, $3::uuid)
+INSERT INTO project_runtime_nodes (
+    tenant_id,
+    project_id,
+    runtime_node_id,
+    provision_status,
+    provisioned_at,
+    provision_source
+) VALUES (
+    $1::uuid,
+    $2::uuid,
+    $3::uuid,
+    $4,
+    $5,
+    $6
+)
 ON CONFLICT (project_id, runtime_node_id)
 DO UPDATE SET runtime_node_id = EXCLUDED.runtime_node_id
-RETURNING id, tenant_id, project_id, runtime_node_id, created_at
+RETURNING id, tenant_id, project_id, runtime_node_id, created_at, provision_status, provisioned_at, provision_source
 `
 
 type InsertProjectRuntimeNodeParams struct {
-	TenantID      uuid.UUID `json:"tenant_id"`
-	ProjectID     uuid.UUID `json:"project_id"`
-	RuntimeNodeID uuid.UUID `json:"runtime_node_id"`
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	ProjectID       uuid.UUID          `json:"project_id"`
+	RuntimeNodeID   uuid.UUID          `json:"runtime_node_id"`
+	ProvisionStatus string             `json:"provision_status"`
+	ProvisionedAt   pgtype.Timestamptz `json:"provisioned_at"`
+	ProvisionSource pgtype.Text        `json:"provision_source"`
 }
 
 func (q *Queries) InsertProjectRuntimeNode(ctx context.Context, arg InsertProjectRuntimeNodeParams) (ProjectRuntimeNode, error) {
-	row := q.db.QueryRow(ctx, InsertProjectRuntimeNode, arg.TenantID, arg.ProjectID, arg.RuntimeNodeID)
+	row := q.db.QueryRow(ctx, InsertProjectRuntimeNode,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.RuntimeNodeID,
+		arg.ProvisionStatus,
+		arg.ProvisionedAt,
+		arg.ProvisionSource,
+	)
 	var i ProjectRuntimeNode
 	err := row.Scan(
 		&i.ID,
@@ -126,12 +150,15 @@ func (q *Queries) InsertProjectRuntimeNode(ctx context.Context, arg InsertProjec
 		&i.ProjectID,
 		&i.RuntimeNodeID,
 		&i.CreatedAt,
+		&i.ProvisionStatus,
+		&i.ProvisionedAt,
+		&i.ProvisionSource,
 	)
 	return i, err
 }
 
 const ListProjectRuntimeNodes = `-- name: ListProjectRuntimeNodes :many
-SELECT id, tenant_id, project_id, runtime_node_id, created_at FROM project_runtime_nodes
+SELECT id, tenant_id, project_id, runtime_node_id, created_at, provision_status, provisioned_at, provision_source FROM project_runtime_nodes
 WHERE tenant_id = $1::uuid AND project_id = $2::uuid
 ORDER BY created_at ASC
 `
@@ -156,6 +183,9 @@ func (q *Queries) ListProjectRuntimeNodes(ctx context.Context, arg ListProjectRu
 			&i.ProjectID,
 			&i.RuntimeNodeID,
 			&i.CreatedAt,
+			&i.ProvisionStatus,
+			&i.ProvisionedAt,
+			&i.ProvisionSource,
 		); err != nil {
 			return nil, err
 		}
@@ -165,6 +195,47 @@ func (q *Queries) ListProjectRuntimeNodes(ctx context.Context, arg ListProjectRu
 		return nil, err
 	}
 	return items, nil
+}
+
+const MarkProjectRuntimeNodeProvisioned = `-- name: MarkProjectRuntimeNodeProvisioned :one
+UPDATE project_runtime_nodes
+SET provision_status = 'provisioned',
+    provisioned_at = $1,
+    provision_source = $2
+WHERE tenant_id = $3::uuid
+  AND project_id = $4::uuid
+  AND runtime_node_id = $5::uuid
+RETURNING id, tenant_id, project_id, runtime_node_id, created_at, provision_status, provisioned_at, provision_source
+`
+
+type MarkProjectRuntimeNodeProvisionedParams struct {
+	ProvisionedAt   pgtype.Timestamptz `json:"provisioned_at"`
+	ProvisionSource pgtype.Text        `json:"provision_source"`
+	TenantID        uuid.UUID          `json:"tenant_id"`
+	ProjectID       uuid.UUID          `json:"project_id"`
+	RuntimeNodeID   uuid.UUID          `json:"runtime_node_id"`
+}
+
+func (q *Queries) MarkProjectRuntimeNodeProvisioned(ctx context.Context, arg MarkProjectRuntimeNodeProvisionedParams) (ProjectRuntimeNode, error) {
+	row := q.db.QueryRow(ctx, MarkProjectRuntimeNodeProvisioned,
+		arg.ProvisionedAt,
+		arg.ProvisionSource,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.RuntimeNodeID,
+	)
+	var i ProjectRuntimeNode
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.RuntimeNodeID,
+		&i.CreatedAt,
+		&i.ProvisionStatus,
+		&i.ProvisionedAt,
+		&i.ProvisionSource,
+	)
+	return i, err
 }
 
 const RemoveProjectRuntimeNode = `-- name: RemoveProjectRuntimeNode :exec

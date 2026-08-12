@@ -71,6 +71,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "@/components/ui/textarea";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
+import { WorkspaceDeleteQueueSection } from "@/features/runtime/components/workspace-delete-queue";
 import {
   approveRuntimeEnrollment,
   getProviderNativeConfig,
@@ -304,6 +305,8 @@ export function RuntimeNodesView({ apiBaseUrl, fetcher }: RuntimeNodesViewProps)
       />
       <Main width="wide">
         <div className="flex min-w-0 flex-col gap-5 text-ink">
+          {/* Admin disk-delete queue: node-scoped governance (spec 2026-08-12). */}
+          <WorkspaceDeleteQueueSection apiBaseUrl={apiBaseUrl} fetcher={fetcher} />
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <Button
               type="button"

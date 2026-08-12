@@ -44,8 +44,11 @@ type Querier interface {
 	// 该 item_type 不再产生，存量 open 态已由迁移 20260726170000 取消。
 	CancelInboxItemsForProjectDelete(ctx context.Context, arg CancelInboxItemsForProjectDeleteParams) ([]uuid.UUID, error)
 	// When a newer plan supersedes open revisions (casting expansion / replan),
-	// cancel plan_review decisions still pointing at those superseded revisions so
-	// humans cannot approve a dead plan (Accept would 409 and strand the demand).
+	// cancel plan_review *and* demand_acceptance decisions still pointing at those
+	// superseded revisions so humans cannot approve a dead plan (Accept would 409
+	// and strand the demand) and so stale acceptance cards do not linger open after
+	// replan (2026-08-11: demand_acceptance on superseded revision → inbox zombie +
+	// "projection not applied" on 同意).
 	CancelOpenPlanReviewDecisionsForDemandExceptRevision(ctx context.Context, arg CancelOpenPlanReviewDecisionsForDemandExceptRevisionParams) ([]CancelOpenPlanReviewDecisionsForDemandExceptRevisionRow, error)
 	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
 	// Soft-delete cascade: cancel any task that could still light employee overview
@@ -58,6 +61,7 @@ type Querier interface {
 	ClearDigitalEmployeesTeamRef(ctx context.Context, arg ClearDigitalEmployeesTeamRefParams) error
 	ClearProjectsTeamRef(ctx context.Context, arg ClearProjectsTeamRefParams) error
 	CompleteProjectPlanDecompositionClaim(ctx context.Context, arg CompleteProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
+	ConfirmProjectWorkspaceDeleteRequest(ctx context.Context, arg ConfirmProjectWorkspaceDeleteRequestParams) (ProjectWorkspaceDeleteRequest, error)
 	ConsumeCaptchaChallenge(ctx context.Context, arg ConsumeCaptchaChallengeParams) (int64, error)
 	CountActiveArtifactRetentionHolds(ctx context.Context, arg CountActiveArtifactRetentionHoldsParams) (int32, error)
 	CountActiveProviderSessionsForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
@@ -87,6 +91,7 @@ type Querier interface {
 	// guard clamps the file-size cap while any such node is online.
 	CountOnlineLegacyLimitRuntimeNodesForTenant(ctx context.Context, arg CountOnlineLegacyLimitRuntimeNodesForTenantParams) (int64, error)
 	CountOnlineRuntimeNodesForTenant(ctx context.Context, arg CountOnlineRuntimeNodesForTenantParams) (int64, error)
+	CountPendingProjectWorkspaceDeleteByDirectoryName(ctx context.Context, directoryName string) (int32, error)
 	// 从该 demand 上溯到链头的代数（链头返回 0）。写入期用它拦"链太深"。
 	CountProjectDemandContinuationDepth(ctx context.Context, arg CountProjectDemandContinuationDepthParams) (int32, error)
 	// Aggregates a project's demands into total / non-terminal counts so the coordinator
@@ -371,6 +376,8 @@ type Querier interface {
 	GetProjectTaskCompletionContract(ctx context.Context, arg GetProjectTaskCompletionContractParams) (GetProjectTaskCompletionContractRow, error)
 	GetProjectTaskDispatchGateResult(ctx context.Context, arg GetProjectTaskDispatchGateResultParams) (ProjectTaskDispatchGateResult, error)
 	GetProjectTaskDispatchGateResultByKey(ctx context.Context, arg GetProjectTaskDispatchGateResultByKeyParams) (ProjectTaskDispatchGateResult, error)
+	// 项目内单任务深链：按 tenant + project + task 三元隔离（与 dismiss 同判据）。
+	GetProjectTaskInProject(ctx context.Context, arg GetProjectTaskInProjectParams) (ProjectTask, error)
 	GetProjectTaskLatestDispatchFailureEvent(ctx context.Context, arg GetProjectTaskLatestDispatchFailureEventParams) (ProjectEvent, error)
 	// Discovery-only preflight: used by planning-profile facts and the pre-dispatch
 	// gate's runtime snapshot to read health signals for an employee, before any
@@ -408,6 +415,7 @@ type Querier interface {
 	// 与 Go ClassifyProjectTaskPortfolioBucket 同源。展示 failed 仅 failed/error；
 	// ListProjectRunSummaries.failed_count 仍含 blocked（运行总览宽失败）。
 	GetProjectTaskStatusCounts(ctx context.Context, arg GetProjectTaskStatusCountsParams) (GetProjectTaskStatusCountsRow, error)
+	GetProjectWorkspaceDeleteRequest(ctx context.Context, arg GetProjectWorkspaceDeleteRequestParams) (ProjectWorkspaceDeleteRequest, error)
 	// CreateProviderSession retired (2026-07-21).
 	GetProviderSession(ctx context.Context, arg GetProviderSessionParams) (ProviderSession, error)
 	GetProviderSessionByExternalID(ctx context.Context, arg GetProviderSessionByExternalIDParams) (ProviderSession, error)
@@ -454,6 +462,8 @@ type Querier interface {
 	InsertDigitalEmployeeRole(ctx context.Context, arg InsertDigitalEmployeeRoleParams) error
 	InsertProjectPlaybookCasting(ctx context.Context, arg InsertProjectPlaybookCastingParams) (ProjectPlaybookCasting, error)
 	InsertProjectRuntimeNode(ctx context.Context, arg InsertProjectRuntimeNodeParams) (ProjectRuntimeNode, error)
+	// Project workspace delete confirmation queue (spec 2026-08-12 P0).
+	InsertProjectWorkspaceDeleteRequest(ctx context.Context, arg InsertProjectWorkspaceDeleteRequestParams) (ProjectWorkspaceDeleteRequest, error)
 	InsertSkillMCPDependency(ctx context.Context, arg InsertSkillMCPDependencyParams) error
 	InsertTenantLevelMembership(ctx context.Context, arg InsertTenantLevelMembershipParams) (TenantMember, error)
 	LinkDecisionRequestProjectTaskResult(ctx context.Context, arg LinkDecisionRequestProjectTaskResultParams) (ProjectDecisionRequest, error)
@@ -594,6 +604,7 @@ type Querier interface {
 	ListPendingFeishuOutbox(ctx context.Context, arg ListPendingFeishuOutboxParams) ([]FeishuOutbox, error)
 	// 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。
 	ListPendingOrSentCardUpdatesByResource(ctx context.Context, arg ListPendingOrSentCardUpdatesByResourceParams) ([]FeishuOutbox, error)
+	ListPendingProjectWorkspaceDeleteRequests(ctx context.Context, tenantID uuid.UUID) ([]ProjectWorkspaceDeleteRequest, error)
 	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	// Permission-center read path: reads the approval domain directly (never via the
 	// inbox projection). view=mine → target_user_id = actor; view=team → target_user_id NULL.
@@ -715,6 +726,7 @@ type Querier interface {
 	ListSkillNamesByIDs(ctx context.Context, arg ListSkillNamesByIDsParams) ([]ListSkillNamesByIDsRow, error)
 	// 滞留催办扫描(跨租户):待确认超过阈值仍无人处理的团队。
 	ListStalePendingDeleteTeams(ctx context.Context, staleBefore pgtype.Timestamptz) ([]TenantTeam, error)
+	ListStalePendingProjectWorkspaceDeleteRequests(ctx context.Context, staleBefore pgtype.Timestamptz) ([]ProjectWorkspaceDeleteRequest, error)
 	// 看门狗清扫(残债交接 §1 第 2 层):跨租户列出停留在预确认态超过时限的
 	// run。running/cancelling 是真实活跃态,不在清扫范围。
 	ListStalePreConfirmationDigitalEmployeeRuns(ctx context.Context, arg ListStalePreConfirmationDigitalEmployeeRunsParams) ([]TaskRun, error)
@@ -783,6 +795,7 @@ type Querier interface {
 	MarkFeishuOutboxSent(ctx context.Context, arg MarkFeishuOutboxSentParams) (FeishuOutbox, error)
 	MarkProjectPlanRevisionDecomposed(ctx context.Context, arg MarkProjectPlanRevisionDecomposedParams) (ProjectPlanRevision, error)
 	MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error)
+	MarkProjectRuntimeNodeProvisioned(ctx context.Context, arg MarkProjectRuntimeNodeProvisionedParams) (ProjectRuntimeNode, error)
 	MarkProjectTaskLatestDispatchGate(ctx context.Context, arg MarkProjectTaskLatestDispatchGateParams) (ProjectTask, error)
 	MarkQueuedProjectTaskAttemptDispatchStartFailed(ctx context.Context, arg MarkQueuedProjectTaskAttemptDispatchStartFailedParams) (ProjectTaskAttempt, error)
 	MovePlannedProjectTaskToWaitingHumanForGate(ctx context.Context, arg MovePlannedProjectTaskToWaitingHumanForGateParams) (ProjectTask, error)
@@ -804,6 +817,7 @@ type Querier interface {
 	QueueProjectTask(ctx context.Context, arg QueueProjectTaskParams) (ProjectTask, error)
 	ReassignDigitalEmployeeTeam(ctx context.Context, arg ReassignDigitalEmployeeTeamParams) (ReassignDigitalEmployeeTeamRow, error)
 	RejectProjectPlanRevision(ctx context.Context, arg RejectProjectPlanRevisionParams) (ProjectPlanRevision, error)
+	RejectProjectWorkspaceDeleteRequest(ctx context.Context, arg RejectProjectWorkspaceDeleteRequestParams) (ProjectWorkspaceDeleteRequest, error)
 	RejectRuntimeEnrollment(ctx context.Context, arg RejectRuntimeEnrollmentParams) (RuntimeEnrollment, error)
 	// 人类解决任务等待(批准继续)后,任务回到 planned 由协调线程走正常派发管线
 	// (gate 评估 + run 启动 + attempt 创建)。直接由释放方创建 queued attempt 是
@@ -822,6 +836,8 @@ type Querier interface {
 	ResolveApprovalRequest(ctx context.Context, arg ResolveApprovalRequestParams) (ApprovalRequest, error)
 	// 按来源关闭 open 收件箱(通道恢复告警、同类幂等告警回收)。
 	ResolveOpenInboxItemsBySource(ctx context.Context, arg ResolveOpenInboxItemsBySourceParams) error
+	// Close open inbox reminders whose source request is no longer pending.
+	ResolveOrphanProjectWorkspaceDeleteReminders(ctx context.Context) error
 	// 孤儿催办回收:团队已被恢复或确认删除后,其滞留催办条目自动关闭(清扫任务每轮执行)。
 	ResolveOrphanTeamPendingDeleteReminders(ctx context.Context) error
 	ResolveProjectDecisionRequest(ctx context.Context, arg ResolveProjectDecisionRequestParams) (ProjectDecisionRequest, error)

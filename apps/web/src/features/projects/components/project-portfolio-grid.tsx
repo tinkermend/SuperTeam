@@ -1,7 +1,7 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import { ArrowRight, FolderKanban, UserRound } from "lucide-react";
+import { ArrowRight, FolderKanban, LayoutGrid, List, UserRound } from "lucide-react";
 import {
   Button,
   Chip,
@@ -25,6 +25,7 @@ import {
   projectTaskPortfolioBucketLabel,
   type ProjectTaskPortfolioBucketKey,
 } from "@/lib/status-labels";
+import { projectPhaseDotClass } from "../project-lifecycle-display";
 import {
   projectRiskLevelLabel,
   projectRiskLevelTone,
@@ -33,6 +34,32 @@ import {
   type ProjectRiskSummaryMap,
   PROJECT_RISK_FILTERS,
 } from "../project-risk";
+
+/** 默认页大小：3 列 × 3 行 ≈ 1.5 屏（方案 C）。 */
+export const PORTFOLIO_DEFAULT_PAGE_SIZE = 9;
+export const PORTFOLIO_PAGE_SIZE_OPTIONS = [9, 12, 20, 50] as const;
+
+/** 卡片 / 紧凑列表密度；只改变表现，不改变数据口径。 */
+export type PortfolioDensity = "cards" | "compact";
+const PORTFOLIO_DENSITY_STORAGE_KEY = "superteam.projects.portfolioDensity";
+
+function readPortfolioDensity(): PortfolioDensity {
+  try {
+    const raw = window.localStorage.getItem(PORTFOLIO_DENSITY_STORAGE_KEY);
+    if (raw === "compact" || raw === "cards") return raw;
+  } catch {
+    // SSR / 隐私模式：忽略
+  }
+  return "cards";
+}
+
+function writePortfolioDensity(density: PortfolioDensity) {
+  try {
+    window.localStorage.setItem(PORTFOLIO_DENSITY_STORAGE_KEY, density);
+  } catch {
+    // ignore
+  }
+}
 
 /** 卡片/顶栏共用：主桶优先展示顺序（完成→执行中→排队…）。 */
 export const PORTFOLIO_BAR_ORDER: ProjectTaskPortfolioBucketKey[] = [
@@ -105,24 +132,6 @@ const TASK_STATE_CHIPS: Array<{
   { value: "blocked", label: "含阻断" },
   { value: "failed", label: "含失败" },
 ];
-
-function projectStatusIconTone(status: string): string {
-  switch (status) {
-    case "running":
-      return "bg-brand-soft text-brand-deep";
-    case "acceptance":
-      return "bg-info-soft text-info-text";
-    case "paused":
-      return "bg-card-soft text-ink-3";
-    case "archived":
-      return "bg-card-soft text-ink-4";
-    case "configuring":
-    case "draft":
-      return "bg-warn-soft text-warn-text";
-    default:
-      return "bg-card-soft text-ink-2";
-  }
-}
 
 function initials(name: string): string {
   const t = name.trim();
@@ -245,17 +254,21 @@ export type ProjectPortfolioToolbarFilters = {
 
 export function ProjectPortfolioToolbar({
   createAction,
+  density = "cards",
   filters,
   isFetching,
   loadedRiskCounts,
+  onDensityChange,
   onFiltersChange,
   totalLabel,
   totalProjects,
 }: {
   createAction?: React.ReactNode;
+  density?: PortfolioDensity;
   filters: ProjectPortfolioToolbarFilters;
   isFetching: boolean;
   loadedRiskCounts?: { blocked: number };
+  onDensityChange?: (density: PortfolioDensity) => void;
   onFiltersChange: (next: ProjectPortfolioToolbarFilters) => void;
   totalLabel: string;
   totalProjects: number;
@@ -279,7 +292,38 @@ export function ProjectPortfolioToolbar({
             </StatusPill>
           ) : null}
         </div>
-        {createAction ? <div className="shrink-0">{createAction}</div> : null}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {onDensityChange ? (
+            <div
+              aria-label="显示密度"
+              className="inline-flex items-center gap-0.5 rounded-[8px] border border-line bg-card-soft p-0.5"
+              data-testid="portfolio-density-switch"
+              role="group"
+            >
+              <Chip
+                active={density === "cards"}
+                aria-label="卡片视图"
+                className="rounded-[6px] px-2 py-1 text-[11px]"
+                onClick={() => onDensityChange("cards")}
+                type="button"
+              >
+                <LayoutGrid aria-hidden className="size-3.5" />
+                <span className="ml-1">卡片</span>
+              </Chip>
+              <Chip
+                active={density === "compact"}
+                aria-label="紧凑列表"
+                className="rounded-[6px] px-2 py-1 text-[11px]"
+                onClick={() => onDensityChange("compact")}
+                type="button"
+              >
+                <List aria-hidden className="size-3.5" />
+                <span className="ml-1">列表</span>
+              </Chip>
+            </div>
+          ) : null}
+          {createAction ? <div className="shrink-0">{createAction}</div> : null}
+        </div>
       </div>
 
       {/* 一线：搜索 + 状态下拉 + 仅我 + 任务态 chip */}
@@ -416,6 +460,122 @@ function healthDisplay(
   return { label: raw, tone: projectRiskLevelTone(level) };
 }
 
+function portfolioOwnerName(
+  item: ProjectPortfolioItem,
+  principalNamesById?: ReadonlyMap<string, string>,
+): string {
+  const project = item.project;
+  return (
+    item.owner?.display_name?.trim() ||
+    (project.human_owner_user_id
+      ? principalNamesById?.get(project.human_owner_user_id)
+      : undefined) ||
+    "未指定负责人"
+  );
+}
+
+function portfolioActivityLabel(item: ProjectPortfolioItem): string | undefined {
+  if (!item.last_activity_at) return undefined;
+  return new Date(item.last_activity_at).toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** 紧凑列表行：名称+阶段 pill 同行、构成条单行、健康度右对齐。与卡片态同源数据。 */
+export function ProjectPortfolioCompactRow({
+  countsDegraded,
+  item,
+  onSelect,
+  principalNamesById,
+  riskSummary,
+  selected,
+}: {
+  countsDegraded?: boolean;
+  item: ProjectPortfolioItem;
+  onSelect: (projectId: string) => void;
+  principalNamesById?: ReadonlyMap<string, string>;
+  riskSummary?: ProjectRiskSummary;
+  selected?: boolean;
+}) {
+  const project = item.project;
+  const ownerName = portfolioOwnerName(item, principalNamesById);
+  const health = healthDisplay(project.status, riskSummary);
+  const activity = portfolioActivityLabel(item);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(project.id);
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 cursor-pointer items-center gap-3 border-b border-line/70 px-3.5 py-2.5 transition-colors hover:bg-card-soft/70",
+        selected && "bg-brand-soft/40",
+      )}
+      data-project-id={project.id}
+      data-testid="project-portfolio-compact-row"
+      onClick={() => onSelect(project.id)}
+      onKeyDown={onKeyDown}
+      role="button"
+      tabIndex={0}
+    >
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-card-soft text-ink-3">
+        <FolderKanban className="size-3.5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="min-w-0 truncate text-[13px] font-extrabold leading-5 text-ink">
+            {project.name}
+          </h3>
+          <StatusPill
+            className="shrink-0"
+            dotClassName={projectPhaseDotClass(project.status)}
+            tone="mute"
+          >
+            {projectStatusLabel(project.status)}
+          </StatusPill>
+        </div>
+        <div className="mt-1 flex min-w-0 items-center gap-2">
+          <span className="min-w-0 max-w-[8rem] truncate text-[11px] text-ink-3">
+            {ownerName}
+          </span>
+          <TaskCompositionBar
+            className="min-w-0 flex-1"
+            counts={item.task_counts}
+            showTitle={false}
+            size="card"
+          />
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <StatusPill tone={health.tone}>{health.label}</StatusPill>
+        {countsDegraded ? (
+          <span className="text-[10px] text-ink-3">计数可能不准</span>
+        ) : null}
+        <p className="text-[10.5px] text-ink-4">
+          {activity ? `最近 ${activity}` : "暂无活动"}
+        </p>
+      </div>
+      <Button asChild className="h-8 shrink-0 px-2.5 text-[12px]" size="sm">
+        <Link
+          onClick={(e) => e.stopPropagation()}
+          params={{ projectId: project.id }}
+          to="/projects/$projectId"
+        >
+          进入
+          <ArrowRight className="ml-1 size-3.5" />
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
 export function ProjectPortfolioCard({
   countsDegraded,
   item,
@@ -432,12 +592,7 @@ export function ProjectPortfolioCard({
   selected?: boolean;
 }) {
   const project = item.project;
-  const ownerName =
-    item.owner?.display_name?.trim() ||
-    (project.human_owner_user_id
-      ? principalNamesById?.get(project.human_owner_user_id)
-      : undefined) ||
-    "未指定负责人";
+  const ownerName = portfolioOwnerName(item, principalNamesById);
   const employeeN = item.participants.active_digital_employee_count;
   const health = healthDisplay(project.status, riskSummary);
 
@@ -448,14 +603,7 @@ export function ProjectPortfolioCard({
     }
   };
 
-  const activity =
-    item.last_activity_at &&
-    new Date(item.last_activity_at).toLocaleString("zh-CN", {
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const activity = portfolioActivityLabel(item);
 
   return (
     <div data-project-id={project.id} data-testid="project-portfolio-card">
@@ -470,14 +618,9 @@ export function ProjectPortfolioCard({
         role="button"
         tabIndex={0}
       >
-        {/* 行1：图标 | 标题 | 状态 pill */}
+        {/* 行1：图标 | 标题 | 阶段 pill（中性体 + phase 色点，非紧迫度） */}
         <div className="flex min-w-0 items-start gap-2.5">
-          <div
-            className={cn(
-              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-[11px]",
-              projectStatusIconTone(project.status),
-            )}
-          >
+          <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-[11px] bg-card-soft text-ink-3">
             <FolderKanban className="size-4" />
           </div>
           <div className="min-w-0 flex-1">
@@ -485,7 +628,11 @@ export function ProjectPortfolioCard({
               <h3 className="min-w-0 flex-1 truncate text-[13.5px] font-extrabold leading-5 text-ink">
                 {project.name}
               </h3>
-              <StatusPill className="shrink-0" tone="mute">
+              <StatusPill
+                className="shrink-0"
+                dotClassName={projectPhaseDotClass(project.status)}
+                tone="mute"
+              >
                 {projectStatusLabel(project.status)}
               </StatusPill>
             </div>
@@ -602,6 +749,16 @@ export function ProjectPortfolioGrid({
   selectedProjectId?: string;
   totalLabel: string;
 }) {
+  // 密度只影响表现层：同一份 items/riskSummaries，不另发请求。
+  const [density, setDensity] = useState<PortfolioDensity>("cards");
+  useEffect(() => {
+    setDensity(readPortfolioDensity());
+  }, []);
+  const handleDensityChange = (next: PortfolioDensity) => {
+    setDensity(next);
+    writePortfolioDensity(next);
+  };
+
   if (error) {
     return (
       <WorkSurface className="min-w-0 rounded-[14px] p-6 shadow-sm">
@@ -617,14 +774,17 @@ export function ProjectPortfolioGrid({
     <section
       aria-label="项目卡片网格"
       className="min-w-0"
+      data-density={density}
       data-testid="project-portfolio-grid"
     >
       <WorkSurface className="min-w-0 rounded-[14px] shadow-sm">
         <ProjectPortfolioToolbar
           createAction={createAction}
+          density={density}
           filters={filters}
           isFetching={isFetching}
           loadedRiskCounts={loadedRiskCounts}
+          onDensityChange={handleDensityChange}
           onFiltersChange={onFiltersChange}
           totalLabel={totalLabel}
           totalProjects={
@@ -655,6 +815,23 @@ export function ProjectPortfolioGrid({
               title="没有符合条件的项目"
             />
           </div>
+        ) : density === "compact" ? (
+          <div
+            className="min-w-0 divide-y-0 border-t border-line/40"
+            data-testid="portfolio-compact-list"
+          >
+            {items.map((item) => (
+              <ProjectPortfolioCompactRow
+                countsDegraded={portfolio?.counts_degraded}
+                item={item}
+                key={item.project.id}
+                onSelect={onSelectProject}
+                principalNamesById={principalNamesById}
+                riskSummary={riskSummaries[item.project.id]}
+                selected={selectedProjectId === item.project.id}
+              />
+            ))}
+          </div>
         ) : (
           <div className="grid min-w-0 grid-cols-1 gap-3.5 p-3.5 sm:grid-cols-2 xl:grid-cols-3">
             {items.map((item) => (
@@ -679,7 +856,7 @@ export function ProjectPortfolioGrid({
               onPageSizeChange={onPageSizeChange}
               pageCount={pageCount}
               pageSize={pageSize}
-              pageSizeOptions={[12, 20, 50]}
+              pageSizeOptions={[...PORTFOLIO_PAGE_SIZE_OPTIONS]}
               total={paginationTotal}
             />
           </div>

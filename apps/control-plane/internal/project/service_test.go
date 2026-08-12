@@ -183,9 +183,35 @@ func TestAddProjectRuntimeNodeRecordsEventAndReadiness(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, runtimeNodeID, node.RuntimeNodeID)
+	require.Equal(t, ProvisionStatusUnprovisioned, node.ProvisionStatus)
 	require.Equal(t, ProjectEventRuntimePlacementUpdated, repo.eventTypes[len(repo.eventTypes)-1])
 
+	// Bind-only: no disk supply yet → workspace_pending (spec 2026-08-12 P1).
 	readiness, err := service.GetProjectRuntimeReadiness(context.Background(), tenantID, projectID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectRuntimePlacementStatusWorkspacePending, readiness.PlacementStatus)
+
+	// After admin provision confirm, readiness becomes ready.
+	service.SetRuntimeWorkspaceCommander(&recordingWorkspaceCommander{
+		connected: true,
+		nodes: map[uuid.UUID]struct {
+			tenantID uuid.UUID
+			nodeID   string
+		}{
+			runtimeNodeID: {tenantID: tenantID, nodeID: nodeID},
+		},
+	})
+	provisioned, err := service.ProvisionWorkspaceOnNode(context.Background(), ModifyProjectRuntimeNodeRequest{
+		TenantID:      tenantID,
+		ProjectID:     projectID,
+		RuntimeNodeID: runtimeNodeID,
+		ActorUserID:   actorID,
+		Reason:        "confirm supply",
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProvisionStatusProvisioned, provisioned.ProvisionStatus)
+
+	readiness, err = service.GetProjectRuntimeReadiness(context.Background(), tenantID, projectID)
 	require.NoError(t, err)
 	require.Equal(t, ProjectRuntimePlacementStatusReady, readiness.PlacementStatus)
 	require.NotNil(t, readiness.RuntimeNodeID)
@@ -232,7 +258,7 @@ func TestGetProjectRuntimeReadinessBlocksDispatchForPendingEmployeeFacts(t *test
 	// not by project_placements — register the same node there too so this
 	// fixture represents a project that is actually dispatch-eligible under the
 	// new model, not just one with a legacy placement row.
-	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID); err != nil {
+	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID, true, "create"); err != nil {
 		t.Fatalf("insert project runtime node: %v", err)
 	}
 	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
@@ -316,7 +342,7 @@ func TestGetProjectRuntimeReadinessBlocksProviderTypeMissingEmployee(t *testing.
 	// not by project_placements — register the same node there too so this
 	// fixture represents a project that is actually dispatch-eligible under the
 	// new model, not just one with a legacy placement row.
-	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID); err != nil {
+	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID, true, "create"); err != nil {
 		t.Fatalf("insert project runtime node: %v", err)
 	}
 	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
@@ -415,7 +441,7 @@ func TestGetProjectRuntimeReadinessDoesNotFallbackOverExplicitUnavailableCapabil
 	// not by project_placements — register the same node there too so this
 	// fixture represents a project that is actually dispatch-eligible under the
 	// new model, not just one with a legacy placement row.
-	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID); err != nil {
+	if _, err := repo.InsertProjectRuntimeNode(context.Background(), tenantID, projectID, runtimeNodeID, true, "create"); err != nil {
 		t.Fatalf("insert project runtime node: %v", err)
 	}
 	service.SetDigitalEmployeePlanningProfileSource(&fakeProjectPlanningProfileSource{
@@ -3854,9 +3880,10 @@ func TestProjectTaskDispatchRecoveryActionSchedulesRetryForRetryableFailure(t *t
 		},
 	}
 
-	action := projectTaskDispatchRecoveryAction(task, event, 1, 0)
+	// A-layer: no automatic re-dispatch; human recovery card only.
+	action := projectTaskDispatchRecoveryAction(task, event, 1, 0, 0)
 
-	require.Equal(t, ProjectTaskRecoveryActionRetryScheduled, action.Action)
+	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, action.Action)
 	require.Equal(t, FailureFamilyTransientRuntime, action.FailureFamily)
 	require.True(t, action.Retryable)
 	require.Equal(t, HumanWaitReasonRuntimeRecovery, action.WaitingReason)
@@ -3877,7 +3904,7 @@ func TestProjectTaskDispatchRecoveryActionMovesNonRetryableFailureToWaitingHuman
 		},
 	}
 
-	action := projectTaskDispatchRecoveryAction(task, event, 1, 0)
+	action := projectTaskDispatchRecoveryAction(task, event, 1, 0, 0)
 
 	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, action.Action)
 	require.Equal(t, FailureFamilyInvalidContract, action.FailureFamily)
@@ -3900,11 +3927,31 @@ func TestProjectTaskDispatchRecoveryActionMovesRetryExhaustionToWaitingHuman(t *
 		},
 	}
 
-	action := projectTaskDispatchRecoveryAction(task, event, 3, 0)
+	// count=2 exceeds MaxDispatchAutoRetries(1) with no prior human approval.
+	action := projectTaskDispatchRecoveryAction(task, event, 2, 0, 0)
 
 	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, action.Action)
 	require.Equal(t, FailureFamilyTransientRuntime, action.FailureFamily)
 	require.Equal(t, HumanWaitReasonRuntimeRecovery, action.WaitingReason)
+}
+
+func TestProjectTaskDispatchRecoveryActionFailsAfterHumanRedispatchBudget(t *testing.T) {
+	task := ProjectTask{
+		ID:          uuid.New(),
+		Status:      ProjectTaskStatusPlanned,
+		MaxAttempts: serviceTestInt32Ptr(3),
+	}
+	event := ProjectEvent{
+		ID:        uuid.New(),
+		EventType: ProjectEventTaskDispatchFailed,
+		Payload: map[string]any{
+			"retryable": true,
+			"error":     "runtime node is not connected",
+		},
+	}
+	action := projectTaskDispatchRecoveryAction(task, event, 2, 1, 0)
+	require.Equal(t, ProjectTaskRecoveryActionFailed, action.Action)
+	require.Contains(t, action.TerminalReason, "人类恢复")
 }
 
 type dispatchRecoveryFixture struct {
@@ -3961,9 +4008,11 @@ func newDispatchRecoveryFixture(repo *memoryRepository, taskStatus string, attem
 	return dispatchRecoveryFixture{tenantID: tenantID, projectID: projectID, taskID: taskID, failureEventID: eventID}
 }
 
-func TestRecoverProjectTaskDispatchFailureSchedulesRetry(t *testing.T) {
+func TestRecoverProjectTaskDispatchFailureOpensHumanCardWithoutAutoRetry(t *testing.T) {
+	// A-layer dispatch failure: never auto-retry; open recovery card for human click.
 	repo := newMemoryRepository()
-	service, err := NewService(repo)
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
 	require.NoError(t, err)
 	fixture := newDispatchRecoveryFixture(repo, ProjectTaskStatusPlanned, 0, 3, true)
 
@@ -3975,13 +4024,13 @@ func TestRecoverProjectTaskDispatchFailureSchedulesRetry(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, ProjectTaskRecoveryActionRetryScheduled, result.Action)
+	require.Equal(t, ProjectTaskRecoveryActionWaitingHuman, result.Action)
 	task, err := repo.GetProjectTask(context.Background(), fixture.tenantID, fixture.taskID)
 	require.NoError(t, err)
-	require.Equal(t, ProjectTaskStatusPlanned, task.Status)
-	require.NotNil(t, task.RetryNotBefore)
-	require.Len(t, repo.events, 2)
-	require.Equal(t, ProjectEventTaskRetryScheduled, repo.events[1].EventType)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
+	require.Nil(t, task.RetryNotBefore, "must not schedule auto re-dispatch")
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, "project_task_recovery", inbox.upserts[0].DecisionType)
 }
 
 func TestRecoverProjectTaskDispatchFailureCreatesWaitingHumanDecision(t *testing.T) {
@@ -4039,23 +4088,22 @@ func TestRecoverProjectTaskDispatchFailureExhaustsRetriesByFailureCount(t *testi
 	inbox := &fakeDecisionInboxProjector{}
 	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
 	require.NoError(t, err)
+	// Fixture already has 1 dispatch_failed; add one more so count=2 > MaxDispatchAutoRetries(1).
 	fixture := newDispatchRecoveryFixture(repo, ProjectTaskStatusPlanned, 0, 3, true)
-	for i := 0; i < 2; i++ {
-		repo.events = append(repo.events, ProjectEvent{
-			ID:        uuid.New(),
-			TenantID:  fixture.tenantID,
-			ProjectID: fixture.projectID,
-			EventType: ProjectEventTaskDispatchFailed,
-			ActorType: "project_coordinator",
-			ActorID:   fixture.taskID.String(),
-			Payload: map[string]any{
-				"project_task_id": fixture.taskID.String(),
-				"retryable":       true,
-				"error":           "runtime node is not connected",
-			},
-			CreatedAt: time.Now().UTC(),
-		})
-	}
+	repo.events = append(repo.events, ProjectEvent{
+		ID:        uuid.New(),
+		TenantID:  fixture.tenantID,
+		ProjectID: fixture.projectID,
+		EventType: ProjectEventTaskDispatchFailed,
+		ActorType: "project_coordinator",
+		ActorID:   fixture.taskID.String(),
+		Payload: map[string]any{
+			"project_task_id": fixture.taskID.String(),
+			"retryable":       true,
+			"error":           "runtime node is not connected",
+		},
+		CreatedAt: time.Now().UTC(),
+	})
 
 	result, err := service.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureRequest{
 		TenantID:      fixture.tenantID,
@@ -4070,9 +4118,66 @@ func TestRecoverProjectTaskDispatchFailureExhaustsRetriesByFailureCount(t *testi
 	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
 }
 
-func TestRecoverStaleQueuedProjectTaskAttemptSchedulesRetry(t *testing.T) {
+// Second dispatch failure after one human recovery approval must fail the task
+// instead of minting another recovery card (human redispatch budget = 1).
+func TestRecoverProjectTaskDispatchFailureFailsAfterHumanRedispatchBudget(t *testing.T) {
 	repo := newMemoryRepository()
-	service, err := NewService(repo)
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	require.NoError(t, err)
+	fixture := newDispatchRecoveryFixture(repo, ProjectTaskStatusPlanned, 0, 3, true)
+	// Prior human recovery already approved once for this task.
+	taskID := fixture.taskID
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID:             uuid.New(),
+		TenantID:       fixture.tenantID,
+		ProjectID:      fixture.projectID,
+		ProjectTaskID:  &taskID,
+		DecisionType:   "project_task_recovery",
+		TitleSnapshot:  "prior recovery",
+		StatusSnapshot: "approved",
+	})
+	// Exhaust auto-retry: second dispatch failure.
+	repo.events = append(repo.events, ProjectEvent{
+		ID:        uuid.New(),
+		TenantID:  fixture.tenantID,
+		ProjectID: fixture.projectID,
+		EventType: ProjectEventTaskDispatchFailed,
+		ActorType: "project_coordinator",
+		ActorID:   fixture.taskID.String(),
+		Payload: map[string]any{
+			"project_task_id": fixture.taskID.String(),
+			"retryable":       true,
+			"error":           "runtime node is not connected",
+		},
+		CreatedAt: time.Now().UTC(),
+	})
+
+	result, err := service.RecoverProjectTaskDispatchFailure(context.Background(), RecoverProjectTaskDispatchFailureRequest{
+		TenantID:      fixture.tenantID,
+		ProjectID:     fixture.projectID,
+		ProjectTaskID: fixture.taskID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskRecoveryActionFailed, result.Action)
+	task, err := repo.GetProjectTask(context.Background(), fixture.tenantID, fixture.taskID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusFailed, task.Status)
+	require.Empty(t, inbox.upserts, "must not mint another recovery card")
+}
+
+func TestProjectTaskDispatchRetryAvailableNeverAutos(t *testing.T) {
+	task := ProjectTask{}
+	require.False(t, projectTaskDispatchRetryAvailable(task, 1, 3), "A-layer: no auto re-dispatch")
+	require.False(t, projectTaskDispatchRetryAvailable(task, 0, 3))
+	require.Equal(t, int64(0), MaxDispatchAutoRetries)
+}
+
+func TestRecoverStaleQueuedProjectTaskAttemptOpensHumanCard(t *testing.T) {
+	// Runtime never acked start (A-layer): no auto-requeue; human recovery only.
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
 	require.NoError(t, err)
 	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusQueued, ProjectTaskAttemptStatusQueued)
 	repo.tasks[0].MaxAttempts = serviceTestInt32Ptr(3)
@@ -4088,10 +4193,10 @@ func TestRecoverStaleQueuedProjectTaskAttemptSchedulesRetry(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, ProjectTaskStatusQueued, result.Status)
+	require.Equal(t, ProjectTaskStatusWaitingHuman, result.Status)
 	require.Equal(t, ProjectTaskAttemptStatusLost, repo.projectTaskAttempts[0].Status)
-	require.Len(t, repo.projectTaskAttempts, 2)
-	require.Equal(t, ProjectTaskAttemptStatusQueued, repo.projectTaskAttempts[1].Status)
+	require.Len(t, inbox.upserts, 1)
+	require.Equal(t, "project_task_recovery", inbox.upserts[0].DecisionType)
 }
 
 func TestRecoverLostProjectTaskAttemptMovesToWaitingHumanWhenRetryExhausted(t *testing.T) {
@@ -8488,6 +8593,50 @@ func TestResolveDecisionIdempotentSelfHealsFeishuCards(t *testing.T) {
 	}
 }
 
+// TestResolveDecisionTerminalMismatchReprojectsInbox: a decision already
+// terminal under a different verb (e.g. bulk-cancelled) must still re-project
+// the inbox so a stale open card closes when the human taps 同意/驳回.
+func TestResolveDecisionTerminalMismatchReprojectsInbox(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	decisionID := uuid.New()
+	actorID := uuid.New()
+	repo.projects[projectID] = Project{
+		ID: projectID, TenantID: tenantID, Name: "demo", Goal: "g",
+		Status: ProjectStatusRunning, HumanOwnerUserID: actorID,
+	}
+	now := time.Now().UTC()
+	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+		ID: decisionID, TenantID: tenantID, ProjectID: projectID,
+		TargetUserID: actorID, DecisionType: "project_task_recovery",
+		TitleSnapshot: "Create gate-e2e-risk.txt", StatusSnapshot: "cancelled",
+		ResolvedAt: &now,
+	})
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID: tenantID, ProjectID: projectID, DecisionRequestID: decisionID,
+		DecidedByUserID: actorID, Decision: "approved",
+	})
+	if err != nil {
+		t.Fatalf("terminal mismatch resolve: %v", err)
+	}
+	if resolved.StatusSnapshot != "cancelled" {
+		t.Fatalf("must keep real terminal snapshot cancelled, got %s", resolved.StatusSnapshot)
+	}
+	if len(inbox.resolutions) != 1 {
+		t.Fatalf("expected inbox re-project once, got %d", len(inbox.resolutions))
+	}
+	if inbox.resolutions[0].StatusSnapshot != "cancelled" {
+		t.Fatalf("inbox projection must carry cancelled, got %s", inbox.resolutions[0].StatusSnapshot)
+	}
+}
+
 func TestResolveDecisionThreadsTargetExitDeliverableToSignal(t *testing.T) {
 	repo := newMemoryRepository()
 	coordinator := &fakeCoordinatorSignalClient{}
@@ -10320,6 +10469,54 @@ func TestResolveDecisionDemandAcceptanceRejectedFailsDemand(t *testing.T) {
 	demand, _ := repo.GetProjectDemand(context.Background(), f.tenantID, f.demandID)
 	if demand.Status != ProjectDemandStatusFailed {
 		t.Fatalf("expected demand failed, got %s", demand.Status)
+	}
+}
+
+// TestResolveDecisionDemandAcceptanceClosesOrphanOnFailedDemand: a still-pending
+// demand_acceptance card whose demand is already failed (and/or whose plan
+// revision is superseded) must force-close and project the inbox instead of
+// returning "projection not applied" while leaving the card open.
+func TestResolveDecisionDemandAcceptanceClosesOrphanOnFailedDemand(t *testing.T) {
+	repo := newMemoryRepository()
+	inbox := &fakeDecisionInboxProjector{}
+	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	f := setupDemandAcceptanceSignFixture(repo, []DemandAcceptanceCriterion{
+		blockingHumanJudgmentCriterion("c1", "过期判据"),
+	})
+	// Demand already terminal; plan revision superseded — the card is orphaned.
+	for i := range repo.demands {
+		if repo.demands[i].ID == f.demandID {
+			repo.demands[i].Status = ProjectDemandStatusFailed
+		}
+	}
+	for i := range repo.planRevisions {
+		if repo.planRevisions[i].ID == f.revisionID {
+			repo.planRevisions[i].Status = PlanRevisionStatusSuperseded
+		}
+	}
+
+	resolved, err := service.ResolveDecision(context.Background(), ResolveDecisionRequest{
+		TenantID:          f.tenantID,
+		ProjectID:         f.projectID,
+		DecisionRequestID: f.decisionID,
+		DecidedByUserID:   f.ownerID,
+		Decision:          "approved",
+		Comment:           "清理过期验收卡",
+	})
+	if err != nil {
+		t.Fatalf("orphan demand_acceptance resolve: %v", err)
+	}
+	if resolved.StatusSnapshot != "rejected" {
+		t.Fatalf("failed demand orphan should resolve as rejected, got %s", resolved.StatusSnapshot)
+	}
+	if len(inbox.resolutions) == 0 {
+		t.Fatalf("expected inbox projection for orphan acceptance card")
+	}
+	if isPendingDecisionStatus(inbox.resolutions[len(inbox.resolutions)-1].StatusSnapshot) {
+		t.Fatalf("inbox projection must not stay pending")
 	}
 }
 
@@ -12173,6 +12370,8 @@ type memoryRepository struct {
 	deleteAuditEvents                []ProjectDeleteAuditEventParams
 	deleteAuditEventErr              error
 	ensureDecisionCardsTerminalCalls []ensureDecisionCardsTerminalCall
+	workspaceDeleteRequests         []WorkspaceDeleteRequest
+	workspaceDeleteAuditEvents      []map[string]any
 }
 
 type ensureDecisionCardsTerminalCall struct {
@@ -12703,6 +12902,9 @@ func (r *memoryRepository) CreateProject(ctx context.Context, req CreateProjectR
 		RepoBinding:            repoBindingFromInput(req.RepoBinding),
 		ScenarioTemplateKey:    req.ScenarioTemplateKey,
 		WorkspaceReadyStatus:   ready,
+		// 与 pg_repository 对齐：ownership 是持久字段，fake 丢掉它会让
+		// attach 相关回归静默通过。
+		WorkspaceOwnership: workspaceOwnershipFromRecord(string(req.WorkspaceOwnership)),
 	}
 	if ready == WorkspaceReadyStatusReady {
 		now := time.Now().UTC()
@@ -12814,6 +13016,126 @@ func (r *memoryRepository) SoftDeleteProjectCascade(_ context.Context, params So
 		})
 	}
 	return cascade, nil
+}
+
+func (r *memoryRepository) EnqueueWorkspaceDeleteRequest(_ context.Context, params EnqueueWorkspaceDeleteRequestParams) (WorkspaceDeleteRequest, error) {
+	for _, existing := range r.workspaceDeleteRequests {
+		if existing.ProjectID == params.ProjectID && existing.RuntimeNodeID == params.RuntimeNodeID && existing.Status == WorkspaceDeleteRequestStatusPending {
+			return existing, nil
+		}
+	}
+	ownership := params.Ownership
+	if ownership == "" {
+		ownership = WorkspaceOwnershipPlatformManaged
+	}
+	item := WorkspaceDeleteRequest{
+		ID:             uuid.New(),
+		TenantID:       params.TenantID,
+		ProjectID:      params.ProjectID,
+		RuntimeNodeID:  params.RuntimeNodeID,
+		DirectoryName:  params.DirectoryName,
+		NodeIDSnapshot: params.NodeIDSnapshot,
+		Ownership:      ownership,
+		RepoSummary:    params.RepoSummary,
+		Status:         WorkspaceDeleteRequestStatusPending,
+		RequestedBy:    params.RequestedBy,
+		RequestedAt:    time.Now().UTC(),
+	}
+	if strings.TrimSpace(params.Reason) != "" {
+		reason := strings.TrimSpace(params.Reason)
+		item.Reason = &reason
+	}
+	r.workspaceDeleteRequests = append(r.workspaceDeleteRequests, item)
+	return item, nil
+}
+
+func (r *memoryRepository) GetWorkspaceDeleteRequest(_ context.Context, tenantID, requestID uuid.UUID) (WorkspaceDeleteRequest, error) {
+	for _, item := range r.workspaceDeleteRequests {
+		if item.TenantID == tenantID && item.ID == requestID {
+			return item, nil
+		}
+	}
+	return WorkspaceDeleteRequest{}, ErrProjectWorkspaceDeleteRequestNotFound
+}
+
+func (r *memoryRepository) ListPendingWorkspaceDeleteRequests(_ context.Context, tenantID uuid.UUID) ([]WorkspaceDeleteRequest, error) {
+	out := make([]WorkspaceDeleteRequest, 0)
+	for _, item := range r.workspaceDeleteRequests {
+		if item.TenantID == tenantID && item.Status == WorkspaceDeleteRequestStatusPending {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) ListStalePendingWorkspaceDeleteRequests(_ context.Context, staleBefore time.Time) ([]WorkspaceDeleteRequest, error) {
+	out := make([]WorkspaceDeleteRequest, 0)
+	for _, item := range r.workspaceDeleteRequests {
+		if item.Status == WorkspaceDeleteRequestStatusPending && item.RequestedAt.Before(staleBefore) {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepository) CountPendingWorkspaceDeleteByDirectoryName(_ context.Context, directoryName string) (int32, error) {
+	var count int32
+	for _, item := range r.workspaceDeleteRequests {
+		if item.DirectoryName == directoryName && item.Status == WorkspaceDeleteRequestStatusPending {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (r *memoryRepository) ConfirmWorkspaceDeleteRequest(_ context.Context, tenantID, requestID, actorUserID uuid.UUID) (WorkspaceDeleteRequest, error) {
+	for i, item := range r.workspaceDeleteRequests {
+		if item.TenantID == tenantID && item.ID == requestID && item.Status == WorkspaceDeleteRequestStatusPending {
+			now := time.Now().UTC()
+			item.Status = WorkspaceDeleteRequestStatusConfirmed
+			item.ResolvedBy = &actorUserID
+			item.ResolvedAt = &now
+			r.workspaceDeleteRequests[i] = item
+			return item, nil
+		}
+	}
+	return WorkspaceDeleteRequest{}, ErrProjectWorkspaceDeleteRequestNotFound
+}
+
+func (r *memoryRepository) RejectWorkspaceDeleteRequest(_ context.Context, tenantID, requestID, actorUserID uuid.UUID, reason string) (WorkspaceDeleteRequest, error) {
+	for i, item := range r.workspaceDeleteRequests {
+		if item.TenantID == tenantID && item.ID == requestID && item.Status == WorkspaceDeleteRequestStatusPending {
+			now := time.Now().UTC()
+			item.Status = WorkspaceDeleteRequestStatusRejected
+			item.ResolvedBy = &actorUserID
+			item.ResolvedAt = &now
+			if strings.TrimSpace(reason) != "" {
+				r := strings.TrimSpace(reason)
+				item.Reason = &r
+			}
+			r.workspaceDeleteRequests[i] = item
+			return item, nil
+		}
+	}
+	return WorkspaceDeleteRequest{}, ErrProjectWorkspaceDeleteRequestNotFound
+}
+
+func (r *memoryRepository) ResolveOrphanWorkspaceDeleteReminders(_ context.Context) error {
+	return nil
+}
+
+func (r *memoryRepository) CreateWorkspaceDeleteAuditEvent(_ context.Context, tenantID, actorUserID uuid.UUID, action string, request WorkspaceDeleteRequest, extra map[string]any) error {
+	payload := map[string]any{
+		"tenant_id": tenantID.String(),
+		"actor_id":  actorUserID.String(),
+		"action":    action,
+		"request":   request.ID.String(),
+	}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	r.workspaceDeleteAuditEvents = append(r.workspaceDeleteAuditEvents, payload)
+	return nil
 }
 
 func (r *memoryRepository) ListProjects(ctx context.Context, req ListProjectsRequest) ([]Project, error) {
@@ -13315,7 +13637,7 @@ func (r *memoryRepository) AppendProjectEvent(ctx context.Context, event AppendP
 	return projectEvent, nil
 }
 
-func (r *memoryRepository) InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID) (ProjectRuntimeNode, error) {
+func (r *memoryRepository) InsertProjectRuntimeNode(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID, provisioned bool, provisionSource string) (ProjectRuntimeNode, error) {
 	if r.projectRuntimeNodes == nil {
 		r.projectRuntimeNodes = map[uuid.UUID][]ProjectRuntimeNode{}
 	}
@@ -13324,15 +13646,54 @@ func (r *memoryRepository) InsertProjectRuntimeNode(ctx context.Context, tenantI
 			return existing, nil
 		}
 	}
+	status := ProvisionStatusUnprovisioned
+	var provisionedAt *time.Time
+	var source *string
+	if provisioned {
+		status = ProvisionStatusProvisioned
+		now := time.Now().UTC()
+		provisionedAt = &now
+		s := provisionSource
+		if s == "" {
+			s = "create"
+		}
+		source = &s
+	}
 	node := ProjectRuntimeNode{
-		ID:            uuid.New(),
-		TenantID:      tenantID,
-		ProjectID:     projectID,
-		RuntimeNodeID: runtimeNodeID,
-		CreatedAt:     time.Now(),
+		ID:              uuid.New(),
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		RuntimeNodeID:   runtimeNodeID,
+		ProvisionStatus: status,
+		ProvisionedAt:   provisionedAt,
+		ProvisionSource: source,
+		CreatedAt:       time.Now().UTC(),
 	}
 	r.projectRuntimeNodes[projectID] = append(r.projectRuntimeNodes[projectID], node)
 	return node, nil
+}
+
+func (r *memoryRepository) MarkProjectRuntimeNodeProvisioned(ctx context.Context, tenantID, projectID, runtimeNodeID uuid.UUID, provisionSource string) (ProjectRuntimeNode, error) {
+	if r.projectRuntimeNodes == nil {
+		return ProjectRuntimeNode{}, ErrProjectNotFound
+	}
+	nodes := r.projectRuntimeNodes[projectID]
+	for i, node := range nodes {
+		if node.TenantID == tenantID && node.RuntimeNodeID == runtimeNodeID {
+			now := time.Now().UTC()
+			node.ProvisionStatus = ProvisionStatusProvisioned
+			node.ProvisionedAt = &now
+			s := provisionSource
+			if s == "" {
+				s = "confirm"
+			}
+			node.ProvisionSource = &s
+			nodes[i] = node
+			r.projectRuntimeNodes[projectID] = nodes
+			return node, nil
+		}
+	}
+	return ProjectRuntimeNode{}, ErrProjectNotFound
 }
 
 func (r *memoryRepository) ListProjectRuntimeNodes(ctx context.Context, tenantID, projectID uuid.UUID) ([]ProjectRuntimeNode, error) {
@@ -13519,6 +13880,15 @@ func (r *memoryRepository) AdvanceProjectDemandStatus(ctx context.Context, tenan
 func (r *memoryRepository) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (ProjectTask, error) {
 	for _, task := range r.tasks {
 		if task.ID == projectTaskID && task.TenantID == tenantID {
+			return task, nil
+		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+func (r *memoryRepository) GetProjectTaskInProject(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (ProjectTask, error) {
+	for _, task := range r.tasks {
+		if task.ID == projectTaskID && task.TenantID == tenantID && task.ProjectID == projectID {
 			return task, nil
 		}
 	}
@@ -15299,6 +15669,37 @@ func (r *memoryRepository) RecoverProjectTaskDispatchFailure(ctx context.Context
 		return ProjectTaskWritebackResult{}, err
 	}
 	switch req.Action.Action {
+	case ProjectTaskRecoveryActionFailed:
+		reason := strings.TrimSpace(req.Action.TerminalReason)
+		if reason == "" {
+			reason = "dispatch recovery marked the project task failed"
+		}
+		event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
+			TenantID:  req.TenantID,
+			ProjectID: req.ProjectID,
+			EventType: ProjectEventTaskFailed,
+			ActorType: "project_coordinator",
+			ActorID:   req.ProjectTaskID.String(),
+			Summary:   reason,
+			Payload: map[string]any{
+				"project_task_id":          req.ProjectTaskID.String(),
+				"dispatch_failed_event_id": req.FailureEventID.String(),
+				"failure_family":           req.Action.FailureFamily,
+				"terminal_reason":          reason,
+			},
+		})
+		if err != nil {
+			return ProjectTaskWritebackResult{}, err
+		}
+		for i := range r.tasks {
+			if r.tasks[i].TenantID == req.TenantID && r.tasks[i].ID == req.ProjectTaskID {
+				r.tasks[i].Status = ProjectTaskStatusFailed
+				r.tasks[i].WaitingReason = nil
+				r.tasks[i].WaitingRequestID = nil
+				r.tasks[i].RetryNotBefore = nil
+				return ProjectTaskWritebackResult{Task: r.tasks[i], Event: event}, nil
+			}
+		}
 	case ProjectTaskRecoveryActionRetryScheduled:
 		event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
 			TenantID:  req.TenantID,

@@ -14,6 +14,7 @@ import {
   getProjectPlanRevision,
   addProjectRuntimeNode,
   getProjectRuntimeReadiness,
+  getProjectTask,
   getProjectTaskGraph,
   listProjectTaskDispatchGates,
   listProjectConfigRevisions,
@@ -622,6 +623,35 @@ describe("project API", () => {
 
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/projects/project%201%2Fprimary/task-graph?demand_id=demand+1%2Fprimary",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("gets a single project task by id (deep-link fallback)", async () => {
+    const task = {
+      id: "55555555-5555-4555-8555-555555555555",
+      tenant_id: "22222222-2222-4222-8222-222222222222",
+      project_id: "11111111-1111-4111-8111-111111111111",
+      title: "失败任务",
+      status: "failed",
+    };
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify(task), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+    );
+
+    const result = await getProjectTask(
+      { baseUrl: "http://control-plane.local", fetcher },
+      "project-1",
+      "task/1",
+    );
+
+    expect(result).toEqual(task);
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/projects/project-1/tasks/task%2F1",
       expect.objectContaining({ method: "GET" }),
     );
   });

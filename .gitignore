@@ -124,6 +124,7 @@ output/
 # Agent / local tool state (project skills under .codex/skills are intentionally tracked)
 .agents/
 .claude/
+.zcode/
 .reasonix/
 .codex/*
 !.codex/skills/
