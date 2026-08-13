@@ -148,6 +148,8 @@ doc/
 
 # Local scratch / experimental dumps
 .scratch/
+# 本机开发服务 pid（正式落点是 .scratch/dev-services/pids；勿把仓库根 .dev-pids 入库）
+.dev-pids/
 .tests/
 
 # 会话临时脚本：E2E 排障时现写的一次性 Playwright/curl 脚本，用完即弃，不入库。
