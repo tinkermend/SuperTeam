@@ -26,6 +26,9 @@ var (
 	// reference a resumable chat run: wrong run_kind, wrong employee, not yet
 	// terminal, or missing a provider session id.
 	ErrInvalidResumeRun = errors.New("invalid resume_of_run_id")
+	// ErrForbidden is returned when the caller is authenticated but not allowed
+	// to mutate the resource (e.g. renaming a chat thread as a non-initiator).
+	ErrForbidden = errors.New("forbidden")
 )
 
 type DigitalEmployeeRunStatus string
@@ -86,6 +89,8 @@ type DigitalEmployeeRun struct {
 	// chat run (the stored thread root, or the run's own id for a root turn),
 	// nil for task runs.
 	ChatThreadID           *uuid.UUID
+	CreatorUserID          *uuid.UUID
+	CreatorDisplayName     *string
 	Status                 DigitalEmployeeRunStatus
 	Result                 map[string]any
 	Diagnostic             map[string]any
@@ -230,6 +235,10 @@ type CreateDigitalEmployeeRunRequest struct {
 	// injects that session id into Metadata so the runtime resumes the same
 	// provider session instead of starting a fresh one.
 	ResumeOfRunID *uuid.UUID
+	// ChatThreadID joins an existing SuperTeam chat thread without requiring a
+	// provider session (TTL-expiry continue path). Ignored when ResumeOfRunID
+	// succeeds; mutually exclusive with opening a brand-new root.
+	ChatThreadID *uuid.UUID
 	// ProjectID is the chat run's runtime anchor (§13 design revision): a chat
 	// run carries no project business effect, but resolving its dispatch node,
 	// budget, and policy boundary requires a project context the way project
@@ -239,9 +248,18 @@ type CreateDigitalEmployeeRunRequest struct {
 	// 派发依赖解析会把项目级 MCP 绑定并入员工侧集合（同 server_key 项目侧优
 	// 先）。StartProjectTaskRun 绕过 CreateRun 组装请求时会据此回填项目 ID。
 	ProjectID *uuid.UUID
-	// chatThreadID is resolved by CreateRun itself (inherited from the resumed
-	// run's effective thread id); caller-provided values are discarded. Kept
-	// unexported so the handler layer cannot populate it.
+	// SkillIDs is the optional per-turn Chat skill envelope (autonomy P1).
+	// Empty = project skill bindings ∩ three-layer supply (Chat default surface).
+	// Non-empty = further intersect; ids outside the default surface → 400.
+	// Ignored for task-kind / StartProjectTaskRun paths.
+	SkillIDs []uuid.UUID
+	// InteractiveConfirmed acknowledges Chat B2 light confirm (autonomy P4).
+	// Required when invoker is interactive and (skill_ids non-empty or project
+	// autonomy_ceiling=pause_at_gate). Automation metadata bypasses this gate.
+	InteractiveConfirmed bool
+	// chatThreadID is resolved by CreateRun itself (resume inherit or validated
+	// ChatThreadID join); caller-provided values go through ChatThreadID above
+	// then land here after validation. Kept unexported so only CreateRun sets it.
 	chatThreadID *uuid.UUID
 }
 
@@ -321,6 +339,40 @@ type RuntimeEventRecordRequest struct {
 
 type RuntimeEventRecorder interface {
 	RecordRuntimeEvent(ctx context.Context, req RuntimeEventRecordRequest) error
+}
+
+// DigitalEmployeeChatThread is the aggregated chat session list row for a
+// (employee, project) pair — SuperTeam title, initiator, last speaker, mutex.
+type DigitalEmployeeChatThread struct {
+	ChatThreadID            uuid.UUID
+	Title                   string
+	InitiatorUserID         uuid.UUID
+	InitiatorDisplayName    string
+	LastSpeakerUserID       uuid.UUID
+	LastSpeakerDisplayName  string
+	LastPrompt              string
+	LastActiveAt            time.Time
+	HasActiveRun            bool
+	ActiveRunnerUserID      *uuid.UUID
+	ActiveRunnerDisplayName *string
+}
+
+// ChatThreadRoot is the root chat turn used for join validation and rename authz.
+type ChatThreadRoot struct {
+	RootRunID            uuid.UUID
+	ProjectID            uuid.UUID
+	TaskID               uuid.UUID
+	InitiatorUserID      uuid.UUID
+	Title                string
+	InitiatorDisplayName string
+}
+
+// ActiveChatRunOnThread is the in-flight chat run occupying a thread (mutex).
+type ActiveChatRunOnThread struct {
+	RunID             uuid.UUID
+	RunnerUserID      uuid.UUID
+	RunnerDisplayName string
+	Status            DigitalEmployeeRunStatus
 }
 
 type RuntimeCommandEventWriteback struct {

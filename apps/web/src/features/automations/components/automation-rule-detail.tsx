@@ -109,7 +109,10 @@ export function AutomationRuleDetail({
           </div>
         </div>
 
-        <HumanGateCallout mode={rule.coordination_mode} />
+        <HumanGateCallout
+          autonomyTier={rule.autonomy_tier ?? "pause_at_gate"}
+          mode={rule.coordination_mode}
+        />
 
         {actionError ? (
           <p className="text-sm text-destructive" role="alert">

@@ -1708,6 +1708,200 @@ func TestCreateRunChatThreadIDResolution(t *testing.T) {
 
 }
 
+// TestCreateRunChatThreadIDJoinWithoutResume covers the TTL-expiry continue
+// path (chat 会话持久化 spec): a caller supplies chat_thread_id without
+// resume_of_run_id to keep posting to the same SuperTeam thread once the
+// provider session has expired. CreateRun must validate the thread root
+// belongs to the same employee+project via GetChatThreadRoot and persist the
+// validated thread id — no provider session is required.
+func TestCreateRunChatThreadIDJoinWithoutResume(t *testing.T) {
+	repo := chatAnchorRunServiceRepository(nil)
+	threadID := uuid.New()
+	repo.chatThreadRoot = &ChatThreadRoot{
+		RootRunID:       threadID,
+		ProjectID:       runServiceProjectID,
+		InitiatorUserID: uuid.New(),
+	}
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
+	req.ChatThreadID = &threadID
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if err != nil {
+		t.Fatalf("chat thread join without resume: %v", err)
+	}
+	if len(repo.createRunRequests) != 1 {
+		t.Fatalf("expected one create run request, got %d", len(repo.createRunRequests))
+	}
+	created := repo.createRunRequests[0]
+	if created.ChatThreadID == nil || *created.ChatThreadID != threadID {
+		t.Fatalf("expected persisted chat_thread_id %s, got %#v", threadID, created.ChatThreadID)
+	}
+	// A validated join is not a root turn: no title should be (re-)seeded.
+	if created.ThreadTitle != nil {
+		t.Fatalf("expected no thread title on a join turn, got %#v", created.ThreadTitle)
+	}
+}
+
+// TestCreateRunChatThreadIDJoinRejectsMismatchedProject ensures a
+// chat_thread_id whose root belongs to a different project is rejected —
+// joining a thread must never let a caller cross project anchors.
+func TestCreateRunChatThreadIDJoinRejectsMismatchedProject(t *testing.T) {
+	repo := chatAnchorRunServiceRepository(nil)
+	threadID := uuid.New()
+	repo.chatThreadRoot = &ChatThreadRoot{
+		RootRunID: threadID,
+		ProjectID: uuid.New(), // different project than the request anchors to
+	}
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
+	req.ChatThreadID = &threadID
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for cross-project chat_thread_id, got %v", err)
+	}
+	if len(repo.createRunRequests) != 0 {
+		t.Fatalf("expected no run created for rejected chat_thread_id, got %d", len(repo.createRunRequests))
+	}
+}
+
+// TestCreateRunChatThreadMutexBlocksConcurrentTurn covers the per-thread
+// mutex (chat 会话持久化 spec): a chat_thread_id join must be rejected with
+// ErrConflict, carrying the occupying runner's display name in the Chinese
+// message, whenever GetActiveChatRunOnThread reports an in-flight run.
+func TestCreateRunChatThreadMutexBlocksConcurrentTurn(t *testing.T) {
+	repo := chatAnchorRunServiceRepository(nil)
+	threadID := uuid.New()
+	repo.chatThreadRoot = &ChatThreadRoot{
+		RootRunID: threadID,
+		ProjectID: runServiceProjectID,
+	}
+	repo.activeChatRunOnThread = &ActiveChatRunOnThread{
+		RunID:             uuid.New(),
+		RunnerDisplayName: "张三",
+		Status:            DigitalEmployeeRunStatusRunning,
+	}
+	dispatcher := newFakeRunServiceDispatcher()
+	service := chatAnchorRunService(t, repo, dispatcher)
+
+	req := validCreateRunServiceRequest()
+	req.RunKind = RunKindChat
+	projectID := runServiceProjectID
+	req.ProjectID = &projectID
+	req.ChatThreadID = &threadID
+
+	_, err := service.CreateRun(context.Background(), req)
+
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict when thread has an active run, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "张三正在这条会话里") {
+		t.Fatalf("expected occupying runner name in conflict message, got %q", err.Error())
+	}
+	if len(repo.createRunRequests) != 0 {
+		t.Fatalf("expected no run created while thread is occupied, got %d", len(repo.createRunRequests))
+	}
+}
+
+// TestDigitalEmployeeRunServiceListChatThreads verifies ListChatThreads
+// validates its identifiers and otherwise delegates straight to the
+// repository's chatThreadStore projection.
+func TestDigitalEmployeeRunServiceListChatThreads(t *testing.T) {
+	repo := newFakeRunServiceRepository()
+	repo.chatThreads = []DigitalEmployeeChatThread{
+		{ChatThreadID: uuid.New(), Title: "第一次沟通"},
+	}
+	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+	items, err := service.ListChatThreads(context.Background(), runServiceTenantID, runServiceEmployeeID, runServiceProjectID)
+
+	if err != nil {
+		t.Fatalf("list chat threads: %v", err)
+	}
+	if len(items) != 1 || items[0].Title != "第一次沟通" {
+		t.Fatalf("expected repository chat threads passed through, got %#v", items)
+	}
+
+	if _, err := service.ListChatThreads(context.Background(), uuid.Nil, runServiceEmployeeID, runServiceProjectID); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for missing tenant_id, got %v", err)
+	}
+}
+
+// TestDigitalEmployeeRunServiceRenameChatThread covers PatchDigitalEmployeeChatThread's
+// authz rule: only the thread initiator may rename (ErrForbidden otherwise),
+// and renaming a thread that does not exist returns ErrNotFound.
+func TestDigitalEmployeeRunServiceRenameChatThread(t *testing.T) {
+	initiatorID := uuid.New()
+	threadID := uuid.New()
+
+	t.Run("initiator can rename", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		repo.chatThreadRoot = &ChatThreadRoot{
+			RootRunID:       threadID,
+			ProjectID:       runServiceProjectID,
+			InitiatorUserID: initiatorID,
+		}
+		repo.chatThreads = []DigitalEmployeeChatThread{{ChatThreadID: threadID, Title: "旧标题"}}
+		service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+		thread, err := service.RenameChatThread(context.Background(), runServiceTenantID, runServiceEmployeeID, threadID, initiatorID, "新标题")
+
+		if err != nil {
+			t.Fatalf("rename by initiator: %v", err)
+		}
+		if thread.Title != "新标题" {
+			t.Fatalf("expected renamed title, got %#v", thread)
+		}
+		if len(repo.updateChatThreadTitleCalls) != 1 || repo.updateChatThreadTitleCalls[0].Title != "新标题" {
+			t.Fatalf("expected UpdateChatThreadTitle called with new title, got %#v", repo.updateChatThreadTitleCalls)
+		}
+	})
+
+	t.Run("non-initiator forbidden", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		repo.chatThreadRoot = &ChatThreadRoot{
+			RootRunID:       threadID,
+			ProjectID:       runServiceProjectID,
+			InitiatorUserID: initiatorID,
+		}
+		service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+		otherUserID := uuid.New()
+		_, err := service.RenameChatThread(context.Background(), runServiceTenantID, runServiceEmployeeID, threadID, otherUserID, "新标题")
+
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden for non-initiator rename, got %v", err)
+		}
+		if len(repo.updateChatThreadTitleCalls) != 0 {
+			t.Fatalf("expected no title update for forbidden rename, got %#v", repo.updateChatThreadTitleCalls)
+		}
+	})
+
+	t.Run("missing thread not found", func(t *testing.T) {
+		repo := newFakeRunServiceRepository() // chatThreadRoot left nil: "not found"
+		service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+		_, err := service.RenameChatThread(context.Background(), runServiceTenantID, runServiceEmployeeID, threadID, initiatorID, "新标题")
+
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound for missing thread, got %v", err)
+		}
+	})
+}
+
 func TestRunServiceListRunEventsReturnsPersistedEvents(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.run = validRunServiceRun(DigitalEmployeeRunStatusRunning)
@@ -2565,6 +2759,23 @@ type fakeRunServiceRepository struct {
 	// return for it (e.g. a prior chat run's persisted anchor_project_id);
 	// absent means "no metadata" (nil map, not an error).
 	taskMetadata map[uuid.UUID]map[string]any
+
+	// chatThreadStore fakes (optional interface — see chatThreadStore in
+	// run_service.go): chatThreadRoot/chatThreadRootErr back GetChatThreadRoot
+	// (chat_thread_id join validation + rename authz lookup);
+	// activeChatRunOnThread backs GetActiveChatRunOnThread (per-thread mutex,
+	// nil means idle); chatThreads backs ListChatThreads;
+	// updateChatThreadTitleCalls records UpdateChatThreadTitle invocations.
+	chatThreadRoot             *ChatThreadRoot
+	chatThreadRootErr          error
+	activeChatRunOnThread      *ActiveChatRunOnThread
+	chatThreads                []DigitalEmployeeChatThread
+	updateChatThreadTitleCalls []updateChatThreadTitleCall
+}
+
+type updateChatThreadTitleCall struct {
+	ThreadID uuid.UUID
+	Title    string
 }
 
 type resolveLineageRootCall struct {
@@ -2701,6 +2912,31 @@ func (f *fakeRunServiceRepository) CreateRun(_ context.Context, req CreateRunRec
 	run.ResumeOfRunID = req.ResumeOfRunID
 	f.createdRun = run
 	return cloneRun(run), nil
+}
+
+func (f *fakeRunServiceRepository) ListChatThreads(_ context.Context, _, _, _ uuid.UUID) ([]DigitalEmployeeChatThread, error) {
+	return f.chatThreads, nil
+}
+
+func (f *fakeRunServiceRepository) GetChatThreadRoot(_ context.Context, _, _, _ uuid.UUID) (*ChatThreadRoot, error) {
+	if f.chatThreadRootErr != nil {
+		return nil, f.chatThreadRootErr
+	}
+	return f.chatThreadRoot, nil
+}
+
+func (f *fakeRunServiceRepository) UpdateChatThreadTitle(_ context.Context, _, _, threadID uuid.UUID, title string) (*ChatThreadRoot, error) {
+	f.updateChatThreadTitleCalls = append(f.updateChatThreadTitleCalls, updateChatThreadTitleCall{ThreadID: threadID, Title: title})
+	if f.chatThreadRoot == nil {
+		return nil, ErrNotFound
+	}
+	updated := *f.chatThreadRoot
+	updated.Title = title
+	return &updated, nil
+}
+
+func (f *fakeRunServiceRepository) GetActiveChatRunOnThread(_ context.Context, _, _, _ uuid.UUID) (*ActiveChatRunOnThread, error) {
+	return f.activeChatRunOnThread, nil
 }
 
 func (f *fakeRunServiceRepository) UpdateRunStatus(_ context.Context, req UpdateRunStatusRequest) (*DigitalEmployeeRun, error) {

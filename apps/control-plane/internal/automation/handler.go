@@ -102,6 +102,7 @@ func (h *HTTPHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		IntervalSeconds:       body.IntervalSeconds,
 		Timezone:              body.Timezone,
 		Enabled:               body.Enabled,
+		AutonomyTier:          body.AutonomyTier,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -155,6 +156,7 @@ func (h *HTTPHandler) PatchRule(w http.ResponseWriter, r *http.Request) {
 		CronExpr:              body.CronExpr,
 		IntervalSeconds:       body.IntervalSeconds,
 		Timezone:              body.Timezone,
+		AutonomyTier:          body.AutonomyTier,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -346,6 +348,7 @@ type createRuleBody struct {
 	IntervalSeconds       *int32     `json:"interval_seconds"`
 	Timezone              string     `json:"timezone"`
 	Enabled               *bool      `json:"enabled"`
+	AutonomyTier          string     `json:"autonomy_tier"`
 }
 
 type patchRuleBody struct {
@@ -359,6 +362,7 @@ type patchRuleBody struct {
 	CronExpr              *string    `json:"cron_expr"`
 	IntervalSeconds       *int32     `json:"interval_seconds"`
 	Timezone              *string    `json:"timezone"`
+	AutonomyTier          *string    `json:"autonomy_tier"`
 }
 
 type listRulesResponse struct {
@@ -388,6 +392,7 @@ type ruleResponse struct {
 	IntervalSeconds         *int32        `json:"interval_seconds,omitempty"`
 	Timezone                string        `json:"timezone"`
 	OverlapPolicy           string        `json:"overlap_policy"`
+	AutonomyTier            string        `json:"autonomy_tier"`
 	ActorUserID             uuid.UUID     `json:"actor_user_id"`
 	DisabledReason          *string       `json:"disabled_reason,omitempty"`
 	ConsecutiveFailureCount int32         `json:"consecutive_failure_count"`
@@ -431,6 +436,7 @@ func ruleResponseFrom(rule Rule) ruleResponse {
 		IntervalSeconds:         rule.IntervalSeconds,
 		Timezone:                rule.Timezone,
 		OverlapPolicy:           rule.OverlapPolicy,
+		AutonomyTier:            rule.AutonomyTier,
 		ActorUserID:             rule.ActorUserID,
 		DisabledReason:          rule.DisabledReason,
 		ConsecutiveFailureCount: rule.ConsecutiveFailureCount,

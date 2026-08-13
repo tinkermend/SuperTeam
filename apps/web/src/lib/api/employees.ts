@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { deleteJson, getJson, postJson, putJson } from "./client";
+import { deleteJson, getJson, patchJson, postJson, putJson } from "./client";
 
 export type DigitalEmployeeStatus =
   | "draft"
@@ -224,11 +224,18 @@ export type DigitalEmployeeRunInput = {
   metadata?: Record<string, unknown>;
   run_kind?: DigitalEmployeeRunKind;
   resume_of_run_id?: string;
+  /** Join an existing chat thread without provider session resume (TTL expiry path). */
+  chat_thread_id?: string;
   /** Project anchor for the chat run: resolves dispatch node, budget and policy
    * boundary. Always required (run-project affiliation spec, 2026-07-26 A3).
    * run_kind=task is rejected — task runs are produced only by project task
    * dispatch, not by this endpoint. */
   project_id?: string;
+  /** Optional per-turn Chat skill envelope (autonomy P1). Empty/omitted = project
+   * skill bindings ∩ supply. Each id must be in that default surface. */
+  skill_ids?: string[];
+  /** Autonomy P4 / Chat B2: acknowledge interactive light confirm when required. */
+  interactive_confirmed?: boolean;
 };
 
 export type DigitalEmployeeRun = {
@@ -269,6 +276,9 @@ export type DigitalEmployeeRun = {
   resume_of_run_id?: string;
   /** Effective chat conversation id (thread root run id); present on chat runs only. */
   chat_thread_id?: string;
+  /** Human who created this turn. */
+  creator_user_id?: string;
+  creator_display_name?: string;
   project_id?: string;
   project_name?: string;
   /** Soft-deleted linked project: keep the name, do not navigate to project detail. */
@@ -1102,5 +1112,50 @@ export function stopDigitalEmployeeRun(
     `/api/v1/digital-employees/${encodedEmployeeId}/runs/${encodedRunId}/stop`,
     input,
     "stop digital employee run",
+  );
+}
+
+export type DigitalEmployeeChatThread = {
+  chat_thread_id: string;
+  title: string;
+  initiator_user_id: string;
+  initiator_display_name: string;
+  last_speaker_user_id: string;
+  last_speaker_display_name: string;
+  last_prompt: string;
+  last_active_at: string;
+  has_active_run: boolean;
+  active_runner_user_id?: string;
+  active_runner_display_name?: string;
+};
+
+export type DigitalEmployeeChatThreadList = {
+  items: DigitalEmployeeChatThread[];
+};
+
+export function listDigitalEmployeeChatThreads(
+  options: ApiClientOptions,
+  employeeId: string,
+  projectId: string,
+): Promise<DigitalEmployeeChatThreadList> {
+  const params = new URLSearchParams({ project_id: projectId });
+  return getJson<DigitalEmployeeChatThreadList>(
+    options,
+    `/api/v1/digital-employees/${encodePathSegment(employeeId)}/chat-threads?${params.toString()}`,
+    "digital employee chat threads",
+  );
+}
+
+export function patchDigitalEmployeeChatThread(
+  options: ApiClientOptions,
+  employeeId: string,
+  threadId: string,
+  input: { title: string },
+): Promise<DigitalEmployeeChatThread> {
+  return patchJson<DigitalEmployeeChatThread>(
+    options,
+    `/api/v1/digital-employees/${encodePathSegment(employeeId)}/chat-threads/${encodePathSegment(threadId)}`,
+    input,
+    "rename digital employee chat thread",
   );
 }

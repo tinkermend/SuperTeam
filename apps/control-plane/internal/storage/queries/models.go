@@ -314,6 +314,8 @@ type AutomationRule struct {
 	TemporalScheduleID pgtype.Text        `json:"temporal_schedule_id"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	// 自治档位：pause_at_gate（缺省，遇闸停车等人）| full_auto（闸照触发但策略自动放行，resolved_by=policy:{rule_id}）
+	AutonomyTier string `json:"autonomy_tier"`
 }
 
 // 租户级能力词汇注册表：场景模板角色 required_capabilities 与员工能力声明共享的键，插行即扩展，不建代码枚举
@@ -626,6 +628,42 @@ type ExecutionLedgerEvent struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// 外部 API 集成绑定：带信封的预授权执行入口（两动词：信封内 chat run / 提交 plan|loop demand）。活引用：调用时现算 Effective(剧本上限, 项目上限, 绑定档) 与技能面交集。
+type ExternalIntegration struct {
+	ID                  uuid.UUID   `json:"id"`
+	TenantID            uuid.UUID   `json:"tenant_id"`
+	ProjectID           uuid.UUID   `json:"project_id"`
+	DigitalEmployeeID   uuid.UUID   `json:"digital_employee_id"`
+	Name                string      `json:"name"`
+	Description         string      `json:"description"`
+	AllowChatRun        bool        `json:"allow_chat_run"`
+	AllowDemandSubmit   bool        `json:"allow_demand_submit"`
+	SkillIds            []byte      `json:"skill_ids"`
+	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
+	// 开通时选定的自治档；调用时受项目/剧本上限单向收紧（收紧即时生效，放松不自动升档）
+	AutonomyTier string `json:"autonomy_tier"`
+	// P5 第一版预算：每小时调用数硬闸（固定窗口计数），超限 429
+	MaxCallsPerHour   int32              `json:"max_calls_per_hour"`
+	BudgetWindowStart pgtype.Timestamptz `json:"budget_window_start"`
+	BudgetWindowCount int32              `json:"budget_window_count"`
+	Status            string             `json:"status"`
+	CreatedByUserID   uuid.UUID          `json:"created_by_user_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+// 外部集成专用 token（与 connector service token 分家）：明文仅签发时返回一次，可独立吊销
+type ExternalIntegrationToken struct {
+	ID            uuid.UUID          `json:"id"`
+	TenantID      uuid.UUID          `json:"tenant_id"`
+	IntegrationID uuid.UUID          `json:"integration_id"`
+	TokenSha256   string             `json:"token_sha256"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	LastUsedAt    pgtype.Timestamptz `json:"last_used_at"`
+	RevokedAt     pgtype.Timestamptz `json:"revoked_at"`
+}
+
 // 租户级飞书应用配置(企业自建应用凭据)
 type FeishuAppConfig struct {
 	// 配置记录ID
@@ -809,8 +847,6 @@ type Project struct {
 	RepoBindingStatus string `json:"repo_binding_status"`
 	// 软删除时间；非空表示项目已从当前管理面移除
 	DeletedAt pgtype.Timestamptz `json:"deleted_at"`
-	// 项目绑定的场景模板 key，可空 = generic 兜底（行为同无模板）
-	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
 	// 项目人类负责人ID集合(平级,至少一个;任一可审批/验收/兜底路由)
 	HumanOwnerUserIds []uuid.UUID `json:"human_owner_user_ids"`
 	// 工作区首启就绪:pending|ready|error;未就绪只挡派发
@@ -1099,7 +1135,7 @@ type ProjectDemand struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 	// 协调模式:plan=上游阻塞时报人类决策;loop=自动补链。随需求提交,冻结进 plan revision。
 	CoordinationMode string `json:"coordination_mode"`
-	// 需求级场景模板 key；解析顺序：需求显式 > 项目默认 > generic 兜底
+	// 需求级场景模板 key；解析顺序：需求显式 > generic 兜底（已无项目默认回落）
 	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
 	// Demand this one continues (single parent). NULL for a chain head. Chain traversal is indexed by idx_project_demands_tenant_continues.
 	ContinuesDemandID uuid.NullUUID `json:"continues_demand_id"`
@@ -2514,6 +2550,8 @@ type Task struct {
 	ResumeOfRunID uuid.NullUUID `json:"resume_of_run_id"`
 	// chat 会话根 id(根 run 的 task_runs.id);首轮为 NULL(有效值=自身 run id),追问轮继承前序有效值。仅 chat run 使用,无 FK。
 	ChatThreadID uuid.NullUUID `json:"chat_thread_id"`
+	// chat 会话标题（仅根轮）；缺省自首问截断，用户可改名；追问轮为 NULL
+	ThreadTitle pgtype.Text `json:"thread_title"`
 }
 
 // 任务事件流表

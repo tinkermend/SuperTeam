@@ -140,6 +140,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 function makeEmployee(): DigitalEmployee {
   return {
+    description: "处理客户工单与常见问题解答",
     employee_type: "generalist",
     id: "emp-1",
     name: "Ada",
@@ -205,7 +206,45 @@ function projectMembersRouteResponse(
   );
 }
 
-function createChatFetcher() {
+/** P1 Chat rail: skill bindings + project detail (git). Empty by default. */
+function chatAuxRoutesResponse(
+  path: string,
+  method: string,
+  skillBindings: Array<{ skill_id: string; skill?: { id: string; name: string; slug: string } }> = [],
+  project: Project = makeProject(),
+): Response | null {
+  const bindingsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/skill-bindings$/);
+  if (bindingsMatch && method === "GET") {
+    return jsonResponse(
+      skillBindings.map((row, index) => ({
+        id: `binding-${index + 1}`,
+        tenant_id: "tenant-1",
+        project_id: bindingsMatch[1],
+        skill_id: row.skill_id,
+        skill: row.skill ?? {
+          id: row.skill_id,
+          name: `Skill ${row.skill_id}`,
+          slug: row.skill_id,
+        },
+      })),
+    );
+  }
+  const projectMatch = path.match(/^\/api\/v1\/projects\/([^/]+)$/);
+  if (projectMatch && method === "GET") {
+    return jsonResponse({ ...project, id: projectMatch[1] });
+  }
+  if (path === "/api/auth/me" && method === "GET") {
+    return jsonResponse({
+      user: { id: "owner-1", username: "owner", display_name: "负责人", tenant_id: "tenant-1" },
+    });
+  }
+  return null;
+}
+
+function createChatFetcher(
+  skillBindings: Array<{ skill_id: string; skill?: { id: string; name: string; slug: string } }> = [],
+  project: Project = makeProject(),
+) {
   const employees = [makeEmployee()];
   const runScripts = new Map<string, Array<Partial<DigitalEmployeeRun>>>();
   const runGetCallCounts = new Map<string, number>();
@@ -223,6 +262,13 @@ function createChatFetcher() {
     const membersResponse = projectMembersRouteResponse(path, method, employees);
     if (membersResponse) {
       return membersResponse;
+    }
+    const auxResponse = chatAuxRoutesResponse(path, method, skillBindings, project);
+    if (auxResponse) {
+      return auxResponse;
+    }
+    if (path.match(/^\/api\/v1\/digital-employees\/[^/]+\/chat-threads$/) && method === "GET") {
+      return jsonResponse({ items: [] });
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -243,8 +289,9 @@ function createChatFetcher() {
         {
           ...baseRunFields(runId, employeeId),
           status: "queued",
-          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {})
-},
+          chat_thread_id: body.resume_of_run_id ?? runId,
+          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {}),
+        },
         201,
       );
     }
@@ -290,6 +337,10 @@ function createFailingSendFetcher() {
     if (membersResponse) {
       return membersResponse;
     }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
+    }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
@@ -326,6 +377,10 @@ function createRetryDeferredFetcher() {
     const membersResponse = projectMembersRouteResponse(path, method, employees);
     if (membersResponse) {
       return membersResponse;
+    }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -396,6 +451,14 @@ function createResumeDegradeFetcher() {
     if (membersResponse) {
       return membersResponse;
     }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
+    }
+
+    if (path.match(/^\/api\/v1\/digital-employees\/[^/]+\/chat-threads$/) && method === "GET") {
+      return jsonResponse({ items: [] });
+    }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
@@ -411,7 +474,11 @@ function createResumeDegradeFetcher() {
       };
       if (createCallCount === 1) {
         return jsonResponse(
-          { ...baseRunFields("run-1", employeeId), status: "queued" },
+          {
+            ...baseRunFields("run-1", employeeId),
+            chat_thread_id: "run-1",
+            status: "queued",
+          },
           201,
         );
       }
@@ -419,7 +486,11 @@ function createResumeDegradeFetcher() {
         return jsonResponse({ message: "会话已失效，无法继续上下文" }, 400);
       }
       return jsonResponse(
-        { ...baseRunFields("run-2", employeeId), status: "queued" },
+        {
+          ...baseRunFields("run-2", employeeId),
+          chat_thread_id: "run-1",
+          status: "queued",
+        },
         201,
       );
     }
@@ -459,6 +530,10 @@ function createNonResumableFailureFetcher() {
     const membersResponse = projectMembersRouteResponse(path, method, employees);
     if (membersResponse) {
       return membersResponse;
+    }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -520,6 +595,35 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
     const membersResponse = projectMembersRouteResponse(path, method, employees);
     if (membersResponse) {
       return membersResponse;
+    }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
+    }
+
+    if (path.match(/^\/api\/v1\/digital-employees\/[^/]+\/chat-threads$/) && method === "GET") {
+      const root = threadItemsAsc[0];
+      if (!root) {
+        return jsonResponse({ items: [] });
+      }
+      const last = threadItemsAsc[threadItemsAsc.length - 1]!;
+      return jsonResponse({
+        items: [
+          {
+            chat_thread_id: String(root.chat_thread_id ?? root.id),
+            title: root.task_title,
+            initiator_user_id: "owner-1",
+            initiator_display_name: "负责人",
+            last_speaker_user_id: "owner-1",
+            last_speaker_display_name: "负责人",
+            last_prompt: last.task_title,
+            last_active_at: "2026-08-13T00:00:00Z",
+            has_active_run: threadItemsAsc.some((item) =>
+              ["queued", "dispatching", "running", "cancelling"].includes(String(item.status ?? "")),
+            ),
+          },
+        ],
+      });
     }
 
     const runsMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -598,8 +702,15 @@ describe("ChatPanel", () => {
       />,
     );
 
-    // 1. employee select lists mock employees (name/role)
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    // 1. employee roster lists mock employees with identity (avatar row: name/role),
+    //    and the thread header surfaces the selected employee's role + description
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
+    expect(getByText("客服助手")).toBeTruthy();
+    const roster = document.querySelector('[aria-label="数字员工列表"]');
+    expect(roster).toBeTruthy();
+    const selectedRow = roster!.querySelector('button[aria-pressed="true"]');
+    expect(selectedRow?.textContent).toContain("Ada");
+    expect(document.body.textContent).toContain("处理客户工单与常见问题解答");
 
     // 2. send first question -> POST without resume_of_run_id
     setRunScript("run-1", [
@@ -674,6 +785,157 @@ describe("ChatPanel", () => {
     });
   });
 
+  it("shows project skill chips and includes selected skill_ids on create-run", async () => {
+    const skillId = "11111111-1111-1111-1111-111111111111";
+    const { fetcher } = createChatFetcher([
+      {
+        skill_id: skillId,
+        skill: { id: skillId, name: "调研助手", slug: "research" },
+      },
+    ]);
+    await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={vi.fn()}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(document.body.textContent).toContain("调研助手"));
+    await waitFor(() => expect(document.body.textContent).toContain("将投影"));
+
+    const chip = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
+      (btn) => btn.textContent?.trim() === "调研助手",
+    );
+    expect(chip).toBeTruthy();
+    await act(async () => {
+      chip!.click();
+    });
+    expect(chip!.getAttribute("aria-pressed")).toBe("true");
+
+    await typeInLabeledField("对话问题", "带技能提问");
+    await clickButton("发送");
+
+    await waitFor(() => expect(document.body.textContent).toContain("确认开跑"));
+    await clickButton("确认开跑");
+
+    await waitFor(() => {
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toEqual({
+        objective: "带技能提问",
+        run_kind: "chat",
+        project_id: "project-1",
+        skill_ids: [skillId],
+        interactive_confirmed: true,
+      });
+    });
+  });
+
+  it("opens SoftDialog when project autonomy_ceiling is pause_at_gate", async () => {
+    const project = {
+      ...makeProject(),
+      coordination_policy: { autonomy_ceiling: "pause_at_gate" },
+    };
+    const { fetcher } = createChatFetcher([], project);
+    await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={vi.fn()}
+        projects={[project]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
+    await typeInLabeledField("对话问题", "ceiling 确认");
+    await clickButton("发送");
+
+    await waitFor(() => expect(document.body.textContent).toContain("确认开跑"));
+    expect(document.body.textContent).toContain("遇闸暂停");
+    expect(postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs")).toHaveLength(0);
+
+    await clickButton("确认开跑");
+    await waitFor(() => {
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toEqual({
+        objective: "ceiling 确认",
+        run_kind: "chat",
+        project_id: "project-1",
+        interactive_confirmed: true,
+      });
+    });
+  });
+
+  it("recovers SoftDialog when create-run returns interactive confirm required", async () => {
+    const employees = [makeEmployee()];
+    let createCalls = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      const path = url.pathname;
+      if (path === "/api/v1/digital-employees" && method === "GET") {
+        return jsonResponse(employees);
+      }
+      const membersResponse = projectMembersRouteResponse(path, method, employees);
+      if (membersResponse) {
+        return membersResponse;
+      }
+      const auxResponse = chatAuxRoutesResponse(path, method);
+      if (auxResponse) {
+        return auxResponse;
+      }
+      const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+      if (createMatch && method === "GET") {
+        return emptyRunListResponse();
+      }
+      if (createMatch && method === "POST") {
+        createCalls += 1;
+        const body = JSON.parse(String(init?.body)) as { interactive_confirmed?: boolean };
+        if (!body.interactive_confirmed) {
+          return jsonResponse(
+            {
+              message:
+                "invalid employee input: interactive light confirm required (set interactive_confirmed=true after user acknowledgment)",
+            },
+            400,
+          );
+        }
+        return jsonResponse(
+          { ...baseRunFields("run-confirm", createMatch[1]), status: "queued" },
+          201,
+        );
+      }
+      return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
+    });
+
+    await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={vi.fn()}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
+    await typeInLabeledField("对话问题", "服务端要求确认");
+    await clickButton("发送");
+
+    await waitFor(() => expect(document.body.textContent).toContain("确认开跑"));
+    expect(createCalls).toBe(1);
+    expect(document.body.textContent).not.toContain("interactive light confirm required");
+
+    await clickButton("确认开跑");
+    await waitFor(() => {
+      expect(createCalls).toBe(2);
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies[1]).toMatchObject({
+        objective: "服务端要求确认",
+        interactive_confirmed: true,
+      });
+    });
+  });
+
   it("keeps the typed question in the textarea and re-enables send after a failed create-run request", async () => {
     const { fetcher } = createFailingSendFetcher();
     const onConvertToTask = vi.fn();
@@ -685,7 +947,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "会失败的问题");
     await clickButton("发送");
@@ -716,7 +978,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "第一次问题");
     await clickButton("发送");
@@ -755,7 +1017,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "第一个问题");
     await clickButton("发送");
@@ -778,8 +1040,9 @@ describe("ChatPanel", () => {
     expect(bodies[2]).toEqual({
       objective: "第二个问题",
       run_kind: "chat",
-      project_id: "project-1"
-});
+      project_id: "project-1",
+      chat_thread_id: "run-1",
+    });
 
     await waitFor(() => expect(chatThread().textContent).toContain("上下文未延续"));
   });
@@ -795,7 +1058,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "第一个问题");
     await clickButton("发送");
@@ -826,7 +1089,7 @@ describe("ChatPanel", () => {
 
     // 参与门禁：未选项目时员工下拉只出占位，不出任何候选员工
     await waitFor(() => expect(getByText("请先选择项目")).toBeTruthy());
-    expect(queryByText("Ada · 客服助手")).toBeNull();
+    expect(queryByText("Ada")).toBeNull();
     expect(getByLabelText("项目")).toBeTruthy();
 
     await typeInLabeledField("对话问题", "第一个问题");
@@ -839,7 +1102,7 @@ describe("ChatPanel", () => {
     await act(async () => {
       await queryClient.refetchQueries();
     });
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     // 员工自动选中后锚点会话恢复需要再走一轮查询才能落定
     await act(async () => {
       await queryClient.refetchQueries();
@@ -858,7 +1121,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     setRunScript("run-1", [{ status: "completed", result: { output: "第一轮回答" } }]);
     await typeInLabeledField("对话问题", "第一个问题");
@@ -879,7 +1142,7 @@ describe("ChatPanel", () => {
     await act(async () => {
       await queryClient.refetchQueries();
     });
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     setRunScript("run-2", [{ status: "completed", result: { output: "第二轮回答" } }]);
     await typeInLabeledField("对话问题", "第二个问题");
@@ -922,7 +1185,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -970,7 +1233,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -1001,13 +1264,13 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
     await waitFor(() => expect(chatThread().textContent).toContain("历史问题一"));
 
-    await clickButton("新对话");
+    await clickButton("新会话");
     expect(chatThread().textContent).not.toContain("历史问题一");
 
     await typeInLabeledField("对话问题", "全新会话的问题");
@@ -1040,7 +1303,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -1062,7 +1325,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     setRunScript("run-1", [
       { status: "running" },
       { status: "completed", result: { output: "快捷键回答" } },

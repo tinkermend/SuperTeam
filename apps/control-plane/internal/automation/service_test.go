@@ -372,8 +372,9 @@ func (r *fakeRepo) GetLatestNonTerminalFire(ctx context.Context, tenantID, ruleI
 }
 
 type fakeProjects struct {
-	eligible bool
-	name     string
+	eligible           bool
+	name               string
+	coordinationPolicy map[string]any
 }
 
 func (f *fakeProjects) MissingCastingRoles(ctx context.Context, tenantID, projectID uuid.UUID, templateKey string) ([]project.CastingInvalidation, error) {
@@ -381,10 +382,27 @@ func (f *fakeProjects) MissingCastingRoles(ctx context.Context, tenantID, projec
 }
 
 func (f *fakeProjects) GetProject(ctx context.Context, tenantID, projectID uuid.UUID) (ProjectInfo, error) {
-	return ProjectInfo{ID: projectID, TeamID: uuid.New(), Name: f.name}, nil
+	return ProjectInfo{
+		ID:                 projectID,
+		TeamID:             uuid.New(),
+		Name:               f.name,
+		CoordinationPolicy: f.coordinationPolicy,
+	}, nil
 }
 func (f *fakeProjects) IsEligibleInitiator(ctx context.Context, tenantID, projectID, userID uuid.UUID) (bool, error) {
 	return f.eligible, nil
+}
+
+type fakePlaybooks struct {
+	ceiling string
+	err     error
+}
+
+func (f *fakePlaybooks) PlaybookAutonomyCeiling(ctx context.Context, tenantID uuid.UUID, templateKey string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.ceiling, nil
 }
 
 type fakeDemands struct {
@@ -422,3 +440,60 @@ func (f *fakeSchedules) Delete(ctx context.Context, scheduleID string) error {
 
 func strPtr(v string) *string { return &v }
 func int32Ptr(v int32) *int32 { return &v }
+
+func TestCreateRuleRejectsAutonomyAboveProjectCeiling(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo := newFakeRepo()
+	svc := NewService(repo, &fakeProjects{
+		eligible:           true,
+		name:               "P",
+		coordinationPolicy: map[string]any{"autonomy_ceiling": "pause_at_gate"},
+	}, nil, nil, &fakeSchedules{})
+
+	_, err := svc.CreateRule(context.Background(), CreateRuleRequest{
+		TenantID:            tenantID,
+		ActorUserID:         actorID,
+		ProjectID:           projectID,
+		Name:                "宽档",
+		CoordinationMode:    ModeLoop,
+		DemandTitleTemplate: strPtr("t"),
+		DemandBodyTemplate:  strPtr("b"),
+		ScheduleKind:        ScheduleInterval,
+		IntervalSeconds:     int32Ptr(3600),
+		Timezone:            DefaultTimezone,
+		AutonomyTier:        "full_auto",
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestCreateRuleRejectsAutonomyAbovePlaybookCeiling(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo := newFakeRepo()
+	svc := NewService(repo, &fakeProjects{eligible: true, name: "P"}, nil, nil, &fakeSchedules{})
+	svc.SetPlaybookAutonomySource(&fakePlaybooks{ceiling: "pause_at_gate"})
+	key := "ops_patrol"
+
+	_, err := svc.CreateRule(context.Background(), CreateRuleRequest{
+		TenantID:            tenantID,
+		ActorUserID:         actorID,
+		ProjectID:           projectID,
+		Name:                "宽档",
+		CoordinationMode:    ModeLoop,
+		DemandTitleTemplate: strPtr("t"),
+		DemandBodyTemplate:  strPtr("b"),
+		ScenarioTemplateKey: &key,
+		ScheduleKind:        ScheduleInterval,
+		IntervalSeconds:     int32Ptr(3600),
+		Timezone:            DefaultTimezone,
+		AutonomyTier:        "full_auto",
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}

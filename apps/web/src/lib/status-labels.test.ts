@@ -52,6 +52,10 @@ describe("statusLabel", () => {
     expect(statusLabel("needs_more_evidence")).toBe("需要补充证据");
   });
 
+  it("covers demand source codes incl. external integration (autonomy P5)", () => {
+    expect(statusLabel("external_integration")).toBe("外部集成");
+  });
+
   it("maps decision types for inbox framing", () => {
     expect(decisionTypeLabel("project_acceptance")).toBe("项目验收");
     expect(decisionTypeLabel("demand_acceptance")).toBe("需求验收");

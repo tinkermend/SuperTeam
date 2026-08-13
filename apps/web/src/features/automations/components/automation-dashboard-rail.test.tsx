@@ -16,6 +16,7 @@ const baseRule: AutomationRule = {
   name: "工作日巡检",
   enabled: true,
   coordination_mode: "loop",
+  autonomy_tier: "pause_at_gate",
   schedule_kind: "cron",
   cron_expr: "0 9 * * *",
   timezone: "Asia/Shanghai",

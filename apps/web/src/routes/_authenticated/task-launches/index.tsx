@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { TaskLaunchPage } from "@/features/task-launches";
 
 export type TaskLaunchSearch = {
+  face?: "chat" | "task";
   mode?: "plan" | "loop" | "chat";
   project?: string;
   view?: "instances";
@@ -15,6 +16,9 @@ export const Route = createFileRoute("/_authenticated/task-launches/")({
     const result: TaskLaunchSearch = {};
     if (typeof search.project === "string" && search.project) {
       result.project = search.project;
+    }
+    if (search.face === "chat" || search.face === "task") {
+      result.face = search.face;
     }
     if (
       search.mode === "plan" ||

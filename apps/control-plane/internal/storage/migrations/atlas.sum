@@ -1,4 +1,4 @@
-h1:Sc5Q7FQ+1DAR1vE4lT4zUQl4C3AjXurD9PJLfEbdgsg=
+h1:PQe/CxW5bUAXmFCBq6p4P6mW2qRDoBOZfAwsWUlgvag=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -127,3 +127,7 @@ h1:Sc5Q7FQ+1DAR1vE4lT4zUQl4C3AjXurD9PJLfEbdgsg=
 20260812130000_project_runtime_node_provision_status.sql h1:olo+PBzu54FbmcFG8uBTrYD4xiZcrOCxbgRA0zvmbN8=
 20260812140000_project_workspace_ownership.sql h1:bU/RzmQwvZCO9GZpNwgbqMUSHH1ubPpv02io94UGKJQ=
 20260812150000_project_workspace_git_snapshots.sql h1:caU/VjIcFMZxo3aiM1p5HdMQHHD6IuB559PuWtBBwXI=
+20260813010000_drop_project_scenario_template_key.sql h1:sb8DCvspIKu6JZOytL0GPrKcZwnfNYEsxNPZlw3qpTA=
+20260813020000_automation_rule_autonomy_tier.sql h1:RhUGBU1XapOwW1HY9zQEpc4hQQtwXZm7c+eV0oEZiWU=
+20260813024458_external_integrations.sql h1:8f0ZJvaamvjGCpSuImAYtyms3+G4ODzWlXs3VEhEay8=
+20260813083533_chat_thread_title.sql h1:LQa10SLgcl5QSjM5VdEMfg4UPPKOoB0A5+UyZ9HmTCI=

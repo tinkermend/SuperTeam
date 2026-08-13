@@ -67,7 +67,9 @@ export type ProjectDemandSourceType =
   | "github"
   | "ticket"
   | "document"
-  | "log";
+  | "log"
+  | "automation"
+  | "external_integration";
 export type ProjectDemandStatus =
   | "submitted"
   | "recorded"
@@ -745,12 +747,11 @@ export type ProjectDemandDossier = {
     id: string;
     name: string;
     status?: string;
-    scenario_template_key?: string | null;
   };
   lineage: ProjectDemandLineage;
   effective_playbook: {
     template_key?: string | null;
-    source: "demand" | "project" | "none";
+    source: "demand" | "none";
     name?: string;
     produce_kinds: string[];
     /** 本单收口：这一单走到哪一步。空串表示未规划或该计划无出口声明。 */
@@ -1253,7 +1254,6 @@ export type CreateProjectInput = {
   runtime_node_ids: string[];
   /** 可选：绑定 Git 仓库，创建后异步 clone 到项目目录。 */
   repo_binding?: ProjectRepoBinding;
-  scenario_template_key?: string;
   /** none | git | attach (spec 2026-08-12). */
   source_kind?: "none" | "git" | "attach";
 };
@@ -1281,6 +1281,7 @@ export type SubmitProjectDemandInput = {
   reviewer_user_id?: string;
   reviewer_selection_reason?: ReviewerSelectionReason;
   coordination_mode?: ProjectCoordinationMode;
+  /** 人手发起必填（服务端校验）；自动化等路径由各自配置钉死。 */
   scenario_template_key?: string;
 };
 

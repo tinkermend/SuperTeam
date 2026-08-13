@@ -65,6 +65,7 @@ import {
   SoftTabsTrigger,
   SoftTabsContent,
   Callout,
+  Segmented,
   notifyError,
   notifySuccess
 } from "@/components/superteam";
@@ -958,6 +959,12 @@ function CoordinationPolicyPanel({
     typeof maxIterationsRaw === "number" && Number.isFinite(maxIterationsRaw)
       ? String(maxIterationsRaw)
       : "";
+  const autonomyCeilingRaw =
+    typeof parsed?.autonomy_ceiling === "string" ? parsed.autonomy_ceiling.trim() : "";
+  const autonomyCeiling =
+    autonomyCeilingRaw === "full_auto" || autonomyCeilingRaw === "pause_at_gate"
+      ? autonomyCeilingRaw
+      : "";
   const controlsDisabled = disabled || invalid;
 
   return (
@@ -998,6 +1005,31 @@ function CoordinationPolicyPanel({
               }
             />
           </label>
+          <div className="grid gap-2 rounded-[12px] border border-line bg-card-soft p-4">
+            <span className="text-[13px] font-semibold text-ink">自治上限</span>
+            <p className="text-[12px] text-ink-3">
+              作用于本项目所有发起面（自动化 / API / 交互）：只能收紧，不能替剧本放松。留空表示不额外收紧。
+            </p>
+            <Segmented
+              aria-label="项目自治上限"
+              value={autonomyCeiling || "unset"}
+              onChange={(next) => {
+                if (controlsDisabled) {
+                  return;
+                }
+                if (next === "unset") {
+                  setKey("autonomy_ceiling", undefined);
+                  return;
+                }
+                setKey("autonomy_ceiling", next);
+              }}
+              options={[
+                { value: "unset", label: "不额外收紧" },
+                { value: "pause_at_gate", label: "遇闸暂停" },
+                { value: "full_auto", label: "完全自动化" },
+              ]}
+            />
+          </div>
           <div className="grid gap-2 rounded-[12px] border border-line bg-card-soft p-4">
             <span className="text-[13px] font-semibold text-ink">最大规划迭代次数</span>
             <p className="text-[12px] text-ink-3">

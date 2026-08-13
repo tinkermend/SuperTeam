@@ -63,6 +63,7 @@ func newDossierFixture(t *testing.T) *dossierFixture {
 	}
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID, Title: "修复登录超时",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -452,13 +453,12 @@ func TestDemandDossierTimelineNamesCoordinatorActor(t *testing.T) {
 func TestDemandDossierRailOrdersSlotsByPlaybookThenActual(t *testing.T) {
 	f := newDossierFixture(t)
 	templateKey := "software_delivery"
-	f.repo.projects[f.projectID] = Project{
-		ID:                  f.projectID,
-		TenantID:            f.tenantID,
-		Name:                "客服工单闭环",
-		Status:              ProjectStatusRunning,
-		HumanOwnerUserID:    f.ownerID,
-		ScenarioTemplateKey: &templateKey,
+	for id, demand := range f.repo.demands {
+		if demand.ID == f.demand.ID {
+			demand.ScenarioTemplateKey = &templateKey
+			f.repo.demands[id] = demand
+			f.demand = demand
+		}
 	}
 	f.service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{
 		bindings:     map[string]ScenarioTemplateBinding{templateKey: {Key: templateKey, Name: "软件交付", Status: "active"}},
@@ -475,8 +475,8 @@ func TestDemandDossierRailOrdersSlotsByPlaybookThenActual(t *testing.T) {
 
 	dossier := f.get(t)
 
-	if dossier.EffectivePlaybook.Source != DossierPlaybookSourceProject {
-		t.Fatalf("剧本应来自项目,得到 %q", dossier.EffectivePlaybook.Source)
+	if dossier.EffectivePlaybook.Source != DossierPlaybookSourceDemand {
+		t.Fatalf("剧本应来自需求,得到 %q", dossier.EffectivePlaybook.Source)
 	}
 	kinds := make([]string, 0, len(dossier.Rail))
 	for _, slot := range dossier.Rail {
@@ -645,36 +645,30 @@ func TestDemandDossierSignalsFlagOpenDecisions(t *testing.T) {
 	}
 }
 
-// 需求级剧本覆盖项目级。
-func TestDemandDossierPlaybookDemandOverridesProject(t *testing.T) {
+// 需求显式绑定剧本时 source=demand；无项目级回落。
+func TestDemandDossierPlaybookFromDemand(t *testing.T) {
 	f := newDossierFixture(t)
-	projectKey := "project_playbook"
 	demandKey := "demand_playbook"
-	f.repo.projects[f.projectID] = Project{
-		ID: f.projectID, TenantID: f.tenantID, Name: "客服工单闭环", Status: ProjectStatusRunning,
-		HumanOwnerUserID: f.ownerID, ScenarioTemplateKey: &projectKey,
-	}
 	for id, demand := range f.repo.demands {
 		if demand.ID == f.demand.ID {
 			demand.ScenarioTemplateKey = &demandKey
 			f.repo.demands[id] = demand
+			f.demand = demand
 		}
 	}
 	f.service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{
 		bindings: map[string]ScenarioTemplateBinding{
-			projectKey: {Key: projectKey, Name: "项目剧本", Status: "active"},
-			demandKey:  {Key: demandKey, Name: "需求剧本", Status: "active"},
+			demandKey: {Key: demandKey, Name: "需求剧本", Status: "active"},
 		},
 		produceKinds: map[string][]string{
-			projectKey: {"conclusion"},
-			demandKey:  {"evidence_ref"},
+			demandKey: {"evidence_ref"},
 		},
 	})
 
 	dossier := f.get(t)
 
 	if dossier.EffectivePlaybook.Source != DossierPlaybookSourceDemand {
-		t.Fatalf("需求剧本应覆盖项目剧本,得到 %q", dossier.EffectivePlaybook.Source)
+		t.Fatalf("剧本应来自需求,得到 %q", dossier.EffectivePlaybook.Source)
 	}
 	if dossier.EffectivePlaybook.Name != "需求剧本" {
 		t.Fatalf("剧本名应为需求剧本,得到 %q", dossier.EffectivePlaybook.Name)
@@ -685,9 +679,12 @@ func TestDemandDossierPlaybookDemandOverridesProject(t *testing.T) {
 func TestDemandDossierPlaybookDegradesToNoneOnResolverFailure(t *testing.T) {
 	f := newDossierFixture(t)
 	templateKey := "missing_playbook"
-	f.repo.projects[f.projectID] = Project{
-		ID: f.projectID, TenantID: f.tenantID, Name: "客服工单闭环", Status: ProjectStatusRunning,
-		HumanOwnerUserID: f.ownerID, ScenarioTemplateKey: &templateKey,
+	for id, demand := range f.repo.demands {
+		if demand.ID == f.demand.ID {
+			demand.ScenarioTemplateKey = &templateKey
+			f.repo.demands[id] = demand
+			f.demand = demand
+		}
 	}
 	f.service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{
 		bindings:     map[string]ScenarioTemplateBinding{},
@@ -708,9 +705,12 @@ func TestDemandDossierPlaybookDegradesToNoneOnResolverFailure(t *testing.T) {
 func TestDemandDossierPlaybookKeepsBindingWhenKindsFail(t *testing.T) {
 	f := newDossierFixture(t)
 	templateKey := "kinds_broken"
-	f.repo.projects[f.projectID] = Project{
-		ID: f.projectID, TenantID: f.tenantID, Name: "客服工单闭环", Status: ProjectStatusRunning,
-		HumanOwnerUserID: f.ownerID, ScenarioTemplateKey: &templateKey,
+	for id, demand := range f.repo.demands {
+		if demand.ID == f.demand.ID {
+			demand.ScenarioTemplateKey = &templateKey
+			f.repo.demands[id] = demand
+			f.demand = demand
+		}
 	}
 	f.service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{
 		bindings: map[string]ScenarioTemplateBinding{templateKey: {Key: templateKey, Name: "坏剧本", Status: "active"}},
@@ -719,7 +719,7 @@ func TestDemandDossierPlaybookKeepsBindingWhenKindsFail(t *testing.T) {
 
 	dossier := f.get(t)
 
-	if dossier.EffectivePlaybook.Source != DossierPlaybookSourceProject {
+	if dossier.EffectivePlaybook.Source != DossierPlaybookSourceDemand {
 		t.Fatalf("剧本身份应保留,得到 %q", dossier.EffectivePlaybook.Source)
 	}
 	if len(dossier.EffectivePlaybook.ProduceKinds) != 0 {
@@ -795,9 +795,12 @@ func TestDemandDossierExitFallsBackToLatestAndFlagsPending(t *testing.T) {
 func TestDemandDossierExitSurvivesPlaybookDegradation(t *testing.T) {
 	f := newDossierFixture(t)
 	templateKey := "missing_playbook"
-	f.repo.projects[f.projectID] = Project{
-		ID: f.projectID, TenantID: f.tenantID, Name: "客服工单闭环", Status: ProjectStatusRunning,
-		HumanOwnerUserID: f.ownerID, ScenarioTemplateKey: &templateKey,
+	for id, demand := range f.repo.demands {
+		if demand.ID == f.demand.ID {
+			demand.ScenarioTemplateKey = &templateKey
+			f.repo.demands[id] = demand
+			f.demand = demand
+		}
 	}
 	f.service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{
 		bindings:     map[string]ScenarioTemplateBinding{},

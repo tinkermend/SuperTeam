@@ -324,6 +324,9 @@ const (
 	DemandSourceDocument   DemandSourceType = "document"
 	DemandSourceLog        DemandSourceType = "log"
 	DemandSourceAutomation DemandSourceType = "automation"
+	// DemandSourceExternal marks demands submitted through an external API
+	// integration binding (autonomy P5); source_refs carries external_integration_id.
+	DemandSourceExternal DemandSourceType = "external_integration"
 )
 
 type ProjectDemandStatus string
@@ -505,29 +508,29 @@ const (
 
 // ProjectWorkspaceGitStatus 最近一次观测到的项目目录 git 状态（spec 2026-08-12 P1）。
 type ProjectWorkspaceGitStatus struct {
-	Applicable          bool                             `json:"applicable"`
-	IsGitRepo           *bool                            `json:"is_git_repo,omitempty"`
-	IsClean             *bool                            `json:"is_clean,omitempty"`
-	HeadCommit          string                           `json:"head_commit,omitempty"`
-	CurrentBranch       string                           `json:"current_branch,omitempty"`
-	Detached            bool                             `json:"detached,omitempty"`
-	RepoState           ProjectWorkspaceGitRepoState     `json:"repo_state,omitempty"`
-	UncommittedCount    int                              `json:"uncommitted_count"`
-	UncommittedEntries  []ProjectWorkspaceGitFileEntry   `json:"uncommitted_entries,omitempty"`
-	UncommittedTruncated bool                            `json:"uncommitted_truncated,omitempty"`
-	UncommittedOmitted  int                              `json:"uncommitted_omitted,omitempty"`
-	SampledAt           *time.Time                       `json:"sampled_at,omitempty"`
-	SampledRuntimeNodeID *uuid.UUID                      `json:"sampled_runtime_node_id,omitempty"`
-	SampledNodeID       string                           `json:"sampled_node_id,omitempty"`
-	SampleError         string                           `json:"sample_error,omitempty"`
-	LastAttemptAt       *time.Time                       `json:"last_attempt_at,omitempty"`
-	RefreshPending      bool                             `json:"refresh_pending,omitempty"`
-	InflightAt          *time.Time                       `json:"-"`
+	Applicable           bool                           `json:"applicable"`
+	IsGitRepo            *bool                          `json:"is_git_repo,omitempty"`
+	IsClean              *bool                          `json:"is_clean,omitempty"`
+	HeadCommit           string                         `json:"head_commit,omitempty"`
+	CurrentBranch        string                         `json:"current_branch,omitempty"`
+	Detached             bool                           `json:"detached,omitempty"`
+	RepoState            ProjectWorkspaceGitRepoState   `json:"repo_state,omitempty"`
+	UncommittedCount     int                            `json:"uncommitted_count"`
+	UncommittedEntries   []ProjectWorkspaceGitFileEntry `json:"uncommitted_entries,omitempty"`
+	UncommittedTruncated bool                           `json:"uncommitted_truncated,omitempty"`
+	UncommittedOmitted   int                            `json:"uncommitted_omitted,omitempty"`
+	SampledAt            *time.Time                     `json:"sampled_at,omitempty"`
+	SampledRuntimeNodeID *uuid.UUID                     `json:"sampled_runtime_node_id,omitempty"`
+	SampledNodeID        string                         `json:"sampled_node_id,omitempty"`
+	SampleError          string                         `json:"sample_error,omitempty"`
+	LastAttemptAt        *time.Time                     `json:"last_attempt_at,omitempty"`
+	RefreshPending       bool                           `json:"refresh_pending,omitempty"`
+	InflightAt           *time.Time                     `json:"-"`
 }
 
 type ProjectWorkspaceGitFileEntry struct {
-	Path     string                           `json:"path"`
-	Category ProjectWorkspaceGitFileCategory  `json:"category"`
+	Path     string                          `json:"path"`
+	Category ProjectWorkspaceGitFileCategory `json:"category"`
 }
 
 type Project struct {
@@ -545,7 +548,6 @@ type Project struct {
 	CoordinationStatus     string
 	CoordinationPolicy     map[string]any
 	RepoBinding            ProjectRepoBinding
-	ScenarioTemplateKey    *string
 	WorkspaceReadyStatus   WorkspaceReadyStatus
 	PrimaryRuntimeNodeID   *uuid.UUID
 	WorkspaceReadyError    *string
@@ -1386,9 +1388,10 @@ type ProjectDemand struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	CoordinationMode   string
-	// ScenarioTemplateKey binds this demand to a scenario template,
-	// overriding the project's default; nil falls back to the project's
-	// ScenarioTemplateKey (and ultimately the generic fallback).
+	// ScenarioTemplateKey binds this demand to a scenario template.
+	// SubmitDemand now requires a non-blank, active key for every new demand;
+	// nil only remains possible on rows created before this field was
+	// mandatory (no project-level default was ever supported).
 	ScenarioTemplateKey *string
 	// ContinuesDemandID 是接续血缘(spec 2026-08-01-demand-continuation-design)：
 	// 本单接着哪一单做。nil = 链头。原单终态永不回退，接续一律新开一单接链，
@@ -1795,9 +1798,6 @@ type CreateProjectRequest struct {
 	CoordinationPolicy map[string]any
 	RepoBinding        *ProjectRepoBindingInput
 	RuntimeNodeIDs     []uuid.UUID
-	// ScenarioTemplateKey binds the project to a scenario template; nil means
-	// the generic fallback (planning behaves exactly as an unbound project).
-	ScenarioTemplateKey *string
 	// WorkspaceReadyStatus is set by CreateProject before persistence; callers
 	// outside CreateProject leave it empty (repository defaults to ready).
 	WorkspaceReadyStatus WorkspaceReadyStatus
@@ -1939,8 +1939,10 @@ type SubmitProjectDemandRequest struct {
 	ReviewerUserID          *uuid.UUID
 	ReviewerSelectionReason ReviewerSelectionReason
 	CoordinationMode        string
-	// ScenarioTemplateKey binds this demand to a scenario template; nil
-	// means fall back to the project's default (and generic beyond that).
+	// ScenarioTemplateKey binds this demand to a scenario template. It is
+	// mandatory (SubmitDemand rejects nil/blank with ErrInvalidProject) and
+	// must resolve to an active template binding for the tenant — there is
+	// no generic/project-level fallback.
 	ScenarioTemplateKey *string
 	// ContinuesDemandID 非空表示这是一条接续单，接在该 demand 之后。
 	// 服务端在 ContinueProjectDemand 里填，普通提需求路径恒为 nil。
@@ -2305,10 +2307,10 @@ type ProjectPortfolioPagination struct {
 }
 
 type ProjectPortfolioResponse struct {
-	Summary         ProjectPortfolioSummary    `json:"summary"`
-	Items           []ProjectPortfolioItem     `json:"items"`
-	Pagination      ProjectPortfolioPagination `json:"pagination"`
-	CountsDegraded  bool                       `json:"counts_degraded"`
+	Summary        ProjectPortfolioSummary    `json:"summary"`
+	Items          []ProjectPortfolioItem     `json:"items"`
+	Pagination     ProjectPortfolioPagination `json:"pagination"`
+	CountsDegraded bool                       `json:"counts_degraded"`
 }
 
 type ProjectCoordinationWorkflow struct {

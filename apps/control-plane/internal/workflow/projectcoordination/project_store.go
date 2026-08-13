@@ -40,6 +40,11 @@ type ProjectStore struct {
 	// maxAttemptsDefault resolves tenant platform default for project_tasks.max_attempts.
 	// nil falls back to systemconfig registry default (3).
 	maxAttemptsDefault func(ctx context.Context, tenantID uuid.UUID) int32
+	// autonomyLookup + gateDecisionResolver enable P2 full_auto policy resolve;
+	// externalAutonomyLookup extends it to external API integrations (P5).
+	autonomyLookup         AutomationAutonomyLookup
+	externalAutonomyLookup ExternalIntegrationAutonomyLookup
+	gateDecisionResolver   GateDecisionResolver
 }
 
 // RoleVocabularySource lists active role vocabulary for planner system/user prompts.
@@ -396,19 +401,13 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 	if demand.ScenarioTemplateKey != nil {
 		demandTemplateKey = strings.TrimSpace(*demand.ScenarioTemplateKey)
 	}
-	// Resolution order: demand-level key wins when present, then the project's
-	// bound key, then nil (generic fallback). Whichever source is chosen is
-	// tracked so a resolution failure event can attribute its origin.
+	// Resolution order: demand-level key when present, else nil (generic).
+	// Project-level default binding was removed (autonomy envelope P0).
 	key := ""
 	source := ""
 	if demandTemplateKey != "" {
 		key = demandTemplateKey
 		source = "demand"
-	} else if projectRecord.ScenarioTemplateKey != nil {
-		if projectKey := strings.TrimSpace(*projectRecord.ScenarioTemplateKey); projectKey != "" {
-			key = projectKey
-			source = "project"
-		}
 	}
 	var scenarioTemplate *ScenarioTemplateSnapshot
 	if s.scenarioTemplates != nil && key != "" {
@@ -2481,6 +2480,9 @@ func (s *ProjectStore) RequestPlanRevisionReview(ctx context.Context, input Requ
 		if err := s.inbox.UpsertProjectDecisionRequest(ctx, decision); err != nil {
 			return DecisionRequestResult{}, err
 		}
+	}
+	if err := s.maybePolicyAutoResolvePlanReview(ctx, input, decision.ID); err != nil {
+		return DecisionRequestResult{}, err
 	}
 	return DecisionRequestResult{ID: decision.ID}, nil
 }

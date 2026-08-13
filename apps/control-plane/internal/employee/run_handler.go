@@ -18,6 +18,8 @@ import (
 type RunHandlerService interface {
 	CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error)
 	ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error)
+	ListChatThreads(ctx context.Context, tenantID, employeeID, projectID uuid.UUID) ([]DigitalEmployeeChatThread, error)
+	RenameChatThread(ctx context.Context, tenantID, employeeID, threadID, actorUserID uuid.UUID, title string) (*DigitalEmployeeChatThread, error)
 	GetRunCalendar(ctx context.Context, tenantID, employeeID uuid.UUID, from, to time.Time) (*DigitalEmployeeRunCalendarResult, error)
 	GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error)
 	ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
@@ -44,45 +46,51 @@ func (h *HTTPHandler) CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Re
 		return
 	}
 	var req struct {
-		Objective        string           `json:"objective"`
-		Prompt           string           `json:"prompt"`
-		ContextRefs      []map[string]any `json:"context_refs"`
-		ArtifactRefs     []map[string]any `json:"artifact_refs"`
-		OutputSchema     map[string]any   `json:"output_schema"`
-		AllowedActions   []string         `json:"allowed_actions"`
-		ForbiddenActions []string         `json:"forbidden_actions"`
-		SecretRefs       []string         `json:"secret_refs"`
-		IdempotencyKey   *string          `json:"idempotency_key"`
-		TimeoutSec       *int32           `json:"timeout_sec"`
-		GraceSec         *int32           `json:"grace_sec"`
-		Metadata         map[string]any   `json:"metadata"`
-		RunKind          string           `json:"run_kind"`
-		ResumeOfRunID    *uuid.UUID       `json:"resume_of_run_id"`
-		ProjectID        *uuid.UUID       `json:"project_id"`
+		Objective            string           `json:"objective"`
+		Prompt               string           `json:"prompt"`
+		ContextRefs          []map[string]any `json:"context_refs"`
+		ArtifactRefs         []map[string]any `json:"artifact_refs"`
+		OutputSchema         map[string]any   `json:"output_schema"`
+		AllowedActions       []string         `json:"allowed_actions"`
+		ForbiddenActions     []string         `json:"forbidden_actions"`
+		SecretRefs           []string         `json:"secret_refs"`
+		IdempotencyKey       *string          `json:"idempotency_key"`
+		TimeoutSec           *int32           `json:"timeout_sec"`
+		GraceSec             *int32           `json:"grace_sec"`
+		Metadata             map[string]any   `json:"metadata"`
+		RunKind              string           `json:"run_kind"`
+		ResumeOfRunID        *uuid.UUID       `json:"resume_of_run_id"`
+		ChatThreadID         *uuid.UUID       `json:"chat_thread_id"`
+		ProjectID            *uuid.UUID       `json:"project_id"`
+		SkillIDs             []uuid.UUID      `json:"skill_ids"`
+		InteractiveConfirmed bool             `json:"interactive_confirmed"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	run, err := service.CreateRun(r.Context(), CreateDigitalEmployeeRunRequest{
-		TenantID:          tenantID,
-		UserID:            middleware.GetUserID(r.Context()),
-		DigitalEmployeeID: employeeID,
-		Objective:         req.Objective,
-		Prompt:            req.Prompt,
-		ContextRefs:       req.ContextRefs,
-		ArtifactRefs:      req.ArtifactRefs,
-		OutputSchema:      req.OutputSchema,
-		AllowedActions:    req.AllowedActions,
-		ForbiddenActions:  req.ForbiddenActions,
-		SecretRefs:        req.SecretRefs,
-		IdempotencyKey:    req.IdempotencyKey,
-		TimeoutSec:        req.TimeoutSec,
-		GraceSec:          req.GraceSec,
-		Metadata:          req.Metadata,
-		RunKind:           req.RunKind,
-		ResumeOfRunID:     req.ResumeOfRunID,
-		ProjectID:         req.ProjectID,
+		TenantID:             tenantID,
+		UserID:               middleware.GetUserID(r.Context()),
+		DigitalEmployeeID:    employeeID,
+		Objective:            req.Objective,
+		Prompt:               req.Prompt,
+		ContextRefs:          req.ContextRefs,
+		ArtifactRefs:         req.ArtifactRefs,
+		OutputSchema:         req.OutputSchema,
+		AllowedActions:       req.AllowedActions,
+		ForbiddenActions:     req.ForbiddenActions,
+		SecretRefs:           req.SecretRefs,
+		IdempotencyKey:       req.IdempotencyKey,
+		TimeoutSec:           req.TimeoutSec,
+		GraceSec:             req.GraceSec,
+		Metadata:             req.Metadata,
+		RunKind:              req.RunKind,
+		ResumeOfRunID:        req.ResumeOfRunID,
+		ChatThreadID:         req.ChatThreadID,
+		ProjectID:            req.ProjectID,
+		SkillIDs:             req.SkillIDs,
+		InteractiveConfirmed: req.InteractiveConfirmed,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -115,6 +123,65 @@ func (h *HTTPHandler) ListDigitalEmployeeRuns(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, runListResponseFromDomain(result))
+}
+
+func (h *HTTPHandler) ListDigitalEmployeeChatThreads(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "digital employee chat thread list")
+	if !ok {
+		return
+	}
+	service, ok := h.runServiceFromRequest(w)
+	if !ok {
+		return
+	}
+	projectID, err := uuid.Parse(strings.TrimSpace(r.URL.Query().Get("project_id")))
+	if err != nil || projectID == uuid.Nil {
+		http.Error(w, "project_id must be a valid uuid", http.StatusBadRequest)
+		return
+	}
+	items, err := service.ListChatThreads(r.Context(), tenantID, employeeID, projectID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, chatThreadListResponseFromDomain(items))
+}
+
+func (h *HTTPHandler) PatchDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRunCreate, &employeeID, "digital employee chat thread rename")
+	if !ok {
+		return
+	}
+	service, ok := h.runServiceFromRequest(w)
+	if !ok {
+		return
+	}
+	threadID, err := uuid.Parse(chi.URLParam(r, "threadId"))
+	if err != nil || threadID == uuid.Nil {
+		http.Error(w, "threadId must be a valid uuid", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	thread, err := service.RenameChatThread(r.Context(), tenantID, employeeID, threadID, middleware.GetUserID(r.Context()), req.Title)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, chatThreadResponseFromDomain(thread))
 }
 
 // parseRunListFilter parses the run list query parameters: pagination (limit/offset),
@@ -445,6 +512,8 @@ type digitalEmployeeRunResponse struct {
 	RunKind                   string                                             `json:"run_kind"`
 	ResumeOfRunID             *string                                            `json:"resume_of_run_id,omitempty"`
 	ChatThreadID              *string                                            `json:"chat_thread_id,omitempty"`
+	CreatorUserID             *string                                            `json:"creator_user_id,omitempty"`
+	CreatorDisplayName        *string                                            `json:"creator_display_name,omitempty"`
 	Status                    DigitalEmployeeRunStatus                           `json:"status"`
 	Result                    map[string]any                                     `json:"result"`
 	Diagnostic                map[string]any                                     `json:"diagnostic"`
@@ -489,6 +558,8 @@ func runResponseFromDomain(run *DigitalEmployeeRun) digitalEmployeeRunResponse {
 		RunKind:                   run.RunKind,
 		ResumeOfRunID:             uuidStringPtr(run.ResumeOfRunID),
 		ChatThreadID:              uuidStringPtr(run.ChatThreadID),
+		CreatorUserID:             uuidStringPtr(run.CreatorUserID),
+		CreatorDisplayName:        run.CreatorDisplayName,
 		Status:                    run.Status,
 		Result:                    cloneMap(run.Result),
 		Diagnostic:                cloneMap(run.Diagnostic),
@@ -617,6 +688,38 @@ func runListResponseFromDomain(result *DigitalEmployeeRunListResult) digitalEmpl
 		})
 	}
 	return response
+}
+
+func chatThreadResponseFromDomain(thread *DigitalEmployeeChatThread) map[string]any {
+	if thread == nil {
+		return map[string]any{}
+	}
+	body := map[string]any{
+		"chat_thread_id":            thread.ChatThreadID.String(),
+		"title":                     thread.Title,
+		"initiator_user_id":         thread.InitiatorUserID.String(),
+		"initiator_display_name":    thread.InitiatorDisplayName,
+		"last_speaker_user_id":      thread.LastSpeakerUserID.String(),
+		"last_speaker_display_name": thread.LastSpeakerDisplayName,
+		"last_prompt":               thread.LastPrompt,
+		"last_active_at":            thread.LastActiveAt.UTC().Format(time.RFC3339Nano),
+		"has_active_run":            thread.HasActiveRun,
+	}
+	if thread.ActiveRunnerUserID != nil {
+		body["active_runner_user_id"] = thread.ActiveRunnerUserID.String()
+	}
+	if thread.ActiveRunnerDisplayName != nil {
+		body["active_runner_display_name"] = *thread.ActiveRunnerDisplayName
+	}
+	return body
+}
+
+func chatThreadListResponseFromDomain(items []DigitalEmployeeChatThread) map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for i := range items {
+		out = append(out, chatThreadResponseFromDomain(&items[i]))
+	}
+	return map[string]any{"items": out}
 }
 
 func employeeAndRunIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, uuid.UUID, bool) {

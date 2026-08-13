@@ -406,7 +406,7 @@ describe("ProjectDemandsSection", () => {
           effective_playbook: {
             name: "软件交付",
             produce_kinds: ["branch_ref", "conclusion"],
-            source: "project",
+            source: "demand",
             template_key: "software_delivery"
 },
           rail: {
@@ -590,7 +590,7 @@ describe("ProjectDemandsSection", () => {
             exit_pending: false,
             name: "软件交付",
             produce_kinds: ["conclusion"],
-            source: "project",
+            source: "demand",
             template_key: "software_delivery"
 },
 })
@@ -612,7 +612,7 @@ describe("ProjectDemandsSection", () => {
             exit_pending: true,
             name: "软件交付",
             produce_kinds: ["conclusion"],
-            source: "project",
+            source: "demand",
             template_key: "software_delivery"
 },
 })

@@ -107,7 +107,7 @@ export function ScenarioTemplatesPage() {
               <EmptyState
                 icon={<LayoutTemplate />}
                 title="还没有场景模板"
-                description="新建一个场景模板，或依赖种子数据；项目创建时可绑定其一驱动规划。"
+                description="新建一个场景模板，或依赖种子数据；发起需求或配置自动化时可选用其一驱动规划。"
               />
             ) : (
               <DataTable>

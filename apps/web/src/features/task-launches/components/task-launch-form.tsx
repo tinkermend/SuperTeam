@@ -12,10 +12,10 @@ import {
   ChevronsUpDown,
   FolderOpen,
   ListChecks,
-  MessagesSquare,
   RefreshCw,
   SendHorizontal,
   Sparkles,
+  Workflow,
 } from "lucide-react";
 import {
   Dialog,
@@ -26,7 +26,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Button, GlassCard } from "@/components/superteam";
+import { Button } from "@/components/superteam";
+import { EmployeeAvatar } from "@/features/employees/avatar";
+import { employeeAvatarAsset } from "@/features/employees/avatar-library";
 import {
   launchModeLabel,
   missingObjectLabel,
@@ -42,6 +44,9 @@ import {
   type ProjectDemandSourceType,
   type SubmitProjectDemandInput,
 } from "@/lib/api/projects";
+import { listDigitalEmployees } from "@/lib/api/employees";
+import { getPlaybookReadiness, listProjectCastings } from "@/lib/api/casting";
+import { listScenarioTemplates } from "@/lib/api/scenario-templates";
 import { PromptTemplateDialog } from "./prompt-template-dialog";
 import { applyPromptTemplate } from "@/lib/api/prompt-templates";
 
@@ -54,8 +59,8 @@ const MODE_CARDS: Array<{
   badge?: string;
   desc: string;
   icon: ReactNode;
-  tone: "brand" | "info" | "warn";
-  value: LaunchMode;
+  tone: "brand" | "info";
+  value: Exclude<LaunchMode, "chat">;
 }> = [
   {
     badge: "默认",
@@ -70,15 +75,11 @@ const MODE_CARDS: Array<{
     tone: "info",
     value: "loop",
   },
-  {
-    desc: "与指定数字员工单次对话，结果不进入项目流转",
-    icon: <MessagesSquare aria-hidden />,
-    tone: "warn",
-    value: "chat",
-  },
 ];
 
-const MODE_ORDER: LaunchMode[] = MODE_CARDS.map((card) => card.value);
+const MODE_ORDER: Array<Exclude<LaunchMode, "chat">> = MODE_CARDS.map(
+  (card) => card.value,
+);
 
 export type SubmitSuccessResult = {
   demandId: string;
@@ -90,12 +91,11 @@ export type SubmitSuccessResult = {
 
 type TaskLaunchFormProps = {
   apiOptions: ApiClientOptions;
-  chatPanel?: ReactNode;
   content: string;
   isSubmitting?: boolean;
-  mode: LaunchMode;
+  mode: Exclude<LaunchMode, "chat">;
   onContentChange: (content: string) => void;
-  onModeChange: (mode: LaunchMode) => void;
+  onModeChange: (mode: Exclude<LaunchMode, "chat">) => void;
   onProjectChange: ProjectChangeHandler;
   onSubmit: (projectId: string, input: SubmitProjectDemandInput) => void;
   onSuccessDismiss?: () => void;
@@ -114,7 +114,6 @@ function deriveTitle(content: string): string {
 
 export function TaskLaunchForm({
   apiOptions,
-  chatPanel,
   content,
   isSubmitting = false,
   mode,
@@ -135,13 +134,14 @@ export function TaskLaunchForm({
     [projects],
   );
   const [error, setError] = useState("");
+  const [scenarioTemplateKey, setScenarioTemplateKey] = useState("");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [pendingTemplate, setPendingTemplate] = useState<{
     text: string;
     templateId: string;
   } | null>(null);
   const modeGroupRef = useRef<HTMLDivElement>(null);
-  const pendingModeFocus = useRef<LaunchMode | null>(null);
+  const pendingModeFocus = useRef<Exclude<LaunchMode, "chat"> | null>(null);
 
   useEffect(() => {
     if (pendingModeFocus.current !== mode) {
@@ -159,6 +159,61 @@ export function TaskLaunchForm({
   });
   const projectId = selectedProjectId || activeProjects[0]?.id || "";
   const hasNoProjects = !projectsLoading && activeProjects.length === 0;
+
+  const templatesQuery = useQuery({
+    queryFn: () => listScenarioTemplates(apiOptions),
+    queryKey: ["scenario-templates", apiOptions.baseUrl],
+  });
+  const templateOptions = useMemo(
+    () => (templatesQuery.data ?? []).filter((item) => item.status === "active"),
+    [templatesQuery.data],
+  );
+  const selectedTemplate = templateOptions.find(
+    (item) => item.template_key === scenarioTemplateKey,
+  );
+
+  const employeesQuery = useQuery({
+    queryFn: () => listDigitalEmployees(apiOptions),
+    queryKey: ["chat-employees"],
+  });
+  const castingsQuery = useQuery({
+    enabled: Boolean(projectId && scenarioTemplateKey),
+    queryFn: () => listProjectCastings(apiOptions, projectId, scenarioTemplateKey),
+    queryKey: ["project-castings", projectId, scenarioTemplateKey],
+  });
+  const readinessQuery = useQuery({
+    enabled: Boolean(projectId && scenarioTemplateKey),
+    queryFn: () => getPlaybookReadiness(apiOptions, projectId, scenarioTemplateKey),
+    queryKey: ["playbook-readiness", projectId, scenarioTemplateKey],
+  });
+  const castPeople = useMemo(() => {
+    const byId = new Map((employeesQuery.data ?? []).map((item) => [item.id, item]));
+    const seen = new Set<string>();
+    const people: Array<{ id: string; name: string; role: string; description?: string }> = [];
+    for (const row of castingsQuery.data ?? []) {
+      if (seen.has(row.digital_employee_id)) {
+        continue;
+      }
+      seen.add(row.digital_employee_id);
+      const employee = byId.get(row.digital_employee_id);
+      people.push({
+        id: row.digital_employee_id,
+        name: employee?.name ?? row.digital_employee_id.slice(0, 8),
+        role: employee?.role ?? row.role_key,
+        description: employee?.description,
+      });
+    }
+    return people;
+  }, [castingsQuery.data, employeesQuery.data]);
+  const readinessNote = readinessQuery.data?.[0]
+    ? readinessQuery.data[0].runnable
+      ? `可跑 · ${readinessQuery.data[0].deepest_exit?.label ?? "角色齐备"}`
+      : `暂不可跑${
+          readinessQuery.data[0].missing_roles_for_any?.length
+            ? ` · 缺 ${readinessQuery.data[0].missing_roles_for_any.join("、")}`
+            : ""
+        }`
+    : "";
 
   // Token 预算熔断(P1-A):选中项目预算耗尽时禁止发起新任务。前端禁用是 UX,真正的
   // 强制在后端派发前闸;两者一致(自动化不走前端,只受后端闸约束)。
@@ -186,6 +241,10 @@ export function TaskLaunchForm({
       setError(hasNoProjects ? "请先新建项目后再提交" : "请选择项目");
       return;
     }
+    if (!scenarioTemplateKey.trim()) {
+      setError("请选择场景模板");
+      return;
+    }
     if (budgetExhausted) {
       setError("该项目 token 预算已耗尽，提高额度后才能发起新任务");
       return;
@@ -195,6 +254,7 @@ export function TaskLaunchForm({
     onSubmit(projectId, {
       attachments: [],
       content: trimmedContent,
+      scenario_template_key: scenarioTemplateKey.trim(),
       source_refs: {},
       source_type: "manual" as ProjectDemandSourceType,
       title: resolvedTitle,
@@ -259,16 +319,17 @@ export function TaskLaunchForm({
 
   return (
     <>
+    <div className="hub-task-sheet hub-task-main">
       <div className="tl-hero">
-        <h2 className="tl-title">提出任务</h2>
+        <h2 className="tl-title">发起任务</h2>
         <p className="tl-sub">
-          先把目标说清楚，编排、上下文切片和执行分派会在提交后由系统完成。
+          先选 Plan 或 Loop，再选场景模板，填清目标后提交进入主轨。
         </p>
       </div>
 
       <div
         ref={modeGroupRef}
-        aria-label="任务模式"
+        aria-label="阻塞策略"
         className="tl-modes"
         onKeyDown={handleModeKeyDown}
         role="radiogroup"
@@ -302,82 +363,136 @@ export function TaskLaunchForm({
         })}
       </div>
 
-      <GlassCard>
-        {mode === "chat" ? (
-          <div data-testid="chat-panel-slot">{chatPanel}</div>
-        ) : (
-          <>
-            <div className="tl-cmd">
-              <div className="tl-cmd-top">
-                <div className="tl-cmd-t">
-                  <span>需求描述</span>
-                  <span className="tl-req">*</span>
-                </div>
-              </div>
-              <textarea
-                aria-label="需求描述"
-                className="tl-textarea"
-                onChange={(event) => onContentChange(event.target.value)}
-                placeholder="描述你希望项目协调线程处理的目标或问题场景"
-                value={content}
-              />
-              <div className="tl-cmd-foot">
-                <button
-                  className="tl-ghost"
-                  onClick={() => setTemplateDialogOpen(true)}
-                  type="button"
-                >
-                  <Sparkles className="size-3.5" aria-hidden />
-                  浏览模板库
-                </button>
-                <span className="tl-counter">{content.length} 字</span>
-              </div>
+      <div className="tl-cmd">
+          <div className="tl-cmd-top">
+            <div className="tl-cmd-t">
+              <span>需求描述</span>
+              <span className="tl-req">*</span>
             </div>
+          </div>
+          <textarea
+            aria-label="需求描述"
+            className="tl-textarea"
+            onChange={(event) => onContentChange(event.target.value)}
+            placeholder="描述你希望项目协调线程处理的目标或问题场景"
+            value={content}
+          />
+          <div className="tl-cmd-foot">
+            <button
+              className="tl-ghost"
+              onClick={() => setTemplateDialogOpen(true)}
+              type="button"
+            >
+              <Sparkles className="size-3.5" aria-hidden />
+              浏览模板库
+            </button>
+            <span className="tl-counter">{content.length} 字</span>
+          </div>
+        </div>
 
-            <div className="tl-params" data-testid="task-launch-parameters">
-              <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
-                {hasNoProjects ? (
-                  <NoProjectsEmptyState />
-                ) : (
-                  <ProjectPicker
-                    apiOptions={apiOptions}
-                    onChange={handleProjectChange}
-                    projects={activeProjects}
-                    resolvedProject={resolvedProject}
-                    value={projectId}
-                  />
-                )}
-              </LaunchChip>
-            </div>
-
-            {budgetExhausted ? (
-              <div className="tl-err" data-testid="budget-exhausted-notice">
-                ⚠ 该项目 token 预算已耗尽（已用 {budget?.consumed_tokens ?? 0}
-                {budget?.token_limit != null ? ` / 上限 ${budget.token_limit}` : ""}
-                ），提高额度后才能发起新任务。
-              </div>
-            ) : null}
+        <div className="tl-params" data-testid="task-launch-parameters">
+          <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
             {hasNoProjects ? (
-              <div className="tl-err" data-testid="no-projects-notice">
-                ⚠ 当前没有可用项目，请先新建项目后再提交任务。
+              <NoProjectsEmptyState />
+            ) : (
+              <ProjectPicker
+                apiOptions={apiOptions}
+                onChange={handleProjectChange}
+                projects={activeProjects}
+                resolvedProject={resolvedProject}
+                value={projectId}
+              />
+            )}
+          </LaunchChip>
+          <div className="tl-chip">
+            <div className="tl-chip-label">
+              <Workflow aria-hidden />
+              <span>场景模板</span>
+              <span className="tl-req">*</span>
+            </div>
+            <div
+              aria-label="场景模板"
+              className="hub-tpl-grid"
+              role="radiogroup"
+            >
+              {templateOptions.map((template) => {
+                const selected = template.template_key === scenarioTemplateKey;
+                return (
+                  <button
+                    aria-checked={selected}
+                    aria-label={template.name}
+                    className="hub-tpl"
+                    data-active={selected || undefined}
+                    key={template.template_key}
+                    onClick={() => setScenarioTemplateKey(template.template_key)}
+                    role="radio"
+                    type="button"
+                  >
+                    <span className="hub-tpl-name">{template.name}</span>
+                    {template.description?.trim() ? (
+                      <span className="hub-tpl-desc">{template.description}</span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedTemplate ? (
+              <div className="hub-cast" data-testid="task-hub-cast">
+                <span className="hub-cast-label">编制</span>
+                {castPeople.length > 0 ? (
+                  castPeople.map((person) => {
+                    const employee = employeesQuery.data?.find((item) => item.id === person.id);
+                    return (
+                      <span className="hub-cast-person" key={person.id}>
+                        <EmployeeAvatar
+                          asset={employeeAvatarAsset(employee ?? { id: person.id })}
+                          name={person.name}
+                          size="sm"
+                        />
+                        <span>
+                          {person.name}
+                          {person.role ? ` · ${person.role}` : ""}
+                        </span>
+                      </span>
+                    );
+                  })
+                ) : (
+                  <span className="hub-cast-empty">该模板在本项目尚未编制数字员工</span>
+                )}
+                {readinessNote ? (
+                  <span className="hub-cast-empty">{readinessNote}</span>
+                ) : null}
               </div>
             ) : null}
-            {displayError ? <div className="tl-err">⚠ {displayError}</div> : null}
+          </div>
+        </div>
 
-            <div className="tl-actions">
-              <button
-                className="tl-btn-send"
-                disabled={isSubmitting || budgetExhausted || hasNoProjects}
-                onClick={handleSubmit}
-                type="button"
-              >
-                提交任务
-                <SendHorizontal className="size-4" aria-hidden />
-              </button>
-            </div>
-          </>
-        )}
-      </GlassCard>
+        {budgetExhausted ? (
+          <div className="tl-err" data-testid="budget-exhausted-notice">
+            ⚠ 该项目 token 预算已耗尽（已用 {budget?.consumed_tokens ?? 0}
+            {budget?.token_limit != null ? ` / 上限 ${budget.token_limit}` : ""}
+            ），提高额度后才能发起新任务。
+          </div>
+        ) : null}
+        {hasNoProjects ? (
+          <div className="tl-err" data-testid="no-projects-notice">
+            ⚠ 当前没有可用项目，请先新建项目后再提交任务。
+          </div>
+        ) : null}
+        {displayError ? <div className="tl-err">⚠ {displayError}</div> : null}
+
+        <div className="tl-actions">
+          <button
+            className="tl-btn-send"
+            disabled={isSubmitting || budgetExhausted || hasNoProjects}
+            onClick={handleSubmit}
+            type="button"
+          >
+            提交任务
+            <SendHorizontal className="size-4" aria-hidden />
+          </button>
+        </div>
+    </div>
 
       <PromptTemplateDialog
         open={templateDialogOpen}
@@ -436,13 +551,12 @@ function SubmitSuccessPanel({
   onAgain?: () => void;
 }) {
   return (
-    <>
+    <div className="hub-task-sheet hub-task-main">
       <div className="tl-hero">
         <h2 className="tl-title">需求已提交</h2>
         <p className="tl-sub">任务已写入项目需求卷宗，可继续提交下一条，或前往卷宗查看详情。</p>
       </div>
-      <GlassCard>
-        <div className="tl-result" data-testid="submit-success-panel">
+      <div className="tl-result" data-testid="submit-success-panel">
           <dl className="tl-result-meta">
             <div>
               <dt>需求标题</dt>
@@ -471,8 +585,7 @@ function SubmitSuccessPanel({
             </button>
           </div>
         </div>
-      </GlassCard>
-    </>
+    </div>
   );
 }
 

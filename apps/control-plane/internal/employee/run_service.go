@@ -49,6 +49,13 @@ type RuntimeSkillLister interface {
 	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) (skill.RuntimeSkillsResult, error)
 }
 
+// ProjectSkillBindingLister resolves the Chat default skill surface (project
+// skill bindings). Optional: when the concrete skillLister also implements
+// this, chat runs apply the autonomy P1 envelope.
+type ProjectSkillBindingLister interface {
+	ListProjectSkillBindings(ctx context.Context, req skill.ListProjectSkillBindingsRequest) ([]skill.ProjectSkillBinding, error)
+}
+
 type RuntimeCapabilityLister interface {
 	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]cpruntime.RuntimeCapability, error)
 }
@@ -178,8 +185,8 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	if req.RunKind != RunKindChat {
 		return nil, ErrInvalidRunKind
 	}
-	// chatThreadID is resolved exclusively by the resume branch below; discard
-	// anything a caller in this package may have pre-set.
+	// chatThreadID is resolved by resume inherit or validated ChatThreadID join;
+	// discard anything a caller in this package may have pre-set on the unexported field.
 	req.chatThreadID = nil
 
 	if req.ProjectID == nil || *req.ProjectID == uuid.Nil {
@@ -235,9 +242,59 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 			rootID := prior.ID
 			req.chatThreadID = &rootID
 		}
+	} else if req.ChatThreadID != nil && *req.ChatThreadID != uuid.Nil {
+		// TTL-expiry continue: stay on the same SuperTeam thread without a
+		// provider session. Validate the root belongs to this employee+project.
+		threads, ok := s.repository.(chatThreadStore)
+		if !ok {
+			return nil, fmt.Errorf("%w: chat thread store is required", ErrInvalidInput)
+		}
+		root, err := threads.GetChatThreadRoot(ctx, req.TenantID, req.DigitalEmployeeID, *req.ChatThreadID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: chat_thread_id: %v", ErrInvalidInput, err)
+		}
+		if root == nil || root.ProjectID != *req.ProjectID {
+			return nil, fmt.Errorf("%w: chat_thread_id does not match employee/project", ErrInvalidInput)
+		}
+		threadID := *req.ChatThreadID
+		req.chatThreadID = &threadID
+	}
+
+	if req.chatThreadID != nil {
+		if err := s.ensureChatThreadIdle(ctx, req.TenantID, req.DigitalEmployeeID, *req.chatThreadID); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.createChatRun(ctx, req, objective, prompt)
+}
+
+// chatThreadStore is the optional repository surface for chat session list,
+// rename, root lookup, and per-thread mutex. PgRunRepository implements it.
+type chatThreadStore interface {
+	ListChatThreads(ctx context.Context, tenantID, employeeID, projectID uuid.UUID) ([]DigitalEmployeeChatThread, error)
+	GetChatThreadRoot(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ChatThreadRoot, error)
+	UpdateChatThreadTitle(ctx context.Context, tenantID, employeeID, threadID uuid.UUID, title string) (*ChatThreadRoot, error)
+	GetActiveChatRunOnThread(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ActiveChatRunOnThread, error)
+}
+
+func (s *DigitalEmployeeRunService) ensureChatThreadIdle(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) error {
+	threads, ok := s.repository.(chatThreadStore)
+	if !ok {
+		return nil
+	}
+	active, err := threads.GetActiveChatRunOnThread(ctx, tenantID, employeeID, threadID)
+	if err != nil {
+		return fmt.Errorf("check active chat run on thread: %w", err)
+	}
+	if active == nil {
+		return nil
+	}
+	name := strings.TrimSpace(active.RunnerDisplayName)
+	if name == "" {
+		name = "有人"
+	}
+	return fmt.Errorf("%w: %s正在这条会话里", ErrConflict, name)
 }
 
 // createChatRun dispatches a chat run using its project anchor (§13 design
@@ -267,6 +324,21 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 		if err := participantValidator.ValidateChatParticipant(ctx, req.TenantID, projectID, req.DigitalEmployeeID); err != nil {
 			return nil, err
 		}
+	}
+	// Autonomy P1: reject out-of-surface skill_ids before provider/runtime preflight
+	// so callers get a clear 4xx without depending on node health.
+	if err := s.validateChatSkillSelection(ctx, req); err != nil {
+		return nil, err
+	}
+	// Autonomy P4 / Chat B2: interactive light confirm (not inbox).
+	projectCeiling := ""
+	if s.dispatchFacts != nil {
+		if facts, ferr := s.dispatchFacts.GetProjectDispatchFacts(ctx, req.TenantID, projectID); ferr == nil {
+			projectCeiling = facts.AutonomyCeiling
+		}
+	}
+	if err := enforceInteractiveLightConfirm(req, projectCeiling); err != nil {
+		return nil, err
 	}
 
 	resolvedNodeID, err := s.nodeResolver.ResolveProjectTaskNode(ctx, ResolveProjectTaskNodeRequest{
@@ -315,6 +387,16 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 	// Audit-only anchor record (§13): not a new column, lives in
 	// tasks.params["metadata"]["anchor_project_id"] via buildRunParams.
 	req.Metadata["anchor_project_id"] = projectID.String()
+	if len(req.SkillIDs) > 0 {
+		ids := make([]string, 0, len(req.SkillIDs))
+		for _, id := range req.SkillIDs {
+			ids = append(ids, id.String())
+		}
+		req.Metadata["chat_skill_ids"] = ids
+	}
+	if req.InteractiveConfirmed && isInteractiveChatInvoker(req) {
+		req.Metadata["interactive_confirmed"] = true
+	}
 	// 目录与能力投影修订 spec §4: the chat anchor gains filesystem semantics —
 	// the runtime keys the chat working directory by (project, thread) and
 	// seeds a readonly worktree when the anchor project has a repo binding.
@@ -507,7 +589,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 	}
 	if activeRun != nil {
 		if sameIdempotentRun(activeRun, idempotencyKey, fingerprint) {
-			deps, err := s.prepareStartSessionDependencies(ctx, req.TenantID, req.DigitalEmployeeID, req.ProjectID, preflight)
+			deps, err := s.prepareStartSessionDependencies(ctx, req, preflight)
 			if err != nil {
 				return nil, err
 			}
@@ -523,7 +605,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		}
 	}
 
-	deps, err := s.prepareStartSessionDependencies(ctx, req.TenantID, req.DigitalEmployeeID, req.ProjectID, preflight)
+	deps, err := s.prepareStartSessionDependencies(ctx, req, preflight)
 	if err != nil {
 		return nil, err
 	}
@@ -543,6 +625,12 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 	projectID := uuid.Nil
 	if req.ProjectID != nil {
 		projectID = *req.ProjectID
+	}
+	var threadTitle *string
+	if req.chatThreadID == nil && runKind == RunKindChat {
+		// Root turn: seed SuperTeam-only title from the first prompt (truncate).
+		title := truncateChatThreadTitle(objective)
+		threadTitle = &title
 	}
 	createReq := CreateRunRecordRequest{
 		IdempotencyKey:         idempotencyKey,
@@ -567,6 +655,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		RunKind:                runKind,
 		ResumeOfRunID:          req.ResumeOfRunID,
 		ChatThreadID:           req.chatThreadID,
+		ThreadTitle:            threadTitle,
 		ProjectID:              projectID,
 	}
 
@@ -753,7 +842,10 @@ func (s *DigitalEmployeeRunService) dispatchEffectiveConfig(ctx context.Context,
 	return configInput, nil
 }
 
-func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID, preflight RunPreflight) (startSessionDependencies, error) {
+func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, req CreateDigitalEmployeeRunRequest, preflight RunPreflight) (startSessionDependencies, error) {
+	tenantID := req.TenantID
+	digitalEmployeeID := req.DigitalEmployeeID
+	projectID := req.ProjectID
 	var deps startSessionDependencies
 	// 派发生效配置只认已生效(active)修订(员工配置页 spec §6.2/A):草案治理修订未批不得生效,
 	// 否则审批 gate 形同虚设。生产 PgRunRepository 恒走 active-only;未实现该可选接口的仓库回退。
@@ -776,6 +868,12 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 		}
 		deps.runtimeSkills = runtimeResult.Skills
 		deps.skillConflicts = runtimeResult.Conflicts
+	}
+	// Autonomy P1: Chat envelope = project bindings ∩ supply ∩ optional selection.
+	if req.RunKind == RunKindChat && projectID != nil {
+		if err := s.applyChatSkillEnvelopeToDeps(ctx, req, &deps); err != nil {
+			return deps, err
+		}
 	}
 	var capabilities []cpruntime.RuntimeCapability
 	if s.capabilityLister != nil {
@@ -833,6 +931,61 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 		return deps, err
 	}
 	return deps, nil
+}
+
+func (s *DigitalEmployeeRunService) applyChatSkillEnvelopeToDeps(ctx context.Context, req CreateDigitalEmployeeRunRequest, deps *startSessionDependencies) error {
+	bindingLister, ok := s.skillLister.(ProjectSkillBindingLister)
+	if !ok || req.ProjectID == nil {
+		// Without a binding lister, refuse silent full-supply Chat (would bypass envelope).
+		if len(req.SkillIDs) > 0 {
+			return fmt.Errorf("%w: chat skill_ids require project skill binding resolver", ErrInvalidInput)
+		}
+		return nil
+	}
+	bindings, err := bindingLister.ListProjectSkillBindings(ctx, skill.ListProjectSkillBindingsRequest{
+		TenantID:  req.TenantID,
+		UserID:    req.UserID,
+		ProjectID: *req.ProjectID,
+	})
+	if err != nil {
+		return fmt.Errorf("list project skill bindings for chat envelope: %w", err)
+	}
+	allow := make(map[uuid.UUID]struct{}, len(bindings))
+	for _, b := range bindings {
+		allow[b.SkillID] = struct{}{}
+	}
+	filtered, err := applyChatSkillEnvelope(deps.runtimeSkills, allow, req.SkillIDs)
+	if err != nil {
+		return err
+	}
+	deps.runtimeSkills = filtered
+	return nil
+}
+
+// validateChatSkillSelection checks CreateRun skill_ids against the project Chat
+// default surface before expensive runtime/provider preflight.
+func (s *DigitalEmployeeRunService) validateChatSkillSelection(ctx context.Context, req CreateDigitalEmployeeRunRequest) error {
+	if len(req.SkillIDs) == 0 || req.ProjectID == nil {
+		return nil
+	}
+	bindingLister, ok := s.skillLister.(ProjectSkillBindingLister)
+	if !ok {
+		return fmt.Errorf("%w: chat skill_ids require project skill binding resolver", ErrInvalidInput)
+	}
+	bindings, err := bindingLister.ListProjectSkillBindings(ctx, skill.ListProjectSkillBindingsRequest{
+		TenantID:  req.TenantID,
+		UserID:    req.UserID,
+		ProjectID: *req.ProjectID,
+	})
+	if err != nil {
+		return fmt.Errorf("list project skill bindings for chat envelope: %w", err)
+	}
+	allow := make(map[uuid.UUID]struct{}, len(bindings))
+	for _, b := range bindings {
+		allow[b.SkillID] = struct{}{}
+	}
+	_, err = applyChatSkillEnvelope(nil, allow, req.SkillIDs)
+	return err
 }
 
 // applySkillMCPDependencyClosure unions MCP servers required by projected skills into
@@ -1976,6 +2129,74 @@ func stringPtrIfNotEmpty(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+const chatThreadTitleMaxRunes = 80
+
+func truncateChatThreadTitle(value string) string {
+	trimmed := strings.TrimSpace(value)
+	runes := []rune(trimmed)
+	if len(runes) <= chatThreadTitleMaxRunes {
+		return trimmed
+	}
+	return string(runes[:chatThreadTitleMaxRunes])
+}
+
+func (s *DigitalEmployeeRunService) ListChatThreads(ctx context.Context, tenantID, employeeID, projectID uuid.UUID) ([]DigitalEmployeeChatThread, error) {
+	if tenantID == uuid.Nil || employeeID == uuid.Nil || projectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, digital_employee_id, and project_id are required", ErrInvalidInput)
+	}
+	threads, ok := s.repository.(chatThreadStore)
+	if !ok {
+		return nil, fmt.Errorf("%w: chat thread store is required", ErrInvalidInput)
+	}
+	return threads.ListChatThreads(ctx, tenantID, employeeID, projectID)
+}
+
+func (s *DigitalEmployeeRunService) RenameChatThread(ctx context.Context, tenantID, employeeID, threadID, actorUserID uuid.UUID, title string) (*DigitalEmployeeChatThread, error) {
+	title = strings.TrimSpace(title)
+	if tenantID == uuid.Nil || employeeID == uuid.Nil || threadID == uuid.Nil || actorUserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, digital_employee_id, thread_id, and actor are required", ErrInvalidInput)
+	}
+	if title == "" {
+		return nil, fmt.Errorf("%w: title is required", ErrInvalidInput)
+	}
+	if len([]rune(title)) > 120 {
+		return nil, fmt.Errorf("%w: title must be at most 120 characters", ErrInvalidInput)
+	}
+	threads, ok := s.repository.(chatThreadStore)
+	if !ok {
+		return nil, fmt.Errorf("%w: chat thread store is required", ErrInvalidInput)
+	}
+	root, err := threads.GetChatThreadRoot(ctx, tenantID, employeeID, threadID)
+	if err != nil {
+		return nil, err
+	}
+	if root == nil {
+		return nil, ErrNotFound
+	}
+	if root.InitiatorUserID != actorUserID {
+		return nil, fmt.Errorf("%w: only the thread initiator may rename", ErrForbidden)
+	}
+	if _, err := threads.UpdateChatThreadTitle(ctx, tenantID, employeeID, threadID, title); err != nil {
+		return nil, err
+	}
+	listed, err := threads.ListChatThreads(ctx, tenantID, employeeID, root.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range listed {
+		if listed[i].ChatThreadID == threadID {
+			listed[i].Title = title
+			return &listed[i], nil
+		}
+	}
+	return &DigitalEmployeeChatThread{
+		ChatThreadID:         threadID,
+		Title:                title,
+		InitiatorUserID:      root.InitiatorUserID,
+		InitiatorDisplayName: root.InitiatorDisplayName,
+	}, nil
 }
 
 func stringPtr(value string) *string {

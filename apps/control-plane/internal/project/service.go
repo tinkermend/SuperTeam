@@ -307,22 +307,6 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 	}
 	req.RuntimeNodeIDs = runtimeNodeIDs
 
-	if req.ScenarioTemplateKey != nil {
-		key := strings.TrimSpace(*req.ScenarioTemplateKey)
-		if key == "" {
-			req.ScenarioTemplateKey = nil
-		} else if s.scenarioTemplates != nil {
-			binding, err := s.scenarioTemplates.ResolveScenarioTemplate(ctx, req.TenantID, key)
-			if err != nil {
-				return nil, fmt.Errorf("scenario template %q: %w", key, ErrInvalidProject)
-			}
-			if binding.Status != "active" {
-				return nil, fmt.Errorf("scenario template %q is %s: %w", key, binding.Status, ErrInvalidProject)
-			}
-			req.ScenarioTemplateKey = &key
-		}
-	}
-
 	// Resolve source kind: attach | git | none (legacy from repo binding).
 	sourceKind := req.SourceKind
 	if sourceKind == "" {
@@ -1052,7 +1036,6 @@ func (s *Service) GetProjectPortfolio(ctx context.Context, req GetProjectPortfol
 	s.attachWorkspaceGitStatusPortfolio(ctx, req.TenantID, resp.Items)
 	return resp, nil
 }
-
 
 func (s *Service) QueueProjectTask(ctx context.Context, req QueueProjectTaskRequest) (QueueProjectTaskResult, error) {
 	if req.TenantID == uuid.Nil || req.ProjectID == uuid.Nil || req.ProjectTaskID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
@@ -2493,21 +2476,20 @@ func (s *Service) SubmitDemand(ctx context.Context, req SubmitProjectDemandReque
 	if req.SourceType == "" {
 		req.SourceType = DemandSourceManual
 	}
-	if req.ScenarioTemplateKey != nil {
-		key := strings.TrimSpace(*req.ScenarioTemplateKey)
-		if key == "" {
-			req.ScenarioTemplateKey = nil
-		} else if s.scenarioTemplates != nil {
-			binding, err := s.scenarioTemplates.ResolveScenarioTemplate(ctx, req.TenantID, key)
-			if err != nil {
-				return nil, fmt.Errorf("scenario template %q: %w", key, ErrInvalidProject)
-			}
-			if binding.Status != "active" {
-				return nil, fmt.Errorf("scenario template %q is %s: %w", key, binding.Status, ErrInvalidProject)
-			}
-			req.ScenarioTemplateKey = &key
+	if req.ScenarioTemplateKey == nil || strings.TrimSpace(*req.ScenarioTemplateKey) == "" {
+		return nil, fmt.Errorf("%w: scenario_template_key is required", ErrInvalidProject)
+	}
+	key := strings.TrimSpace(*req.ScenarioTemplateKey)
+	if s.scenarioTemplates != nil {
+		binding, err := s.scenarioTemplates.ResolveScenarioTemplate(ctx, req.TenantID, key)
+		if err != nil {
+			return nil, fmt.Errorf("scenario template %q: %w", key, ErrInvalidProject)
+		}
+		if binding.Status != "active" {
+			return nil, fmt.Errorf("scenario template %q is %s: %w", key, binding.Status, ErrInvalidProject)
 		}
 	}
+	req.ScenarioTemplateKey = &key
 	project, err := s.repository.GetProject(ctx, req.TenantID, req.ProjectID)
 	if err != nil {
 		return nil, err

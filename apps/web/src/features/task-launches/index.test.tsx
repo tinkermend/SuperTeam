@@ -1,9 +1,10 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskLaunchView } from "@/features/task-launches";
+import type { WorkflowInstancesFilters } from "@/features/task-launches/components/workflow-instances-view";
 import type { Project } from "@/lib/api/projects";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
@@ -204,6 +205,39 @@ function createTaskLaunchFetcher({
         ...(includeSecondProject ? [makeProject("project-2")] : []),
       ]);
     }
+    if (url.pathname === "/api/v1/scenario-templates" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "tpl-1",
+          tenant_id: "tenant-1",
+          template_key: "software_delivery",
+          name: "软件交付",
+          description: "交付类场景",
+          spec: {},
+          status: "active",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ]);
+    }
+    if (url.pathname.match(/^\/api\/v1\/projects\/[^/]+\/budget-summary$/) && method === "GET") {
+      return jsonResponse({ exhausted: false, consumed_tokens: 0 });
+    }
+    if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (url.pathname === "/api/v1/digital-employees" && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (url.pathname.endsWith("/castings") || url.pathname.endsWith("/playbook-readiness")) {
+      return jsonResponse([]);
+    }
+    if (
+      url.pathname.match(/^\/api\/v1\/projects\/[^/]+$/) &&
+      method === "GET"
+    ) {
+      return jsonResponse(makeProject(url.pathname.split("/").pop()));
+    }
     if (url.pathname === "/api/v1/projects/project-1/demands" && method === "POST") {
       return jsonResponse(submittedDemand, 201);
     }
@@ -238,6 +272,41 @@ function createTaskLaunchFetcher({
   });
 }
 
+type HubFace = "chat" | "task";
+
+function TaskLaunchHarness({
+  apiBaseUrl,
+  face: initialFace = "task",
+  fetcher,
+}: {
+  apiBaseUrl: string;
+  face?: HubFace;
+  fetcher: typeof fetch;
+}) {
+  const [face, setFace] = useState<HubFace>(initialFace);
+  const [instanceFilters, setInstanceFilters] = useState<WorkflowInstancesFilters>({});
+  return (
+    <div>
+      <div role="tablist" aria-label="任务中枢视图">
+        <button type="button" role="tab" onClick={() => setFace("chat")}>
+          对话
+        </button>
+        <button type="button" role="tab" onClick={() => setFace("task")}>
+          任务
+        </button>
+      </div>
+      <TaskLaunchView
+        apiBaseUrl={apiBaseUrl}
+        face={face}
+        fetcher={fetcher}
+        instanceFilters={instanceFilters}
+        onFaceChange={setFace}
+        onInstanceFiltersChange={setInstanceFilters}
+      />
+    </div>
+  );
+}
+
 /** Extends the base task-launch fetcher with chat-mode endpoints (a single digital
  * employee and a run that completes immediately) so tests can drive the
  * chat -> 转为任务 -> submit flow and assert the resulting demand's source_refs. */
@@ -268,6 +337,28 @@ function createTaskLaunchFetcherWithChat({
 },
       ]);
     }
+    if (path === "/api/auth/me" && method === "GET") {
+      return jsonResponse({
+        user: {
+          id: "owner-1",
+          username: "owner",
+          display_name: "负责人",
+          tenant_id: "tenant-1",
+        },
+      });
+    }
+    if (path.match(/^\/api\/v1\/digital-employees\/[^/]+\/chat-threads$/) && method === "GET") {
+      return jsonResponse({ items: [] });
+    }
+    if (path.match(/^\/api\/v1\/projects\/[^/]+\/skill-bindings$/) && method === "GET") {
+      return jsonResponse([]);
+    }
+    if (path.match(/^\/api\/v1\/projects\/[^/]+$/) && method === "GET") {
+      return jsonResponse(makeProject(path.split("/").pop()!));
+    }
+    if (path.match(/^\/api\/v1\/projects\/[^/]+\/budget-summary$/) && method === "GET") {
+      return jsonResponse({ exhausted: false, consumed_tokens: 0 });
+    }
     // 参与门禁:chat 员工按项目成员过滤,emp-1 投影为锚点项目的 active 成员。
     const membersMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/members$/);
     if (membersMatch && method === "GET") {
@@ -294,6 +385,7 @@ function createTaskLaunchFetcherWithChat({
     if (path === "/api/v1/digital-employees/emp-1/runs" && method === "POST") {
       return jsonResponse(
         {
+          chat_thread_id: "run-1",
           command_id: "cmd-run-1",
           digital_employee_id: "emp-1",
           execution_instance_id: "instance-1",
@@ -316,6 +408,7 @@ function createTaskLaunchFetcherWithChat({
     }
     if (path === "/api/v1/digital-employees/emp-1/runs/run-1" && method === "GET") {
       return jsonResponse({
+        chat_thread_id: "run-1",
         command_id: "cmd-run-1",
         digital_employee_id: "emp-1",
         execution_instance_id: "instance-1",
@@ -464,12 +557,13 @@ describe("TaskLaunchView", () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await typeInLabeledField("需求描述", "审查这个开源项目的 PR，并按数量分配数字员工");
     await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
 
+    await selectScenarioTemplate();
     await clickButton("提交任务");
 
     await waitFor(() => {
@@ -479,7 +573,8 @@ describe("TaskLaunchView", () => {
         source_type: "manual",
         source_refs: {},
         attachments: [],
-        coordination_mode: "plan"
+        coordination_mode: "plan",
+        scenario_template_key: "software_delivery",
 });
     });
     expect(fetchPaths(fetcher)).not.toContain("/api/v1/projects/project-1/members");
@@ -495,7 +590,7 @@ describe("TaskLaunchView", () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcher({ includeSecondProject: true });
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await clickButton("项目");
@@ -503,6 +598,7 @@ describe("TaskLaunchView", () => {
     await clickButton("生产巡检项目");
     await typeInLabeledField("需求描述", "处理第二个项目的巡检问题");
 
+    await selectScenarioTemplate();
     await clickButton("提交任务");
 
     const body = postBody(fetcher, "/api/v1/projects/project-2/demands");
@@ -523,13 +619,14 @@ describe("TaskLaunchView", () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
     await clickButton("循环任务（Loop）");
     await typeInLabeledField("需求描述", "遇到阻塞时自动补做上游任务");
 
+    await selectScenarioTemplate();
     await clickButton("提交任务");
 
     await waitFor(() => {
@@ -542,12 +639,12 @@ describe("TaskLaunchView", () => {
   it("renders the pre-submit launch composer without orchestration state controls", async () => {
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(getByText("需求描述")).toBeTruthy());
 
-    expect(getByText("提出任务")).toBeTruthy();
+    expect(getByText("发起任务")).toBeTruthy();
     expect(queryByText("提交后由协调线程动态编排")).toBeNull();
     expect(getByText("需求描述")).toBeTruthy();
     expect(queryByText("中枢指令区")).toBeNull();
@@ -561,11 +658,12 @@ describe("TaskLaunchView", () => {
     expect(queryByText("优先级")).toBeNull();
     expect(queryByText("风险级别")).toBeNull();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeTruthy();
-    expect(document.querySelector(".glass")).toBeTruthy();
+    expect(document.querySelector(".hub-task-sheet")).toBeTruthy();
+    expect(document.querySelector(".glass")).toBeNull();
     expect(document.querySelector(".tl-btn-send")).toBeTruthy();
     // 壳 H1 唯一；内容区标题降为 h2（§3.1）
     expect(document.querySelectorAll("h1").length).toBe(1);
-    expect(document.querySelector("h2.tl-title")?.textContent).toBe("提出任务");
+    expect(document.querySelector("h2.tl-title")?.textContent).toBe("发起任务");
 
     expect(queryByText("Command Center")).toBeNull();
     expect(queryByText("Project routing")).toBeNull();
@@ -583,25 +681,17 @@ describe("TaskLaunchView", () => {
     expect(queryByText("备注")).toBeNull();
     expect(queryByText("待提交")).toBeNull();
     expect(queryByText("待生成")).toBeNull();
-    expect(queryByText("已完成")).toBeNull();
-    expect(queryByText("运行中")).toBeNull();
   });
 
-  it("switches to chat mode: hides the task-form parameter grid but keeps a required 项目 chip inside the chat panel slot", async () => {
+  it("opens chat face with project chip and session list, without task parameter grid", async () => {
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" face="chat" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
-    await clickButton("对话（Chat）");
-
-    await waitFor(() => {
-      expect(document.querySelector('[data-testid="chat-panel-slot"]')).toBeTruthy();
-    });
+    expect(document.querySelector('[data-testid="chat-session-list"]')).toBeTruthy();
     expect(document.querySelector('[data-testid="task-launch-parameters"]')).toBeNull();
-    // the 项目 chip moved into the chat panel (same aria-label/select pattern as
-    // task mode) rather than disappearing: chat runs are anchored to a project.
     expect(getByLabelText("项目")).toBeTruthy();
   });
 
@@ -609,12 +699,11 @@ describe("TaskLaunchView", () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcherWithChat();
     const { queryClient } = await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" face="chat" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
-    await clickButton("对话（Chat）");
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "如何配置这个项目？");
     await clickButton("发送");
@@ -635,6 +724,7 @@ describe("TaskLaunchView", () => {
     // conversion switches the composer back to plan mode with the draft prefilled
     await waitFor(() => expect(getByLabelText("项目")).toBeTruthy());
 
+    await selectScenarioTemplate();
     await clickButton("提交任务");
 
     await waitFor(() => {
@@ -652,12 +742,11 @@ describe("TaskLaunchView", () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcherWithChat({ includeSecondProject: true });
     const { queryClient } = await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" face="chat" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
-    await clickButton("对话（Chat）");
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     // anchor the chat conversation to the second project before asking anything
     await clickButton("项目");
@@ -666,7 +755,7 @@ describe("TaskLaunchView", () => {
     await act(async () => {
       await queryClient.refetchQueries();
     });
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -690,6 +779,7 @@ describe("TaskLaunchView", () => {
 
     // no manual project change here: conversion must have pre-selected project-2
     // (the chat anchor), overriding the form's original project-1 default
+    await selectScenarioTemplate();
     await clickButton("提交任务");
 
     await waitFor(() => {
@@ -707,12 +797,11 @@ describe("TaskLaunchView", () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcherWithChat();
     const { queryClient } = await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" face="chat" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
-    await clickButton("对话（Chat）");
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "如何配置这个项目？");
     await clickButton("发送");
@@ -726,10 +815,13 @@ describe("TaskLaunchView", () => {
 
     // switch back to chat, then to plan for an unrelated demand: lineage must not
     // leak onto this later submit
-    await clickButton("对话（Chat）");
+    await clickButton("对话");
+    await clickButton("任务");
+    await waitFor(() => expect(getByLabelText("计划任务（Plan）")).toBeTruthy());
     await clickButton("计划任务（Plan）");
     await typeInLabeledField("需求描述", "一个与对话无关的新需求");
 
+    await selectScenarioTemplate();
     await clickButton("提交任务");
 
     await waitFor(() => {
@@ -743,7 +835,7 @@ describe("TaskLaunchView", () => {
   it("shows template insert dialog with overwrite/append/cancel when content is non-empty", async () => {
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await typeInLabeledField("需求描述", "已有内容");
@@ -762,14 +854,14 @@ describe("TaskLaunchView", () => {
   it("renders mode card labels from the launch mode dictionary", async () => {
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(getByLabelText("计划任务（Plan）")).toBeTruthy());
     expect(getByLabelText("循环任务（Loop）")).toBeTruthy();
-    expect(getByLabelText("对话（Chat）")).toBeTruthy();
+    expect(() => getByLabelText("对话（Chat）")).toThrow();
 
-    const group = document.querySelector('[role="radiogroup"][aria-label="任务模式"]') as HTMLElement;
+    const group = document.querySelector('[role="radiogroup"][aria-label="阻塞策略"]') as HTMLElement;
     expect(group).toBeTruthy();
     const plan = getByLabelText("计划任务（Plan）") as HTMLButtonElement;
     expect(plan.tabIndex).toBe(0);
@@ -791,10 +883,16 @@ describe("TaskLaunchView", () => {
       if (url.pathname === "/api/v1/projects" && method === "GET") {
         return jsonResponse([]);
       }
+      if (url.pathname === "/api/v1/scenario-templates" && method === "GET") {
+        return jsonResponse([]);
+      }
+      if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
+        return jsonResponse([]);
+      }
       return jsonResponse({ message: `Unhandled ${method} ${url.pathname}` }, 404);
     });
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(document.querySelector('[data-testid="no-projects-empty"]')).toBeTruthy());
@@ -820,13 +918,31 @@ describe("TaskLaunchView", () => {
       if (url.pathname.includes("/budget-summary") && method === "GET") {
         return jsonResponse({ exhausted: false, consumed_tokens: 0 });
       }
+      if (url.pathname === "/api/v1/scenario-templates" && method === "GET") {
+        return jsonResponse([
+          {
+            id: "tpl-1",
+            tenant_id: "tenant-1",
+            template_key: "software_delivery",
+            name: "软件交付",
+            description: "",
+            spec: {},
+            status: "active",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ]);
+      }
+      if (url.pathname === "/api/v1/workflow-instances" && method === "GET") {
+        return jsonResponse([]);
+      }
       if (url.pathname === `/api/v1/projects/${far.id}` && method === "GET") {
         return jsonResponse(far);
       }
       return jsonResponse({ message: `Unhandled ${method} ${url.pathname}` }, 404);
     });
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
@@ -859,11 +975,12 @@ describe("TaskLaunchView", () => {
     mocks.navigate.mockClear();
     const fetcher = createTaskLaunchFetcher();
     await renderWithQueryClient(
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
+      <TaskLaunchHarness apiBaseUrl="http://control-plane.local" fetcher={fetcher} />,
     );
 
     await typeInLabeledField("需求描述", "第一条需求");
     await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
+    await selectScenarioTemplate();
     await clickButton("提交任务");
     await waitFor(() => expect(document.querySelector('[data-testid="submit-success-panel"]')).toBeTruthy());
 
@@ -874,6 +991,7 @@ describe("TaskLaunchView", () => {
     await clickButton("再提一个");
     await waitFor(() => expect(getByLabelText("需求描述")).toBeTruthy());
     await typeInLabeledField("需求描述", "第二条需求");
+    await selectScenarioTemplate();
     await clickButton("提交任务");
     await waitFor(() => expect(document.querySelector('[data-testid="submit-success-panel"]')).toBeTruthy());
     expect(mocks.navigate).not.toHaveBeenCalled();
@@ -926,6 +1044,13 @@ async function typeInLabeledField(label: string, value: string) {
   await act(async () => {
     setInputValue(input, value);
   });
+}
+
+
+async function selectScenarioTemplate(name = "软件交付") {
+  await waitFor(() => expect(getByLabelText("场景模板")).toBeTruthy());
+  await waitFor(() => expect(getByText(name)).toBeTruthy());
+  await clickButton(name);
 }
 
 async function clickButton(name: string) {

@@ -524,8 +524,8 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 		} `json:"summary"`
 		QueueSummary struct {
 			NeedsConfigurationCount int32 `json:"needs_configuration_count"`
-			StaleConfigCount           int32 `json:"stale_config_count"`
-			FailedRecentRunCount       int32 `json:"failed_recent_run_count"`
+			StaleConfigCount        int32 `json:"stale_config_count"`
+			FailedRecentRunCount    int32 `json:"failed_recent_run_count"`
 		} `json:"queue_summary"`
 		Items []struct {
 			IdentitySummary struct {
@@ -2049,6 +2049,14 @@ func (s *routeEmployeeRunService) CreateRun(ctx context.Context, req employee.Cr
 	run := routeEmployeeRun(req.TenantID, req.DigitalEmployeeID, employee.DigitalEmployeeRunStatusDispatching)
 	s.createdRun = run
 	return run, nil
+}
+
+func (s *routeEmployeeRunService) ListChatThreads(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) ([]employee.DigitalEmployeeChatThread, error) {
+	return nil, nil
+}
+
+func (s *routeEmployeeRunService) RenameChatThread(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, string) (*employee.DigitalEmployeeChatThread, error) {
+	return nil, employee.ErrNotFound
 }
 
 func (s *routeEmployeeRunService) ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter employee.DigitalEmployeeRunListFilter) (*employee.DigitalEmployeeRunListResult, error) {

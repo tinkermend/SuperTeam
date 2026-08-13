@@ -16,6 +16,7 @@ import (
 	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/externalintegration"
 	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/oplog"
@@ -61,6 +62,7 @@ type Server struct {
 	serviceAuthService             middleware.ServiceAuthService
 	onBehalfOfResolver             middleware.OnBehalfOfResolver
 	serviceTokenHandler            *serviceauth.HTTPHandler
+	externalIntegrationHandler     *externalintegration.HTTPHandler
 	feishuConnectorHandler         *feishu.ConnectorHTTPHandler
 	feishuAdminHandler             *feishu.AdminHTTPHandler
 	feishuOAuthHandler             *feishu.OAuthHTTPHandler
@@ -262,6 +264,16 @@ func (s *Server) SetServiceTokenHandler(handler *serviceauth.HTTPHandler) {
 	s.registerRoutes()
 }
 
+// SetExternalIntegrationHandler wires autonomy P5 external API integrations:
+// console-authed admin CRUD/token routes plus the two integration-token verbs.
+func (s *Server) SetExternalIntegrationHandler(handler *externalintegration.HTTPHandler) {
+	s.externalIntegrationHandler = handler
+	if s.authorizer != nil && handler != nil {
+		handler.SetAuthorizer(s.authorizer)
+	}
+	s.registerRoutes()
+}
+
 func (s *Server) SetFeishuHandlers(connectorHandler *feishu.ConnectorHTTPHandler, adminHandler *feishu.AdminHTTPHandler) {
 	s.feishuConnectorHandler = connectorHandler
 	s.feishuAdminHandler = adminHandler
@@ -343,6 +355,23 @@ func (s *Server) registerRoutes() {
 			})
 		}
 
+		if s.externalIntegrationHandler != nil {
+			if s.authService != nil {
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.ConsoleUserAuth(s.authService))
+					r.Get("/external-integrations", s.externalIntegrationHandler.ListIntegrations)
+					r.Post("/external-integrations", s.externalIntegrationHandler.CreateIntegration)
+					r.Patch("/external-integrations/{integrationId}", s.externalIntegrationHandler.UpdateIntegration)
+					r.Get("/external-integrations/{integrationId}/tokens", s.externalIntegrationHandler.ListTokens)
+					r.Post("/external-integrations/{integrationId}/tokens", s.externalIntegrationHandler.IssueToken)
+					r.Delete("/external-integrations/{integrationId}/tokens/{tokenId}", s.externalIntegrationHandler.RevokeToken)
+				})
+			}
+			// 外部两动词:专用 integration token 鉴权在 handler 内完成(非 session)。
+			r.Post("/external/chat-runs", s.externalIntegrationHandler.ExternalChatRun)
+			r.Post("/external/demands", s.externalIntegrationHandler.ExternalSubmitDemand)
+		}
+
 		if s.feishuAdminHandler != nil && s.authService != nil {
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.ConsoleUserAuth(s.authService))
@@ -394,6 +423,8 @@ func (s *Server) registerRoutes() {
 				r.Post("/digital-employees/{employeeId}/permission-changes", s.employeeHandler.SubmitPermissionChange)
 				r.Post("/digital-employees/{employeeId}/runs", s.employeeHandler.CreateDigitalEmployeeRun)
 				r.Get("/digital-employees/{employeeId}/runs", s.employeeHandler.ListDigitalEmployeeRuns)
+				r.Get("/digital-employees/{employeeId}/chat-threads", s.employeeHandler.ListDigitalEmployeeChatThreads)
+				r.Patch("/digital-employees/{employeeId}/chat-threads/{threadId}", s.employeeHandler.PatchDigitalEmployeeChatThread)
 				r.Get("/digital-employees/{employeeId}/run-stats", s.employeeHandler.GetDigitalEmployeeRunStats)
 				r.Get("/digital-employees/{employeeId}/run-calendar", s.employeeHandler.GetDigitalEmployeeRunCalendar)
 				r.Get("/digital-employees/{employeeId}/runs/{runId}", s.employeeHandler.GetDigitalEmployeeRun)

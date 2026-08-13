@@ -152,3 +152,31 @@ func TestParseSpecEmptyIsGeneric(t *testing.T) {
 		t.Fatalf("expected zero-value SpecV2, got %#v", spec)
 	}
 }
+
+func TestParseSpecAutonomyFields(t *testing.T) {
+	spec, err := ParseSpec(map[string]any{
+		"spec_version":      2,
+		"autonomy_default":  "full_auto",
+		"autonomy_ceiling":  "full_auto",
+		"roles":             []any{map[string]any{"key": "executor", "title": "执行者"}},
+		"skeleton":          []any{map[string]any{"step": "execute", "role": "executor"}},
+		"exits":             []any{map[string]any{"deliverable": "outcome", "label": "完成"}},
+	})
+	if err != nil {
+		t.Fatalf("ParseSpec: %v", err)
+	}
+	if spec.AutonomyDefault != "full_auto" || spec.AutonomyCeiling != "full_auto" {
+		t.Fatalf("autonomy fields: %#v", spec)
+	}
+	_, err = ParseSpec(map[string]any{
+		"spec_version":     2,
+		"autonomy_default": "full_auto",
+		"autonomy_ceiling": "pause_at_gate",
+		"roles":            []any{map[string]any{"key": "executor", "title": "执行者"}},
+		"skeleton":         []any{map[string]any{"step": "execute", "role": "executor"}},
+		"exits":            []any{map[string]any{"deliverable": "outcome", "label": "完成"}},
+	})
+	if err == nil {
+		t.Fatal("expected default>ceiling error")
+	}
+}

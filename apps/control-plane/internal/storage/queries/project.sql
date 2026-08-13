@@ -18,7 +18,6 @@ INSERT INTO projects (
     repo_git_credential_ref,
     repo_scope,
     repo_binding_status,
-    scenario_template_key,
     workspace_ready_status,
     workspace_ready_at,
     workspace_ownership
@@ -41,7 +40,6 @@ INSERT INTO projects (
     sqlc.narg('repo_git_credential_ref')::varchar,
     COALESCE(sqlc.narg('repo_scope')::jsonb, '[]'::jsonb),
     COALESCE(sqlc.narg('repo_binding_status')::varchar, 'unbound'),
-    sqlc.narg('scenario_template_key')::text,
     COALESCE(sqlc.narg('workspace_ready_status')::varchar, 'ready'),
     sqlc.narg('workspace_ready_at')::timestamptz,
     COALESCE(sqlc.narg('workspace_ownership')::varchar, 'platform_managed')

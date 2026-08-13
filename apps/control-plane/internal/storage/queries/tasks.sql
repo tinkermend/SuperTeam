@@ -276,7 +276,8 @@ created_task AS (
         risk_level,
         run_kind,
         resume_of_run_id,
-        chat_thread_id
+        chat_thread_id,
+        thread_title
     )
     SELECT
         CASE
@@ -304,7 +305,8 @@ created_task AS (
         COALESCE(sqlc.narg('risk_level')::varchar, 'normal'),
         sqlc.arg('run_kind')::varchar,
         sqlc.narg('resume_of_run_id')::uuid,
-        sqlc.narg('chat_thread_id')::uuid
+        sqlc.narg('chat_thread_id')::uuid,
+        sqlc.narg('thread_title')::text
     FROM idempotency_input
     CROSS JOIN lock_barrier
     CROSS JOIN LATERAL (
@@ -538,6 +540,12 @@ SELECT
     t.run_kind,
     t.resume_of_run_id,
     t.chat_thread_id,
+    t.creator_id,
+    COALESCE(
+      NULLIF(creator.display_name, ''),
+      NULLIF(creator.username, ''),
+      t.creator_id::text
+    )::text AS creator_display_name,
     p.name AS project_name,
     (p.deleted_at IS NOT NULL)::boolean AS project_deleted,
     jsonb_array_length(tr.work_products) AS work_product_count
@@ -546,6 +554,8 @@ JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 LEFT JOIN projects p
   ON p.tenant_id = tr.tenant_id
  AND p.id = tr.project_id
+LEFT JOIN auth_users creator
+  ON creator.id = t.creator_id AND creator.deleted_at IS NULL
 WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
   AND t.deleted_at IS NULL
@@ -649,3 +659,162 @@ WITH inserted AS (
     RETURNING *, (xmax = 0) AS inserted
 )
 SELECT * FROM inserted;
+
+-- name: ListDigitalEmployeeChatThreads :many
+-- 聚合 (employee, project) 下全部 chat 会话；标题/发起人/接续人/末问/活跃态。
+WITH chat_runs AS (
+  SELECT
+    tr.id AS run_id,
+    tr.status,
+    tr.created_at,
+    tr.updated_at,
+    tr.project_id,
+    t.title AS task_title,
+    t.creator_id,
+    t.thread_title,
+    t.chat_thread_id AS stored_thread_id,
+    COALESCE(t.chat_thread_id, tr.id) AS thread_id,
+    (t.chat_thread_id IS NULL) AS is_root
+  FROM task_runs tr
+  JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+  WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+    AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+    AND tr.project_id = sqlc.arg('project_id')::uuid
+    AND t.run_kind = 'chat'
+    AND t.deleted_at IS NULL
+),
+thread_agg AS (
+  SELECT
+    thread_id,
+    MAX(updated_at) AS last_active_at,
+    BOOL_OR(status IN ('queued', 'dispatching', 'running', 'cancelling')) AS has_active_run
+  FROM chat_runs
+  GROUP BY thread_id
+),
+root_rows AS (
+  SELECT DISTINCT ON (thread_id)
+    thread_id,
+    run_id AS root_run_id,
+    creator_id AS initiator_user_id,
+    thread_title,
+    task_title AS root_task_title
+  FROM chat_runs
+  WHERE is_root
+  ORDER BY thread_id, created_at ASC
+),
+last_human AS (
+  SELECT DISTINCT ON (thread_id)
+    thread_id,
+    creator_id AS last_speaker_user_id,
+    task_title AS last_prompt
+  FROM chat_runs
+  ORDER BY thread_id, created_at DESC
+),
+active_runner AS (
+  SELECT DISTINCT ON (thread_id)
+    thread_id,
+    creator_id AS active_runner_user_id
+  FROM chat_runs
+  WHERE status IN ('queued', 'dispatching', 'running', 'cancelling')
+  ORDER BY thread_id, created_at DESC
+)
+SELECT
+  ta.thread_id AS chat_thread_id,
+  COALESCE(NULLIF(rr.thread_title, ''), rr.root_task_title)::text AS thread_title,
+  rr.initiator_user_id,
+  COALESCE(
+    NULLIF(initiator.display_name, ''),
+    NULLIF(initiator.username, ''),
+    rr.initiator_user_id::text
+  )::text AS initiator_display_name,
+  lh.last_speaker_user_id,
+  COALESCE(
+    NULLIF(speaker.display_name, ''),
+    NULLIF(speaker.username, ''),
+    lh.last_speaker_user_id::text
+  )::text AS last_speaker_display_name,
+  lh.last_prompt,
+  ta.last_active_at,
+  ta.has_active_run,
+  ar.active_runner_user_id,
+  CASE
+    WHEN ar.active_runner_user_id IS NULL THEN ''::text
+    ELSE COALESCE(
+      NULLIF(runner.display_name, ''),
+      NULLIF(runner.username, ''),
+      ar.active_runner_user_id::text
+    )::text
+  END AS active_runner_display_name
+FROM thread_agg ta
+JOIN root_rows rr ON rr.thread_id = ta.thread_id
+JOIN last_human lh ON lh.thread_id = ta.thread_id
+LEFT JOIN active_runner ar ON ar.thread_id = ta.thread_id
+LEFT JOIN auth_users initiator
+  ON initiator.id = rr.initiator_user_id AND initiator.deleted_at IS NULL
+LEFT JOIN auth_users speaker
+  ON speaker.id = lh.last_speaker_user_id AND speaker.deleted_at IS NULL
+LEFT JOIN auth_users runner
+  ON runner.id = ar.active_runner_user_id AND runner.deleted_at IS NULL
+ORDER BY ta.last_active_at DESC;
+
+-- name: GetDigitalEmployeeChatThreadRoot :one
+SELECT
+  tr.id AS root_run_id,
+  tr.project_id,
+  t.id AS task_id,
+  t.creator_id AS initiator_user_id,
+  t.thread_title,
+  t.title AS root_task_title,
+  COALESCE(
+    NULLIF(u.display_name, ''),
+    NULLIF(u.username, ''),
+    t.creator_id::text
+  )::text AS initiator_display_name
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN auth_users u
+  ON u.id = t.creator_id AND u.deleted_at IS NULL
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND tr.id = sqlc.arg('thread_id')::uuid
+  AND t.run_kind = 'chat'
+  AND t.chat_thread_id IS NULL
+  AND t.deleted_at IS NULL;
+
+-- name: UpdateChatThreadTitle :one
+UPDATE tasks t
+SET thread_title = sqlc.arg('thread_title')::text,
+    updated_at = NOW()
+FROM task_runs tr
+WHERE t.id = tr.task_id
+  AND t.tenant_id = tr.tenant_id
+  AND tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND tr.id = sqlc.arg('thread_id')::uuid
+  AND t.run_kind = 'chat'
+  AND t.chat_thread_id IS NULL
+  AND t.deleted_at IS NULL
+RETURNING t.id, t.thread_title, t.creator_id;
+
+-- name: GetActiveChatRunOnThread :one
+SELECT
+  tr.id AS run_id,
+  t.creator_id AS runner_user_id,
+  COALESCE(
+    NULLIF(u.display_name, ''),
+    NULLIF(u.username, ''),
+    t.creator_id::text
+  )::text AS runner_display_name,
+  tr.status
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN auth_users u
+  ON u.id = t.creator_id AND u.deleted_at IS NULL
+WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND t.run_kind = 'chat'
+  AND t.deleted_at IS NULL
+  AND tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+  AND (t.chat_thread_id = sqlc.arg('thread_id')::uuid OR tr.id = sqlc.arg('thread_id')::uuid)
+ORDER BY tr.created_at DESC
+LIMIT 1;

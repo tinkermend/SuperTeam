@@ -30,8 +30,9 @@ func (g *ProjectServiceGateway) GetProject(ctx context.Context, tenantID, projec
 		return ProjectInfo{}, ErrNotFound
 	}
 	info := ProjectInfo{
-		ID:   record.ID,
-		Name: record.Name,
+		ID:                 record.ID,
+		Name:               record.Name,
+		CoordinationPolicy: record.CoordinationPolicy,
 	}
 	if record.TeamID != nil {
 		info.TeamID = *record.TeamID

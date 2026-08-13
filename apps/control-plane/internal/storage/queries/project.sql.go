@@ -122,7 +122,7 @@ SET status = 'archived',
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
 `
 
 type ArchiveProjectParams struct {
@@ -154,7 +154,6 @@ func (q *Queries) ArchiveProject(ctx context.Context, arg ArchiveProjectParams) 
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -909,7 +908,7 @@ func (q *Queries) CountProjectDemandsByTerminality(ctx context.Context, arg Coun
 
 const CountProjectPortfolioItems = `-- name: CountProjectPortfolioItems :one
 WITH visible_projects AS (
-  SELECT p.id, p.tenant_id, p.team_id, p.name, p.description, p.goal, p.status, p.human_owner_user_id, p.coordination_workflow_id, p.coordination_status, p.coordination_policy, p.archived_at, p.created_at, p.updated_at, p.repo_url, p.repo_default_branch, p.repo_git_credential_ref, p.repo_scope, p.repo_binding_status, p.deleted_at, p.scenario_template_key, p.human_owner_user_ids, p.workspace_ready_status, p.primary_runtime_node_id, p.workspace_ready_error, p.workspace_ready_at, p.directory_name, p.budget_token_limit, p.workspace_ownership
+  SELECT p.id, p.tenant_id, p.team_id, p.name, p.description, p.goal, p.status, p.human_owner_user_id, p.coordination_workflow_id, p.coordination_status, p.coordination_policy, p.archived_at, p.created_at, p.updated_at, p.repo_url, p.repo_default_branch, p.repo_git_credential_ref, p.repo_scope, p.repo_binding_status, p.deleted_at, p.human_owner_user_ids, p.workspace_ready_status, p.primary_runtime_node_id, p.workspace_ready_error, p.workspace_ready_at, p.directory_name, p.budget_token_limit, p.workspace_ownership
   FROM projects p
   WHERE p.tenant_id = $1::uuid
     AND p.deleted_at IS NULL
@@ -1103,7 +1102,6 @@ INSERT INTO projects (
     repo_git_credential_ref,
     repo_scope,
     repo_binding_status,
-    scenario_template_key,
     workspace_ready_status,
     workspace_ready_at,
     workspace_ownership
@@ -1126,11 +1124,10 @@ INSERT INTO projects (
     $16::varchar,
     COALESCE($17::jsonb, '[]'::jsonb),
     COALESCE($18::varchar, 'unbound'),
-    $19::text,
-    COALESCE($20::varchar, 'ready'),
-    $21::timestamptz,
-    COALESCE($22::varchar, 'platform_managed')
-) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
+    COALESCE($19::varchar, 'ready'),
+    $20::timestamptz,
+    COALESCE($21::varchar, 'platform_managed')
+) RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
 `
 
 type CreateProjectParams struct {
@@ -1152,7 +1149,6 @@ type CreateProjectParams struct {
 	RepoGitCredentialRef   pgtype.Text        `json:"repo_git_credential_ref"`
 	RepoScope              []byte             `json:"repo_scope"`
 	RepoBindingStatus      pgtype.Text        `json:"repo_binding_status"`
-	ScenarioTemplateKey    pgtype.Text        `json:"scenario_template_key"`
 	WorkspaceReadyStatus   pgtype.Text        `json:"workspace_ready_status"`
 	WorkspaceReadyAt       pgtype.Timestamptz `json:"workspace_ready_at"`
 	WorkspaceOwnership     pgtype.Text        `json:"workspace_ownership"`
@@ -1178,7 +1174,6 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.RepoGitCredentialRef,
 		arg.RepoScope,
 		arg.RepoBindingStatus,
-		arg.ScenarioTemplateKey,
 		arg.WorkspaceReadyStatus,
 		arg.WorkspaceReadyAt,
 		arg.WorkspaceOwnership,
@@ -1205,7 +1200,6 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -3335,7 +3329,7 @@ func (q *Queries) GetPendingDemandAcceptanceDecisionByPlanRevision(ctx context.C
 }
 
 const GetProject = `-- name: GetProject :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND deleted_at IS NULL
@@ -3370,7 +3364,6 @@ func (q *Queries) GetProject(ctx context.Context, arg GetProjectParams) (Project
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -3729,7 +3722,7 @@ func (q *Queries) GetProjectEventByTypeAndActor(ctx context.Context, arg GetProj
 }
 
 const GetProjectForDelete = `-- name: GetProjectForDelete :one
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership FROM projects
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND deleted_at IS NULL
@@ -3765,7 +3758,6 @@ func (q *Queries) GetProjectForDelete(ctx context.Context, arg GetProjectForDele
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -6610,7 +6602,7 @@ func (q *Queries) ListProjectPlanRevisionsForDemand(ctx context.Context, arg Lis
 
 const ListProjectPortfolioItems = `-- name: ListProjectPortfolioItems :many
 WITH visible_projects AS (
-  SELECT p.id, p.tenant_id, p.team_id, p.name, p.description, p.goal, p.status, p.human_owner_user_id, p.coordination_workflow_id, p.coordination_status, p.coordination_policy, p.archived_at, p.created_at, p.updated_at, p.repo_url, p.repo_default_branch, p.repo_git_credential_ref, p.repo_scope, p.repo_binding_status, p.deleted_at, p.scenario_template_key, p.human_owner_user_ids, p.workspace_ready_status, p.primary_runtime_node_id, p.workspace_ready_error, p.workspace_ready_at, p.directory_name, p.budget_token_limit, p.workspace_ownership
+  SELECT p.id, p.tenant_id, p.team_id, p.name, p.description, p.goal, p.status, p.human_owner_user_id, p.coordination_workflow_id, p.coordination_status, p.coordination_policy, p.archived_at, p.created_at, p.updated_at, p.repo_url, p.repo_default_branch, p.repo_git_credential_ref, p.repo_scope, p.repo_binding_status, p.deleted_at, p.human_owner_user_ids, p.workspace_ready_status, p.primary_runtime_node_id, p.workspace_ready_error, p.workspace_ready_at, p.directory_name, p.budget_token_limit, p.workspace_ownership
   FROM projects p
   WHERE p.tenant_id = $2::uuid
     AND p.deleted_at IS NULL
@@ -6629,7 +6621,7 @@ WITH visible_projects AS (
     )
 ),
 filtered_projects AS (
-  SELECT vp.id, vp.tenant_id, vp.team_id, vp.name, vp.description, vp.goal, vp.status, vp.human_owner_user_id, vp.coordination_workflow_id, vp.coordination_status, vp.coordination_policy, vp.archived_at, vp.created_at, vp.updated_at, vp.repo_url, vp.repo_default_branch, vp.repo_git_credential_ref, vp.repo_scope, vp.repo_binding_status, vp.deleted_at, vp.scenario_template_key, vp.human_owner_user_ids, vp.workspace_ready_status, vp.primary_runtime_node_id, vp.workspace_ready_error, vp.workspace_ready_at, vp.directory_name, vp.budget_token_limit, vp.workspace_ownership
+  SELECT vp.id, vp.tenant_id, vp.team_id, vp.name, vp.description, vp.goal, vp.status, vp.human_owner_user_id, vp.coordination_workflow_id, vp.coordination_status, vp.coordination_policy, vp.archived_at, vp.created_at, vp.updated_at, vp.repo_url, vp.repo_default_branch, vp.repo_git_credential_ref, vp.repo_scope, vp.repo_binding_status, vp.deleted_at, vp.human_owner_user_ids, vp.workspace_ready_status, vp.primary_runtime_node_id, vp.workspace_ready_error, vp.workspace_ready_at, vp.directory_name, vp.budget_token_limit, vp.workspace_ownership
   FROM visible_projects vp
   WHERE (
       $5::text IS NULL
@@ -6728,7 +6720,7 @@ evidence_agg AS (
 ),
 candidate_projects AS (
   SELECT
-    fp.id, fp.tenant_id, fp.team_id, fp.name, fp.description, fp.goal, fp.status, fp.human_owner_user_id, fp.coordination_workflow_id, fp.coordination_status, fp.coordination_policy, fp.archived_at, fp.created_at, fp.updated_at, fp.repo_url, fp.repo_default_branch, fp.repo_git_credential_ref, fp.repo_scope, fp.repo_binding_status, fp.deleted_at, fp.scenario_template_key, fp.human_owner_user_ids, fp.workspace_ready_status, fp.primary_runtime_node_id, fp.workspace_ready_error, fp.workspace_ready_at, fp.directory_name, fp.budget_token_limit, fp.workspace_ownership,
+    fp.id, fp.tenant_id, fp.team_id, fp.name, fp.description, fp.goal, fp.status, fp.human_owner_user_id, fp.coordination_workflow_id, fp.coordination_status, fp.coordination_policy, fp.archived_at, fp.created_at, fp.updated_at, fp.repo_url, fp.repo_default_branch, fp.repo_git_credential_ref, fp.repo_scope, fp.repo_binding_status, fp.deleted_at, fp.human_owner_user_ids, fp.workspace_ready_status, fp.primary_runtime_node_id, fp.workspace_ready_error, fp.workspace_ready_at, fp.directory_name, fp.budget_token_limit, fp.workspace_ownership,
     COALESCE(t.task_total, 0)::integer AS task_total,
     COALESCE(t.task_pending, 0)::integer AS task_pending,
     COALESCE(t.task_queued, 0)::integer AS task_queued,
@@ -8085,7 +8077,7 @@ func (q *Queries) ListProjectTransferRequests(ctx context.Context, arg ListProje
 }
 
 const ListProjects = `-- name: ListProjects :many
-SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership FROM projects
+SELECT id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership FROM projects
 WHERE tenant_id = $1::uuid
   AND deleted_at IS NULL
   AND ($2::varchar IS NULL OR status = $2::varchar)
@@ -8143,7 +8135,6 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.RepoScope,
 			&i.RepoBindingStatus,
 			&i.DeletedAt,
-			&i.ScenarioTemplateKey,
 			&i.HumanOwnerUserIds,
 			&i.WorkspaceReadyStatus,
 			&i.PrimaryRuntimeNodeID,
@@ -10646,7 +10637,7 @@ SET budget_token_limit = $1::bigint,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
 `
 
 type SetProjectBudgetTokenLimitParams struct {
@@ -10681,7 +10672,6 @@ func (q *Queries) SetProjectBudgetTokenLimit(ctx context.Context, arg SetProject
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -10880,7 +10870,7 @@ WHERE tenant_id = $4::uuid
       ELSE TRUE
     END
   )
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
 `
 
 type SetProjectWorkspaceReadyParams struct {
@@ -10922,7 +10912,6 @@ func (q *Queries) SetProjectWorkspaceReady(ctx context.Context, arg SetProjectWo
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -10943,7 +10932,7 @@ SET deleted_at = COALESCE(deleted_at, $1::timestamptz),
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND deleted_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
 `
 
 type SoftDeleteProjectParams struct {
@@ -10976,7 +10965,6 @@ func (q *Queries) SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectPa
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -11202,7 +11190,7 @@ SET status = $1::varchar,
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
   AND status = ANY($4::varchar[])
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
 `
 
 type TransitionProjectStatusParams struct {
@@ -11244,7 +11232,6 @@ func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionPro
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -11265,7 +11252,7 @@ SET status = 'running',
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
   AND status = 'archived'
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
 `
 
 type UnarchiveProjectParams struct {
@@ -11298,7 +11285,6 @@ func (q *Queries) UnarchiveProject(ctx context.Context, arg UnarchiveProjectPara
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,
@@ -11346,7 +11332,7 @@ SET
 WHERE tenant_id = $13::uuid
   AND id = $14::uuid
   AND archived_at IS NULL
-RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, scenario_template_key, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
+RETURNING id, tenant_id, team_id, name, description, goal, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, archived_at, created_at, updated_at, repo_url, repo_default_branch, repo_git_credential_ref, repo_scope, repo_binding_status, deleted_at, human_owner_user_ids, workspace_ready_status, primary_runtime_node_id, workspace_ready_error, workspace_ready_at, directory_name, budget_token_limit, workspace_ownership
 `
 
 type UpdateProjectParams struct {
@@ -11405,7 +11391,6 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.RepoScope,
 		&i.RepoBindingStatus,
 		&i.DeletedAt,
-		&i.ScenarioTemplateKey,
 		&i.HumanOwnerUserIds,
 		&i.WorkspaceReadyStatus,
 		&i.PrimaryRuntimeNodeID,

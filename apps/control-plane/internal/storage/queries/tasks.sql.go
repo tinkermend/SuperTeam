@@ -19,7 +19,7 @@ SET status = 'cancelled',
     updated_at = NOW()
 WHERE id = $1::uuid
   AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title
 `
 
 type CancelTaskParams struct {
@@ -53,6 +53,7 @@ func (q *Queries) CancelTask(ctx context.Context, arg CancelTaskParams) (Task, e
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
+		&i.ThreadTitle,
 	)
 	return i, err
 }
@@ -212,7 +213,8 @@ created_task AS (
         risk_level,
         run_kind,
         resume_of_run_id,
-        chat_thread_id
+        chat_thread_id,
+        thread_title
     )
     SELECT
         CASE
@@ -240,7 +242,8 @@ created_task AS (
         COALESCE($14::varchar, 'normal'),
         $15::varchar,
         $16::uuid,
-        $17::uuid
+        $17::uuid,
+        $18::text
     FROM idempotency_input
     CROSS JOIN lock_barrier
     CROSS JOIN LATERAL (
@@ -253,7 +256,7 @@ created_task AS (
     WHERE NOT EXISTS (SELECT 1 FROM existing_run)
       AND NOT EXISTS (SELECT 1 FROM conflicting_run)
     ON CONFLICT (id) DO UPDATE SET id = tasks.id
-    RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id
+    RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title
 ),
 created_run AS (
     INSERT INTO task_runs (
@@ -276,19 +279,19 @@ created_run AS (
     SELECT
         created_task.tenant_id,
         created_task.id,
-        $18::varchar,
-        $19::uuid,
-        $20::varchar,
+        $19::varchar,
+        $20::uuid,
         $21::varchar,
         $22::varchar,
+        $23::varchar,
         $4::uuid,
-        $23::uuid,
+        $24::uuid,
         idempotency_input.idempotency_key,
         idempotency_input.idempotency_fingerprint,
-        $24::integer,
         $25::integer,
+        $26::integer,
         $9::varchar,
-        $26::uuid
+        $27::uuid
     FROM created_task
     CROSS JOIN idempotency_input
     WHERE NOT EXISTS (SELECT 1 FROM existing_run)
@@ -350,6 +353,7 @@ type CreateDigitalEmployeeTaskRunParams struct {
 	RunKind                string        `json:"run_kind"`
 	ResumeOfRunID          uuid.NullUUID `json:"resume_of_run_id"`
 	ChatThreadID           uuid.NullUUID `json:"chat_thread_id"`
+	ThreadTitle            pgtype.Text   `json:"thread_title"`
 	NodeID                 string        `json:"node_id"`
 	RuntimeNodeID          uuid.UUID     `json:"runtime_node_id"`
 	ProviderSessionID      pgtype.Text   `json:"provider_session_id"`
@@ -388,6 +392,7 @@ func (q *Queries) CreateDigitalEmployeeTaskRun(ctx context.Context, arg CreateDi
 		arg.RunKind,
 		arg.ResumeOfRunID,
 		arg.ChatThreadID,
+		arg.ThreadTitle,
 		arg.NodeID,
 		arg.RuntimeNodeID,
 		arg.ProviderSessionID,
@@ -434,7 +439,7 @@ INSERT INTO tasks (
     $9::varchar,
     $10::text,
     COALESCE($11::jsonb, '{}'::jsonb)
-) RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id
+) RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title
 `
 
 type CreateTaskParams struct {
@@ -489,6 +494,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (Task, e
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
+		&i.ThreadTitle,
 	)
 	return i, err
 }
@@ -732,6 +738,55 @@ func (q *Queries) DeleteTask(ctx context.Context, arg DeleteTaskParams) error {
 	return err
 }
 
+const GetActiveChatRunOnThread = `-- name: GetActiveChatRunOnThread :one
+SELECT
+  tr.id AS run_id,
+  t.creator_id AS runner_user_id,
+  COALESCE(
+    NULLIF(u.display_name, ''),
+    NULLIF(u.username, ''),
+    t.creator_id::text
+  )::text AS runner_display_name,
+  tr.status
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN auth_users u
+  ON u.id = t.creator_id AND u.deleted_at IS NULL
+WHERE tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+  AND t.run_kind = 'chat'
+  AND t.deleted_at IS NULL
+  AND tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+  AND (t.chat_thread_id = $3::uuid OR tr.id = $3::uuid)
+ORDER BY tr.created_at DESC
+LIMIT 1
+`
+
+type GetActiveChatRunOnThreadParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	ThreadID          uuid.UUID `json:"thread_id"`
+}
+
+type GetActiveChatRunOnThreadRow struct {
+	RunID             uuid.UUID     `json:"run_id"`
+	RunnerUserID      uuid.NullUUID `json:"runner_user_id"`
+	RunnerDisplayName string        `json:"runner_display_name"`
+	Status            string        `json:"status"`
+}
+
+func (q *Queries) GetActiveChatRunOnThread(ctx context.Context, arg GetActiveChatRunOnThreadParams) (GetActiveChatRunOnThreadRow, error) {
+	row := q.db.QueryRow(ctx, GetActiveChatRunOnThread, arg.TenantID, arg.DigitalEmployeeID, arg.ThreadID)
+	var i GetActiveChatRunOnThreadRow
+	err := row.Scan(
+		&i.RunID,
+		&i.RunnerUserID,
+		&i.RunnerDisplayName,
+		&i.Status,
+	)
+	return i, err
+}
+
 const GetActiveDigitalEmployeeRun = `-- name: GetActiveDigitalEmployeeRun :one
 SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id, tr.failure_acknowledged_at, tr.failure_acknowledged_by, tr.project_id
 FROM task_runs tr
@@ -789,6 +844,62 @@ func (q *Queries) GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActive
 		&i.FailureAcknowledgedAt,
 		&i.FailureAcknowledgedBy,
 		&i.ProjectID,
+	)
+	return i, err
+}
+
+const GetDigitalEmployeeChatThreadRoot = `-- name: GetDigitalEmployeeChatThreadRoot :one
+SELECT
+  tr.id AS root_run_id,
+  tr.project_id,
+  t.id AS task_id,
+  t.creator_id AS initiator_user_id,
+  t.thread_title,
+  t.title AS root_task_title,
+  COALESCE(
+    NULLIF(u.display_name, ''),
+    NULLIF(u.username, ''),
+    t.creator_id::text
+  )::text AS initiator_display_name
+FROM task_runs tr
+JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+LEFT JOIN auth_users u
+  ON u.id = t.creator_id AND u.deleted_at IS NULL
+WHERE tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+  AND tr.id = $3::uuid
+  AND t.run_kind = 'chat'
+  AND t.chat_thread_id IS NULL
+  AND t.deleted_at IS NULL
+`
+
+type GetDigitalEmployeeChatThreadRootParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	ThreadID          uuid.UUID `json:"thread_id"`
+}
+
+type GetDigitalEmployeeChatThreadRootRow struct {
+	RootRunID            uuid.UUID     `json:"root_run_id"`
+	ProjectID            uuid.UUID     `json:"project_id"`
+	TaskID               uuid.UUID     `json:"task_id"`
+	InitiatorUserID      uuid.NullUUID `json:"initiator_user_id"`
+	ThreadTitle          pgtype.Text   `json:"thread_title"`
+	RootTaskTitle        string        `json:"root_task_title"`
+	InitiatorDisplayName string        `json:"initiator_display_name"`
+}
+
+func (q *Queries) GetDigitalEmployeeChatThreadRoot(ctx context.Context, arg GetDigitalEmployeeChatThreadRootParams) (GetDigitalEmployeeChatThreadRootRow, error) {
+	row := q.db.QueryRow(ctx, GetDigitalEmployeeChatThreadRoot, arg.TenantID, arg.DigitalEmployeeID, arg.ThreadID)
+	var i GetDigitalEmployeeChatThreadRootRow
+	err := row.Scan(
+		&i.RootRunID,
+		&i.ProjectID,
+		&i.TaskID,
+		&i.InitiatorUserID,
+		&i.ThreadTitle,
+		&i.RootTaskTitle,
+		&i.InitiatorDisplayName,
 	)
 	return i, err
 }
@@ -1116,7 +1227,7 @@ func (q *Queries) GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunPara
 }
 
 const GetTask = `-- name: GetTask :one
-SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id FROM tasks
+SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title FROM tasks
 WHERE id = $1::uuid
   AND tenant_id = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
 `
@@ -1152,6 +1263,7 @@ func (q *Queries) GetTask(ctx context.Context, arg GetTaskParams) (Task, error) 
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
+		&i.ThreadTitle,
 	)
 	return i, err
 }
@@ -1242,6 +1354,156 @@ func (q *Queries) GetTaskRun(ctx context.Context, arg GetTaskRunParams) (TaskRun
 		&i.ProjectID,
 	)
 	return i, err
+}
+
+const ListDigitalEmployeeChatThreads = `-- name: ListDigitalEmployeeChatThreads :many
+WITH chat_runs AS (
+  SELECT
+    tr.id AS run_id,
+    tr.status,
+    tr.created_at,
+    tr.updated_at,
+    tr.project_id,
+    t.title AS task_title,
+    t.creator_id,
+    t.thread_title,
+    t.chat_thread_id AS stored_thread_id,
+    COALESCE(t.chat_thread_id, tr.id) AS thread_id,
+    (t.chat_thread_id IS NULL) AS is_root
+  FROM task_runs tr
+  JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
+  WHERE tr.tenant_id = $1::uuid
+    AND tr.digital_employee_id = $2::uuid
+    AND tr.project_id = $3::uuid
+    AND t.run_kind = 'chat'
+    AND t.deleted_at IS NULL
+),
+thread_agg AS (
+  SELECT
+    thread_id,
+    MAX(updated_at) AS last_active_at,
+    BOOL_OR(status IN ('queued', 'dispatching', 'running', 'cancelling')) AS has_active_run
+  FROM chat_runs
+  GROUP BY thread_id
+),
+root_rows AS (
+  SELECT DISTINCT ON (thread_id)
+    thread_id,
+    run_id AS root_run_id,
+    creator_id AS initiator_user_id,
+    thread_title,
+    task_title AS root_task_title
+  FROM chat_runs
+  WHERE is_root
+  ORDER BY thread_id, created_at ASC
+),
+last_human AS (
+  SELECT DISTINCT ON (thread_id)
+    thread_id,
+    creator_id AS last_speaker_user_id,
+    task_title AS last_prompt
+  FROM chat_runs
+  ORDER BY thread_id, created_at DESC
+),
+active_runner AS (
+  SELECT DISTINCT ON (thread_id)
+    thread_id,
+    creator_id AS active_runner_user_id
+  FROM chat_runs
+  WHERE status IN ('queued', 'dispatching', 'running', 'cancelling')
+  ORDER BY thread_id, created_at DESC
+)
+SELECT
+  ta.thread_id AS chat_thread_id,
+  COALESCE(NULLIF(rr.thread_title, ''), rr.root_task_title)::text AS thread_title,
+  rr.initiator_user_id,
+  COALESCE(
+    NULLIF(initiator.display_name, ''),
+    NULLIF(initiator.username, ''),
+    rr.initiator_user_id::text
+  )::text AS initiator_display_name,
+  lh.last_speaker_user_id,
+  COALESCE(
+    NULLIF(speaker.display_name, ''),
+    NULLIF(speaker.username, ''),
+    lh.last_speaker_user_id::text
+  )::text AS last_speaker_display_name,
+  lh.last_prompt,
+  ta.last_active_at,
+  ta.has_active_run,
+  ar.active_runner_user_id,
+  CASE
+    WHEN ar.active_runner_user_id IS NULL THEN ''::text
+    ELSE COALESCE(
+      NULLIF(runner.display_name, ''),
+      NULLIF(runner.username, ''),
+      ar.active_runner_user_id::text
+    )::text
+  END AS active_runner_display_name
+FROM thread_agg ta
+JOIN root_rows rr ON rr.thread_id = ta.thread_id
+JOIN last_human lh ON lh.thread_id = ta.thread_id
+LEFT JOIN active_runner ar ON ar.thread_id = ta.thread_id
+LEFT JOIN auth_users initiator
+  ON initiator.id = rr.initiator_user_id AND initiator.deleted_at IS NULL
+LEFT JOIN auth_users speaker
+  ON speaker.id = lh.last_speaker_user_id AND speaker.deleted_at IS NULL
+LEFT JOIN auth_users runner
+  ON runner.id = ar.active_runner_user_id AND runner.deleted_at IS NULL
+ORDER BY ta.last_active_at DESC
+`
+
+type ListDigitalEmployeeChatThreadsParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	ProjectID         uuid.UUID `json:"project_id"`
+}
+
+type ListDigitalEmployeeChatThreadsRow struct {
+	ChatThreadID            uuid.UUID     `json:"chat_thread_id"`
+	ThreadTitle             string        `json:"thread_title"`
+	InitiatorUserID         uuid.NullUUID `json:"initiator_user_id"`
+	InitiatorDisplayName    string        `json:"initiator_display_name"`
+	LastSpeakerUserID       uuid.NullUUID `json:"last_speaker_user_id"`
+	LastSpeakerDisplayName  string        `json:"last_speaker_display_name"`
+	LastPrompt              string        `json:"last_prompt"`
+	LastActiveAt            interface{}   `json:"last_active_at"`
+	HasActiveRun            bool          `json:"has_active_run"`
+	ActiveRunnerUserID      uuid.NullUUID `json:"active_runner_user_id"`
+	ActiveRunnerDisplayName string        `json:"active_runner_display_name"`
+}
+
+// 聚合 (employee, project) 下全部 chat 会话；标题/发起人/接续人/末问/活跃态。
+func (q *Queries) ListDigitalEmployeeChatThreads(ctx context.Context, arg ListDigitalEmployeeChatThreadsParams) ([]ListDigitalEmployeeChatThreadsRow, error) {
+	rows, err := q.db.Query(ctx, ListDigitalEmployeeChatThreads, arg.TenantID, arg.DigitalEmployeeID, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDigitalEmployeeChatThreadsRow{}
+	for rows.Next() {
+		var i ListDigitalEmployeeChatThreadsRow
+		if err := rows.Scan(
+			&i.ChatThreadID,
+			&i.ThreadTitle,
+			&i.InitiatorUserID,
+			&i.InitiatorDisplayName,
+			&i.LastSpeakerUserID,
+			&i.LastSpeakerDisplayName,
+			&i.LastPrompt,
+			&i.LastActiveAt,
+			&i.HasActiveRun,
+			&i.ActiveRunnerUserID,
+			&i.ActiveRunnerDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListDigitalEmployeeRunCalendarItems = `-- name: ListDigitalEmployeeRunCalendarItems :many
@@ -1504,6 +1766,12 @@ SELECT
     t.run_kind,
     t.resume_of_run_id,
     t.chat_thread_id,
+    t.creator_id,
+    COALESCE(
+      NULLIF(creator.display_name, ''),
+      NULLIF(creator.username, ''),
+      t.creator_id::text
+    )::text AS creator_display_name,
     p.name AS project_name,
     (p.deleted_at IS NOT NULL)::boolean AS project_deleted,
     jsonb_array_length(tr.work_products) AS work_product_count
@@ -1512,6 +1780,8 @@ JOIN tasks t ON t.id = tr.task_id AND t.tenant_id = tr.tenant_id
 LEFT JOIN projects p
   ON p.tenant_id = tr.tenant_id
  AND p.id = tr.project_id
+LEFT JOIN auth_users creator
+  ON creator.id = t.creator_id AND creator.deleted_at IS NULL
 WHERE tr.tenant_id = $1::uuid
   AND tr.digital_employee_id = $2::uuid
   AND t.deleted_at IS NULL
@@ -1580,6 +1850,8 @@ type ListDigitalEmployeeRunsDetailedRow struct {
 	RunKind                   string             `json:"run_kind"`
 	ResumeOfRunID             uuid.NullUUID      `json:"resume_of_run_id"`
 	ChatThreadID              uuid.NullUUID      `json:"chat_thread_id"`
+	CreatorID                 uuid.NullUUID      `json:"creator_id"`
+	CreatorDisplayName        string             `json:"creator_display_name"`
 	ProjectName               pgtype.Text        `json:"project_name"`
 	ProjectDeleted            bool               `json:"project_deleted"`
 	WorkProductCount          int32              `json:"work_product_count"`
@@ -1645,6 +1917,8 @@ func (q *Queries) ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListD
 			&i.RunKind,
 			&i.ResumeOfRunID,
 			&i.ChatThreadID,
+			&i.CreatorID,
+			&i.CreatorDisplayName,
 			&i.ProjectName,
 			&i.ProjectDeleted,
 			&i.WorkProductCount,
@@ -1660,7 +1934,7 @@ func (q *Queries) ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListD
 }
 
 const ListPendingTasks = `-- name: ListPendingTasks :many
-SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id FROM tasks
+SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title FROM tasks
 WHERE tenant_id = COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
   AND deleted_at IS NULL
   AND status = 'pending'
@@ -1707,6 +1981,7 @@ func (q *Queries) ListPendingTasks(ctx context.Context, arg ListPendingTasksPara
 			&i.RunKind,
 			&i.ResumeOfRunID,
 			&i.ChatThreadID,
+			&i.ThreadTitle,
 		); err != nil {
 			return nil, err
 		}
@@ -2031,7 +2306,7 @@ func (q *Queries) ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsPa
 }
 
 const ListTasks = `-- name: ListTasks :many
-SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id FROM tasks
+SELECT id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title FROM tasks
 WHERE tenant_id = COALESCE($1::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
   AND deleted_at IS NULL
   AND ($2::varchar IS NULL OR status = $2::varchar)
@@ -2089,6 +2364,7 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 			&i.RunKind,
 			&i.ResumeOfRunID,
 			&i.ChatThreadID,
+			&i.ThreadTitle,
 		); err != nil {
 			return nil, err
 		}
@@ -2098,6 +2374,47 @@ func (q *Queries) ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, e
 		return nil, err
 	}
 	return items, nil
+}
+
+const UpdateChatThreadTitle = `-- name: UpdateChatThreadTitle :one
+UPDATE tasks t
+SET thread_title = $1::text,
+    updated_at = NOW()
+FROM task_runs tr
+WHERE t.id = tr.task_id
+  AND t.tenant_id = tr.tenant_id
+  AND tr.tenant_id = $2::uuid
+  AND tr.digital_employee_id = $3::uuid
+  AND tr.id = $4::uuid
+  AND t.run_kind = 'chat'
+  AND t.chat_thread_id IS NULL
+  AND t.deleted_at IS NULL
+RETURNING t.id, t.thread_title, t.creator_id
+`
+
+type UpdateChatThreadTitleParams struct {
+	ThreadTitle       string    `json:"thread_title"`
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	ThreadID          uuid.UUID `json:"thread_id"`
+}
+
+type UpdateChatThreadTitleRow struct {
+	ID          uuid.UUID     `json:"id"`
+	ThreadTitle pgtype.Text   `json:"thread_title"`
+	CreatorID   uuid.NullUUID `json:"creator_id"`
+}
+
+func (q *Queries) UpdateChatThreadTitle(ctx context.Context, arg UpdateChatThreadTitleParams) (UpdateChatThreadTitleRow, error) {
+	row := q.db.QueryRow(ctx, UpdateChatThreadTitle,
+		arg.ThreadTitle,
+		arg.TenantID,
+		arg.DigitalEmployeeID,
+		arg.ThreadID,
+	)
+	var i UpdateChatThreadTitleRow
+	err := row.Scan(&i.ID, &i.ThreadTitle, &i.CreatorID)
+	return i, err
 }
 
 const UpdateDigitalEmployeeRunStatus = `-- name: UpdateDigitalEmployeeRunStatus :one
@@ -2222,7 +2539,7 @@ SET
     updated_at = NOW()
 WHERE id = $9::uuid
   AND tenant_id = COALESCE($10::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title
 `
 
 type UpdateTaskParams struct {
@@ -2275,6 +2592,7 @@ func (q *Queries) UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, e
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
+		&i.ThreadTitle,
 	)
 	return i, err
 }
@@ -2284,7 +2602,7 @@ UPDATE tasks
 SET assigned_node_id = $1::varchar, status = 'claimed', updated_at = NOW()
 WHERE id = $2::uuid
   AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title
 `
 
 type UpdateTaskAssignmentParams struct {
@@ -2319,6 +2637,7 @@ func (q *Queries) UpdateTaskAssignment(ctx context.Context, arg UpdateTaskAssign
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
+		&i.ThreadTitle,
 	)
 	return i, err
 }
@@ -2395,7 +2714,7 @@ SET
     updated_at = NOW()
 WHERE id = $2::uuid
   AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title
 `
 
 type UpdateTaskStatusParams struct {
@@ -2430,6 +2749,7 @@ func (q *Queries) UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusPara
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
+		&i.ThreadTitle,
 	)
 	return i, err
 }
@@ -2439,7 +2759,7 @@ UPDATE tasks
 SET workspace_path = $1::text, updated_at = NOW()
 WHERE id = $2::uuid
   AND tenant_id = COALESCE($3::uuid, '00000000-0000-0000-0000-000000000001'::uuid)
-RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id
+RETURNING id, tenant_id, team_id, title, description, creator_id, provider_type, target_node_id, assigned_node_id, status, workspace_path, params, priority, idempotency_key, risk_level, cancelled_at, deleted_at, created_at, updated_at, run_kind, resume_of_run_id, chat_thread_id, thread_title
 `
 
 type UpdateTaskWorkspaceParams struct {
@@ -2474,6 +2794,7 @@ func (q *Queries) UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspa
 		&i.RunKind,
 		&i.ResumeOfRunID,
 		&i.ChatThreadID,
+		&i.ThreadTitle,
 	)
 	return i, err
 }

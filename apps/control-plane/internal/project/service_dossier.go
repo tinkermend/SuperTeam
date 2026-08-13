@@ -31,9 +31,9 @@ const (
 // 剧本来源。none = 需求与项目都没绑剧本(automation 路径合法),右轨此时只按
 // 实际产物推导,不假装有剧本。
 const (
-	DossierPlaybookSourceDemand  = "demand"
-	DossierPlaybookSourceProject = "project"
-	DossierPlaybookSourceNone    = "none"
+	DossierPlaybookSourceDemand = "demand"
+	DossierPlaybookSourceNone   = "none"
+
 )
 
 // 右轨条目状态。unknown ≠ 失败:它表示"无声明,无法判定"。
@@ -335,7 +335,7 @@ func (s *Service) resolveDemandDossierNames(ctx context.Context, facts *demandLa
 	return names
 }
 
-// resolveDemandDossierPlaybook 解析有效剧本:需求覆盖项目,都没有则 none。
+// resolveDemandDossierPlaybook 解析有效剧本:需求显式绑定,否则 none（无项目默认回落）。
 // 解析失败(模板被删/spec 不可解析/resolver 未接线)一律降级 none 并记 warn,
 // 不 500——卷宗的其余事实与剧本无关,不该因为剧本读不出来整页打不开。
 func (s *Service) resolveDemandDossierPlaybook(ctx context.Context, facts *demandLaunchFacts) DemandDossierPlaybook {
@@ -345,9 +345,6 @@ func (s *Service) resolveDemandDossierPlaybook(ctx context.Context, facts *deman
 	if facts.Demand.ScenarioTemplateKey != nil && strings.TrimSpace(*facts.Demand.ScenarioTemplateKey) != "" {
 		key = strings.TrimSpace(*facts.Demand.ScenarioTemplateKey)
 		playbook.Source = DossierPlaybookSourceDemand
-	} else if facts.Project.ScenarioTemplateKey != nil && strings.TrimSpace(*facts.Project.ScenarioTemplateKey) != "" {
-		key = strings.TrimSpace(*facts.Project.ScenarioTemplateKey)
-		playbook.Source = DossierPlaybookSourceProject
 	}
 	if key == "" {
 		return playbook

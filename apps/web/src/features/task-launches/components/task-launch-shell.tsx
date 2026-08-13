@@ -35,19 +35,28 @@ export function TaskLaunchShell({
       />
       <Main
         width={width}
+        fixed={width === "wide"}
         className={cn(
           "tl-aurora p-0",
-          width === "wide" && "min-w-0 overflow-x-hidden",
+          width === "wide" && "tl-hub flex min-h-0 flex-1 flex-col overflow-hidden",
         )}
       >
         {tabs ? (
-          <div className="relative z-[1] mx-auto mb-6 w-full max-w-[940px]">
+          <div
+            className={
+              width === "wide"
+                ? "relative z-[1] mb-2 w-full shrink-0"
+                : "relative z-[1] mx-auto mb-6 w-full max-w-[940px]"
+            }
+          >
             {tabs}
           </div>
         ) : null}
         <div
           className={
-            width === "wide" ? "relative z-[1] w-full min-w-0" : "tl-stage"
+            width === "wide"
+              ? "relative z-[1] flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden"
+              : "tl-stage"
           }
         >
           {children}
