@@ -8255,9 +8255,11 @@ func TestLoadProjectCoordinationSnapshotCarriesScenarioTemplate(t *testing.T) {
 	repo := &projectStoreMemoryRepository{
 		projectRecord: project.Project{
 			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
+		},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析",
 			ScenarioTemplateKey: &key,
 		},
-		demand: project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析"},
 	}
 	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{templates: map[string]ScenarioTemplateSnapshot{
 		"ops_analysis": {Key: "ops_analysis", Name: "运维分析", Spec: map[string]any{"skeleton": []any{}}},
@@ -8282,9 +8284,11 @@ func TestLoadProjectCoordinationSnapshotDegradesOnUnresolvedTemplate(t *testing.
 	repo := &projectStoreMemoryRepository{
 		projectRecord: project.Project{
 			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
+		},
+		demand: project.ProjectDemand{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析",
 			ScenarioTemplateKey: &key,
 		},
-		demand: project.ProjectDemand{ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析"},
 	}
 	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{})
 
@@ -8303,12 +8307,10 @@ func TestLoadSnapshotPrefersDemandTemplateKey(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
 	demandID := uuid.New()
-	projectKey := "software_delivery"
 	demandKey := "research_report"
 	repo := &projectStoreMemoryRepository{
 		projectRecord: project.Project{
 			ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New(),
-			ScenarioTemplateKey: &projectKey,
 		},
 		demand: project.ProjectDemand{
 			ID: demandID, TenantID: tenantID, ProjectID: projectID, Title: "分析",
@@ -8316,8 +8318,7 @@ func TestLoadSnapshotPrefersDemandTemplateKey(t *testing.T) {
 		},
 	}
 	store := NewProjectStore(repo).WithScenarioTemplateSource(fakeScenarioTemplateSource{templates: map[string]ScenarioTemplateSnapshot{
-		"software_delivery": {Key: "software_delivery", Name: "软件交付"},
-		"research_report":   {Key: "research_report", Name: "调研报告"},
+		"research_report": {Key: "research_report", Name: "调研报告"},
 	}})
 
 	snapshot, err := store.LoadProjectCoordinationSnapshot(context.Background(), LoadSnapshotInput{
@@ -8327,7 +8328,7 @@ func TestLoadSnapshotPrefersDemandTemplateKey(t *testing.T) {
 		t.Fatalf("load snapshot: %v", err)
 	}
 	if snapshot.ScenarioTemplate == nil || snapshot.ScenarioTemplate.Key != "research_report" {
-		t.Fatalf("expected demand-level template to win, got %#v", snapshot.ScenarioTemplate)
+		t.Fatalf("expected demand-level template, got %#v", snapshot.ScenarioTemplate)
 	}
 	if snapshot.Demand.ScenarioTemplateKey != "research_report" {
 		t.Fatalf("expected DemandSnapshot.ScenarioTemplateKey to carry demand key, got %q", snapshot.Demand.ScenarioTemplateKey)

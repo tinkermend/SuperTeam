@@ -96,6 +96,7 @@ INSERT INTO automation_rules (
     interval_seconds,
     timezone,
     overlap_policy,
+    autonomy_tier,
     actor_user_id,
     disabled_reason,
     consecutive_failure_count,
@@ -117,12 +118,13 @@ INSERT INTO automation_rules (
     $14::int,
     $15::varchar,
     $16::varchar,
-    $17::uuid,
-    $18::varchar,
-    $19::int,
-    $20::varchar
+    $17::varchar,
+    $18::uuid,
+    $19::varchar,
+    $20::int,
+    $21::varchar
 )
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
 `
 
 type CreateAutomationRuleParams struct {
@@ -142,6 +144,7 @@ type CreateAutomationRuleParams struct {
 	IntervalSeconds         pgtype.Int4   `json:"interval_seconds"`
 	Timezone                string        `json:"timezone"`
 	OverlapPolicy           string        `json:"overlap_policy"`
+	AutonomyTier            string        `json:"autonomy_tier"`
 	ActorUserID             uuid.UUID     `json:"actor_user_id"`
 	DisabledReason          pgtype.Text   `json:"disabled_reason"`
 	ConsecutiveFailureCount int32         `json:"consecutive_failure_count"`
@@ -166,6 +169,7 @@ func (q *Queries) CreateAutomationRule(ctx context.Context, arg CreateAutomation
 		arg.IntervalSeconds,
 		arg.Timezone,
 		arg.OverlapPolicy,
+		arg.AutonomyTier,
 		arg.ActorUserID,
 		arg.DisabledReason,
 		arg.ConsecutiveFailureCount,
@@ -196,6 +200,7 @@ func (q *Queries) CreateAutomationRule(ctx context.Context, arg CreateAutomation
 		&i.TemporalScheduleID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutonomyTier,
 	)
 	return i, err
 }
@@ -268,7 +273,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
 `
 
 type DisableAutomationRuleSystemParams struct {
@@ -304,6 +309,7 @@ func (q *Queries) DisableAutomationRuleSystem(ctx context.Context, arg DisableAu
 		&i.TemporalScheduleID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutonomyTier,
 	)
 	return i, err
 }
@@ -333,7 +339,7 @@ func (q *Queries) GetAutomationFireByIdempotency(ctx context.Context, idempotenc
 }
 
 const GetAutomationRule = `-- name: GetAutomationRule :one
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at FROM automation_rules
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier FROM automation_rules
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -370,6 +376,7 @@ func (q *Queries) GetAutomationRule(ctx context.Context, arg GetAutomationRulePa
 		&i.TemporalScheduleID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutonomyTier,
 	)
 	return i, err
 }
@@ -427,7 +434,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
 `
 
 type IncrementAutomationRuleFailureCountParams struct {
@@ -462,6 +469,7 @@ func (q *Queries) IncrementAutomationRuleFailureCount(ctx context.Context, arg I
 		&i.TemporalScheduleID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutonomyTier,
 	)
 	return i, err
 }
@@ -520,7 +528,7 @@ func (q *Queries) ListAutomationFires(ctx context.Context, arg ListAutomationFir
 }
 
 const ListAutomationRules = `-- name: ListAutomationRules :many
-SELECT ar.id, ar.tenant_id, ar.team_id, ar.project_id, ar.name, ar.enabled, ar.coordination_mode, ar.demand_title_template, ar.demand_body_template, ar.scenario_template_key, ar.digital_employee_id, ar.chat_objective_template, ar.schedule_kind, ar.cron_expr, ar.interval_seconds, ar.timezone, ar.overlap_policy, ar.actor_user_id, ar.disabled_reason, ar.consecutive_failure_count, ar.temporal_schedule_id, ar.created_at, ar.updated_at FROM automation_rules ar
+SELECT ar.id, ar.tenant_id, ar.team_id, ar.project_id, ar.name, ar.enabled, ar.coordination_mode, ar.demand_title_template, ar.demand_body_template, ar.scenario_template_key, ar.digital_employee_id, ar.chat_objective_template, ar.schedule_kind, ar.cron_expr, ar.interval_seconds, ar.timezone, ar.overlap_policy, ar.actor_user_id, ar.disabled_reason, ar.consecutive_failure_count, ar.temporal_schedule_id, ar.created_at, ar.updated_at, ar.autonomy_tier FROM automation_rules ar
 JOIN projects p ON p.id = ar.project_id AND p.tenant_id = ar.tenant_id
 WHERE ar.tenant_id = $1::uuid
   AND p.deleted_at IS NULL
@@ -584,6 +592,7 @@ func (q *Queries) ListAutomationRules(ctx context.Context, arg ListAutomationRul
 			&i.TemporalScheduleID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AutonomyTier,
 		); err != nil {
 			return nil, err
 		}
@@ -596,7 +605,7 @@ func (q *Queries) ListAutomationRules(ctx context.Context, arg ListAutomationRul
 }
 
 const ListAutomationRulesByProject = `-- name: ListAutomationRulesByProject :many
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
 FROM automation_rules
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
@@ -640,6 +649,7 @@ func (q *Queries) ListAutomationRulesByProject(ctx context.Context, arg ListAuto
 			&i.TemporalScheduleID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AutonomyTier,
 		); err != nil {
 			return nil, err
 		}
@@ -652,7 +662,7 @@ func (q *Queries) ListAutomationRulesByProject(ctx context.Context, arg ListAuto
 }
 
 const ListEnabledAutomationRulesByActor = `-- name: ListEnabledAutomationRulesByActor :many
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at FROM automation_rules
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier FROM automation_rules
 WHERE tenant_id = $1::uuid
   AND actor_user_id = $2::uuid
   AND enabled = TRUE
@@ -696,6 +706,7 @@ func (q *Queries) ListEnabledAutomationRulesByActor(ctx context.Context, arg Lis
 			&i.TemporalScheduleID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AutonomyTier,
 		); err != nil {
 			return nil, err
 		}
@@ -708,7 +719,7 @@ func (q *Queries) ListEnabledAutomationRulesByActor(ctx context.Context, arg Lis
 }
 
 const ListEnabledAutomationRulesByActorOnProject = `-- name: ListEnabledAutomationRulesByActorOnProject :many
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at FROM automation_rules
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier FROM automation_rules
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND actor_user_id = $3::uuid
@@ -754,6 +765,7 @@ func (q *Queries) ListEnabledAutomationRulesByActorOnProject(ctx context.Context
 			&i.TemporalScheduleID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AutonomyTier,
 		); err != nil {
 			return nil, err
 		}
@@ -771,7 +783,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
 `
 
 type ResetAutomationRuleFailureCountParams struct {
@@ -806,6 +818,7 @@ func (q *Queries) ResetAutomationRuleFailureCount(ctx context.Context, arg Reset
 		&i.TemporalScheduleID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutonomyTier,
 	)
 	return i, err
 }
@@ -821,7 +834,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $3::uuid
   AND id = $4::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
 `
 
 type SetAutomationRuleEnabledParams struct {
@@ -863,6 +876,7 @@ func (q *Queries) SetAutomationRuleEnabled(ctx context.Context, arg SetAutomatio
 		&i.TemporalScheduleID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutonomyTier,
 	)
 	return i, err
 }
@@ -873,7 +887,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
 `
 
 type SetAutomationRuleScheduleIDParams struct {
@@ -909,6 +923,7 @@ func (q *Queries) SetAutomationRuleScheduleID(ctx context.Context, arg SetAutoma
 		&i.TemporalScheduleID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutonomyTier,
 	)
 	return i, err
 }
@@ -974,11 +989,12 @@ UPDATE automation_rules SET
     cron_expr = $8::varchar,
     interval_seconds = $9::int,
     timezone = $10::varchar,
-    temporal_schedule_id = $11::varchar,
+    autonomy_tier = $11::varchar,
+    temporal_schedule_id = $12::varchar,
     updated_at = NOW()
-WHERE tenant_id = $12::uuid
-  AND id = $13::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+WHERE tenant_id = $13::uuid
+  AND id = $14::uuid
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
 `
 
 type UpdateAutomationRuleParams struct {
@@ -992,6 +1008,7 @@ type UpdateAutomationRuleParams struct {
 	CronExpr              pgtype.Text   `json:"cron_expr"`
 	IntervalSeconds       pgtype.Int4   `json:"interval_seconds"`
 	Timezone              string        `json:"timezone"`
+	AutonomyTier          string        `json:"autonomy_tier"`
 	TemporalScheduleID    pgtype.Text   `json:"temporal_schedule_id"`
 	TenantID              uuid.UUID     `json:"tenant_id"`
 	ID                    uuid.UUID     `json:"id"`
@@ -1009,6 +1026,7 @@ func (q *Queries) UpdateAutomationRule(ctx context.Context, arg UpdateAutomation
 		arg.CronExpr,
 		arg.IntervalSeconds,
 		arg.Timezone,
+		arg.AutonomyTier,
 		arg.TemporalScheduleID,
 		arg.TenantID,
 		arg.ID,
@@ -1038,6 +1056,7 @@ func (q *Queries) UpdateAutomationRule(ctx context.Context, arg UpdateAutomation
 		&i.TemporalScheduleID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutonomyTier,
 	)
 	return i, err
 }

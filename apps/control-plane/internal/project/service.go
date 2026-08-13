@@ -307,22 +307,6 @@ func (s *Service) CreateProject(ctx context.Context, req CreateProjectRequest) (
 	}
 	req.RuntimeNodeIDs = runtimeNodeIDs
 
-	if req.ScenarioTemplateKey != nil {
-		key := strings.TrimSpace(*req.ScenarioTemplateKey)
-		if key == "" {
-			req.ScenarioTemplateKey = nil
-		} else if s.scenarioTemplates != nil {
-			binding, err := s.scenarioTemplates.ResolveScenarioTemplate(ctx, req.TenantID, key)
-			if err != nil {
-				return nil, fmt.Errorf("scenario template %q: %w", key, ErrInvalidProject)
-			}
-			if binding.Status != "active" {
-				return nil, fmt.Errorf("scenario template %q is %s: %w", key, binding.Status, ErrInvalidProject)
-			}
-			req.ScenarioTemplateKey = &key
-		}
-	}
-
 	// Resolve source kind: attach | git | none (legacy from repo binding).
 	sourceKind := req.SourceKind
 	if sourceKind == "" {

@@ -66,6 +66,9 @@ func (s *ProjectStore) RunPreDispatchGate(ctx context.Context, input DispatchPro
 		if err != nil {
 			return PreDispatchGateDecision{}, err
 		}
+		if err := s.maybePolicyAutoResolvePredispatchGate(ctx, input, task, gate, evaluation.HumanActionRequest); err != nil {
+			return PreDispatchGateDecision{}, err
+		}
 	}
 	return PreDispatchGateDecision{
 		Gate:          gate,

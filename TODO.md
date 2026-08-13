@@ -3,7 +3,6 @@
 > 约定见 CLAUDE.md「延后工作」条。每条一行:日期 + 要做的事 + 参考文档。
 > 完成后删除该行(历史归 git);这里不是任务系统,只是"别忘了"清单。
 
-- [ ] 2026-07-26 租户角色与控制台业务模块能力矩阵——当前仅打通「账号→租户成员→console.access」；`member` 对团队/数字员工/技能等租户级列表仍 403（需 admin），侧栏未按权限裁剪。待其他功能完善后补齐：角色可读/可写范围、导航裁剪、无权限空态。参考 `docs/superpowers/specs/2026-07-25-tenant-membership-and-console-access.md` 与 authz `ActionTeamRead`/`ActionSkillRead`/`ActionEmployeeRead`
 - [ ] 2026-07-24 P2 planner 判据中文 E2E 验证——提示词已约束 `statement` 必须中文;真实产出依赖 planner(F6 deepseek 不稳),需独占环境稳定规划后抽查新卡判据无英文原文。参考 §6.2 / §12
 - [ ] 2026-07-27 飞书联调残余 2 项(原 7 项中 6 项已验证:结果结论卡/卡内签署/any-of-N 双人/投影不阻塞/通讯录反查含手机号正向命中/outbox 重推按钮——P1 G4 真实 E2E 重推后 connector 消费并 sent+feishu_message_id)——剩:①换绑 UI(spec 2026-07-27-feishu-channel-access-management §6)；②越权对照(需第三个不在合格集合的绑定账号)。参考 manual-test-plans/2026-07-19-feishu-remaining-verification.md
 - [x] 2026-07-19 生产桶 CORS 引导命令——已落地 `apps/control-plane/cmd/bucket-cors`（`--check` / `BUCKET_CORS_ORIGINS` / 复用 CP objectStore）；本地 RustFS 用法见 `docs/ops/local-rustfs.md` §2.2。规则模板背景：`docs/superpowers/specs/2026-07-19-execution-output-attachments-followups.md` §2

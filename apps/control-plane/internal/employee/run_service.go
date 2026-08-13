@@ -49,6 +49,13 @@ type RuntimeSkillLister interface {
 	ListSkillsForRuntime(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID) (skill.RuntimeSkillsResult, error)
 }
 
+// ProjectSkillBindingLister resolves the Chat default skill surface (project
+// skill bindings). Optional: when the concrete skillLister also implements
+// this, chat runs apply the autonomy P1 envelope.
+type ProjectSkillBindingLister interface {
+	ListProjectSkillBindings(ctx context.Context, req skill.ListProjectSkillBindingsRequest) ([]skill.ProjectSkillBinding, error)
+}
+
 type RuntimeCapabilityLister interface {
 	ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]cpruntime.RuntimeCapability, error)
 }
@@ -268,6 +275,21 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 			return nil, err
 		}
 	}
+	// Autonomy P1: reject out-of-surface skill_ids before provider/runtime preflight
+	// so callers get a clear 4xx without depending on node health.
+	if err := s.validateChatSkillSelection(ctx, req); err != nil {
+		return nil, err
+	}
+	// Autonomy P4 / Chat B2: interactive light confirm (not inbox).
+	projectCeiling := ""
+	if s.dispatchFacts != nil {
+		if facts, ferr := s.dispatchFacts.GetProjectDispatchFacts(ctx, req.TenantID, projectID); ferr == nil {
+			projectCeiling = facts.AutonomyCeiling
+		}
+	}
+	if err := enforceInteractiveLightConfirm(req, projectCeiling); err != nil {
+		return nil, err
+	}
 
 	resolvedNodeID, err := s.nodeResolver.ResolveProjectTaskNode(ctx, ResolveProjectTaskNodeRequest{
 		TenantID:          req.TenantID,
@@ -315,6 +337,16 @@ func (s *DigitalEmployeeRunService) createChatRun(ctx context.Context, req Creat
 	// Audit-only anchor record (§13): not a new column, lives in
 	// tasks.params["metadata"]["anchor_project_id"] via buildRunParams.
 	req.Metadata["anchor_project_id"] = projectID.String()
+	if len(req.SkillIDs) > 0 {
+		ids := make([]string, 0, len(req.SkillIDs))
+		for _, id := range req.SkillIDs {
+			ids = append(ids, id.String())
+		}
+		req.Metadata["chat_skill_ids"] = ids
+	}
+	if req.InteractiveConfirmed && isInteractiveChatInvoker(req) {
+		req.Metadata["interactive_confirmed"] = true
+	}
 	// 目录与能力投影修订 spec §4: the chat anchor gains filesystem semantics —
 	// the runtime keys the chat working directory by (project, thread) and
 	// seeds a readonly worktree when the anchor project has a repo binding.
@@ -507,7 +539,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 	}
 	if activeRun != nil {
 		if sameIdempotentRun(activeRun, idempotencyKey, fingerprint) {
-			deps, err := s.prepareStartSessionDependencies(ctx, req.TenantID, req.DigitalEmployeeID, req.ProjectID, preflight)
+			deps, err := s.prepareStartSessionDependencies(ctx, req, preflight)
 			if err != nil {
 				return nil, err
 			}
@@ -523,7 +555,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		}
 	}
 
-	deps, err := s.prepareStartSessionDependencies(ctx, req.TenantID, req.DigitalEmployeeID, req.ProjectID, preflight)
+	deps, err := s.prepareStartSessionDependencies(ctx, req, preflight)
 	if err != nil {
 		return nil, err
 	}
@@ -753,7 +785,10 @@ func (s *DigitalEmployeeRunService) dispatchEffectiveConfig(ctx context.Context,
 	return configInput, nil
 }
 
-func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, tenantID, digitalEmployeeID uuid.UUID, projectID *uuid.UUID, preflight RunPreflight) (startSessionDependencies, error) {
+func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.Context, req CreateDigitalEmployeeRunRequest, preflight RunPreflight) (startSessionDependencies, error) {
+	tenantID := req.TenantID
+	digitalEmployeeID := req.DigitalEmployeeID
+	projectID := req.ProjectID
 	var deps startSessionDependencies
 	// 派发生效配置只认已生效(active)修订(员工配置页 spec §6.2/A):草案治理修订未批不得生效,
 	// 否则审批 gate 形同虚设。生产 PgRunRepository 恒走 active-only;未实现该可选接口的仓库回退。
@@ -776,6 +811,12 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 		}
 		deps.runtimeSkills = runtimeResult.Skills
 		deps.skillConflicts = runtimeResult.Conflicts
+	}
+	// Autonomy P1: Chat envelope = project bindings ∩ supply ∩ optional selection.
+	if req.RunKind == RunKindChat && projectID != nil {
+		if err := s.applyChatSkillEnvelopeToDeps(ctx, req, &deps); err != nil {
+			return deps, err
+		}
 	}
 	var capabilities []cpruntime.RuntimeCapability
 	if s.capabilityLister != nil {
@@ -833,6 +874,61 @@ func (s *DigitalEmployeeRunService) prepareStartSessionDependencies(ctx context.
 		return deps, err
 	}
 	return deps, nil
+}
+
+func (s *DigitalEmployeeRunService) applyChatSkillEnvelopeToDeps(ctx context.Context, req CreateDigitalEmployeeRunRequest, deps *startSessionDependencies) error {
+	bindingLister, ok := s.skillLister.(ProjectSkillBindingLister)
+	if !ok || req.ProjectID == nil {
+		// Without a binding lister, refuse silent full-supply Chat (would bypass envelope).
+		if len(req.SkillIDs) > 0 {
+			return fmt.Errorf("%w: chat skill_ids require project skill binding resolver", ErrInvalidInput)
+		}
+		return nil
+	}
+	bindings, err := bindingLister.ListProjectSkillBindings(ctx, skill.ListProjectSkillBindingsRequest{
+		TenantID:  req.TenantID,
+		UserID:    req.UserID,
+		ProjectID: *req.ProjectID,
+	})
+	if err != nil {
+		return fmt.Errorf("list project skill bindings for chat envelope: %w", err)
+	}
+	allow := make(map[uuid.UUID]struct{}, len(bindings))
+	for _, b := range bindings {
+		allow[b.SkillID] = struct{}{}
+	}
+	filtered, err := applyChatSkillEnvelope(deps.runtimeSkills, allow, req.SkillIDs)
+	if err != nil {
+		return err
+	}
+	deps.runtimeSkills = filtered
+	return nil
+}
+
+// validateChatSkillSelection checks CreateRun skill_ids against the project Chat
+// default surface before expensive runtime/provider preflight.
+func (s *DigitalEmployeeRunService) validateChatSkillSelection(ctx context.Context, req CreateDigitalEmployeeRunRequest) error {
+	if len(req.SkillIDs) == 0 || req.ProjectID == nil {
+		return nil
+	}
+	bindingLister, ok := s.skillLister.(ProjectSkillBindingLister)
+	if !ok {
+		return fmt.Errorf("%w: chat skill_ids require project skill binding resolver", ErrInvalidInput)
+	}
+	bindings, err := bindingLister.ListProjectSkillBindings(ctx, skill.ListProjectSkillBindingsRequest{
+		TenantID:  req.TenantID,
+		UserID:    req.UserID,
+		ProjectID: *req.ProjectID,
+	})
+	if err != nil {
+		return fmt.Errorf("list project skill bindings for chat envelope: %w", err)
+	}
+	allow := make(map[uuid.UUID]struct{}, len(bindings))
+	for _, b := range bindings {
+		allow[b.SkillID] = struct{}{}
+	}
+	_, err = applyChatSkillEnvelope(nil, allow, req.SkillIDs)
+	return err
 }
 
 // applySkillMCPDependencyClosure unions MCP servers required by projected skills into

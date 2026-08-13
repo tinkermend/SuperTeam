@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/superteam/control-plane/internal/autonomypolicy"
 	"github.com/superteam/control-plane/internal/project"
 )
 
@@ -33,6 +34,12 @@ type RuleFailureAlert struct {
 	FireID       uuid.UUID
 }
 
+// PlaybookAutonomySource resolves a scenario template's autonomy_ceiling (P3).
+// Optional: nil skips playbook ceiling checks at rule save (fire-time still applies via coordination).
+type PlaybookAutonomySource interface {
+	PlaybookAutonomyCeiling(ctx context.Context, tenantID uuid.UUID, templateKey string) (string, error)
+}
+
 type Service struct {
 	repo      Repository
 	projects  ProjectGateway
@@ -40,6 +47,7 @@ type Service struct {
 	chats     ChatRunner
 	schedules ScheduleSyncer
 	alerts    AlertNotifier
+	playbooks PlaybookAutonomySource
 	now       func() time.Time
 }
 
@@ -58,6 +66,13 @@ func NewService(repo Repository, projects ProjectGateway, demands DemandSubmitte
 func (s *Service) SetAlertNotifier(n AlertNotifier) {
 	if s != nil {
 		s.alerts = n
+	}
+}
+
+// SetPlaybookAutonomySource wires optional playbook ceiling checks at rule save.
+func (s *Service) SetPlaybookAutonomySource(src PlaybookAutonomySource) {
+	if s != nil {
+		s.playbooks = src
 	}
 }
 
@@ -156,6 +171,14 @@ func (s *Service) CreateRule(ctx context.Context, req CreateRuleRequest) (Rule, 
 		return Rule{}, err
 	}
 
+	autonomyTier, err := normalizeAutonomyTier(req.AutonomyTier)
+	if err != nil {
+		return Rule{}, err
+	}
+	if err := s.validateAutonomyAgainstCeilings(ctx, req.TenantID, autonomyTier, projectInfo.CoordinationPolicy, req.ScenarioTemplateKey); err != nil {
+		return Rule{}, err
+	}
+
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -177,6 +200,7 @@ func (s *Service) CreateRule(ctx context.Context, req CreateRuleRequest) (Rule, 
 		IntervalSeconds:       intervalSeconds,
 		Timezone:              timezone,
 		OverlapPolicy:         OverlapSkip,
+		AutonomyTier:          autonomyTier,
 		ActorUserID:           req.ActorUserID,
 	}
 	created, err := s.repo.CreateRule(ctx, rule)
@@ -253,6 +277,19 @@ func (s *Service) UpdateRule(ctx context.Context, req UpdateRuleRequest) (Rule, 
 	rule.CronExpr = normalizedCron
 	rule.IntervalSeconds = normalizedInterval
 	rule.Timezone = normalizedTZ
+
+	if req.AutonomyTier != nil {
+		tier, err := normalizeAutonomyTier(*req.AutonomyTier)
+		if err != nil {
+			return Rule{}, err
+		}
+		rule.AutonomyTier = tier
+	}
+	if projectInfo, err := s.projects.GetProject(ctx, req.TenantID, rule.ProjectID); err == nil {
+		if err := s.validateAutonomyAgainstCeilings(ctx, req.TenantID, rule.AutonomyTier, projectInfo.CoordinationPolicy, rule.ScenarioTemplateKey); err != nil {
+			return Rule{}, err
+		}
+	}
 
 	if err := validateModeFields(rule.CoordinationMode, CreateRuleRequest{
 		CoordinationMode:      rule.CoordinationMode,
@@ -750,6 +787,41 @@ func validateMode(mode string) error {
 		return nil
 	default:
 		return fmt.Errorf("%w: coordination_mode must be plan, loop, or chat", ErrInvalidInput)
+	}
+}
+
+func normalizeAutonomyTier(raw string) (string, error) {
+	tier, err := autonomypolicy.Normalize(raw)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	return tier, nil
+}
+
+func (s *Service) validateAutonomyAgainstCeilings(ctx context.Context, tenantID uuid.UUID, tier string, policy map[string]any, scenarioTemplateKey *string) error {
+	projectCeiling := autonomypolicy.CoordinationPolicyCeiling(policy)
+	playbookCeiling := ""
+	if scenarioTemplateKey != nil {
+		key := strings.TrimSpace(*scenarioTemplateKey)
+		if key != "" && s != nil && s.playbooks != nil {
+			ceil, err := s.playbooks.PlaybookAutonomyCeiling(ctx, tenantID, key)
+			if err != nil {
+				return fmt.Errorf("%w: playbook autonomy ceiling: %v", ErrInvalidInput, err)
+			}
+			playbookCeiling = strings.TrimSpace(ceil)
+		}
+	}
+	effective := autonomypolicy.Effective(playbookCeiling, projectCeiling, tier)
+	if effective == tier {
+		return nil
+	}
+	switch {
+	case playbookCeiling != "" && autonomypolicy.Effective(playbookCeiling, "", tier) != tier:
+		return fmt.Errorf("%w: autonomy_tier %q exceeds playbook autonomy_ceiling %q", ErrInvalidInput, tier, playbookCeiling)
+	case projectCeiling != "":
+		return fmt.Errorf("%w: autonomy_tier %q exceeds project coordination_policy.autonomy_ceiling %q", ErrInvalidInput, tier, projectCeiling)
+	default:
+		return fmt.Errorf("%w: autonomy_tier %q exceeds autonomy ceiling", ErrInvalidInput, tier)
 	}
 }
 

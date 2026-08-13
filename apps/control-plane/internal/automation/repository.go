@@ -41,10 +41,11 @@ type ProjectGateway interface {
 }
 
 type ProjectInfo struct {
-	ID           uuid.UUID
-	TeamID       uuid.UUID
-	Name         string
-	OwnerUserIDs []uuid.UUID // human_owner_user_ids (+ primary); any-of-N alert recipients
+	ID                  uuid.UUID
+	TeamID              uuid.UUID
+	Name                string
+	OwnerUserIDs        []uuid.UUID // human_owner_user_ids (+ primary); any-of-N alert recipients
+	CoordinationPolicy  map[string]any
 }
 
 // DemandSubmitter submits plan/loop demands into the task hub.

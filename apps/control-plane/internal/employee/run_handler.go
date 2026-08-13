@@ -59,30 +59,34 @@ func (h *HTTPHandler) CreateDigitalEmployeeRun(w http.ResponseWriter, r *http.Re
 		RunKind          string           `json:"run_kind"`
 		ResumeOfRunID    *uuid.UUID       `json:"resume_of_run_id"`
 		ProjectID        *uuid.UUID       `json:"project_id"`
+		SkillIDs         []uuid.UUID      `json:"skill_ids"`
+		InteractiveConfirmed bool         `json:"interactive_confirmed"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	run, err := service.CreateRun(r.Context(), CreateDigitalEmployeeRunRequest{
-		TenantID:          tenantID,
-		UserID:            middleware.GetUserID(r.Context()),
-		DigitalEmployeeID: employeeID,
-		Objective:         req.Objective,
-		Prompt:            req.Prompt,
-		ContextRefs:       req.ContextRefs,
-		ArtifactRefs:      req.ArtifactRefs,
-		OutputSchema:      req.OutputSchema,
-		AllowedActions:    req.AllowedActions,
-		ForbiddenActions:  req.ForbiddenActions,
-		SecretRefs:        req.SecretRefs,
-		IdempotencyKey:    req.IdempotencyKey,
-		TimeoutSec:        req.TimeoutSec,
-		GraceSec:          req.GraceSec,
-		Metadata:          req.Metadata,
-		RunKind:           req.RunKind,
-		ResumeOfRunID:     req.ResumeOfRunID,
-		ProjectID:         req.ProjectID,
+		TenantID:             tenantID,
+		UserID:               middleware.GetUserID(r.Context()),
+		DigitalEmployeeID:    employeeID,
+		Objective:            req.Objective,
+		Prompt:               req.Prompt,
+		ContextRefs:          req.ContextRefs,
+		ArtifactRefs:         req.ArtifactRefs,
+		OutputSchema:         req.OutputSchema,
+		AllowedActions:       req.AllowedActions,
+		ForbiddenActions:     req.ForbiddenActions,
+		SecretRefs:           req.SecretRefs,
+		IdempotencyKey:       req.IdempotencyKey,
+		TimeoutSec:           req.TimeoutSec,
+		GraceSec:             req.GraceSec,
+		Metadata:             req.Metadata,
+		RunKind:              req.RunKind,
+		ResumeOfRunID:        req.ResumeOfRunID,
+		ProjectID:            req.ProjectID,
+		SkillIDs:             req.SkillIDs,
+		InteractiveConfirmed: req.InteractiveConfirmed,
 	})
 	if err != nil {
 		writeHandlerError(w, err)

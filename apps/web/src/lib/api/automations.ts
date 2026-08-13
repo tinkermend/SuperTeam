@@ -8,6 +8,7 @@ import {
 } from "./client";
 
 export type AutomationCoordinationMode = "plan" | "loop" | "chat";
+export type AutomationAutonomyTier = "pause_at_gate" | "full_auto";
 export type AutomationScheduleKind = "cron" | "interval";
 export type AutomationFireStatus =
   | "pending"
@@ -30,6 +31,7 @@ export type AutomationRule = {
   name: string;
   enabled: boolean;
   coordination_mode: AutomationCoordinationMode;
+  autonomy_tier: AutomationAutonomyTier;
   demand_title_template?: string | null;
   demand_body_template?: string | null;
   scenario_template_key?: string | null;
@@ -76,6 +78,7 @@ export type CreateAutomationRuleInput = {
   name: string;
   project_id: string;
   coordination_mode: AutomationCoordinationMode;
+  autonomy_tier?: AutomationAutonomyTier;
   demand_title_template?: string;
   demand_body_template?: string;
   scenario_template_key?: string;
@@ -99,6 +102,7 @@ export type UpdateAutomationRuleInput = {
   cron_expr?: string | null;
   interval_seconds?: number | null;
   timezone?: string;
+  autonomy_tier?: AutomationAutonomyTier;
 };
 
 function encodeRuleId(ruleId: string): string {

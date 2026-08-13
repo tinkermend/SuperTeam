@@ -139,6 +139,8 @@ type ProjectDispatchFacts struct {
 	WorkspaceReadyStatus string
 	// WorkspaceOwnership is platform_managed | attached (spec 2026-08-12).
 	WorkspaceOwnership string
+	// AutonomyCeiling is projects.coordination_policy.autonomy_ceiling (empty = unset).
+	AutonomyCeiling string
 }
 
 // ProjectDispatchFactsReader loads project dispatch facts without importing

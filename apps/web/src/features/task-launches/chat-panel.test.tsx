@@ -205,7 +205,40 @@ function projectMembersRouteResponse(
   );
 }
 
-function createChatFetcher() {
+/** P1 Chat rail: skill bindings + project detail (git). Empty by default. */
+function chatAuxRoutesResponse(
+  path: string,
+  method: string,
+  skillBindings: Array<{ skill_id: string; skill?: { id: string; name: string; slug: string } }> = [],
+  project: Project = makeProject(),
+): Response | null {
+  const bindingsMatch = path.match(/^\/api\/v1\/projects\/([^/]+)\/skill-bindings$/);
+  if (bindingsMatch && method === "GET") {
+    return jsonResponse(
+      skillBindings.map((row, index) => ({
+        id: `binding-${index + 1}`,
+        tenant_id: "tenant-1",
+        project_id: bindingsMatch[1],
+        skill_id: row.skill_id,
+        skill: row.skill ?? {
+          id: row.skill_id,
+          name: `Skill ${row.skill_id}`,
+          slug: row.skill_id,
+        },
+      })),
+    );
+  }
+  const projectMatch = path.match(/^\/api\/v1\/projects\/([^/]+)$/);
+  if (projectMatch && method === "GET") {
+    return jsonResponse({ ...project, id: projectMatch[1] });
+  }
+  return null;
+}
+
+function createChatFetcher(
+  skillBindings: Array<{ skill_id: string; skill?: { id: string; name: string; slug: string } }> = [],
+  project: Project = makeProject(),
+) {
   const employees = [makeEmployee()];
   const runScripts = new Map<string, Array<Partial<DigitalEmployeeRun>>>();
   const runGetCallCounts = new Map<string, number>();
@@ -223,6 +256,10 @@ function createChatFetcher() {
     const membersResponse = projectMembersRouteResponse(path, method, employees);
     if (membersResponse) {
       return membersResponse;
+    }
+    const auxResponse = chatAuxRoutesResponse(path, method, skillBindings, project);
+    if (auxResponse) {
+      return auxResponse;
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -290,6 +327,10 @@ function createFailingSendFetcher() {
     if (membersResponse) {
       return membersResponse;
     }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
+    }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
@@ -326,6 +367,10 @@ function createRetryDeferredFetcher() {
     const membersResponse = projectMembersRouteResponse(path, method, employees);
     if (membersResponse) {
       return membersResponse;
+    }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
     }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -396,6 +441,10 @@ function createResumeDegradeFetcher() {
     if (membersResponse) {
       return membersResponse;
     }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
+    }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
@@ -460,6 +509,10 @@ function createNonResumableFailureFetcher() {
     if (membersResponse) {
       return membersResponse;
     }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
+    }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
@@ -520,6 +573,10 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
     const membersResponse = projectMembersRouteResponse(path, method, employees);
     if (membersResponse) {
       return membersResponse;
+    }
+    const auxResponse = chatAuxRoutesResponse(path, method);
+    if (auxResponse) {
+      return auxResponse;
     }
 
     const runsMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
@@ -671,6 +728,157 @@ describe("ChatPanel", () => {
         project_id: "project-1",
         resume_of_run_id: "run-1"
 });
+    });
+  });
+
+  it("shows project skill chips and includes selected skill_ids on create-run", async () => {
+    const skillId = "11111111-1111-1111-1111-111111111111";
+    const { fetcher } = createChatFetcher([
+      {
+        skill_id: skillId,
+        skill: { id: skillId, name: "调研助手", slug: "research" },
+      },
+    ]);
+    await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={vi.fn()}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(document.body.textContent).toContain("调研助手"));
+    await waitFor(() => expect(document.body.textContent).toContain("将投影"));
+
+    const chip = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find(
+      (btn) => btn.textContent?.trim() === "调研助手",
+    );
+    expect(chip).toBeTruthy();
+    await act(async () => {
+      chip!.click();
+    });
+    expect(chip!.getAttribute("aria-pressed")).toBe("true");
+
+    await typeInLabeledField("对话问题", "带技能提问");
+    await clickButton("发送");
+
+    await waitFor(() => expect(document.body.textContent).toContain("确认开跑"));
+    await clickButton("确认开跑");
+
+    await waitFor(() => {
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toEqual({
+        objective: "带技能提问",
+        run_kind: "chat",
+        project_id: "project-1",
+        skill_ids: [skillId],
+        interactive_confirmed: true,
+      });
+    });
+  });
+
+  it("opens SoftDialog when project autonomy_ceiling is pause_at_gate", async () => {
+    const project = {
+      ...makeProject(),
+      coordination_policy: { autonomy_ceiling: "pause_at_gate" },
+    };
+    const { fetcher } = createChatFetcher([], project);
+    await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={vi.fn()}
+        projects={[project]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await typeInLabeledField("对话问题", "ceiling 确认");
+    await clickButton("发送");
+
+    await waitFor(() => expect(document.body.textContent).toContain("确认开跑"));
+    expect(document.body.textContent).toContain("遇闸暂停");
+    expect(postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs")).toHaveLength(0);
+
+    await clickButton("确认开跑");
+    await waitFor(() => {
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toEqual({
+        objective: "ceiling 确认",
+        run_kind: "chat",
+        project_id: "project-1",
+        interactive_confirmed: true,
+      });
+    });
+  });
+
+  it("recovers SoftDialog when create-run returns interactive confirm required", async () => {
+    const employees = [makeEmployee()];
+    let createCalls = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      const path = url.pathname;
+      if (path === "/api/v1/digital-employees" && method === "GET") {
+        return jsonResponse(employees);
+      }
+      const membersResponse = projectMembersRouteResponse(path, method, employees);
+      if (membersResponse) {
+        return membersResponse;
+      }
+      const auxResponse = chatAuxRoutesResponse(path, method);
+      if (auxResponse) {
+        return auxResponse;
+      }
+      const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
+      if (createMatch && method === "GET") {
+        return emptyRunListResponse();
+      }
+      if (createMatch && method === "POST") {
+        createCalls += 1;
+        const body = JSON.parse(String(init?.body)) as { interactive_confirmed?: boolean };
+        if (!body.interactive_confirmed) {
+          return jsonResponse(
+            {
+              message:
+                "invalid employee input: interactive light confirm required (set interactive_confirmed=true after user acknowledgment)",
+            },
+            400,
+          );
+        }
+        return jsonResponse(
+          { ...baseRunFields("run-confirm", createMatch[1]), status: "queued" },
+          201,
+        );
+      }
+      return jsonResponse({ message: `Unhandled ${method} ${path}` }, 404);
+    });
+
+    await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={vi.fn()}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await typeInLabeledField("对话问题", "服务端要求确认");
+    await clickButton("发送");
+
+    await waitFor(() => expect(document.body.textContent).toContain("确认开跑"));
+    expect(createCalls).toBe(1);
+    expect(document.body.textContent).not.toContain("interactive light confirm required");
+
+    await clickButton("确认开跑");
+    await waitFor(() => {
+      expect(createCalls).toBe(2);
+      const bodies = postBodies(fetcher, "/api/v1/digital-employees/emp-1/runs");
+      expect(bodies[1]).toMatchObject({
+        objective: "服务端要求确认",
+        interactive_confirmed: true,
+      });
     });
   });
 

@@ -16,6 +16,7 @@ INSERT INTO automation_rules (
     interval_seconds,
     timezone,
     overlap_policy,
+    autonomy_tier,
     actor_user_id,
     disabled_reason,
     consecutive_failure_count,
@@ -37,6 +38,7 @@ INSERT INTO automation_rules (
     sqlc.narg('interval_seconds')::int,
     sqlc.arg('timezone')::varchar,
     sqlc.arg('overlap_policy')::varchar,
+    sqlc.arg('autonomy_tier')::varchar,
     sqlc.arg('actor_user_id')::uuid,
     sqlc.narg('disabled_reason')::varchar,
     sqlc.arg('consecutive_failure_count')::int,
@@ -78,6 +80,7 @@ UPDATE automation_rules SET
     cron_expr = sqlc.narg('cron_expr')::varchar,
     interval_seconds = sqlc.narg('interval_seconds')::int,
     timezone = sqlc.arg('timezone')::varchar,
+    autonomy_tier = sqlc.arg('autonomy_tier')::varchar,
     temporal_schedule_id = sqlc.narg('temporal_schedule_id')::varchar,
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
@@ -136,7 +139,7 @@ WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND id = sqlc.arg('id')::uuid;
 
 -- name: ListAutomationRulesByProject :many
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at
+SELECT *
 FROM automation_rules
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND project_id = sqlc.arg('project_id')::uuid;

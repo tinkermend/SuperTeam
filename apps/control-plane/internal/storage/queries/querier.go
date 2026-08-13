@@ -63,6 +63,9 @@ type Querier interface {
 	CompleteProjectPlanDecompositionClaim(ctx context.Context, arg CompleteProjectPlanDecompositionClaimParams) (ProjectPlanDecompositionClaim, error)
 	ConfirmProjectWorkspaceDeleteRequest(ctx context.Context, arg ConfirmProjectWorkspaceDeleteRequestParams) (ProjectWorkspaceDeleteRequest, error)
 	ConsumeCaptchaChallenge(ctx context.Context, arg ConsumeCaptchaChallengeParams) (int64, error)
+	// P5 first-version budget: atomic fixed-window hourly counter on the binding row.
+	// Zero rows returned on an existing active row means the window is full (429).
+	ConsumeExternalIntegrationBudget(ctx context.Context, arg ConsumeExternalIntegrationBudgetParams) (ExternalIntegration, error)
 	CountActiveArtifactRetentionHolds(ctx context.Context, arg CountActiveArtifactRetentionHoldsParams) (int32, error)
 	CountActiveProviderSessionsForTenant(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountActiveTenantLevelMemberships(ctx context.Context, tenantID uuid.UUID) (int32, error)
@@ -139,6 +142,8 @@ type Querier interface {
 	CreateEmployeeMCPBindingV2(ctx context.Context, arg CreateEmployeeMCPBindingV2Params) (DigitalEmployeeMcpBindingsV2, error)
 	CreateEmployeeTemplate(ctx context.Context, arg CreateEmployeeTemplateParams) (DigitalEmployeeTemplate, error)
 	CreateExecutionLedgerEvent(ctx context.Context, arg CreateExecutionLedgerEventParams) (ExecutionLedgerEvent, error)
+	CreateExternalIntegration(ctx context.Context, arg CreateExternalIntegrationParams) (ExternalIntegration, error)
+	CreateExternalIntegrationToken(ctx context.Context, arg CreateExternalIntegrationTokenParams) (ExternalIntegrationToken, error)
 	CreateFeishuIdentity(ctx context.Context, arg CreateFeishuIdentityParams) (UserFeishuIdentity, error)
 	CreateFeishuOutbox(ctx context.Context, arg CreateFeishuOutboxParams) (FeishuOutbox, error)
 	// ============================================================================
@@ -283,6 +288,7 @@ type Querier interface {
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
 	GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActiveDigitalEmployeeRunParams) (TaskRun, error)
+	GetActiveExternalIntegrationTokenBySHA(ctx context.Context, tokenSha256 string) (ExternalIntegrationToken, error)
 	GetActiveRoleVocabularyByKeys(ctx context.Context, arg GetActiveRoleVocabularyByKeysParams) ([]RoleVocabulary, error)
 	GetActiveRuntimeBootstrapKeyByHash(ctx context.Context, arg GetActiveRuntimeBootstrapKeyByHashParams) (RuntimeBootstrapKey, error)
 	GetActiveRuntimeSessionByLookupHash(ctx context.Context, tokenLookupHash string) (GetActiveRuntimeSessionByLookupHashRow, error)
@@ -321,6 +327,7 @@ type Querier interface {
 	GetDigitalEmployeeSchedulingSkillCounts(ctx context.Context, arg GetDigitalEmployeeSchedulingSkillCountsParams) (GetDigitalEmployeeSchedulingSkillCountsRow, error)
 	GetEmployeeTemplateByID(ctx context.Context, arg GetEmployeeTemplateByIDParams) (DigitalEmployeeTemplate, error)
 	GetEmployeeTemplateByType(ctx context.Context, arg GetEmployeeTemplateByTypeParams) (DigitalEmployeeTemplate, error)
+	GetExternalIntegration(ctx context.Context, arg GetExternalIntegrationParams) (ExternalIntegration, error)
 	GetFeishuAppConfig(ctx context.Context, arg GetFeishuAppConfigParams) (FeishuAppConfig, error)
 	GetFeishuIdentityByOpenID(ctx context.Context, arg GetFeishuIdentityByOpenIDParams) (UserFeishuIdentity, error)
 	GetFeishuIdentityByUser(ctx context.Context, arg GetFeishuIdentityByUserParams) (UserFeishuIdentity, error)
@@ -572,6 +579,9 @@ type Querier interface {
 	ListEnabledAutomationRulesByActor(ctx context.Context, arg ListEnabledAutomationRulesByActorParams) ([]AutomationRule, error)
 	ListEnabledAutomationRulesByActorOnProject(ctx context.Context, arg ListEnabledAutomationRulesByActorOnProjectParams) ([]AutomationRule, error)
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
+	// 管理面列表：含 active/revoked，不回显 token_sha256。
+	ListExternalIntegrationTokens(ctx context.Context, arg ListExternalIntegrationTokensParams) ([]ListExternalIntegrationTokensRow, error)
+	ListExternalIntegrationsByTenant(ctx context.Context, arg ListExternalIntegrationsByTenantParams) ([]ExternalIntegration, error)
 	// 管理面列表:含 active/unverified/disabled。
 	ListFeishuAppConfigs(ctx context.Context, tenantID uuid.UUID) ([]FeishuAppConfig, error)
 	ListFeishuIdentitiesByTenant(ctx context.Context, tenantID uuid.UUID) ([]UserFeishuIdentity, error)
@@ -887,6 +897,7 @@ type Querier interface {
 	// 记录任务结果那几步（非同事务）若失败，任务会退回 waiting_human 但指针已空，
 	// 人类再也点不动"验收通过"。补偿动作必须还原它清掉的每一样东西。
 	RestoreProjectTaskHumanWait(ctx context.Context, arg RestoreProjectTaskHumanWaitParams) (ProjectTask, error)
+	RevokeExternalIntegrationToken(ctx context.Context, arg RevokeExternalIntegrationTokenParams) (ExternalIntegrationToken, error)
 	RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error)
 	RevokeRuntimeSession(ctx context.Context, arg RevokeRuntimeSessionParams) (RuntimeSession, error)
@@ -945,6 +956,7 @@ type Querier interface {
 	TakeoverTeamMCPBindings(ctx context.Context, arg TakeoverTeamMCPBindingsParams) error
 	// 员工侧绑定前的冲突判据：该员工所属团队是否已经提供同一个 MCP。
 	TeamProvidesMCPServer(ctx context.Context, arg TeamProvidesMCPServerParams) (bool, error)
+	TouchExternalIntegrationTokenLastUsed(ctx context.Context, id uuid.UUID) error
 	TouchRuntimeSessionLastSeen(ctx context.Context, arg TouchRuntimeSessionLastSeenParams) (RuntimeSession, error)
 	TouchServiceTokenLastUsed(ctx context.Context, id uuid.UUID) error
 	// Forward-guarded project status transition: only applied when the current status
@@ -975,6 +987,7 @@ type Querier interface {
 	UpdateDigitalEmployeeRunStatus(ctx context.Context, arg UpdateDigitalEmployeeRunStatusParams) (TaskRun, error)
 	UpdateDigitalEmployeeStatus(ctx context.Context, arg UpdateDigitalEmployeeStatusParams) (DigitalEmployee, error)
 	UpdateEmployeeTemplate(ctx context.Context, arg UpdateEmployeeTemplateParams) (DigitalEmployeeTemplate, error)
+	UpdateExternalIntegration(ctx context.Context, arg UpdateExternalIntegrationParams) (ExternalIntegration, error)
 	UpdateFeishuAppConfigStatus(ctx context.Context, arg UpdateFeishuAppConfigStatusParams) (FeishuAppConfig, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error)
 	UpdateProjectArtifactRetention(ctx context.Context, arg UpdateProjectArtifactRetentionParams) (ProjectArtifactRef, error)

@@ -22,13 +22,15 @@ import {
 } from "@/components/ui/select";
 import { SoftCard, Button, Segmented } from "@/components/superteam";
 import {
+  type AutomationAutonomyTier,
   type AutomationCoordinationMode,
   type AutomationRule,
   type AutomationScheduleKind,
   type CreateAutomationRuleInput,
   type UpdateAutomationRuleInput
 } from "@/lib/api/automations";
-import { listProjectMembers, listProjects } from "@/lib/api/projects";
+import { getProjectConfig, listProjectMembers, listProjects } from "@/lib/api/projects";
+import { listScenarioTemplates } from "@/lib/api/scenario-templates";
 import { cn } from "@/lib/utils";
 import type { AutomationRuleDraft } from "../scenario-templates";
 import { HumanGateCallout } from "./human-gate-callout";
@@ -101,6 +103,8 @@ export function AutomationRuleFormSheet({
   const [name, setName] = useState("");
   const [projectId, setProjectId] = useState("");
   const [mode, setMode] = useState<AutomationCoordinationMode>("loop");
+  const [autonomyTier, setAutonomyTier] = useState<AutomationAutonomyTier>("pause_at_gate");
+  const [scenarioTemplateKey, setScenarioTemplateKey] = useState("");
   const [titleTemplate, setTitleTemplate] = useState("");
   const [bodyTemplate, setBodyTemplate] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -115,6 +119,8 @@ export function AutomationRuleFormSheet({
       setName(editing.name);
       setProjectId(editing.project_id);
       setMode(editing.coordination_mode);
+      setAutonomyTier(editing.autonomy_tier ?? "pause_at_gate");
+      setScenarioTemplateKey(editing.scenario_template_key ?? "");
       setTitleTemplate(editing.demand_title_template ?? "");
       setBodyTemplate(editing.demand_body_template ?? "");
       setEmployeeId(editing.digital_employee_id ?? "");
@@ -131,6 +137,8 @@ export function AutomationRuleFormSheet({
     setName(draft?.name ?? "");
     setProjectId(draft?.project_id ?? "");
     setMode(draft?.coordination_mode ?? "loop");
+    setAutonomyTier(draft?.autonomy_tier ?? "pause_at_gate");
+    setScenarioTemplateKey(draft?.scenario_template_key ?? "");
     setTitleTemplate(draft?.demand_title_template ?? "");
     setBodyTemplate(draft?.demand_body_template ?? "");
     setEmployeeId(draft?.digital_employee_id ?? "");
@@ -156,7 +164,19 @@ export function AutomationRuleFormSheet({
     queryKey: ["automation-form-employees", apiBaseUrl, anchorProjectId],
     queryFn: () => listProjectMembers({ baseUrl: apiBaseUrl }, anchorProjectId),
     enabled: open && mode === "chat" && Boolean(anchorProjectId)
-});
+  });
+
+  const projectConfigQuery = useQuery({
+    queryKey: ["automation-form-project-config", apiBaseUrl, anchorProjectId],
+    queryFn: () => getProjectConfig({ baseUrl: apiBaseUrl }, anchorProjectId),
+    enabled: open && Boolean(anchorProjectId)
+  });
+
+  const scenarioTemplatesQuery = useQuery({
+    queryKey: ["automation-form-scenario-templates", apiBaseUrl],
+    queryFn: () => listScenarioTemplates({ baseUrl: apiBaseUrl }),
+    enabled: open && mode !== "chat"
+  });
 
   const projectList = projectsQuery.data ?? [];
 
@@ -167,8 +187,41 @@ export function AutomationRuleFormSheet({
       .map((member) => ({
         id: member.principal_id,
         name: member.display_name_snapshot?.trim() || member.principal_id
-}));
+      }));
   }, [employeesQuery.data]);
+
+  const projectCeiling = useMemo(() => {
+    const raw = projectConfigQuery.data?.coordination_policy?.autonomy_ceiling;
+    return raw === "pause_at_gate" || raw === "full_auto" ? raw : "";
+  }, [projectConfigQuery.data]);
+
+  const playbookCeiling = useMemo(() => {
+    if (!scenarioTemplateKey) return "";
+    const templates = scenarioTemplatesQuery.data ?? [];
+    const match = templates.find((t) => t.template_key === scenarioTemplateKey);
+    const raw = match?.spec?.autonomy_ceiling;
+    return raw === "pause_at_gate" || raw === "full_auto" ? raw : "";
+  }, [scenarioTemplateKey, scenarioTemplatesQuery.data]);
+
+  const effectiveCeiling = useMemo(() => {
+    const ranks = { pause_at_gate: 0, full_auto: 1 } as const;
+    let out: AutomationAutonomyTier | "" = "";
+    for (const c of [playbookCeiling, projectCeiling] as const) {
+      if (!c) continue;
+      if (!out || ranks[c] < ranks[out as AutomationAutonomyTier]) {
+        out = c;
+      }
+    }
+    return out;
+  }, [playbookCeiling, projectCeiling]);
+
+  const fullAutoBlocked = effectiveCeiling === "pause_at_gate";
+
+  useEffect(() => {
+    if (fullAutoBlocked && autonomyTier === "full_auto") {
+      setAutonomyTier("pause_at_gate");
+    }
+  }, [fullAutoBlocked, autonomyTier]);
 
   function handleSubmit() {
     const intervalSeconds = Math.max(60, Number(intervalHours || "0") * 3600);
@@ -177,21 +230,25 @@ export function AutomationRuleFormSheet({
         name: name.trim(),
         demand_title_template: mode === "chat" ? null : titleTemplate,
         demand_body_template: mode === "chat" ? null : bodyTemplate,
+        scenario_template_key: mode === "chat" ? null : scenarioTemplateKey || null,
         digital_employee_id: mode === "chat" ? employeeId || null : null,
         chat_objective_template: mode === "chat" ? chatObjective : null,
         schedule_kind: scheduleKind,
         cron_expr: scheduleKind === "cron" ? cronExpr : null,
         interval_seconds: scheduleKind === "interval" ? intervalSeconds : null,
-        timezone: "Asia/Shanghai"
-});
+        timezone: "Asia/Shanghai",
+        autonomy_tier: autonomyTier,
+      });
       return;
     }
     onCreate({
       name: name.trim(),
       project_id: projectId,
       coordination_mode: mode,
+      autonomy_tier: autonomyTier,
       demand_title_template: mode === "chat" ? undefined : titleTemplate,
       demand_body_template: mode === "chat" ? undefined : bodyTemplate,
+      scenario_template_key: mode === "chat" ? undefined : scenarioTemplateKey || undefined,
       digital_employee_id: mode === "chat" ? employeeId : undefined,
       chat_objective_template: mode === "chat" ? chatObjective : undefined,
       schedule_kind: scheduleKind,
@@ -199,7 +256,7 @@ export function AutomationRuleFormSheet({
       interval_seconds: scheduleKind === "interval" ? intervalSeconds : undefined,
       timezone: "Asia/Shanghai",
       enabled: true
-});
+    });
   }
 
   const canSubmit =
@@ -296,10 +353,57 @@ export function AutomationRuleFormSheet({
                   );
                 })}
               </div>
-              <HumanGateCallout mode={mode} />
+              <div className="space-y-2">
+                <Label>自治档位</Label>
+                <Segmented
+                  aria-label="自治档位"
+                  value={autonomyTier}
+                  onChange={(next) => {
+                    if (fullAutoBlocked && next === "full_auto") {
+                      return;
+                    }
+                    setAutonomyTier(next);
+                  }}
+                  options={[
+                    { value: "pause_at_gate", label: "遇闸暂停" },
+                    {
+                      value: "full_auto",
+                      label: fullAutoBlocked ? "完全自动化（受上限）" : "完全自动化",
+                    },
+                  ]}
+                />
+                <p className="text-[11.5px] leading-4 text-ink-3">
+                  {fullAutoBlocked
+                    ? "当前剧本/项目自治上限为「遇闸暂停」，不可选完全自动化。"
+                    : "缺省遇闸暂停。完全自动化仍会触发闸与决策记录，由策略自动放行（非跳过闸）。"}
+                </p>
+              </div>
+              <HumanGateCallout autonomyTier={autonomyTier} mode={mode} />
             </section>
           ) : (
-            <HumanGateCallout mode={mode} />
+            <>
+              <div className="space-y-2">
+                <Label>自治档位</Label>
+                <Segmented
+                  aria-label="自治档位"
+                  value={autonomyTier}
+                  onChange={(next) => {
+                    if (fullAutoBlocked && next === "full_auto") {
+                      return;
+                    }
+                    setAutonomyTier(next);
+                  }}
+                  options={[
+                    { value: "pause_at_gate", label: "遇闸暂停" },
+                    {
+                      value: "full_auto",
+                      label: fullAutoBlocked ? "完全自动化（受上限）" : "完全自动化",
+                    },
+                  ]}
+                />
+              </div>
+              <HumanGateCallout autonomyTier={autonomyTier} mode={mode} />
+            </>
           )}
 
           <section className="space-y-3">
@@ -339,6 +443,32 @@ export function AutomationRuleFormSheet({
               </>
             ) : (
               <>
+                <div className="space-y-2">
+                  <Label>场景剧本（可选）</Label>
+                  <Select
+                    value={scenarioTemplateKey || "__none__"}
+                    onValueChange={(next) =>
+                      setScenarioTemplateKey(next === "__none__" ? "" : next)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="不绑定剧本" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">不绑定剧本</SelectItem>
+                      {(scenarioTemplatesQuery.data ?? [])
+                        .filter((t) => t.status === "active")
+                        .map((template) => (
+                          <SelectItem key={template.template_key} value={template.template_key}>
+                            {template.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-ink-3">
+                    先选剧本再定自治档：剧本 `autonomy_ceiling` 与项目上限会单向收紧可选档位。
+                  </p>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="demand-title">需求标题模板</Label>
                   <Input

@@ -24,6 +24,7 @@ import (
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/externalintegration"
 	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/oplog"
@@ -899,6 +900,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		automationScheduler,
 	)
 	automationService.SetAlertNotifier(newAutomationAlertNotifier(inboxService))
+	automationService.SetPlaybookAutonomySource(playbookAutonomyCeilingAdapter{service: scenarioTemplateService})
 	projectService.SetAutomationActorRemover(automationService)
 	projectService.SetAutomationProjectCascade(automationService)
 	authService.SetUserDeactivatedHook(automationUserDeactivatedHook{service: automationService})
@@ -907,6 +909,21 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		automation.RegisterWith(temporalWorker, automation.NewActivities(automationService))
 	}
 	automationHandler := automation.NewHandler(automationService)
+	// Autonomy P5: external API integrations (two pre-authorized verbs).
+	externalIntegrationService := externalintegration.NewService(
+		externalintegration.NewPgRepository(q),
+		externalintegration.NewProjectServiceGateway(projectService, skillService),
+		externalintegration.NewChatRunner(runService),
+		externalintegration.NewDemandSubmitter(projectService),
+	)
+	externalIntegrationService.SetPlaybookAutonomySource(playbookAutonomyCeilingAdapter{service: scenarioTemplateService})
+	externalIntegrationService.SetAuditRecorder(auditService)
+	externalIntegrationHandler := externalintegration.NewHandler(externalIntegrationService)
+	if coordinationStore != nil {
+		coordinationStore.WithGateDecisionResolver(projectService)
+		coordinationStore.WithAutomationAutonomyLookup(automationAutonomyLookupAdapter{service: automationService})
+		coordinationStore.WithExternalIntegrationAutonomyLookup(externalIntegrationService)
+	}
 	skillHandler := skill.NewHandler(skillService)
 	skillHandler.SetSystemConfigReader(systemConfigService)
 	capabilityHandler := capability.NewHandler(capabilityService)
@@ -971,6 +988,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetRoleVocabularyHandler(roleVocabularyHandler)
 	server.SetPromptTemplateHandler(promptTemplateHandler)
 	server.SetServiceTokenHandler(serviceTokenHandler)
+	server.SetExternalIntegrationHandler(externalIntegrationHandler)
 	server.SetFeishuHandlers(feishuConnectorHandler, feishuAdminHandler)
 	server.SetFeishuOAuthHandler(feishuOAuthHandler)
 	server.SetServiceAuth(serviceAuthMiddlewareAdapter{core: serviceAuthCore}, feishuService)
@@ -1191,6 +1209,23 @@ func (a scenarioTemplateSourceAdapter) GetScenarioTemplateSnapshot(ctx context.C
 		return projectcoordination.ScenarioTemplateSnapshot{}, fmt.Errorf("scenario template %q is %s", key, template.Status)
 	}
 	return projectcoordination.ScenarioTemplateSnapshot{Key: template.Key, Name: template.Name, Version: template.ActiveVersion, Spec: template.Spec}, nil
+}
+
+// playbookAutonomyCeilingAdapter feeds automation rule-save ceiling checks (P3).
+type playbookAutonomyCeilingAdapter struct {
+	service *scenariotemplate.Service
+}
+
+func (a playbookAutonomyCeilingAdapter) PlaybookAutonomyCeiling(ctx context.Context, tenantID uuid.UUID, templateKey string) (string, error) {
+	template, err := a.service.GetByKey(ctx, tenantID, templateKey)
+	if err != nil {
+		return "", err
+	}
+	spec, err := scenariotemplate.ParseSpec(template.Spec)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(spec.AutonomyCeiling), nil
 }
 
 // roleHolderCounterAdapter backs scenario-template role-view holder_count
@@ -1445,4 +1480,17 @@ func (h automationUserDeactivatedHook) OnUserDeactivated(ctx context.Context, us
 		return nil
 	}
 	return h.service.DisableForActorDeactivated(ctx, platform.DefaultTenantID, userID)
+}
+
+// automationAutonomyLookupAdapter feeds coordination P2 full_auto policy resolve.
+type automationAutonomyLookupAdapter struct {
+	service *automation.Service
+}
+
+func (a automationAutonomyLookupAdapter) LookupAutomationAutonomy(ctx context.Context, tenantID, ruleID uuid.UUID) (string, uuid.UUID, error) {
+	rule, err := a.service.GetRule(ctx, tenantID, ruleID)
+	if err != nil {
+		return "", uuid.Nil, err
+	}
+	return rule.AutonomyTier, rule.ActorUserID, nil
 }

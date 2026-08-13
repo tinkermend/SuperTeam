@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/superteam/control-plane/internal/autonomypolicy"
 	"github.com/superteam/control-plane/internal/employee"
 )
 
@@ -34,5 +35,6 @@ func (a ProjectDispatchFactsAdapter) GetProjectDispatchFacts(ctx context.Context
 		Name:                 project.WorkspaceDirectoryName(),
 		WorkspaceReadyStatus: string(project.WorkspaceReadyStatus),
 		WorkspaceOwnership:   ownership,
+		AutonomyCeiling:      autonomypolicy.CoordinationPolicyCeiling(project.CoordinationPolicy),
 	}, nil
 }

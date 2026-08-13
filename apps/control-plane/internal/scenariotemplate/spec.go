@@ -3,6 +3,9 @@ package scenariotemplate
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"github.com/superteam/control-plane/internal/autonomypolicy"
 )
 
 // knownConstraintKinds is the registry of constraint kinds this parser
@@ -70,6 +73,10 @@ type SpecV2 struct {
 	DefaultAcceptanceCriteria []SpecAcceptanceCriterion `json:"default_acceptance_criteria"`
 	FeasibilityThresholds     map[string]float64        `json:"feasibility_thresholds,omitempty"`
 	BudgetProfile             map[string]any            `json:"budget_profile,omitempty"`
+	// AutonomyDefault / AutonomyCeiling: playbook posture (P3). Empty = unset
+	// (no extra tighten / default pause recommendation). Enum: pause_at_gate | full_auto.
+	AutonomyDefault string `json:"autonomy_default,omitempty"`
+	AutonomyCeiling string `json:"autonomy_ceiling,omitempty"`
 }
 
 // ExitIndex returns the position of deliverable within Exits, or -1 if it is
@@ -147,6 +154,9 @@ func ParseSpec(raw map[string]any) (SpecV2, error) {
 		return SpecV2{}, fmt.Errorf("unmarshal spec: %w", err)
 	}
 	if err := validateConstraints(spec, false); err != nil {
+		return SpecV2{}, err
+	}
+	if err := validateAutonomyFields(spec); err != nil {
 		return SpecV2{}, err
 	}
 	return spec, nil
@@ -326,4 +336,23 @@ func sortedPair(a, b string) []string {
 func collapsePairKey(a, b string) string {
 	pair := sortedPair(a, b)
 	return pair[0] + "\x00" + pair[1]
+}
+
+func validateAutonomyFields(spec SpecV2) error {
+	def := strings.TrimSpace(spec.AutonomyDefault)
+	ceil := strings.TrimSpace(spec.AutonomyCeiling)
+	if def != "" {
+		if _, err := autonomypolicy.Normalize(def); err != nil {
+			return fmt.Errorf("autonomy_default: %w", err)
+		}
+	}
+	if ceil != "" {
+		if _, err := autonomypolicy.Normalize(ceil); err != nil {
+			return fmt.Errorf("autonomy_ceiling: %w", err)
+		}
+	}
+	if def != "" && ceil != "" && autonomypolicy.Rank(def) > autonomypolicy.Rank(ceil) {
+		return fmt.Errorf("autonomy_default %q exceeds autonomy_ceiling %q", def, ceil)
+	}
+	return nil
 }

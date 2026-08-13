@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
-import { EmptyState, ErrorState, LoadingState } from "@/components/superteam";
+import { EmptyState, ErrorState, LoadingState, SoftDialog, SoftDialogBody, SoftDialogContent, SoftDialogDescription, SoftDialogFooter, SoftDialogHeader, SoftDialogTitle, Button } from "@/components/superteam";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
   createDigitalEmployeeRun,
@@ -26,7 +26,9 @@ import {
   type DigitalEmployeeRunListItem,
   type DigitalEmployeeRunStatus
 } from "@/lib/api/employees";
-import { listProjectMembers, type Project } from "@/lib/api/projects";
+import { listProjectMembers, getProject, refreshProjectWorkspaceGitStatus, type Project } from "@/lib/api/projects";
+import { listProjectSkillBindings } from "@/lib/api/skills";
+import { ProjectWorkspaceGitPanel } from "@/features/projects/components/project-workspace-git-panel";
 import {
   LaunchChip,
   NoProjectsEmptyState,
@@ -132,6 +134,12 @@ export function ChatPanel({
   const [question, setQuestion] = useState("");
   const [thread, setThread] = useState<ChatEntry[]>([]);
   const [sendError, setSendError] = useState("");
+  /** Per-turn skill envelope (autonomy P1). Empty = full project Chat surface. */
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    objective: string;
+    resumeOf?: string;
+  } | null>(null);
   // 会话恢复的水合标记：记录 thread 当前对应的 (employee, project) 锚点。
   // 锚点变化(挂载/换员工/换项目)后由服务端最新链重建;点"新对话"只清视图、
   // 不动水合标记,下一条消息不带 resume 即开新链(spec §4.4)。
@@ -150,6 +158,37 @@ export function ChatPanel({
     queryFn: () => listProjectMembers(apiOptions, projectId),
     queryKey: ["chat-project-members", projectId]
 });
+  const skillBindingsQuery = useQuery({
+    enabled: Boolean(projectId),
+    queryFn: () => listProjectSkillBindings(apiOptions, projectId),
+    queryKey: ["chat-project-skill-bindings", projectId],
+  });
+  const projectDetailQuery = useQuery({
+    enabled: Boolean(projectId),
+    queryFn: () => getProject(apiOptions, projectId),
+    queryKey: ["chat-project-detail", projectId],
+    // Ceiling drives SoftDialog; avoid long-lived stale policy after config edits.
+    staleTime: 0,
+  });
+  const refreshGitMutation = useMutation({
+    mutationFn: () => refreshProjectWorkspaceGitStatus(apiOptions, projectId),
+    onSuccess: () => {
+      void projectDetailQuery.refetch();
+    },
+  });
+  const chatSkillOptions = useMemo(() => {
+    const rows = skillBindingsQuery.data ?? [];
+    return rows.map((row) => ({
+      id: row.skill_id,
+      label: row.skill?.name?.trim() || row.skill?.slug?.trim() || row.skill_id.slice(0, 8),
+    }));
+  }, [skillBindingsQuery.data]);
+
+  useEffect(() => {
+    // Drop selections that left the project surface when the project changes.
+    const allow = new Set(chatSkillOptions.map((item) => item.id));
+    setSelectedSkillIds((prev) => prev.filter((id) => allow.has(id)));
+  }, [chatSkillOptions]);
   const memberEmployeeIds = useMemo(() => {
     const ids = new Set<string>();
     for (const member of membersQuery.data ?? []) {
@@ -284,13 +323,20 @@ export function ChatPanel({
   }, [runQuery.data]);
 
   const sendMutation = useMutation({
-    mutationFn: (input: { objective: string; resumeOf?: string; degraded?: boolean }) =>
+    mutationFn: (input: {
+      objective: string;
+      resumeOf?: string;
+      degraded?: boolean;
+      interactiveConfirmed?: boolean;
+    }) =>
       createDigitalEmployeeRun(apiOptions, employeeId, {
         objective: input.objective,
         run_kind: "chat",
         project_id: projectId,
+        ...(selectedSkillIds.length > 0 ? { skill_ids: selectedSkillIds } : {}),
+        ...(input.interactiveConfirmed ? { interactive_confirmed: true } : {}),
         ...(input.resumeOf ? { resume_of_run_id: input.resumeOf } : {})
-}),
+      }),
     onSuccess: (run, variables) => {
       setSendError("");
       setThread((prev) => [
@@ -305,19 +351,58 @@ export function ChatPanel({
     }
 });
 
+  function autonomyCeilingFromPolicy(policy: Record<string, unknown> | undefined | null): string {
+    const raw = policy?.autonomy_ceiling;
+    return raw === "pause_at_gate" || raw === "full_auto" ? raw : "";
+  }
+
+  function isInteractiveConfirmRequiredError(error: unknown): boolean {
+    if (!(error instanceof ApiRequestError) || error.status !== 400) {
+      return false;
+    }
+    return /interactive light confirm required/i.test(error.message);
+  }
+
   // When a send carrying resume_of_run_id fails with a 400 (server rejected the
   // resumed session — invalid or lost), automatically resend exactly once without
   // resume_of_run_id rather than leaving the thread wedged on a repeating 400. The
   // guard against a resend loop is structural: the retry omits `resumeOf`, so its
   // own failure path below never re-enters this branch.
-  async function sendWithDegradeFallback(objective: string, resumeOf?: string) {
+  //
+  // If the server still requires Chat B2 light confirm (stale local ceiling /
+  // race), open SoftDialog instead of leaving a raw 400 in the rail.
+  async function sendWithDegradeFallback(
+    objective: string,
+    resumeOf?: string,
+    interactiveConfirmed?: boolean,
+  ) {
     try {
-      return await sendMutation.mutateAsync({ objective, resumeOf });
+      return await sendMutation.mutateAsync({ objective, resumeOf, interactiveConfirmed });
     } catch (error) {
+      if (
+        !interactiveConfirmed &&
+        isInteractiveConfirmRequiredError(error)
+      ) {
+        setSendError("");
+        setPendingConfirm({ objective, resumeOf });
+        return undefined;
+      }
       if (resumeOf && error instanceof ApiRequestError && error.status === 400) {
         try {
-          return await sendMutation.mutateAsync({ objective, degraded: true });
+          return await sendMutation.mutateAsync({
+            objective,
+            degraded: true,
+            interactiveConfirmed,
+          });
         } catch (retryError) {
+          if (
+            !interactiveConfirmed &&
+            isInteractiveConfirmRequiredError(retryError)
+          ) {
+            setSendError("");
+            setPendingConfirm({ objective, resumeOf: undefined });
+            return undefined;
+          }
           setSendError(retryError instanceof Error ? retryError.message : "发送失败，请重试");
           throw retryError;
         }
@@ -326,6 +411,17 @@ export function ChatPanel({
       throw error;
     }
   }
+
+  const projectAutonomyCeiling = useMemo(() => {
+    const policy =
+      projectDetailQuery.data?.coordination_policy ??
+      resolvedProject?.coordination_policy ??
+      {};
+    return autonomyCeilingFromPolicy(policy);
+  }, [projectDetailQuery.data, resolvedProject]);
+
+  const needsInteractiveConfirm =
+    selectedSkillIds.length > 0 || projectAutonomyCeiling === "pause_at_gate";
 
   // 换员工/换项目 = 切换会话锚点：清掉当前视图,由恢复查询重建新锚点自己的
   // 最新链(切回来时旧会话仍在)。
@@ -341,6 +437,13 @@ export function ChatPanel({
     setThread([]);
     setSendError("");
     setRestoreFailed(false);
+    setSelectedSkillIds([]);
+  }
+
+  function toggleSkill(skillId: string) {
+    setSelectedSkillIds((prev) =>
+      prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId],
+    );
   }
 
   // 新对话是断链的唯一主动入口：只清本地视图,下一条消息不带 resume_of_run_id,
@@ -351,6 +454,43 @@ export function ChatPanel({
     }
     setThread([]);
     setSendError("");
+  }
+
+  function beginSend(objective: string, resumeOf?: string) {
+    if (needsInteractiveConfirm) {
+      setPendingConfirm({ objective, resumeOf });
+      return;
+    }
+    sendInFlightRef.current = true;
+    sendWithDegradeFallback(objective, resumeOf)
+      .then((run) => {
+        if (run) {
+          setQuestion("");
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        sendInFlightRef.current = false;
+      });
+  }
+
+  function confirmPendingSend() {
+    if (!pendingConfirm || sendInFlightRef.current) {
+      return;
+    }
+    const { objective, resumeOf } = pendingConfirm;
+    setPendingConfirm(null);
+    sendInFlightRef.current = true;
+    sendWithDegradeFallback(objective, resumeOf, true)
+      .then((run) => {
+        if (run) {
+          setQuestion("");
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        sendInFlightRef.current = false;
+      });
   }
 
   function handleSend() {
@@ -365,13 +505,7 @@ export function ChatPanel({
     ) {
       return;
     }
-    sendInFlightRef.current = true;
-    sendWithDegradeFallback(trimmed, lastCompleted?.runId)
-      .then(() => setQuestion(""))
-      .catch(() => {})
-      .finally(() => {
-        sendInFlightRef.current = false;
-      });
+    beginSend(trimmed, lastCompleted?.runId);
   }
 
   // 重试沿用当前会话的续链语义(带上最近完成轮的 resume 目标)；此前不带
@@ -380,12 +514,7 @@ export function ChatPanel({
     if (activeEntry || sendInFlightRef.current) {
       return;
     }
-    sendInFlightRef.current = true;
-    sendWithDegradeFallback(entry.question, lastCompleted?.runId)
-      .catch(() => {})
-      .finally(() => {
-        sendInFlightRef.current = false;
-      });
+    beginSend(entry.question, lastCompleted?.runId);
   }
 
   function handleConvert(entry: ChatEntry) {
@@ -403,7 +532,9 @@ export function ChatPanel({
     Boolean(projectId) &&
     !restoring &&
     !activeEntry &&
-    !sendMutation.isPending;
+    !sendMutation.isPending &&
+    // Wait for project policy so pause_at_gate SoftDialog is not skipped on first paint.
+    (!projectId || !projectDetailQuery.isPending);
 
   return (
     <div className="tl-chat">
@@ -446,104 +577,202 @@ export function ChatPanel({
         </button>
       </div>
 
-      <div className="tl-chat-thread glass-inner" data-testid="chat-thread">
-        {employeesQuery.isLoading || (Boolean(projectId) && membersQuery.isLoading) ? (
-          <LoadingState label="加载数字员工…" />
-        ) : null}
-        {employeesQuery.isError || membersQuery.isError ? (
-          <ErrorState
-            description="无法加载数字员工列表"
-            onRetry={() => {
-              void employeesQuery.refetch();
-              void membersQuery.refetch();
-            }}
-          />
-        ) : null}
-        {!projectId && employeesQuery.isSuccess ? (
-          <EmptyState
-            icon={<FolderOpen aria-hidden />}
-            title="请先选择项目"
-            description="对话按项目锚定，仅项目内的数字员工成员可参与对话"
-          />
-        ) : null}
-        {Boolean(projectId) && employeesQuery.isSuccess && membersQuery.isSuccess && employees.length === 0 ? (
-          <EmptyState
-            icon={<UserRound aria-hidden />}
-            title="该项目暂无可对话的数字员工成员"
-            description="请先在项目配置中把数字员工加入项目成员"
-          />
-        ) : null}
-        {employeesQuery.isSuccess && employees.length > 0 && restoring ? (
-          <LoadingState label="恢复历史对话…" />
-        ) : null}
-        {employeesQuery.isSuccess && employees.length > 0 && !restoring && thread.length === 0 ? (
-          <EmptyState
-            icon={<MessageCircle aria-hidden />}
-            title="向数字员工提问开始对话"
-            description="对话结果不会进入项目流转，可随时转为正式任务"
-          />
-        ) : null}
-        {thread.map((entry) => (
-          <div className="tl-chat-entry" key={entry.runId}>
-            <p className="tl-chat-question">{entry.question}</p>
-            {entry.contextNotContinued ? (
-              <p className="tl-chat-notice">上下文未延续，已作为新对话重新发送</p>
+      <div className="tl-chat-body">
+        <div className="tl-chat-main">
+          <div className="tl-chat-thread glass-inner" data-testid="chat-thread">
+            {employeesQuery.isLoading || (Boolean(projectId) && membersQuery.isLoading) ? (
+              <LoadingState label="加载数字员工…" />
             ) : null}
-            {entry.status === "completed" ? (
-              <div className="tl-chat-answer">
-                <p>{entry.answer}</p>
-                <button
-                  className="tl-ghost"
-                  onClick={() => handleConvert(entry)}
-                  type="button"
-                >
-                  <ArrowRightLeft aria-hidden className="size-3.5" />
-                  转为任务
-                </button>
-              </div>
-            ) : entry.status === "failed" ||
-              entry.status === "cancelled" ||
-              entry.status === "timed_out" ? (
+            {employeesQuery.isError || membersQuery.isError ? (
               <ErrorState
-                description={entry.error}
-                onRetry={sendMutation.isPending ? undefined : () => handleRetry(entry)}
-                title="对话失败"
+                description="无法加载数字员工列表"
+                onRetry={() => {
+                  void employeesQuery.refetch();
+                  void membersQuery.refetch();
+                }}
               />
+            ) : null}
+            {!projectId && employeesQuery.isSuccess ? (
+              <EmptyState
+                icon={<FolderOpen aria-hidden />}
+                title="请先选择项目"
+                description="对话按项目锚定，仅项目内的数字员工成员可参与对话"
+              />
+            ) : null}
+            {Boolean(projectId) && employeesQuery.isSuccess && membersQuery.isSuccess && employees.length === 0 ? (
+              <EmptyState
+                icon={<UserRound aria-hidden />}
+                title="该项目暂无可对话的数字员工成员"
+                description="请先在项目配置中把数字员工加入项目成员"
+              />
+            ) : null}
+            {employeesQuery.isSuccess && employees.length > 0 && restoring ? (
+              <LoadingState label="恢复历史对话…" />
+            ) : null}
+            {employeesQuery.isSuccess && employees.length > 0 && !restoring && thread.length === 0 ? (
+              <EmptyState
+                icon={<MessageCircle aria-hidden />}
+                title="向数字员工提问开始对话"
+                description="对话结果不会进入项目流转，可随时转为正式任务"
+              />
+            ) : null}
+            {thread.map((entry) => (
+              <div className="tl-chat-entry" key={entry.runId}>
+                <p className="tl-chat-question">{entry.question}</p>
+                {entry.contextNotContinued ? (
+                  <p className="tl-chat-notice">上下文未延续，已作为新对话重新发送</p>
+                ) : null}
+                {entry.status === "completed" ? (
+                  <div className="tl-chat-answer">
+                    <p>{entry.answer}</p>
+                    <button
+                      className="tl-ghost"
+                      onClick={() => handleConvert(entry)}
+                      type="button"
+                    >
+                      <ArrowRightLeft aria-hidden className="size-3.5" />
+                      转为任务
+                    </button>
+                  </div>
+                ) : entry.status === "failed" ||
+                  entry.status === "cancelled" ||
+                  entry.status === "timed_out" ? (
+                  <ErrorState
+                    description={entry.error}
+                    onRetry={sendMutation.isPending ? undefined : () => handleRetry(entry)}
+                    title="对话失败"
+                  />
+                ) : (
+                  <LoadingState label="数字员工思考中…" />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {restoreFailed ? <div className="tl-err">⚠ 历史对话恢复失败，可直接开始新对话</div> : null}
+          {sendError ? <div className="tl-err">⚠ {sendError}</div> : null}
+
+          {projectId && chatSkillOptions.length > 0 ? (
+            <div className="tl-chat-skills" data-testid="chat-skill-chips">
+              <p className="tl-chat-skills-label">本轮技能（可选；不选则用项目默认面）</p>
+              <div className="tl-chat-skills-row">
+                {chatSkillOptions.map((skill) => {
+                  const active = selectedSkillIds.includes(skill.id);
+                  return (
+                    <button
+                      aria-pressed={active}
+                      className={active ? "tl-chat-skill is-active" : "tl-chat-skill"}
+                      key={skill.id}
+                      onClick={() => toggleSkill(skill.id)}
+                      type="button"
+                    >
+                      {skill.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="tl-chat-composer glass-inner">
+            <textarea
+              aria-label="对话问题"
+              className="tl-chat-textarea"
+              onChange={(event) => setQuestion(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="向数字员工提问，回答不会写入项目流转"
+              value={question}
+            />
+            <button
+              className="tl-btn-send"
+              disabled={!canSend}
+              onClick={handleSend}
+              title="发送（Shift+Enter）"
+              type="button"
+            >
+              发送
+              <SendHorizontal aria-hidden className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        <aside className="tl-chat-rail glass-inner" data-testid="chat-context-rail">
+          <p className="tl-chat-rail-title">项目上下文</p>
+          <p className="tl-chat-rail-note">
+            Chat 不进审批/验收；动手会改工作区。产出默认旁路，正式进入项目需「转为任务」。
+          </p>
+          {projectId ? (
+            <ProjectWorkspaceGitPanel
+              onRefresh={() => refreshGitMutation.mutate()}
+              pending={refreshGitMutation.isPending || Boolean(projectDetailQuery.data?.workspace_git?.refresh_pending)}
+              status={projectDetailQuery.data?.workspace_git}
+            />
+          ) : (
+            <p className="tl-chat-rail-empty">选择项目后显示 git 状态</p>
+          )}
+          <div className="tl-chat-rail-skills">
+            <p className="tl-chat-rail-subtitle">技能面</p>
+            {!projectId ? (
+              <p className="tl-chat-rail-empty">选择项目后显示</p>
+            ) : skillBindingsQuery.isLoading ? (
+              <p className="tl-chat-rail-empty">加载中…</p>
+            ) : chatSkillOptions.length === 0 ? (
+              <p className="tl-chat-rail-empty">项目尚未绑定技能（Chat 默认面为空）</p>
             ) : (
-              <LoadingState label="数字员工思考中…" />
+              <ul className="tl-chat-rail-skill-list">
+                {chatSkillOptions.map((skill) => (
+                  <li key={skill.id}>
+                    {skill.label}
+                    {selectedSkillIds.length === 0 || selectedSkillIds.includes(skill.id)
+                      ? " · 将投影"
+                      : " · 未选"}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-        ))}
+        </aside>
       </div>
 
-      {restoreFailed ? <div className="tl-err">⚠ 历史对话恢复失败，可直接开始新对话</div> : null}
-      {sendError ? <div className="tl-err">⚠ {sendError}</div> : null}
-
-      <div className="tl-chat-composer glass-inner">
-        <textarea
-          aria-label="对话问题"
-          className="tl-chat-textarea"
-          onChange={(event) => setQuestion(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder="向数字员工提问，回答不会写入项目流转"
-          value={question}
-        />
-        <button
-          className="tl-btn-send"
-          disabled={!canSend}
-          onClick={handleSend}
-          title="发送（Shift+Enter）"
-          type="button"
-        >
-          发送
-          <SendHorizontal aria-hidden className="size-4" />
-        </button>
-      </div>
+      <SoftDialog
+        open={Boolean(pendingConfirm)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingConfirm(null);
+          }
+        }}
+      >
+        <SoftDialogContent size="sm">
+          <SoftDialogHeader>
+            <SoftDialogTitle>确认开跑</SoftDialogTitle>
+            <SoftDialogDescription>
+              Chat 不进审批/验收，动手会改工作区。本确认仅本轮有效，不进收件箱。
+            </SoftDialogDescription>
+          </SoftDialogHeader>
+          <SoftDialogBody className="space-y-2 text-sm text-ink-2">
+            {selectedSkillIds.length > 0 ? (
+              <p>本轮显式选用 {selectedSkillIds.length} 个技能。</p>
+            ) : null}
+            {projectAutonomyCeiling === "pause_at_gate" ? (
+              <p>项目自治上限为「遇闸暂停」，交互侧需点头后再开跑。</p>
+            ) : null}
+            {selectedSkillIds.length === 0 && projectAutonomyCeiling !== "pause_at_gate" ? (
+              <p>本轮需确认后再开跑。</p>
+            ) : null}
+          </SoftDialogBody>
+          <SoftDialogFooter>
+            <Button variant="outline" onClick={() => setPendingConfirm(null)}>
+              取消
+            </Button>
+            <Button onClick={confirmPendingSend}>确认开跑</Button>
+          </SoftDialogFooter>
+        </SoftDialogContent>
+      </SoftDialog>
     </div>
   );
 }

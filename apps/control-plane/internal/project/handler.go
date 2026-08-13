@@ -391,7 +391,6 @@ func (h *HTTPHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		CoordinationPolicy:  req.CoordinationPolicy,
 		RepoBinding:         req.RepoBinding,
 		RuntimeNodeIDs:      req.RuntimeNodeIDs,
-		ScenarioTemplateKey: req.ScenarioTemplateKey,
 		SourceKind:          ProjectSourceKind(strings.TrimSpace(req.SourceKind)),
 	})
 	if err != nil {
@@ -2407,7 +2406,6 @@ type createProjectBody struct {
 	CoordinationPolicy  map[string]any           `json:"coordination_policy"`
 	RepoBinding         *ProjectRepoBindingInput `json:"repo_binding"`
 	RuntimeNodeIDs      []uuid.UUID              `json:"runtime_node_ids"`
-	ScenarioTemplateKey *string                  `json:"scenario_template_key"`
 	// SourceKind: none | git | attach (spec 2026-08-12). Empty → infer from repo_binding.
 	SourceKind string `json:"source_kind"`
 }
@@ -2764,7 +2762,6 @@ type projectResponse struct {
 	CoordinationStatus     string                     `json:"coordination_status"`
 	CoordinationPolicy     map[string]any             `json:"coordination_policy"`
 	RepoBinding            projectRepoBindingResponse `json:"repo_binding"`
-	ScenarioTemplateKey    *string                    `json:"scenario_template_key,omitempty"`
 	WorkspaceReadyStatus   WorkspaceReadyStatus       `json:"workspace_ready_status"`
 	PrimaryRuntimeNodeID   *string                    `json:"primary_runtime_node_id,omitempty"`
 	WorkspaceReadyError    *string                    `json:"workspace_ready_error,omitempty"`
@@ -3424,10 +3421,9 @@ type demandContinueAvailabilityResponse struct {
 }
 
 type demandDossierProjectResponse struct {
-	ID                  string  `json:"id"`
-	Name                string  `json:"name"`
-	Status              string  `json:"status"`
-	ScenarioTemplateKey *string `json:"scenario_template_key"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 type demandDossierPlaybookResponse struct {
@@ -3797,7 +3793,6 @@ func projectResponseFromDomain(project Project) projectResponse {
 		CoordinationStatus:     project.CoordinationStatus,
 		CoordinationPolicy:     mapOrEmpty(project.CoordinationPolicy),
 		RepoBinding:            projectRepoBindingResponseFromDomain(project.RepoBinding),
-		ScenarioTemplateKey:    project.ScenarioTemplateKey,
 		WorkspaceReadyStatus:   readyStatus,
 		PrimaryRuntimeNodeID:   stringPtr(project.PrimaryRuntimeNodeID),
 		WorkspaceReadyError:    project.WorkspaceReadyError,
@@ -4758,10 +4753,9 @@ func demandDossierResponseFromDomain(dossier DemandDossier) demandDossierRespons
 	response := demandDossierResponse{
 		Demand: demandResponseFromDomain(dossier.Demand),
 		Project: demandDossierProjectResponse{
-			ID:                  dossier.Project.ID.String(),
-			Name:                dossier.Project.Name,
-			Status:              string(dossier.Project.Status),
-			ScenarioTemplateKey: dossier.Project.ScenarioTemplateKey,
+			ID:     dossier.Project.ID.String(),
+			Name:   dossier.Project.Name,
+			Status: string(dossier.Project.Status),
 		},
 		Lineage: demandDossierLineageResponseFromDomain(dossier.Lineage),
 		EffectivePlaybook: demandDossierPlaybookResponse{

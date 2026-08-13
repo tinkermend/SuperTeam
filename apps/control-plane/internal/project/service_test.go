@@ -12934,7 +12934,6 @@ func (r *memoryRepository) CreateProject(ctx context.Context, req CreateProjectR
 		CoordinationStatus:     "registered",
 		CoordinationPolicy:     req.CoordinationPolicy,
 		RepoBinding:            repoBindingFromInput(req.RepoBinding),
-		ScenarioTemplateKey:    req.ScenarioTemplateKey,
 		WorkspaceReadyStatus:   ready,
 		// 与 pg_repository 对齐：ownership 是持久字段，fake 丢掉它会让
 		// attach 相关回归静默通过。
@@ -17412,79 +17411,4 @@ func (r stubScenarioTemplateResolver) ResolveScenarioTemplateProduceKinds(_ cont
 		return nil, errors.New("scenario template not found")
 	}
 	return kinds, nil
-}
-
-func TestCreateProjectScenarioTemplateBinding(t *testing.T) {
-	newService := func(t *testing.T) (*Service, *memoryRepository, uuid.UUID, uuid.UUID, uuid.UUID) {
-		t.Helper()
-		repo := newMemoryRepository()
-		service, err := NewService(repo)
-		if err != nil {
-			t.Fatalf("new service: %v", err)
-		}
-		tenantID := uuid.New()
-		ownerID := uuid.New()
-		runtimeNodeID := uuid.New()
-		stubProjectRuntimeNodeReader(service, tenantID, runtimeNodeID)
-		service.SetScenarioTemplateResolver(stubScenarioTemplateResolver{bindings: map[string]ScenarioTemplateBinding{
-			"ops_analysis": {Key: "ops_analysis", Name: "运维分析", Status: "active"},
-			"retired":      {Key: "retired", Name: "退役", Status: "disabled"},
-		}})
-		return service, repo, tenantID, ownerID, runtimeNodeID
-	}
-	baseRequest := func(tenantID, ownerID, runtimeNodeID uuid.UUID) CreateProjectRequest {
-		return CreateProjectRequest{
-			TenantID:         tenantID,
-			ActorUserID:      ownerID,
-			Name:             "scenario-template-binding",
-			Goal:             "验证场景模板绑定",
-			HumanOwnerUserID: ownerID,
-			RuntimeNodeIDs:   []uuid.UUID{runtimeNodeID},
-		}
-	}
-
-	t.Run("unknown key rejected", func(t *testing.T) {
-		service, _, tenantID, ownerID, nodeID := newService(t)
-		req := baseRequest(tenantID, ownerID, nodeID)
-		key := "nope"
-		req.ScenarioTemplateKey = &key
-		if _, err := service.CreateProject(context.Background(), req); !errors.Is(err, ErrInvalidProject) {
-			t.Fatalf("expected ErrInvalidProject, got %v", err)
-		}
-	})
-
-	t.Run("disabled key rejected", func(t *testing.T) {
-		service, _, tenantID, ownerID, nodeID := newService(t)
-		req := baseRequest(tenantID, ownerID, nodeID)
-		key := "retired"
-		req.ScenarioTemplateKey = &key
-		if _, err := service.CreateProject(context.Background(), req); !errors.Is(err, ErrInvalidProject) {
-			t.Fatalf("expected ErrInvalidProject, got %v", err)
-		}
-	})
-
-	t.Run("active key accepted and persisted", func(t *testing.T) {
-		service, _, tenantID, ownerID, nodeID := newService(t)
-		req := baseRequest(tenantID, ownerID, nodeID)
-		key := " ops_analysis "
-		req.ScenarioTemplateKey = &key
-		created, err := service.CreateProject(context.Background(), req)
-		if err != nil {
-			t.Fatalf("create project: %v", err)
-		}
-		if created.Project.ScenarioTemplateKey == nil || *created.Project.ScenarioTemplateKey != "ops_analysis" {
-			t.Fatalf("expected bound key, got %#v", created.Project.ScenarioTemplateKey)
-		}
-	})
-
-	t.Run("no key keeps today's behavior", func(t *testing.T) {
-		service, _, tenantID, ownerID, nodeID := newService(t)
-		created, err := service.CreateProject(context.Background(), baseRequest(tenantID, ownerID, nodeID))
-		if err != nil {
-			t.Fatalf("create project: %v", err)
-		}
-		if created.Project.ScenarioTemplateKey != nil {
-			t.Fatalf("expected nil key, got %#v", created.Project.ScenarioTemplateKey)
-		}
-	})
 }

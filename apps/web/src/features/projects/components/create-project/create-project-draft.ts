@@ -43,7 +43,6 @@ export type ProjectCreateDraft = {
     newDemandNeedsHumanConfirmation: boolean;
   };
   runtimeNodeIds: string[];
-  scenarioTemplateKey: string;
   selectedDigitalEmployees: DigitalEmployee[];
   sourceTeamIds: string[];
 };
@@ -65,7 +64,6 @@ export const emptyProjectCreateDraft: ProjectCreateDraft = {
   },
   ownerUsers: [],
   runtimeNodeIds: [],
-  scenarioTemplateKey: "",
   selectedDigitalEmployees: [],
   sourceTeamIds: [],
 };
@@ -297,7 +295,6 @@ export function buildProjectCreateInput(
         }
       : {}),
     runtime_node_ids: draft.runtimeNodeIds,
-    scenario_template_key: draft.scenarioTemplateKey.trim() || undefined,
     team_id: draft.sourceTeamIds[0],
   };
 }

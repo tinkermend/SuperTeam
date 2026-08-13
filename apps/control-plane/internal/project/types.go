@@ -324,6 +324,9 @@ const (
 	DemandSourceDocument   DemandSourceType = "document"
 	DemandSourceLog        DemandSourceType = "log"
 	DemandSourceAutomation DemandSourceType = "automation"
+	// DemandSourceExternal marks demands submitted through an external API
+	// integration binding (autonomy P5); source_refs carries external_integration_id.
+	DemandSourceExternal DemandSourceType = "external_integration"
 )
 
 type ProjectDemandStatus string
@@ -545,7 +548,6 @@ type Project struct {
 	CoordinationStatus     string
 	CoordinationPolicy     map[string]any
 	RepoBinding            ProjectRepoBinding
-	ScenarioTemplateKey    *string
 	WorkspaceReadyStatus   WorkspaceReadyStatus
 	PrimaryRuntimeNodeID   *uuid.UUID
 	WorkspaceReadyError    *string
@@ -1386,9 +1388,8 @@ type ProjectDemand struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	CoordinationMode   string
-	// ScenarioTemplateKey binds this demand to a scenario template,
-	// overriding the project's default; nil falls back to the project's
-	// ScenarioTemplateKey (and ultimately the generic fallback).
+	// ScenarioTemplateKey binds this demand to a scenario template;
+	// nil falls back to the generic template (no project-level default).
 	ScenarioTemplateKey *string
 	// ContinuesDemandID 是接续血缘(spec 2026-08-01-demand-continuation-design)：
 	// 本单接着哪一单做。nil = 链头。原单终态永不回退，接续一律新开一单接链，
@@ -1795,9 +1796,6 @@ type CreateProjectRequest struct {
 	CoordinationPolicy map[string]any
 	RepoBinding        *ProjectRepoBindingInput
 	RuntimeNodeIDs     []uuid.UUID
-	// ScenarioTemplateKey binds the project to a scenario template; nil means
-	// the generic fallback (planning behaves exactly as an unbound project).
-	ScenarioTemplateKey *string
 	// WorkspaceReadyStatus is set by CreateProject before persistence; callers
 	// outside CreateProject leave it empty (repository defaults to ready).
 	WorkspaceReadyStatus WorkspaceReadyStatus
@@ -1940,7 +1938,7 @@ type SubmitProjectDemandRequest struct {
 	ReviewerSelectionReason ReviewerSelectionReason
 	CoordinationMode        string
 	// ScenarioTemplateKey binds this demand to a scenario template; nil
-	// means fall back to the project's default (and generic beyond that).
+	// means the generic fallback (no project-level default).
 	ScenarioTemplateKey *string
 	// ContinuesDemandID 非空表示这是一条接续单，接在该 demand 之后。
 	// 服务端在 ContinueProjectDemand 里填，普通提需求路径恒为 nil。

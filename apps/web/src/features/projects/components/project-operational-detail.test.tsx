@@ -471,7 +471,7 @@ describe("ProjectOperationalDetail", () => {
             status: "completed",
             title: "补充上线验收说明"
 },
-          effective_playbook: { name: "软件交付", produce_kinds: [], source: "project" },
+          effective_playbook: { name: "软件交付", produce_kinds: [], source: "demand" },
           handoff_summary: {
             assessments: [],
             fulfilled: 0,

@@ -229,6 +229,11 @@ export type DigitalEmployeeRunInput = {
    * run_kind=task is rejected — task runs are produced only by project task
    * dispatch, not by this endpoint. */
   project_id?: string;
+  /** Optional per-turn Chat skill envelope (autonomy P1). Empty/omitted = project
+   * skill bindings ∩ supply. Each id must be in that default surface. */
+  skill_ids?: string[];
+  /** Autonomy P4 / Chat B2: acknowledge interactive light confirm when required. */
+  interactive_confirmed?: boolean;
 };
 
 export type DigitalEmployeeRun = {

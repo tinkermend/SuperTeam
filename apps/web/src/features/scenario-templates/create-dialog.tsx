@@ -22,7 +22,10 @@ export const SCENARIO_TEMPLATE_SPEC_SKELETON = {
   exits: [{ deliverable: "outcome", label: "完成" }],
   constraints: [],
   collapse_rules: [],
-  default_acceptance_criteria: [{ statement: "工作按验收判据完成并留痕" }]
+  default_acceptance_criteria: [{ statement: "工作按验收判据完成并留痕" }],
+  // Optional playbook autonomy posture (P3). Omit or set pause_at_gate|full_auto.
+  // autonomy_default: "pause_at_gate",
+  // autonomy_ceiling: "full_auto",
 };
 
 const SPEC_SKELETON_TEXT = JSON.stringify(SCENARIO_TEMPLATE_SPEC_SKELETON, null, 2);

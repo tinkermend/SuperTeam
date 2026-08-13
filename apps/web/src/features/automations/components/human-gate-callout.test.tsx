@@ -8,6 +8,13 @@ describe("HumanGateCallout", () => {
     render(<HumanGateCallout mode="loop" />);
     await expect.element(page.getByText("自动触发 ≠ 无人值守")).toBeInTheDocument();
     await expect.element(page.getByText(/终态验收仍需人类处理/)).toBeInTheDocument();
+    await expect.element(page.getByText(/遇闸暂停/)).toBeInTheDocument();
+  });
+
+  it("shows full_auto autonomy line when selected", async () => {
+    render(<HumanGateCallout autonomyTier="full_auto" mode="plan" />);
+    await expect.element(page.getByText(/完全自动化/)).toBeInTheDocument();
+    await expect.element(page.getByText(/resolved_by=policy/)).toBeInTheDocument();
   });
 
   it("shows chat isolation copy", async () => {

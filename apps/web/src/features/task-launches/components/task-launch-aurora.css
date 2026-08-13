@@ -572,6 +572,10 @@
   text-decoration: underline;
 }
 
+@media (max-width: 960px) {
+  .tl-chat-body { grid-template-columns: 1fr; }
+  .tl-chat-rail { position: static; }
+}
 @media (max-width: 760px) {
   .tl-params { grid-template-columns: 1fr; }
   .tl-chat-header { grid-template-columns: 1fr; }
@@ -591,6 +595,81 @@
 .tl-chat-header { display: grid; grid-template-columns: repeat(2, minmax(0, 320px)) 1fr; gap: 16px; }
 .tl-chat-new { justify-self: end; align-self: end; }
 .tl-chat-new:disabled { opacity: 0.5; cursor: not-allowed; }
+.tl-chat-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  gap: 16px;
+  align-items: start;
+}
+.tl-chat-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.tl-chat-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  position: sticky;
+  top: 12px;
+}
+.tl-chat-rail-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--aurora-ink);
+}
+.tl-chat-rail-subtitle {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aurora-ink-2);
+}
+.tl-chat-rail-note,
+.tl-chat-rail-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--aurora-ink-3);
+}
+.tl-chat-rail-skill-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 12px;
+  color: var(--aurora-ink-2);
+  line-height: 1.6;
+}
+.tl-chat-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tl-chat-skills-label {
+  margin: 0;
+  font-size: 12px;
+  color: var(--aurora-ink-3);
+}
+.tl-chat-skills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tl-chat-skill {
+  border: 1px solid color-mix(in oklab, var(--aurora-ink-3) 35%, transparent);
+  background: transparent;
+  color: var(--aurora-ink-2);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.tl-chat-skill.is-active {
+  border-color: var(--aurora-send);
+  background: color-mix(in oklab, var(--aurora-send) 14%, transparent);
+  color: var(--aurora-ink);
+}
 .tl-chat-thread {
   display: flex;
   flex-direction: column;

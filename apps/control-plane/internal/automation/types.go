@@ -21,6 +21,10 @@ const (
 	ModeLoop = "loop"
 	ModeChat = "chat"
 
+	// AutonomyTier (P2): binary; omit/empty on create → AutonomyTierPauseAtGate.
+	AutonomyTierPauseAtGate = "pause_at_gate"
+	AutonomyTierFullAuto    = "full_auto"
+
 	ScheduleCron     = "cron"
 	ScheduleInterval = "interval"
 
@@ -63,6 +67,7 @@ type Rule struct {
 	IntervalSeconds         *int32
 	Timezone                string
 	OverlapPolicy           string
+	AutonomyTier            string
 	ActorUserID             uuid.UUID
 	DisabledReason          *string
 	ConsecutiveFailureCount int32
@@ -102,6 +107,8 @@ type CreateRuleRequest struct {
 	IntervalSeconds       *int32
 	Timezone              string
 	Enabled               *bool
+	// AutonomyTier: empty → pause_at_gate. full_auto must be explicit.
+	AutonomyTier string
 }
 
 type UpdateRuleRequest struct {
@@ -118,6 +125,7 @@ type UpdateRuleRequest struct {
 	CronExpr              *string
 	IntervalSeconds       *int32
 	Timezone              *string
+	AutonomyTier          *string
 }
 
 type ListRulesRequest struct {

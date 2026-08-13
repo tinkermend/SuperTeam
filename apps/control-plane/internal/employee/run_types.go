@@ -239,6 +239,15 @@ type CreateDigitalEmployeeRunRequest struct {
 	// 派发依赖解析会把项目级 MCP 绑定并入员工侧集合（同 server_key 项目侧优
 	// 先）。StartProjectTaskRun 绕过 CreateRun 组装请求时会据此回填项目 ID。
 	ProjectID *uuid.UUID
+	// SkillIDs is the optional per-turn Chat skill envelope (autonomy P1).
+	// Empty = project skill bindings ∩ three-layer supply (Chat default surface).
+	// Non-empty = further intersect; ids outside the default surface → 400.
+	// Ignored for task-kind / StartProjectTaskRun paths.
+	SkillIDs []uuid.UUID
+	// InteractiveConfirmed acknowledges Chat B2 light confirm (autonomy P4).
+	// Required when invoker is interactive and (skill_ids non-empty or project
+	// autonomy_ceiling=pause_at_gate). Automation metadata bypasses this gate.
+	InteractiveConfirmed bool
 	// chatThreadID is resolved by CreateRun itself (inherited from the resumed
 	// run's effective thread id); caller-provided values are discarded. Kept
 	// unexported so the handler layer cannot populate it.

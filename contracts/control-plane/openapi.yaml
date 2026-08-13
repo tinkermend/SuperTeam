@@ -3418,6 +3418,179 @@ paths:
           description: Token revoked
         "404":
           $ref: "#/components/responses/Error"
+  /api/v1/external-integrations:
+    get:
+      operationId: listExternalIntegrations
+      summary: List external API integrations (pre-authorized envelope bindings, autonomy P5)
+      parameters:
+        - name: project_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Integration list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalIntegrationListResponse"
+    post:
+      operationId: createExternalIntegration
+      summary: Create an external API integration binding (envelope + tier validated against live ceilings)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateExternalIntegrationRequest"
+      responses:
+        "201":
+          description: Integration created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalIntegration"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/external-integrations/{integrationId}:
+    patch:
+      operationId: updateExternalIntegration
+      summary: Update an external API integration (tier/envelope re-validated against live ceilings)
+      parameters:
+        - name: integrationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateExternalIntegrationRequest"
+      responses:
+        "200":
+          description: Integration updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalIntegration"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/external-integrations/{integrationId}/tokens:
+    get:
+      operationId: listExternalIntegrationTokens
+      summary: List integration tokens (no plaintext or hash)
+      parameters:
+        - name: integrationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Token list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalIntegrationTokenListResponse"
+    post:
+      operationId: issueExternalIntegrationToken
+      summary: Issue a dedicated integration token (plaintext returned once)
+      parameters:
+        - name: integrationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueExternalIntegrationTokenResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/external-integrations/{integrationId}/tokens/{tokenId}:
+    delete:
+      operationId: revokeExternalIntegrationToken
+      summary: Revoke an integration token
+      parameters:
+        - name: integrationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Token revoked
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/v1/external/chat-runs:
+    post:
+      operationId: externalCreateChatRun
+      summary: "External verb 1: create a chat run inside the integration envelope (Bearer integration token; out-of-envelope rejects, over-budget 429)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExternalChatRunRequest"
+      responses:
+        "201":
+          description: Chat run created (bypass effectiveness — output stays quarantined)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalChatRunResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/v1/external/demands:
+    post:
+      operationId: externalSubmitDemand
+      summary: "External verb 2: submit a plan/loop demand through the integration binding (gates auto-resolve only when effective tier is full_auto)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExternalSubmitDemandRequest"
+      responses:
+        "201":
+          description: Demand created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExternalSubmitDemandResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
   /api/v1/admin/feishu/app-configs:
     get:
       operationId: listFeishuAppConfigs
@@ -6573,6 +6746,239 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ServiceToken"
+    ExternalIntegration:
+      type: object
+      description: |
+        外部 API 集成绑定（自治 P5）：带信封的预授权执行入口。活引用语义——
+        调用时现算 Effective(剧本上限, 项目上限, 绑定档) 与项目技能面交集；
+        项目/剧本收紧立即生效，放松不自动升档。
+      required:
+        - id
+        - tenant_id
+        - project_id
+        - digital_employee_id
+        - name
+        - description
+        - allow_chat_run
+        - allow_demand_submit
+        - skill_ids
+        - autonomy_tier
+        - max_calls_per_hour
+        - status
+        - created_by_user_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        allow_chat_run:
+          type: boolean
+        allow_demand_submit:
+          type: boolean
+        skill_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        scenario_template_key:
+          type: string
+          nullable: true
+        autonomy_tier:
+          $ref: "#/components/schemas/AutomationAutonomyTier"
+        max_calls_per_hour:
+          type: integer
+        status:
+          type: string
+          enum: [active, disabled]
+        created_by_user_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ExternalIntegrationListResponse:
+      type: object
+      required:
+        - integrations
+      properties:
+        integrations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExternalIntegration"
+    CreateExternalIntegrationRequest:
+      type: object
+      required:
+        - project_id
+        - digital_employee_id
+        - name
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        digital_employee_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        allow_chat_run:
+          type: boolean
+        allow_demand_submit:
+          type: boolean
+        skill_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        scenario_template_key:
+          type: string
+        autonomy_tier:
+          $ref: "#/components/schemas/AutomationAutonomyTier"
+        max_calls_per_hour:
+          type: integer
+    UpdateExternalIntegrationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        allow_chat_run:
+          type: boolean
+        allow_demand_submit:
+          type: boolean
+        skill_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        scenario_template_key:
+          type: string
+          nullable: true
+        autonomy_tier:
+          $ref: "#/components/schemas/AutomationAutonomyTier"
+        max_calls_per_hour:
+          type: integer
+        status:
+          type: string
+          enum: [active, disabled]
+    ExternalIntegrationToken:
+      type: object
+      required:
+        - id
+        - integration_id
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        integration_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, revoked]
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+    ExternalIntegrationTokenListResponse:
+      type: object
+      required:
+        - tokens
+      properties:
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExternalIntegrationToken"
+    IssueExternalIntegrationTokenResponse:
+      type: object
+      required:
+        - id
+        - integration_id
+        - token
+      properties:
+        id:
+          type: string
+          format: uuid
+        integration_id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: Plaintext token, returned exactly once at issuance.
+    ExternalChatRunRequest:
+      type: object
+      required:
+        - objective
+      properties:
+        objective:
+          type: string
+        resume_of_run_id:
+          type: string
+          format: uuid
+    ExternalChatRunResponse:
+      type: object
+      required:
+        - run_id
+        - status
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+    ExternalSubmitDemandRequest:
+      type: object
+      required:
+        - title
+        - content
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        coordination_mode:
+          type: string
+          enum: [plan, loop]
+          description: Defaults to plan.
+    ExternalSubmitDemandResponse:
+      type: object
+      required:
+        - demand_id
+        - status
+      properties:
+        demand_id:
+          type: string
+          format: uuid
+        status:
+          type: string
     UpsertFeishuAppConfigRequest:
       type: object
       required:
@@ -8249,6 +8655,14 @@ components:
         - plan
         - loop
         - chat
+    AutomationAutonomyTier:
+      type: string
+      description: |
+        自动化规则自治档位（P2）。缺省 pause_at_gate=遇闸暂停；
+        full_auto=闸照触发但策略自动放行（resolved_by=policy:{rule_id}）。
+      enum:
+        - pause_at_gate
+        - full_auto
     AutomationScheduleKind:
       type: string
       enum:
@@ -8282,6 +8696,7 @@ components:
         - schedule_kind
         - timezone
         - overlap_policy
+        - autonomy_tier
         - actor_user_id
         - consecutive_failure_count
         - created_at
@@ -8338,6 +8753,8 @@ components:
           type: string
           enum:
             - skip
+        autonomy_tier:
+          $ref: "#/components/schemas/AutomationAutonomyTier"
         actor_user_id:
           type: string
           format: uuid
@@ -8459,6 +8876,10 @@ components:
           type: string
         enabled:
           type: boolean
+        autonomy_tier:
+          allOf:
+            - $ref: "#/components/schemas/AutomationAutonomyTier"
+          description: 缺省 pause_at_gate（遇闸暂停）；full_auto 须显式选择
     PatchAutomationRuleRequest:
       type: object
       properties:
@@ -8484,6 +8905,8 @@ components:
           minimum: 60
         timezone:
           type: string
+        autonomy_tier:
+          $ref: "#/components/schemas/AutomationAutonomyTier"
     ProjectDemandStatus:
       type: string
       enum:
@@ -8804,8 +9227,6 @@ components:
         coordination_workflow_id:
           type: string
         coordination_status:
-          type: string
-        scenario_template_key:
           type: string
         coordination_policy:
           type: object
@@ -9778,7 +10199,7 @@ components:
             - $ref: "#/components/schemas/ReviewerPreference"
         scenario_template_key:
           type: string
-          description: 需求级场景模板 key；缺省回落项目默认
+          description: 需求级场景模板 key；缺省回落 generic
         continues_demand_id:
           type: string
           format: uuid
@@ -9928,12 +10349,9 @@ components:
               type: string
             status:
               type: string
-            scenario_template_key:
-              type: string
-              nullable: true
         effective_playbook:
           type: object
-          description: 有效剧本:需求覆盖项目;都没绑或解析失败则 source=none,右轨只按实际产物推导。
+          description: 有效剧本:需求显式绑定;未绑或解析失败则 source=none,右轨只按实际产物推导。
           required:
             - template_key
             - source
@@ -9944,7 +10362,7 @@ components:
               nullable: true
             source:
               type: string
-              enum: [demand, project, none]
+              enum: [demand, none]
             name:
               type: string
             produce_kinds:
@@ -11972,9 +12390,6 @@ components:
             format: uuid
         repo_binding:
           $ref: "#/components/schemas/ProjectRepoBinding"
-        scenario_template_key:
-          type: string
-          description: 绑定的场景模板 key；缺省为 generic 兜底（行为同无模板）
     CreateProjectResponse:
       type: object
       required:
@@ -12052,7 +12467,7 @@ components:
           default: plan
         scenario_template_key:
           type: string
-          description: 需求级场景模板 key；缺省回落项目默认
+          description: 需求级场景模板 key；缺省回落 generic
     CreateProjectEvidenceRequest:
       type: object
       required:
@@ -16329,6 +16744,24 @@ components:
             budget, and policy boundary the way project task dispatch does.
             Always required. The anchor project receives no business effect
             from the chat run — no signal, ProjectTask, or RouteDecision.
+        skill_ids:
+          type: array
+          description: >-
+            Optional per-turn Chat skill envelope (autonomy P1). When omitted or
+            empty, the server projects the Chat default surface (project skill
+            bindings ∩ three-layer supply). When set, each id must be in that
+            default surface; otherwise 400. Ignored for non-chat paths.
+          items:
+            type: string
+            format: uuid
+        interactive_confirmed:
+          type: boolean
+          description: >-
+            Autonomy P4 / Chat B2 light confirm. Required for interactive
+            CreateRun when skill_ids is non-empty or the anchor project's
+            coordination_policy.autonomy_ceiling is pause_at_gate. Automation
+            invokers (metadata.automation_rule_id / source_type=automation) are
+            exempt. Confirmation stays on the run (metadata), not inbox.
     DigitalEmployeeRunEvent:
       type: object
       required:

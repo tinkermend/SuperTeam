@@ -78,6 +78,24 @@ func (e AllowedTeamAction) Valid() bool {
 	}
 }
 
+// Defines values for AutomationAutonomyTier.
+const (
+	FullAuto    AutomationAutonomyTier = "full_auto"
+	PauseAtGate AutomationAutonomyTier = "pause_at_gate"
+)
+
+// Valid indicates whether the value is a known member of the AutomationAutonomyTier enum.
+func (e AutomationAutonomyTier) Valid() bool {
+	switch e {
+	case FullAuto:
+		return true
+	case PauseAtGate:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AutomationCoordinationMode.
 const (
 	AutomationCoordinationModeChat AutomationCoordinationMode = "chat"
@@ -798,6 +816,60 @@ func (e EmployeeTemplateStatus) Valid() bool {
 	}
 }
 
+// Defines values for ExternalIntegrationStatus.
+const (
+	ExternalIntegrationStatusActive   ExternalIntegrationStatus = "active"
+	ExternalIntegrationStatusDisabled ExternalIntegrationStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the ExternalIntegrationStatus enum.
+func (e ExternalIntegrationStatus) Valid() bool {
+	switch e {
+	case ExternalIntegrationStatusActive:
+		return true
+	case ExternalIntegrationStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExternalIntegrationTokenStatus.
+const (
+	ExternalIntegrationTokenStatusActive  ExternalIntegrationTokenStatus = "active"
+	ExternalIntegrationTokenStatusRevoked ExternalIntegrationTokenStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ExternalIntegrationTokenStatus enum.
+func (e ExternalIntegrationTokenStatus) Valid() bool {
+	switch e {
+	case ExternalIntegrationTokenStatusActive:
+		return true
+	case ExternalIntegrationTokenStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExternalSubmitDemandRequestCoordinationMode.
+const (
+	ExternalSubmitDemandRequestCoordinationModeLoop ExternalSubmitDemandRequestCoordinationMode = "loop"
+	ExternalSubmitDemandRequestCoordinationModePlan ExternalSubmitDemandRequestCoordinationMode = "plan"
+)
+
+// Valid indicates whether the value is a known member of the ExternalSubmitDemandRequestCoordinationMode enum.
+func (e ExternalSubmitDemandRequestCoordinationMode) Valid() bool {
+	switch e {
+	case ExternalSubmitDemandRequestCoordinationModeLoop:
+		return true
+	case ExternalSubmitDemandRequestCoordinationModePlan:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for FeishuAppConfigStatus.
 const (
 	FeishuAppConfigStatusActive     FeishuAppConfigStatus = "active"
@@ -1466,9 +1538,8 @@ func (e ProjectDeleteBlockerType) Valid() bool {
 
 // Defines values for ProjectDemandDossierEffectivePlaybookSource.
 const (
-	ProjectDemandDossierEffectivePlaybookSourceDemand  ProjectDemandDossierEffectivePlaybookSource = "demand"
-	ProjectDemandDossierEffectivePlaybookSourceNone    ProjectDemandDossierEffectivePlaybookSource = "none"
-	ProjectDemandDossierEffectivePlaybookSourceProject ProjectDemandDossierEffectivePlaybookSource = "project"
+	ProjectDemandDossierEffectivePlaybookSourceDemand ProjectDemandDossierEffectivePlaybookSource = "demand"
+	ProjectDemandDossierEffectivePlaybookSourceNone   ProjectDemandDossierEffectivePlaybookSource = "none"
 )
 
 // Valid indicates whether the value is a known member of the ProjectDemandDossierEffectivePlaybookSource enum.
@@ -1477,8 +1548,6 @@ func (e ProjectDemandDossierEffectivePlaybookSource) Valid() bool {
 	case ProjectDemandDossierEffectivePlaybookSourceDemand:
 		return true
 	case ProjectDemandDossierEffectivePlaybookSourceNone:
-		return true
-	case ProjectDemandDossierEffectivePlaybookSourceProject:
 		return true
 	default:
 		return false
@@ -2795,16 +2864,16 @@ func (e SignDemandCriterionVerdictRequestVerdict) Valid() bool {
 
 // Defines values for SubmitProjectDemandRequestCoordinationMode.
 const (
-	Loop SubmitProjectDemandRequestCoordinationMode = "loop"
-	Plan SubmitProjectDemandRequestCoordinationMode = "plan"
+	SubmitProjectDemandRequestCoordinationModeLoop SubmitProjectDemandRequestCoordinationMode = "loop"
+	SubmitProjectDemandRequestCoordinationModePlan SubmitProjectDemandRequestCoordinationMode = "plan"
 )
 
 // Valid indicates whether the value is a known member of the SubmitProjectDemandRequestCoordinationMode enum.
 func (e SubmitProjectDemandRequestCoordinationMode) Valid() bool {
 	switch e {
-	case Loop:
+	case SubmitProjectDemandRequestCoordinationModeLoop:
 		return true
-	case Plan:
+	case SubmitProjectDemandRequestCoordinationModePlan:
 		return true
 	default:
 		return false
@@ -3006,6 +3075,24 @@ const (
 func (e TeamUserAvatarStyle) Valid() bool {
 	switch e {
 	case Adventurer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateExternalIntegrationRequestStatus.
+const (
+	UpdateExternalIntegrationRequestStatusActive   UpdateExternalIntegrationRequestStatus = "active"
+	UpdateExternalIntegrationRequestStatusDisabled UpdateExternalIntegrationRequestStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the UpdateExternalIntegrationRequestStatus enum.
+func (e UpdateExternalIntegrationRequestStatus) Valid() bool {
+	switch e {
+	case UpdateExternalIntegrationRequestStatusActive:
+		return true
+	case UpdateExternalIntegrationRequestStatusDisabled:
 		return true
 	default:
 		return false
@@ -3428,19 +3515,19 @@ func (e ChangeTeamMemberRoleJSONBodyRole) Valid() bool {
 
 // Defines values for ListWorkflowInstancesParamsScope.
 const (
-	Active   ListWorkflowInstancesParamsScope = "active"
-	All      ListWorkflowInstancesParamsScope = "all"
-	Archived ListWorkflowInstancesParamsScope = "archived"
+	ListWorkflowInstancesParamsScopeActive   ListWorkflowInstancesParamsScope = "active"
+	ListWorkflowInstancesParamsScopeAll      ListWorkflowInstancesParamsScope = "all"
+	ListWorkflowInstancesParamsScopeArchived ListWorkflowInstancesParamsScope = "archived"
 )
 
 // Valid indicates whether the value is a known member of the ListWorkflowInstancesParamsScope enum.
 func (e ListWorkflowInstancesParamsScope) Valid() bool {
 	switch e {
-	case Active:
+	case ListWorkflowInstancesParamsScopeActive:
 		return true
-	case All:
+	case ListWorkflowInstancesParamsScopeAll:
 		return true
-	case Archived:
+	case ListWorkflowInstancesParamsScopeArchived:
 		return true
 	default:
 		return false
@@ -3500,6 +3587,10 @@ type AuditEvent struct {
 	TenantId     openapi_types.UUID     `json:"tenant_id"`
 }
 
+// AutomationAutonomyTier 自动化规则自治档位（P2）。缺省 pause_at_gate=遇闸暂停；
+// full_auto=闸照触发但策略自动放行（resolved_by=policy:{rule_id}）。
+type AutomationAutonomyTier string
+
 // AutomationCoordinationMode defines model for AutomationCoordinationMode.
 type AutomationCoordinationMode string
 
@@ -3531,7 +3622,11 @@ type AutomationFireStatus string
 
 // AutomationRule defines model for AutomationRule.
 type AutomationRule struct {
-	ActorUserId             openapi_types.UUID          `json:"actor_user_id"`
+	ActorUserId openapi_types.UUID `json:"actor_user_id"`
+
+	// AutonomyTier 自动化规则自治档位（P2）。缺省 pause_at_gate=遇闸暂停；
+	// full_auto=闸照触发但策略自动放行（resolved_by=policy:{rule_id}）。
+	AutonomyTier            AutomationAutonomyTier      `json:"autonomy_tier"`
 	ChatObjectiveTemplate   *string                     `json:"chat_objective_template,omitempty"`
 	ConsecutiveFailureCount int                         `json:"consecutive_failure_count"`
 	CoordinationMode        AutomationCoordinationMode  `json:"coordination_mode"`
@@ -3732,6 +3827,8 @@ type ConnectorSubmitDemandResponse struct {
 
 // CreateAutomationRuleRequest defines model for CreateAutomationRuleRequest.
 type CreateAutomationRuleRequest struct {
+	// AutonomyTier 缺省 pause_at_gate（遇闸暂停）；full_auto 须显式选择
+	AutonomyTier          *AutomationAutonomyTier    `json:"autonomy_tier,omitempty"`
 	ChatObjectiveTemplate *string                    `json:"chat_objective_template,omitempty"`
 	CoordinationMode      AutomationCoordinationMode `json:"coordination_mode"`
 	CronExpr              *string                    `json:"cron_expr,omitempty"`
@@ -3800,9 +3897,12 @@ type CreateDigitalEmployeeRunRequest struct {
 	ForbiddenActions *[]string                 `json:"forbidden_actions,omitempty"`
 	GraceSec         *int32                    `json:"grace_sec,omitempty"`
 	IdempotencyKey   *string                   `json:"idempotency_key,omitempty"`
-	Metadata         *map[string]interface{}   `json:"metadata,omitempty"`
-	Objective        string                    `json:"objective"`
-	OutputSchema     *map[string]interface{}   `json:"output_schema,omitempty"`
+
+	// InteractiveConfirmed Autonomy P4 / Chat B2 light confirm. Required for interactive CreateRun when skill_ids is non-empty or the anchor project's coordination_policy.autonomy_ceiling is pause_at_gate. Automation invokers (metadata.automation_rule_id / source_type=automation) are exempt. Confirmation stays on the run (metadata), not inbox.
+	InteractiveConfirmed *bool                   `json:"interactive_confirmed,omitempty"`
+	Metadata             *map[string]interface{} `json:"metadata,omitempty"`
+	Objective            string                  `json:"objective"`
+	OutputSchema         *map[string]interface{} `json:"output_schema,omitempty"`
 
 	// ProjectId Runtime anchor for the chat run: resolves the dispatch node, budget, and policy boundary the way project task dispatch does. Always required. The anchor project receives no business effect from the chat run — no signal, ProjectTask, or RouteDecision.
 	ProjectId     openapi_types.UUID  `json:"project_id"`
@@ -3812,7 +3912,10 @@ type CreateDigitalEmployeeRunRequest struct {
 	// RunKind Chat is the only creatable kind. Task-kind runs are produced exclusively by project task dispatch (run-project affiliation spec, 2026-07-26 A3); requesting run_kind=task returns 400.
 	RunKind    *CreateDigitalEmployeeRunRequestRunKind `json:"run_kind,omitempty"`
 	SecretRefs *[]string                               `json:"secret_refs,omitempty"`
-	TimeoutSec *int32                                  `json:"timeout_sec,omitempty"`
+
+	// SkillIds Optional per-turn Chat skill envelope (autonomy P1). When omitted or empty, the server projects the Chat default surface (project skill bindings ∩ three-layer supply). When set, each id must be in that default surface; otherwise 400. Ignored for non-chat paths.
+	SkillIds   *[]openapi_types.UUID `json:"skill_ids,omitempty"`
+	TimeoutSec *int32                `json:"timeout_sec,omitempty"`
 }
 
 // CreateDigitalEmployeeRunRequestRunKind Chat is the only creatable kind. Task-kind runs are produced exclusively by project task dispatch (run-project affiliation spec, 2026-07-26 A3); requesting run_kind=task returns 400.
@@ -3831,6 +3934,23 @@ type CreateEmployeeTemplateRequest struct {
 	RecommendedProviderTypes *[]string               `json:"recommended_provider_types,omitempty"`
 	RecommendedSkills        *[]string               `json:"recommended_skills,omitempty"`
 	Type                     string                  `json:"type"`
+}
+
+// CreateExternalIntegrationRequest defines model for CreateExternalIntegrationRequest.
+type CreateExternalIntegrationRequest struct {
+	AllowChatRun      *bool `json:"allow_chat_run,omitempty"`
+	AllowDemandSubmit *bool `json:"allow_demand_submit,omitempty"`
+
+	// AutonomyTier 自动化规则自治档位（P2）。缺省 pause_at_gate=遇闸暂停；
+	// full_auto=闸照触发但策略自动放行（resolved_by=policy:{rule_id}）。
+	AutonomyTier        *AutomationAutonomyTier `json:"autonomy_tier,omitempty"`
+	Description         *string                 `json:"description,omitempty"`
+	DigitalEmployeeId   openapi_types.UUID      `json:"digital_employee_id"`
+	MaxCallsPerHour     *int                    `json:"max_calls_per_hour,omitempty"`
+	Name                string                  `json:"name"`
+	ProjectId           openapi_types.UUID      `json:"project_id"`
+	ScenarioTemplateKey *string                 `json:"scenario_template_key,omitempty"`
+	SkillIds            *[]openapi_types.UUID   `json:"skill_ids,omitempty"`
 }
 
 // CreateMCPBindingRequest defines model for CreateMCPBindingRequest.
@@ -3904,10 +4024,7 @@ type CreateProjectRequest struct {
 	Name           string               `json:"name"`
 	RepoBinding    *ProjectRepoBinding  `json:"repo_binding,omitempty"`
 	RuntimeNodeIds []openapi_types.UUID `json:"runtime_node_ids"`
-
-	// ScenarioTemplateKey 绑定的场景模板 key；缺省为 generic 兜底（行为同无模板）
-	ScenarioTemplateKey *string             `json:"scenario_template_key,omitempty"`
-	TeamId              *openapi_types.UUID `json:"team_id,omitempty"`
+	TeamId         *openapi_types.UUID  `json:"team_id,omitempty"`
 }
 
 // CreateProjectResponse defines model for CreateProjectResponse.
@@ -4891,6 +5008,87 @@ type ExecutionLedgerEvent struct {
 	TenantId             openapi_types.UUID     `json:"tenant_id"`
 }
 
+// ExternalChatRunRequest defines model for ExternalChatRunRequest.
+type ExternalChatRunRequest struct {
+	Objective     string              `json:"objective"`
+	ResumeOfRunId *openapi_types.UUID `json:"resume_of_run_id,omitempty"`
+}
+
+// ExternalChatRunResponse defines model for ExternalChatRunResponse.
+type ExternalChatRunResponse struct {
+	RunId  openapi_types.UUID `json:"run_id"`
+	Status string             `json:"status"`
+}
+
+// ExternalIntegration 外部 API 集成绑定（自治 P5）：带信封的预授权执行入口。活引用语义——
+// 调用时现算 Effective(剧本上限, 项目上限, 绑定档) 与项目技能面交集；
+// 项目/剧本收紧立即生效，放松不自动升档。
+type ExternalIntegration struct {
+	AllowChatRun      bool `json:"allow_chat_run"`
+	AllowDemandSubmit bool `json:"allow_demand_submit"`
+
+	// AutonomyTier 自动化规则自治档位（P2）。缺省 pause_at_gate=遇闸暂停；
+	// full_auto=闸照触发但策略自动放行（resolved_by=policy:{rule_id}）。
+	AutonomyTier        AutomationAutonomyTier    `json:"autonomy_tier"`
+	CreatedAt           time.Time                 `json:"created_at"`
+	CreatedByUserId     openapi_types.UUID        `json:"created_by_user_id"`
+	Description         string                    `json:"description"`
+	DigitalEmployeeId   openapi_types.UUID        `json:"digital_employee_id"`
+	Id                  openapi_types.UUID        `json:"id"`
+	MaxCallsPerHour     int                       `json:"max_calls_per_hour"`
+	Name                string                    `json:"name"`
+	ProjectId           openapi_types.UUID        `json:"project_id"`
+	ScenarioTemplateKey *string                   `json:"scenario_template_key,omitempty"`
+	SkillIds            []openapi_types.UUID      `json:"skill_ids"`
+	Status              ExternalIntegrationStatus `json:"status"`
+	TenantId            openapi_types.UUID        `json:"tenant_id"`
+	UpdatedAt           time.Time                 `json:"updated_at"`
+}
+
+// ExternalIntegrationStatus defines model for ExternalIntegration.Status.
+type ExternalIntegrationStatus string
+
+// ExternalIntegrationListResponse defines model for ExternalIntegrationListResponse.
+type ExternalIntegrationListResponse struct {
+	Integrations []ExternalIntegration `json:"integrations"`
+}
+
+// ExternalIntegrationToken defines model for ExternalIntegrationToken.
+type ExternalIntegrationToken struct {
+	CreatedAt     time.Time                      `json:"created_at"`
+	Id            openapi_types.UUID             `json:"id"`
+	IntegrationId openapi_types.UUID             `json:"integration_id"`
+	LastUsedAt    *time.Time                     `json:"last_used_at,omitempty"`
+	RevokedAt     *time.Time                     `json:"revoked_at,omitempty"`
+	Status        ExternalIntegrationTokenStatus `json:"status"`
+}
+
+// ExternalIntegrationTokenStatus defines model for ExternalIntegrationToken.Status.
+type ExternalIntegrationTokenStatus string
+
+// ExternalIntegrationTokenListResponse defines model for ExternalIntegrationTokenListResponse.
+type ExternalIntegrationTokenListResponse struct {
+	Tokens []ExternalIntegrationToken `json:"tokens"`
+}
+
+// ExternalSubmitDemandRequest defines model for ExternalSubmitDemandRequest.
+type ExternalSubmitDemandRequest struct {
+	Content string `json:"content"`
+
+	// CoordinationMode Defaults to plan.
+	CoordinationMode *ExternalSubmitDemandRequestCoordinationMode `json:"coordination_mode,omitempty"`
+	Title            string                                       `json:"title"`
+}
+
+// ExternalSubmitDemandRequestCoordinationMode Defaults to plan.
+type ExternalSubmitDemandRequestCoordinationMode string
+
+// ExternalSubmitDemandResponse defines model for ExternalSubmitDemandResponse.
+type ExternalSubmitDemandResponse struct {
+	DemandId openapi_types.UUID `json:"demand_id"`
+	Status   string             `json:"status"`
+}
+
 // FailProjectTaskAttemptRequest defines model for FailProjectTaskAttemptRequest.
 type FailProjectTaskAttemptRequest struct {
 	// ErrorCode Optional stable Provider ErrorEnvelope.code (UPPER_SNAKE), e.g. RATE_LIMIT / BUDGET_FUSE. Written to project_task_attempts.error_code for cross-provider query/alerts (provider semantic unification Phase 4).
@@ -5009,18 +5207,27 @@ type FeishuIdentityListResponse struct {
 
 // FeishuOperationalOutboxItem defines model for FeishuOperationalOutboxItem.
 type FeishuOperationalOutboxItem struct {
-	Attempts        int                 `json:"attempts"`
-	CreatedAt       time.Time           `json:"created_at"`
-	Id              openapi_types.UUID  `json:"id"`
-	Kind            string              `json:"kind"`
-	LastError       *string             `json:"last_error,omitempty"`
-	ProjectId       *openapi_types.UUID `json:"project_id,omitempty"`
-	RecipientOpenId string              `json:"recipient_open_id"`
-	RecipientUserId openapi_types.UUID  `json:"recipient_user_id"`
-	ResourceId      openapi_types.UUID  `json:"resource_id"`
-	ResourceType    string              `json:"resource_type"`
-	Status          string              `json:"status"`
-	UpdatedAt       time.Time           `json:"updated_at"`
+	Attempts  int32               `json:"attempts"`
+	CreatedAt time.Time           `json:"created_at"`
+	Id        openapi_types.UUID  `json:"id"`
+	Kind      string              `json:"kind"`
+	LastError *string             `json:"last_error,omitempty"`
+	ProjectId *openapi_types.UUID `json:"project_id,omitempty"`
+
+	// ProjectName 项目显示名（读侧从 payload 或项目表解析；给人看，不替代 project_id）
+	ProjectName *string `json:"project_name,omitempty"`
+
+	// RecipientDisplayName 收件人显示名（display_name 或 username；给人看，不替代 recipient_user_id）
+	RecipientDisplayName *string            `json:"recipient_display_name,omitempty"`
+	RecipientOpenId      string             `json:"recipient_open_id"`
+	RecipientUserId      openapi_types.UUID `json:"recipient_user_id"`
+	ResourceId           openapi_types.UUID `json:"resource_id"`
+
+	// ResourceTitle 资源标题（如决策/需求标题；给人看，不替代 resource_id）
+	ResourceTitle *string   `json:"resource_title,omitempty"`
+	ResourceType  string    `json:"resource_type"`
+	Status        string    `json:"status"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // FeishuOperationalOutboxListResponse defines model for FeishuOperationalOutboxListResponse.
@@ -5262,6 +5469,15 @@ type InstallSkillResponse struct {
 // InstallSkillResponseTargetScope defines model for InstallSkillResponse.TargetScope.
 type InstallSkillResponseTargetScope string
 
+// IssueExternalIntegrationTokenResponse defines model for IssueExternalIntegrationTokenResponse.
+type IssueExternalIntegrationTokenResponse struct {
+	Id            openapi_types.UUID `json:"id"`
+	IntegrationId openapi_types.UUID `json:"integration_id"`
+
+	// Token Plaintext token, returned exactly once at issuance.
+	Token string `json:"token"`
+}
+
 // IssueServiceTokenRequest defines model for IssueServiceTokenRequest.
 type IssueServiceTokenRequest struct {
 	ServiceName string `json:"service_name"`
@@ -5347,6 +5563,9 @@ type OverviewPagination struct {
 
 // PatchAutomationRuleRequest defines model for PatchAutomationRuleRequest.
 type PatchAutomationRuleRequest struct {
+	// AutonomyTier 自动化规则自治档位（P2）。缺省 pause_at_gate=遇闸暂停；
+	// full_auto=闸照触发但策略自动放行（resolved_by=policy:{rule_id}）。
+	AutonomyTier          *AutomationAutonomyTier `json:"autonomy_tier,omitempty"`
 	ChatObjectiveTemplate *string                 `json:"chat_objective_template,omitempty"`
 	CronExpr              *string                 `json:"cron_expr,omitempty"`
 	DemandBodyTemplate    *string                 `json:"demand_body_template,omitempty"`
@@ -5568,7 +5787,6 @@ type Project struct {
 	// PrimaryRuntimeNodeId Sticky primary runtime node (first successful provision/clone).
 	PrimaryRuntimeNodeId *openapi_types.UUID `json:"primary_runtime_node_id,omitempty"`
 	RepoBinding          ProjectRepoBinding  `json:"repo_binding"`
-	ScenarioTemplateKey  *string             `json:"scenario_template_key,omitempty"`
 	Status               ProjectStatus       `json:"status"`
 	TeamId               *openapi_types.UUID `json:"team_id,omitempty"`
 	TenantId             openapi_types.UUID  `json:"tenant_id"`
@@ -5875,7 +6093,7 @@ type ProjectDemand struct {
 	ProjectId         openapi_types.UUID  `json:"project_id"`
 	Reviewer          *ReviewerPreference `json:"reviewer"`
 
-	// ScenarioTemplateKey 需求级场景模板 key；缺省回落项目默认
+	// ScenarioTemplateKey 需求级场景模板 key；缺省回落 generic
 	ScenarioTemplateKey *string                 `json:"scenario_template_key,omitempty"`
 	SourceRefs          map[string]interface{}  `json:"source_refs"`
 	SourceType          ProjectDemandSourceType `json:"source_type"`
@@ -5896,7 +6114,7 @@ type ProjectDemandDossier struct {
 	} `json:"acceptance,omitempty"`
 	Demand ProjectDemand `json:"demand"`
 
-	// EffectivePlaybook 有效剧本:需求覆盖项目;都没绑或解析失败则 source=none,右轨只按实际产物推导。
+	// EffectivePlaybook 有效剧本:需求显式绑定;未绑或解析失败则 source=none,右轨只按实际产物推导。
 	EffectivePlaybook struct {
 		// ExitDeliverable 本单收口:这一单走到哪一步。取自计划修订载荷的 exit_deliverable, 空串表示尚未规划或该计划无声明出口。
 		ExitDeliverable *string `json:"exit_deliverable,omitempty"`
@@ -5971,10 +6189,9 @@ type ProjectDemandDossier struct {
 		Title  string `json:"title"`
 	} `json:"pending_actions"`
 	Project struct {
-		Id                  openapi_types.UUID `json:"id"`
-		Name                string             `json:"name"`
-		ScenarioTemplateKey *string            `json:"scenario_template_key,omitempty"`
-		Status              *string            `json:"status,omitempty"`
+		Id     openapi_types.UUID `json:"id"`
+		Name   string             `json:"name"`
+		Status *string            `json:"status,omitempty"`
 	} `json:"project"`
 	Rail struct {
 		Slots []ProjectDemandDossierRailSlot `json:"slots"`
@@ -7880,7 +8097,7 @@ type SubmitProjectDemandRequest struct {
 	ReviewerSelectionReason *SubmitProjectDemandRequestReviewerSelectionReason `json:"reviewer_selection_reason,omitempty"`
 	ReviewerUserId          *openapi_types.UUID                                `json:"reviewer_user_id,omitempty"`
 
-	// ScenarioTemplateKey 需求级场景模板 key；缺省回落项目默认
+	// ScenarioTemplateKey 需求级场景模板 key；缺省回落 generic
 	ScenarioTemplateKey *string                  `json:"scenario_template_key,omitempty"`
 	SourceRefs          *map[string]interface{}  `json:"source_refs,omitempty"`
 	SourceType          *ProjectDemandSourceType `json:"source_type,omitempty"`
@@ -8185,6 +8402,25 @@ type UpdateEmployeeTemplateRequest struct {
 	RecommendedProviderTypes *[]string               `json:"recommended_provider_types,omitempty"`
 	RecommendedSkills        *[]string               `json:"recommended_skills,omitempty"`
 }
+
+// UpdateExternalIntegrationRequest defines model for UpdateExternalIntegrationRequest.
+type UpdateExternalIntegrationRequest struct {
+	AllowChatRun      *bool `json:"allow_chat_run,omitempty"`
+	AllowDemandSubmit *bool `json:"allow_demand_submit,omitempty"`
+
+	// AutonomyTier 自动化规则自治档位（P2）。缺省 pause_at_gate=遇闸暂停；
+	// full_auto=闸照触发但策略自动放行（resolved_by=policy:{rule_id}）。
+	AutonomyTier        *AutomationAutonomyTier                 `json:"autonomy_tier,omitempty"`
+	Description         *string                                 `json:"description,omitempty"`
+	MaxCallsPerHour     *int                                    `json:"max_calls_per_hour,omitempty"`
+	Name                *string                                 `json:"name,omitempty"`
+	ScenarioTemplateKey *string                                 `json:"scenario_template_key,omitempty"`
+	SkillIds            *[]openapi_types.UUID                   `json:"skill_ids,omitempty"`
+	Status              *UpdateExternalIntegrationRequestStatus `json:"status,omitempty"`
+}
+
+// UpdateExternalIntegrationRequestStatus defines model for UpdateExternalIntegrationRequest.Status.
+type UpdateExternalIntegrationRequestStatus string
 
 // UpdateProjectConfigRequest defines model for UpdateProjectConfigRequest.
 type UpdateProjectConfigRequest struct {
@@ -8626,6 +8862,11 @@ type BindEmployeeSkillJSONBody struct {
 	SkillId openapi_types.UUID `json:"skill_id"`
 }
 
+// ListExternalIntegrationsParams defines parameters for ListExternalIntegrations.
+type ListExternalIntegrationsParams struct {
+	ProjectId *openapi_types.UUID `form:"project_id,omitempty" json:"project_id,omitempty"`
+}
+
 // ListInboxItemsParams defines parameters for ListInboxItems.
 type ListInboxItemsParams struct {
 	View      *ListInboxItemsParamsView     `form:"view,omitempty" json:"view,omitempty"`
@@ -8866,6 +9107,12 @@ type ProvisionProjectRuntimeNode200JSONResponseBodyProvisionStatus string
 type GetProjectTaskGraphParams struct {
 	CoordinationJobId *openapi_types.UUID `form:"coordination_job_id,omitempty" json:"coordination_job_id,omitempty"`
 	DemandId          *openapi_types.UUID `form:"demand_id,omitempty" json:"demand_id,omitempty"`
+
+	// OmitRecentEvents 为 true 时跳过 recent_events（控制台流程图默认）。 缺省 false，保持历史全量响应。
+	OmitRecentEvents *bool `form:"omit_recent_events,omitempty" json:"omit_recent_events,omitempty"`
+
+	// OpenDecisionsOnly 为 true 时 decision_requests 仅含未关闭决策（pending/requested/waiting/open）， 供节点「当前处理」。缺省 false 返回全历史。
+	OpenDecisionsOnly *bool `form:"open_decisions_only,omitempty" json:"open_decisions_only,omitempty"`
 }
 
 // ListProjectTasksParams defines parameters for ListProjectTasks.
@@ -9146,6 +9393,18 @@ type UpdateDigitalEmployeeStatusJSONRequestBody = UpdateDigitalEmployeeStatusReq
 
 // ReassignDigitalEmployeeTeamJSONRequestBody defines body for ReassignDigitalEmployeeTeam for application/json ContentType.
 type ReassignDigitalEmployeeTeamJSONRequestBody = ReassignDigitalEmployeeTeamRequest
+
+// CreateExternalIntegrationJSONRequestBody defines body for CreateExternalIntegration for application/json ContentType.
+type CreateExternalIntegrationJSONRequestBody = CreateExternalIntegrationRequest
+
+// UpdateExternalIntegrationJSONRequestBody defines body for UpdateExternalIntegration for application/json ContentType.
+type UpdateExternalIntegrationJSONRequestBody = UpdateExternalIntegrationRequest
+
+// ExternalCreateChatRunJSONRequestBody defines body for ExternalCreateChatRun for application/json ContentType.
+type ExternalCreateChatRunJSONRequestBody = ExternalChatRunRequest
+
+// ExternalSubmitDemandJSONRequestBody defines body for ExternalSubmitDemand for application/json ContentType.
+type ExternalSubmitDemandJSONRequestBody = ExternalSubmitDemandRequest
 
 // ExecuteInboxActionJSONRequestBody defines body for ExecuteInboxAction for application/json ContentType.
 type ExecuteInboxActionJSONRequestBody = ExecuteInboxActionRequest
@@ -10237,6 +10496,30 @@ type ServerInterface interface {
 	// Reassign a digital employee to a team (first assignment or transfer)
 	// (PUT /api/v1/digital-employees/{employeeId}/team)
 	ReassignDigitalEmployeeTeam(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List external API integrations (pre-authorized envelope bindings, autonomy P5)
+	// (GET /api/v1/external-integrations)
+	ListExternalIntegrations(w http.ResponseWriter, r *http.Request, params ListExternalIntegrationsParams)
+	// Create an external API integration binding (envelope + tier validated against live ceilings)
+	// (POST /api/v1/external-integrations)
+	CreateExternalIntegration(w http.ResponseWriter, r *http.Request)
+	// Update an external API integration (tier/envelope re-validated against live ceilings)
+	// (PATCH /api/v1/external-integrations/{integrationId})
+	UpdateExternalIntegration(w http.ResponseWriter, r *http.Request, integrationId openapi_types.UUID)
+	// List integration tokens (no plaintext or hash)
+	// (GET /api/v1/external-integrations/{integrationId}/tokens)
+	ListExternalIntegrationTokens(w http.ResponseWriter, r *http.Request, integrationId openapi_types.UUID)
+	// Issue a dedicated integration token (plaintext returned once)
+	// (POST /api/v1/external-integrations/{integrationId}/tokens)
+	IssueExternalIntegrationToken(w http.ResponseWriter, r *http.Request, integrationId openapi_types.UUID)
+	// Revoke an integration token
+	// (DELETE /api/v1/external-integrations/{integrationId}/tokens/{tokenId})
+	RevokeExternalIntegrationToken(w http.ResponseWriter, r *http.Request, integrationId openapi_types.UUID, tokenId openapi_types.UUID)
+	// External verb 1: create a chat run inside the integration envelope (Bearer integration token; out-of-envelope rejects, over-budget 429)
+	// (POST /api/v1/external/chat-runs)
+	ExternalCreateChatRun(w http.ResponseWriter, r *http.Request)
+	// External verb 2: submit a plan/loop demand through the integration binding (gates auto-resolve only when effective tier is full_auto)
+	// (POST /api/v1/external/demands)
+	ExternalSubmitDemand(w http.ResponseWriter, r *http.Request)
 	// Get actionable inbox badge counts
 	// (GET /api/v1/inbox/badge)
 	GetInboxBadge(w http.ResponseWriter, r *http.Request)
@@ -11266,6 +11549,54 @@ func (_ Unimplemented) UpdateDigitalEmployeeStatus(w http.ResponseWriter, r *htt
 // Reassign a digital employee to a team (first assignment or transfer)
 // (PUT /api/v1/digital-employees/{employeeId}/team)
 func (_ Unimplemented) ReassignDigitalEmployeeTeam(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List external API integrations (pre-authorized envelope bindings, autonomy P5)
+// (GET /api/v1/external-integrations)
+func (_ Unimplemented) ListExternalIntegrations(w http.ResponseWriter, r *http.Request, params ListExternalIntegrationsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create an external API integration binding (envelope + tier validated against live ceilings)
+// (POST /api/v1/external-integrations)
+func (_ Unimplemented) CreateExternalIntegration(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update an external API integration (tier/envelope re-validated against live ceilings)
+// (PATCH /api/v1/external-integrations/{integrationId})
+func (_ Unimplemented) UpdateExternalIntegration(w http.ResponseWriter, r *http.Request, integrationId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List integration tokens (no plaintext or hash)
+// (GET /api/v1/external-integrations/{integrationId}/tokens)
+func (_ Unimplemented) ListExternalIntegrationTokens(w http.ResponseWriter, r *http.Request, integrationId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Issue a dedicated integration token (plaintext returned once)
+// (POST /api/v1/external-integrations/{integrationId}/tokens)
+func (_ Unimplemented) IssueExternalIntegrationToken(w http.ResponseWriter, r *http.Request, integrationId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Revoke an integration token
+// (DELETE /api/v1/external-integrations/{integrationId}/tokens/{tokenId})
+func (_ Unimplemented) RevokeExternalIntegrationToken(w http.ResponseWriter, r *http.Request, integrationId openapi_types.UUID, tokenId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// External verb 1: create a chat run inside the integration envelope (Bearer integration token; out-of-envelope rejects, over-budget 429)
+// (POST /api/v1/external/chat-runs)
+func (_ Unimplemented) ExternalCreateChatRun(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// External verb 2: submit a plan/loop demand through the integration binding (gates auto-resolve only when effective tier is full_auto)
+// (POST /api/v1/external/demands)
+func (_ Unimplemented) ExternalSubmitDemand(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -14918,6 +15249,194 @@ func (siw *ServerInterfaceWrapper) ReassignDigitalEmployeeTeam(w http.ResponseWr
 	handler.ServeHTTP(w, r)
 }
 
+// ListExternalIntegrations operation middleware
+func (siw *ServerInterfaceWrapper) ListExternalIntegrations(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListExternalIntegrationsParams
+
+	// ------------- Optional query parameter "project_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project_id", r.URL.Query(), &params.ProjectId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListExternalIntegrations(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateExternalIntegration operation middleware
+func (siw *ServerInterfaceWrapper) CreateExternalIntegration(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateExternalIntegration(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateExternalIntegration operation middleware
+func (siw *ServerInterfaceWrapper) UpdateExternalIntegration(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "integrationId" -------------
+	var integrationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "integrationId", chi.URLParam(r, "integrationId"), &integrationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "integrationId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateExternalIntegration(w, r, integrationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListExternalIntegrationTokens operation middleware
+func (siw *ServerInterfaceWrapper) ListExternalIntegrationTokens(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "integrationId" -------------
+	var integrationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "integrationId", chi.URLParam(r, "integrationId"), &integrationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "integrationId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListExternalIntegrationTokens(w, r, integrationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IssueExternalIntegrationToken operation middleware
+func (siw *ServerInterfaceWrapper) IssueExternalIntegrationToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "integrationId" -------------
+	var integrationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "integrationId", chi.URLParam(r, "integrationId"), &integrationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "integrationId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueExternalIntegrationToken(w, r, integrationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeExternalIntegrationToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeExternalIntegrationToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "integrationId" -------------
+	var integrationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "integrationId", chi.URLParam(r, "integrationId"), &integrationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "integrationId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "tokenId" -------------
+	var tokenId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tokenId", chi.URLParam(r, "tokenId"), &tokenId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tokenId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeExternalIntegrationToken(w, r, integrationId, tokenId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExternalCreateChatRun operation middleware
+func (siw *ServerInterfaceWrapper) ExternalCreateChatRun(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExternalCreateChatRun(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExternalSubmitDemand operation middleware
+func (siw *ServerInterfaceWrapper) ExternalSubmitDemand(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExternalSubmitDemand(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetInboxBadge operation middleware
 func (siw *ServerInterfaceWrapper) GetInboxBadge(w http.ResponseWriter, r *http.Request) {
 
@@ -17778,6 +18297,32 @@ func (siw *ServerInterfaceWrapper) GetProjectTaskGraph(w http.ResponseWriter, r 
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "demand_id"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "demand_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "omit_recent_events" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "omit_recent_events", r.URL.Query(), &params.OmitRecentEvents, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "omit_recent_events"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "omit_recent_events", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "open_decisions_only" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "open_decisions_only", r.URL.Query(), &params.OpenDecisionsOnly, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "open_decisions_only"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "open_decisions_only", Err: err})
 		}
 		return
 	}
@@ -21860,6 +22405,30 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/digital-employees/{employeeId}/team", wrapper.ReassignDigitalEmployeeTeam)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/external-integrations", wrapper.ListExternalIntegrations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/external-integrations", wrapper.CreateExternalIntegration)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/external-integrations/{integrationId}", wrapper.UpdateExternalIntegration)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/external-integrations/{integrationId}/tokens", wrapper.ListExternalIntegrationTokens)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/external-integrations/{integrationId}/tokens", wrapper.IssueExternalIntegrationToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/external-integrations/{integrationId}/tokens/{tokenId}", wrapper.RevokeExternalIntegrationToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/external/chat-runs", wrapper.ExternalCreateChatRun)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/external/demands", wrapper.ExternalSubmitDemand)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/inbox/badge", wrapper.GetInboxBadge)
