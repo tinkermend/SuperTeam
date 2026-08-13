@@ -185,8 +185,8 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 	if req.RunKind != RunKindChat {
 		return nil, ErrInvalidRunKind
 	}
-	// chatThreadID is resolved exclusively by the resume branch below; discard
-	// anything a caller in this package may have pre-set.
+	// chatThreadID is resolved by resume inherit or validated ChatThreadID join;
+	// discard anything a caller in this package may have pre-set on the unexported field.
 	req.chatThreadID = nil
 
 	if req.ProjectID == nil || *req.ProjectID == uuid.Nil {
@@ -242,9 +242,59 @@ func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDig
 			rootID := prior.ID
 			req.chatThreadID = &rootID
 		}
+	} else if req.ChatThreadID != nil && *req.ChatThreadID != uuid.Nil {
+		// TTL-expiry continue: stay on the same SuperTeam thread without a
+		// provider session. Validate the root belongs to this employee+project.
+		threads, ok := s.repository.(chatThreadStore)
+		if !ok {
+			return nil, fmt.Errorf("%w: chat thread store is required", ErrInvalidInput)
+		}
+		root, err := threads.GetChatThreadRoot(ctx, req.TenantID, req.DigitalEmployeeID, *req.ChatThreadID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: chat_thread_id: %v", ErrInvalidInput, err)
+		}
+		if root == nil || root.ProjectID != *req.ProjectID {
+			return nil, fmt.Errorf("%w: chat_thread_id does not match employee/project", ErrInvalidInput)
+		}
+		threadID := *req.ChatThreadID
+		req.chatThreadID = &threadID
+	}
+
+	if req.chatThreadID != nil {
+		if err := s.ensureChatThreadIdle(ctx, req.TenantID, req.DigitalEmployeeID, *req.chatThreadID); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.createChatRun(ctx, req, objective, prompt)
+}
+
+// chatThreadStore is the optional repository surface for chat session list,
+// rename, root lookup, and per-thread mutex. PgRunRepository implements it.
+type chatThreadStore interface {
+	ListChatThreads(ctx context.Context, tenantID, employeeID, projectID uuid.UUID) ([]DigitalEmployeeChatThread, error)
+	GetChatThreadRoot(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ChatThreadRoot, error)
+	UpdateChatThreadTitle(ctx context.Context, tenantID, employeeID, threadID uuid.UUID, title string) (*ChatThreadRoot, error)
+	GetActiveChatRunOnThread(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ActiveChatRunOnThread, error)
+}
+
+func (s *DigitalEmployeeRunService) ensureChatThreadIdle(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) error {
+	threads, ok := s.repository.(chatThreadStore)
+	if !ok {
+		return nil
+	}
+	active, err := threads.GetActiveChatRunOnThread(ctx, tenantID, employeeID, threadID)
+	if err != nil {
+		return fmt.Errorf("check active chat run on thread: %w", err)
+	}
+	if active == nil {
+		return nil
+	}
+	name := strings.TrimSpace(active.RunnerDisplayName)
+	if name == "" {
+		name = "有人"
+	}
+	return fmt.Errorf("%w: %s正在这条会话里", ErrConflict, name)
 }
 
 // createChatRun dispatches a chat run using its project anchor (§13 design
@@ -576,6 +626,12 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 	if req.ProjectID != nil {
 		projectID = *req.ProjectID
 	}
+	var threadTitle *string
+	if req.chatThreadID == nil && runKind == RunKindChat {
+		// Root turn: seed SuperTeam-only title from the first prompt (truncate).
+		title := truncateChatThreadTitle(objective)
+		threadTitle = &title
+	}
 	createReq := CreateRunRecordRequest{
 		IdempotencyKey:         idempotencyKey,
 		IdempotencyFingerprint: &fingerprint,
@@ -599,6 +655,7 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 		RunKind:                runKind,
 		ResumeOfRunID:          req.ResumeOfRunID,
 		ChatThreadID:           req.chatThreadID,
+		ThreadTitle:            threadTitle,
 		ProjectID:              projectID,
 	}
 
@@ -2072,6 +2129,74 @@ func stringPtrIfNotEmpty(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+const chatThreadTitleMaxRunes = 80
+
+func truncateChatThreadTitle(value string) string {
+	trimmed := strings.TrimSpace(value)
+	runes := []rune(trimmed)
+	if len(runes) <= chatThreadTitleMaxRunes {
+		return trimmed
+	}
+	return string(runes[:chatThreadTitleMaxRunes])
+}
+
+func (s *DigitalEmployeeRunService) ListChatThreads(ctx context.Context, tenantID, employeeID, projectID uuid.UUID) ([]DigitalEmployeeChatThread, error) {
+	if tenantID == uuid.Nil || employeeID == uuid.Nil || projectID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, digital_employee_id, and project_id are required", ErrInvalidInput)
+	}
+	threads, ok := s.repository.(chatThreadStore)
+	if !ok {
+		return nil, fmt.Errorf("%w: chat thread store is required", ErrInvalidInput)
+	}
+	return threads.ListChatThreads(ctx, tenantID, employeeID, projectID)
+}
+
+func (s *DigitalEmployeeRunService) RenameChatThread(ctx context.Context, tenantID, employeeID, threadID, actorUserID uuid.UUID, title string) (*DigitalEmployeeChatThread, error) {
+	title = strings.TrimSpace(title)
+	if tenantID == uuid.Nil || employeeID == uuid.Nil || threadID == uuid.Nil || actorUserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id, digital_employee_id, thread_id, and actor are required", ErrInvalidInput)
+	}
+	if title == "" {
+		return nil, fmt.Errorf("%w: title is required", ErrInvalidInput)
+	}
+	if len([]rune(title)) > 120 {
+		return nil, fmt.Errorf("%w: title must be at most 120 characters", ErrInvalidInput)
+	}
+	threads, ok := s.repository.(chatThreadStore)
+	if !ok {
+		return nil, fmt.Errorf("%w: chat thread store is required", ErrInvalidInput)
+	}
+	root, err := threads.GetChatThreadRoot(ctx, tenantID, employeeID, threadID)
+	if err != nil {
+		return nil, err
+	}
+	if root == nil {
+		return nil, ErrNotFound
+	}
+	if root.InitiatorUserID != actorUserID {
+		return nil, fmt.Errorf("%w: only the thread initiator may rename", ErrForbidden)
+	}
+	if _, err := threads.UpdateChatThreadTitle(ctx, tenantID, employeeID, threadID, title); err != nil {
+		return nil, err
+	}
+	listed, err := threads.ListChatThreads(ctx, tenantID, employeeID, root.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range listed {
+		if listed[i].ChatThreadID == threadID {
+			listed[i].Title = title
+			return &listed[i], nil
+		}
+	}
+	return &DigitalEmployeeChatThread{
+		ChatThreadID:         threadID,
+		Title:                title,
+		InitiatorUserID:      root.InitiatorUserID,
+		InitiatorDisplayName: root.InitiatorDisplayName,
+	}, nil
 }
 
 func stringPtr(value string) *string {

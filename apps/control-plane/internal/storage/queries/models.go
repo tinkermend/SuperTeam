@@ -2550,6 +2550,8 @@ type Task struct {
 	ResumeOfRunID uuid.NullUUID `json:"resume_of_run_id"`
 	// chat 会话根 id(根 run 的 task_runs.id);首轮为 NULL(有效值=自身 run id),追问轮继承前序有效值。仅 chat run 使用,无 FK。
 	ChatThreadID uuid.NullUUID `json:"chat_thread_id"`
+	// chat 会话标题（仅根轮）；缺省自首问截断，用户可改名；追问轮为 NULL
+	ThreadTitle pgtype.Text `json:"thread_title"`
 }
 
 // 任务事件流表

@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>炬枢 · 任务中枢工作台原型</title>
+<!-- 对照 spec：docs/superpowers/specs/2026-08-13-task-hub-workbench-design.md
+     本页数据为示意，实施须接该 spec §7 真实接口；不得发明 ahead-behind / 技能风险标签 / 跨员工续同一 thread。 -->
+<style>
+  :root {
+    --bg: #f6f8fb;
+    --card: #ffffff;
+    --card-soft: #f7f8fa;
+    --card-inner: #fafbfc;
+    --ink: #0b0d12;
+    --ink-2: #4d586b;
+    --ink-3: #6d7580;
+    --line: #eef1f4;
+    --line-strong: #dfe4ea;
+    --brand: #2f5fff;
+    --brand-deep: #2348e0;
+    --brand-soft: #e9efff;
+    --ok: #009a60;
+    --ok-text: #006639;
+    --ok-soft: #e3f9ec;
+    --warn: #cc572a;
+    --warn-text: #893411;
+    --warn-soft: #ffede5;
+    --danger: #d14647;
+    --danger-text: #8a2f2d;
+    --danger-soft: #ffece9;
+    --mute: #64748b;
+    --r-card: 22px;
+    --r-inner: 14px;
+    --r-ctl: 11px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 30px rgba(16, 24, 40, 0.055);
+    --sans: "Inter", -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --nav: 220px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    background:
+      radial-gradient(680px 520px at 8% 6%, rgba(95, 214, 200, 0.18), transparent 60%),
+      radial-gradient(620px 520px at 92% 16%, rgba(167, 139, 250, 0.14), transparent 60%),
+      linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
+    font-size: 13.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, select, input, textarea { font: inherit; }
+  button { cursor: pointer; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .shell { display: grid; grid-template-columns: var(--nav) minmax(0, 1fr); min-height: 100%; }
+
+  .nav {
+    padding: 18px 12px;
+    border-right: 1px solid rgba(255, 255, 255, 0.55);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.22));
+    backdrop-filter: blur(18px);
+  }
+  .logo { display: flex; align-items: center; gap: 9px; font-weight: 800; padding: 4px 8px 18px; }
+  .logo .mk {
+    width: 28px; height: 28px; border-radius: 9px; color: #fff; display: grid; place-items: center;
+    background: linear-gradient(135deg, #4d7cff, #2348e0); font-size: 13px;
+  }
+  .nav a {
+    display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 11px;
+    color: var(--ink-2); text-decoration: none; font-weight: 600; font-size: 13px;
+  }
+  .nav a.on { background: rgba(47, 95, 255, 0.1); color: var(--brand-deep); }
+  .nav .hint { margin: 22px 10px 0; font-size: 11px; color: var(--ink-3); line-height: 1.55; }
+
+  .app { display: flex; flex-direction: column; min-width: 0; min-height: 100%; }
+  .top {
+    display: flex; align-items: center; gap: 14px; padding: 14px 22px 10px;
+  }
+  .top h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.03em; }
+  .top .sub { color: var(--ink-2); font-size: 12.5px; }
+  .grow { flex: 1; }
+  .seg {
+    display: inline-flex; padding: 3px; border-radius: 12px; background: rgba(255,255,255,0.72);
+    border: 1px solid var(--line-strong);
+  }
+  .seg button {
+    border: 0; background: transparent; color: var(--ink-2); font-weight: 700;
+    padding: 7px 14px; border-radius: 9px;
+  }
+  .seg button.on { background: #fff; color: var(--ink); box-shadow: var(--shadow); }
+  .me {
+    display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 5px;
+    background: #fff; border-radius: 13px; box-shadow: var(--shadow);
+  }
+  .av {
+    width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center;
+    color: #fff; font-size: 11px; font-weight: 800; flex: none;
+  }
+  .me .nm { font-size: 12.5px; font-weight: 700; }
+  .me .ro { font-size: 11px; color: var(--ink-3); }
+
+  .tips {
+    margin: 0 22px 12px; padding: 10px 14px; border-radius: 12px;
+    background: var(--brand-soft); color: var(--brand-deep); font-size: 12.5px;
+    display: flex; gap: 10px; align-items: flex-start; line-height: 1.55;
+  }
+  .tips b { font-weight: 800; }
+  .tips button { margin-left: auto; border: 0; background: transparent; color: var(--brand-deep); font-weight: 700; }
+
+  .bench {
+    flex: 1;
+    display: grid;
+    gap: 12px;
+    padding: 0 16px 16px;
+    min-height: 0;
+    height: calc(100vh - 118px);
+    grid-template-columns: 280px minmax(0, 1fr) 280px;
+  }
+  .bench[hidden] { display: none !important; }
+  @media (max-width: 1180px) {
+    .bench.chat, .bench.task { grid-template-columns: 240px minmax(0, 1fr); }
+    .rail { display: none; }
+  }
+
+  .col {
+    background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow);
+    min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .col-h {
+    display: flex; align-items: center; gap: 8px; padding: 12px 14px;
+    border-bottom: 1px solid var(--line); font-weight: 800; font-size: 13px;
+  }
+  .col-h .meta { margin-left: auto; font-weight: 600; color: var(--ink-3); font-size: 11.5px; }
+  .split { display: flex; flex-direction: column; min-height: 0; }
+  .split-top { flex: 0 0 42%; min-height: 160px; overflow: auto; border-bottom: 1px solid var(--line); }
+  .split-bot { flex: 1; min-height: 0; overflow: auto; }
+
+  .picker {
+    margin: 10px 12px 8px; width: calc(100% - 24px); padding: 8px 10px;
+    border: 1px solid var(--line-strong); border-radius: 11px; background: var(--card-inner);
+    font-weight: 700;
+  }
+  .row {
+    display: flex; gap: 10px; align-items: flex-start; width: 100%;
+    padding: 10px 12px; border: 0; background: transparent; text-align: left; color: inherit;
+  }
+  .row:hover { background: var(--card-soft); }
+  .row.on { background: var(--brand-soft); }
+  .row.on .name { color: var(--brand-deep); }
+  .row .name {
+    font-weight: 750; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .row .people {
+    color: var(--ink-2); font-size: 11.5px; margin-top: 3px; font-weight: 600;
+  }
+  .row .sum {
+    color: var(--ink-3); font-size: 12px; line-height: 1.4; margin-top: 4px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; word-break: break-word;
+  }
+  .row .time { color: var(--ink-3); font-size: 11px; margin-top: 3px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border-radius: 999px;
+    font-size: 11px; font-weight: 700;
+  }
+  .pill.warn { background: var(--warn-soft); color: var(--warn-text); }
+  .pill.mute { background: #eef1f4; color: var(--mute); }
+  .pill.ok { background: var(--ok-soft); color: var(--ok-text); }
+  .sec-label {
+    padding: 10px 14px 4px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+    color: var(--ink-3); text-transform: uppercase;
+  }
+  .filter { display: flex; gap: 6px; padding: 8px 12px 0; }
+  .filter button {
+    border: 1px solid var(--line-strong); background: #fff; border-radius: 999px;
+    padding: 3px 9px; font-size: 11.5px; font-weight: 700; color: var(--ink-2);
+  }
+  .filter button.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-deep); }
+
+  .thread { flex: 1; overflow: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .turn { display: flex; flex-direction: column; gap: 6px; max-width: 86%; }
+  .turn.human { align-self: flex-end; align-items: flex-end; }
+  .turn.agent { align-self: flex-start; }
+  .who { font-size: 11.5px; font-weight: 700; color: var(--ink-3); }
+  .bubble {
+    padding: 10px 14px; border-radius: 14px; font-size: 13.5px; line-height: 1.65; white-space: pre-wrap;
+  }
+  .turn.human .bubble { background: var(--brand); color: #fff; border-radius: 14px 14px 4px 14px; }
+  .turn.agent .bubble { background: var(--card-soft); border: 1px solid var(--line); border-radius: 4px 14px 14px 14px; }
+  .notice {
+    align-self: center; font-size: 12px; color: var(--warn-text); background: var(--warn-soft);
+    padding: 6px 10px; border-radius: 8px;
+  }
+  .busy {
+    margin: 0 16px; padding: 8px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--warn-text);
+    font-size: 12.5px; font-weight: 700;
+  }
+  .composer { padding: 12px 14px 14px; border-top: 1px solid var(--line); background: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chip {
+    border: 1px solid var(--line-strong); background: #fff; border-radius: 999px;
+    padding: 4px 10px; font-size: 12px; color: var(--ink-2);
+  }
+  .chip.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand-deep); font-weight: 700; }
+  .composer textarea {
+    width: 100%; min-height: 72px; border: 1px solid var(--line-strong); border-radius: 12px;
+    padding: 10px 12px; resize: vertical; background: var(--card-inner);
+  }
+  .composer .bar { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  .ghost, .primary {
+    border-radius: 11px; padding: 8px 12px; font-weight: 700; font-size: 12.5px;
+  }
+  .ghost { border: 1px solid var(--line-strong); background: #fff; color: var(--ink-2); }
+  .ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+  .primary { border: 0; background: var(--brand); color: #fff; }
+  .primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .rail { padding: 14px; overflow: auto; }
+  .rail h3 { margin: 0 0 8px; font-size: 13px; }
+  .note { font-size: 12px; color: var(--ink-3); line-height: 1.55; margin: 0 0 14px; }
+  .git {
+    padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card-inner); margin-bottom: 14px;
+  }
+  .git .br { font-weight: 800; }
+  .files { margin: 8px 0 0; padding-left: 16px; color: var(--ink-2); font-size: 12px; }
+  .skills li { font-size: 12.5px; color: var(--ink-2); margin: 4px 0; }
+  .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+
+  .mode-gate {
+    flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 28px 36px 40px;
+  }
+  .mode-gate h2 { margin: 0 0 6px; font-size: 22px; }
+  .mode-gate p { color: var(--ink-2); margin: 0 0 18px; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .mode {
+    text-align: left; border: 1.5px solid var(--line-strong); background: #fff; border-radius: var(--r-card);
+    padding: 16px; min-height: 132px;
+  }
+  .mode:hover { border-color: var(--brand); }
+  .mode .mn { font-size: 16px; font-weight: 800; margin-bottom: 6px; }
+  .mode .md { color: var(--ink-3); font-size: 12.5px; }
+  .draft {
+    margin-bottom: 16px; padding: 12px 14px; border-radius: 12px; background: var(--brand-soft); color: var(--brand-deep);
+  }
+
+  .form { padding: 18px 20px; overflow: auto; }
+  .form label { display: block; font-weight: 800; font-size: 12.5px; margin: 12px 0 6px; }
+  .form textarea, .form input {
+    width: 100%; border: 1px solid var(--line-strong); border-radius: 12px; padding: 10px 12px; background: var(--card-inner);
+  }
+  .form textarea { min-height: 140px; }
+
+  .toast {
+    position: fixed; right: 22px; bottom: 22px; z-index: 40; max-width: 360px;
+    background: #fff; border: 1px solid var(--line-strong); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 12px 14px; font-weight: 700; display: none;
+  }
+  .toast.show { display: block; }
+  .toast.warn { border-left: 4px solid var(--warn); }
+
+  .dialog {
+    position: fixed; inset: 0; background: rgba(11, 13, 18, 0.28); display: none;
+    align-items: center; justify-content: center; z-index: 50;
+  }
+  .dialog.show { display: flex; }
+  .dialog .box { width: 420px; background: #fff; border-radius: 18px; padding: 18px; box-shadow: var(--shadow); }
+  .dialog h3 { margin: 0 0 8px; }
+  .dialog input { width: 100%; padding: 9px 11px; border-radius: 11px; border: 1px solid var(--line-strong); }
+  .dialog .row-act { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="nav">
+    <div class="logo"><span class="mk">炬</span>炬枢</div>
+    <a class="on" href="#">任务中枢</a>
+    <a href="#">项目</a>
+    <a href="#">数字员工</a>
+    <a href="#">收件箱</a>
+    <a href="#">运行总览</a>
+    <p class="hint">左侧为全局导航示意，不在本次讨论范围。本页只评工作台三栏与两面切换。</p>
+  </aside>
+
+  <div class="app">
+    <header class="top">
+      <div>
+        <h1>任务中枢</h1>
+        <div class="sub">项目协作台 · 产出默认不进审批/验收</div>
+      </div>
+      <div class="grow"></div>
+      <div class="seg" role="tablist" aria-label="工作面">
+        <button id="tab-chat" class="on" type="button">对话</button>
+        <button id="tab-task" type="button">任务</button>
+      </div>
+      <div class="me">
+        <span class="av" style="background:#4d586b">陈</span>
+        <div>
+          <div class="nm">陈默</div>
+          <div class="ro">项目成员 · 当前身份</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="tips" id="tips">
+      <div>
+        <b>可试：</b>看「粘贴长上下文排查」两行缩略 · 「转为任务」→ Plan/Loop → <b>必选场景模板</b>（无「通用」）→ 表单 · 「仓库 dirty 怎么收」发送看互斥
+      </div>
+      <button type="button" id="hide-tips">隐藏</button>
+    </div>
+
+    <div id="chat-face" class="bench chat">
+      <section class="col split">
+        <div>
+          <div class="col-h">项目</div>
+          <select class="picker" id="project-select" aria-label="项目"></select>
+        </div>
+        <div class="split-top">
+          <div class="sec-label">数字员工</div>
+          <div id="employee-list"></div>
+        </div>
+        <div class="split-bot">
+          <div class="col-h">会话 <span class="meta" id="session-count"></span></div>
+          <div class="filter">
+            <button class="on" data-filter="all" type="button">全部</button>
+            <button data-filter="mine" type="button">我发起的</button>
+          </div>
+          <div id="session-list"></div>
+        </div>
+      </section>
+
+      <section class="col">
+        <div class="col-h">
+          <span id="thread-title">会话</span>
+          <span class="meta" id="thread-meta"></span>
+        </div>
+        <div id="busy-banner" class="busy" hidden></div>
+        <div class="thread" id="thread"></div>
+        <div class="composer">
+          <div class="chips" id="skill-chips"></div>
+          <textarea id="composer" placeholder="接着问。项目成员都可以续写；每一轮会记下是谁发的。"></textarea>
+          <div class="bar">
+            <button class="ghost" id="btn-new" type="button">新会话</button>
+            <button class="primary" id="btn-send" type="button">发送</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="col rail">
+        <h3>项目上下文</h3>
+        <p class="note">Chat 不进审批/验收；动手会改工作区。正式进入项目请用「转为任务」。</p>
+        <div class="git" id="git-panel"></div>
+        <div>
+          <h3>技能面</h3>
+          <ul class="skills" id="skill-rail"></ul>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="btn-rename" type="button">重命名会话</button>
+          <button class="ghost" id="btn-convert" type="button">转为任务</button>
+        </div>
+      </aside>
+    </div>
+
+    <div id="task-face" class="bench task" hidden>
+      <section class="col">
+        <div class="col-h">在途实例</div>
+        <div id="demand-list"></div>
+      </section>
+      <section class="col" id="task-main"></section>
+      <aside class="col rail">
+        <h3>项目上下文</h3>
+        <p class="note">任务面看需求与阻塞。Plan / Loop 是需求策略，不是页面皮肤。</p>
+        <div class="git" id="git-panel-task"></div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<div class="toast warn" id="toast"></div>
+<div class="dialog" id="rename-dialog">
+  <div class="box">
+    <h3>重命名会话</h3>
+    <p class="note">仅发起人可改。名称只存在炬枢，不同步到 Claude Code / OpenCode。</p>
+    <input id="rename-input" maxlength="80" />
+    <div class="row-act">
+      <button class="ghost" type="button" id="rename-cancel">取消</button>
+      <button class="primary" type="button" id="rename-ok">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ME = { id: "chenmo", name: "陈默" };
+const LIN = { id: "linzhou", name: "林舟" };
+
+const DATA = {
+  projects: [
+    {
+      id: "recon",
+      name: "结算对账试点",
+      git: { branch: "feat/recon-diff", dirty: true, head: "a1b2c3d", sampled: "3 分钟前", files: ["apps/ledger/diff.go", "docs/recon.md"] },
+      skills: ["仓库读写", "数据库只读", "日志检索"],
+      employees: [
+        { id: "ama", name: "阿码", role: "代码工匠", desc: "改代码、查 diff、动工作区", hue: "#2f5fff" },
+        { id: "xiaoxi", name: "小析", role: "测试官", desc: "补用例、盯回归", hue: "#009a60" }
+      ]
+    },
+    {
+      id: "oncall",
+      name: "值班应急通道",
+      git: { branch: "main", dirty: false, head: "e8f90ab", sampled: "1 小时前", files: [] },
+      skills: ["日志检索", "告警只读"],
+      employees: [
+        { id: "ama", name: "阿码", role: "代码工匠", desc: "热修与回滚建议", hue: "#2f5fff" }
+      ]
+    }
+  ],
+  sessions: [
+    {
+      id: "s1", projectId: "recon", employeeId: "ama", title: "对账差异排查",
+      initiator: LIN, lastSpeaker: ME, lastActive: "2 小时前",
+      lastPrompt: "那批 8/12 的差额先按科目拆，入账日的放到明天。",
+      busy: null, stale: false,
+      turns: [
+        { kind: "human", who: LIN, text: "夜间对账有 14 笔差额，先帮我看是科目映射还是入账时间。" },
+        { kind: "agent", who: "阿码", text: "14 笔里 11 笔是入账日跨天，3 笔科目编码和主数据不一致。我已经在工作区写了对照表草稿，还没提交。" },
+        { kind: "human", who: ME, text: "那批 8/12 的差额先按科目拆，入账日的放到明天。" },
+        { kind: "agent", who: "阿码", text: "好。科目 3 笔我标进对照表了。这条会话林舟开的，你接着问即可。" }
+      ]
+    },
+    {
+      id: "s2", projectId: "recon", employeeId: "ama", title: "补跑夜间批处理",
+      initiator: ME, lastSpeaker: ME, lastActive: "昨天",
+      lastPrompt: "批处理漏跑了，先不要动生产配置，只说明怎么补。",
+      busy: null, stale: false,
+      turns: [
+        { kind: "human", who: ME, text: "批处理漏跑了，先不要动生产配置，只说明怎么补。" },
+        { kind: "agent", who: "阿码", text: "可以按日期窗口补跑。需要你确认窗口和是否写回。" }
+      ]
+    },
+    {
+      id: "s3", projectId: "recon", employeeId: "ama", title: "仓库 dirty 怎么收",
+      initiator: LIN, lastSpeaker: LIN, lastActive: "刚才",
+      lastPrompt: "把未提交文件归到这条需求里，不要另开分支。",
+      busy: LIN, stale: false,
+      turns: [
+        { kind: "human", who: LIN, text: "把未提交文件归到这条需求里，不要另开分支。" },
+        { kind: "agent", who: "阿码", text: "正在整理工作区……" }
+      ]
+    },
+    {
+      id: "s4", projectId: "recon", employeeId: "ama", title: "上周的 schema 讨论",
+      initiator: LIN, lastSpeaker: LIN, lastActive: "8 天前",
+      lastPrompt: "对账明细要不要加有效期字段？",
+      busy: null, stale: true,
+      turns: [
+        { kind: "human", who: LIN, text: "对账明细要不要加有效期字段？" },
+        { kind: "agent", who: "阿码", text: "建议加，但要和主数据对齐。当时我把草案写在工作区了。" }
+      ]
+    },
+    {
+      id: "s5", projectId: "recon", employeeId: "xiaoxi", title: "验收用例怎么写",
+      initiator: ME, lastSpeaker: ME, lastActive: "3 小时前",
+      lastPrompt: "覆盖跨天入账这 11 笔，给我验收用例提纲。",
+      busy: null, stale: false,
+      turns: [
+        { kind: "human", who: ME, text: "覆盖跨天入账这 11 笔，给我验收用例提纲。" },
+        { kind: "agent", who: "小析", text: "提纲：日期边界、科目映射失败、重复入账。还没写成正式需求。" }
+      ]
+    },
+    {
+      id: "s7", projectId: "recon", employeeId: "ama", title: "粘贴长上下文排查",
+      initiator: LIN, lastSpeaker: LIN, lastActive: "刚刚",
+      lastPrompt: "下面是完整对账日志，请定位差额根因：\n----\n[2026-08-12 23:01:02] recon start batch=nightly window=2026-08-12\n[2026-08-12 23:01:08] load ledger rows=128440\n[2026-08-12 23:02:11] mismatch account=6001 amount=128.50 ref=TX-99102\n[2026-08-12 23:02:11] mismatch account=6001 amount=64.00 ref=TX-99118\n[2026-08-12 23:02:15] mismatch account=2202 amount=901.00 ref=TX-99201\n……（中间省略 80 行同类 mismatch）……\n[2026-08-12 23:18:44] recon done mismatches=14 dirty_files=2\n请按科目汇总，并指出是否与主数据映射表有关。",
+      busy: null, stale: false,
+      turns: [
+        { kind: "human", who: LIN, text: "下面是完整对账日志，请定位差额根因：……（长日志）" },
+        { kind: "agent", who: "阿码", text: "收到。列表里只会显示你提问的前两行缩略，点进会话才能看全文。" }
+      ]
+    },
+    {
+      id: "s6", projectId: "oncall", employeeId: "ama", title: "今晚告警噪声",
+      initiator: LIN, lastSpeaker: LIN, lastActive: "1 小时前",
+      lastPrompt: "今晚超时告警很多，先看是不是同一类。",
+      busy: null, stale: false,
+      turns: [
+        { kind: "human", who: LIN, text: "今晚超时告警很多，先看是不是同一类。" },
+        { kind: "agent", who: "阿码", text: "多数是同一依赖超时。建议不要在 Chat 里直接改生产。" }
+      ]
+    }
+  ],
+  demands: [
+    { id: "d1", projectId: "recon", title: "对账差异补齐", mode: "plan", status: "待人工确认", who: "林舟" },
+    { id: "d2", projectId: "recon", title: "夜间批处理补跑", mode: "loop", status: "进行中", who: "陈默" }
+  ]
+};
+
+const state = {
+  face: "chat",
+  projectId: "recon",
+  employeeId: "ama",
+  sessionId: "s1",
+  filter: "all",
+  skills: [],
+  taskMode: null,
+  playbook: null,
+  draft: "",
+  toastTimer: null
+};
+
+function project() { return DATA.projects.find((p) => p.id === state.projectId); }
+function employees() { return project().employees; }
+function employee() { return employees().find((e) => e.id === state.employeeId) || employees()[0]; }
+function sessions() {
+  return DATA.sessions.filter((s) => s.projectId === state.projectId && s.employeeId === state.employeeId);
+}
+function visibleSessions() {
+  const list = sessions();
+  return state.filter === "mine" ? list.filter((s) => s.initiator.id === ME.id) : list;
+}
+function session() { return DATA.sessions.find((s) => s.id === state.sessionId); }
+
+function toast(text) {
+  const el = document.getElementById("toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(state.toastTimer);
+  state.toastTimer = setTimeout(() => el.classList.remove("show"), 2800);
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function escapeAttr(text) {
+  return escapeHtml(String(text).replace(/\s+/g, " ").trim());
+}
+
+function renderGit(id) {
+  const g = project().git;
+  const files = (g.files || []).map((f) => `<li>${f}</li>`).join("");
+  document.getElementById(id).innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+      <span class="pill ${g.dirty ? "warn" : "ok"}">${g.dirty ? "工作区有未提交变更" : "工作区干净"}</span>
+      <span class="time">HEAD ${g.head || "—"}</span>
+      <span class="time">${g.branch}</span>
+      <span class="time">采样 ${g.sampled || "刚刚"}</span>
+    </div>
+    ${g.files.length ? `<ul class="files">${files}</ul>` : ""}
+    <button class="ghost" type="button" style="margin-top:8px" onclick="toast('原型：真实路径走刷新现场 API')">刷新现场</button>
+  `;
+}
+
+function renderChat() {
+  const p = project();
+  const empSel = document.getElementById("project-select");
+  empSel.innerHTML = DATA.projects.map((x) => `<option value="${x.id}" ${x.id === p.id ? "selected" : ""}>${x.name}</option>`).join("");
+
+  document.getElementById("employee-list").innerHTML = employees().map((e) => `
+    <button class="row ${e.id === state.employeeId ? "on" : ""}" data-emp="${e.id}" type="button">
+      <span class="av" style="background:${e.hue}">${e.name.slice(0, 1)}</span>
+      <span>
+        <div class="name">${e.name} · ${e.role}</div>
+        <div class="desc">${e.desc}</div>
+      </span>
+    </button>
+  `).join("");
+
+  const vis = visibleSessions();
+  document.getElementById("session-count").textContent = `${vis.length} 条`;
+  document.getElementById("session-list").innerHTML = vis.map((s) => {
+    const same = s.initiator.id === s.lastSpeaker.id;
+    const people = same
+      ? `发起并接续 ${s.initiator.name}`
+      : `发起 ${s.initiator.name} · 接续 ${s.lastSpeaker.name}`;
+    const pills = [
+      s.busy ? `<span class="pill warn">进行中</span>` : "",
+      s.stale ? `<span class="pill mute">上下文可能已过期</span>` : ""
+    ].join(" ");
+    return `
+    <button class="row ${s.id === state.sessionId ? "on" : ""}" data-sid="${s.id}" type="button" title="${escapeAttr(s.lastPrompt)}">
+      <span>
+        <div class="name"><span>${s.title}</span>${pills}</div>
+        <div class="people">${people}</div>
+        <div class="sum">${escapeHtml(s.lastPrompt)}</div>
+        <div class="time num">${s.lastActive}</div>
+      </span>
+    </button>`;
+  }).join("") || `<p class="note" style="padding:12px">没有「我发起的」会话</p>`;
+
+  const s = session();
+  const e = employee();
+  if (!s) {
+    document.getElementById("thread-title").textContent = "新会话";
+    document.getElementById("thread-meta").textContent = `${e.name} · 发起人 ${ME.name}`;
+    document.getElementById("thread").innerHTML = `<p class="note">向 ${e.name} 提问开始。这是你发起的新会话，项目成员之后都能续写。</p>`;
+    document.getElementById("busy-banner").hidden = true;
+    document.getElementById("btn-rename").disabled = false;
+    return;
+  }
+  document.getElementById("thread-title").textContent = s.title;
+  document.getElementById("thread-meta").textContent = `${e.name} · 发起人 ${s.initiator.name}`;
+  const busy = document.getElementById("busy-banner");
+  if (s.busy) {
+    busy.hidden = false;
+    busy.textContent = `${s.busy.name}正在这条会话里`;
+  } else busy.hidden = true;
+
+  document.getElementById("thread").innerHTML = s.turns.map((t) => {
+    if (t.kind === "notice") return `<div class="notice">${t.text}</div>`;
+    const who = t.kind === "human" ? t.who.name : t.who;
+    const mine = t.kind === "human" && t.who.id === ME.id;
+    return `<div class="turn ${t.kind}">
+      <div class="who">${t.kind === "human" ? (mine ? "我 · " : "") + who : e.name}</div>
+      <div class="bubble">${t.text}</div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("skill-chips").innerHTML = p.skills.map((name) => {
+    const on = state.skills.includes(name);
+    return `<button class="chip ${on ? "on" : ""}" data-skill="${name}" type="button">${name}</button>`;
+  }).join("");
+  document.getElementById("skill-rail").innerHTML = p.skills.map((name) => {
+    const mark = state.skills.length === 0 || state.skills.includes(name) ? "将投影" : "未选";
+    return `<li>${name} · ${mark}</li>`;
+  }).join("");
+  renderGit("git-panel");
+  document.getElementById("btn-rename").disabled = !s || s.initiator.id !== ME.id;
+  document.getElementById("btn-rename").title = s && s.initiator.id !== ME.id ? "仅发起人可改名" : "";
+  document.getElementById("btn-send").disabled = Boolean(s && s.busy);
+}
+
+function renderTask() {
+  const list = DATA.demands.filter((d) => d.projectId === state.projectId);
+  document.getElementById("demand-list").innerHTML = list.map((d) => `
+    <div class="row">
+      <span>
+        <div class="name">${d.title}</div>
+        <div class="sum">${d.mode === "plan" ? "计划任务" : "循环任务"} · ${d.who}</div>
+        <div class="time">${d.status}</div>
+      </span>
+    </div>
+  `).join("");
+  renderGit("git-panel-task");
+  const main = document.getElementById("task-main");
+  if (!state.taskMode) {
+    main.innerHTML = `<div class="mode-gate">
+      <h2>先选这条需求怎么跑</h2>
+      <p>Plan / Loop 是协调策略。选完后再定场景模板（约束任务骨架与员工编制）。</p>
+      ${state.draft ? `<div class="draft">从对话带过来的草稿已放好。</div>` : ""}
+      <div class="modes">
+        <button class="mode" data-mode="plan" type="button">
+          <div class="mn">计划任务</div>
+          <div class="md">遇上游阻塞时暂停，提案报你决策后再补做。</div>
+        </button>
+        <button class="mode" data-mode="loop" type="button">
+          <div class="mn">循环任务</div>
+          <div class="md">遇上游阻塞时自动补做上游任务并重跑下游。</div>
+        </button>
+      </div>
+    </div>`;
+    return;
+  }
+  if (!state.playbook) {
+    const label = state.taskMode === "plan" ? "计划任务" : "循环任务";
+    main.innerHTML = `<div class="mode-gate">
+      <h2>选择场景模板</h2>
+      <p>当前策略：${label}。场景模板必选——约束任务骨架与数字员工编制。企业发起不走「通用 / 现场推理」。</p>
+      <div class="modes">
+        <button class="mode" data-playbook="recon" type="button">
+          <div class="mn">结算对账处置</div>
+          <div class="md">差额定位 → 科目映射 → 补录验收。编制：阿码 / 小析。</div>
+        </button>
+        <button class="mode" data-playbook="incident" type="button">
+          <div class="mn">故障应急分析</div>
+          <div class="md">告警归类 → 根因假设 → 回滚/热修建议。编制：阿码。</div>
+        </button>
+      </div>
+      <div style="margin-top:14px"><button class="ghost" id="btn-change-mode" type="button">重选 Plan / Loop</button></div>
+    </div>`;
+    return;
+  }
+  const label = state.taskMode === "plan" ? "计划任务" : "循环任务";
+  const pb = state.playbook === "incident" ? "故障应急分析" : "结算对账处置";
+  main.innerHTML = `<div class="form">
+    <div class="col-h" style="padding:0 0 12px;border:0">提出任务 <span class="meta">${label} · ${pb}</span></div>
+    <label>需求描述</label>
+    <textarea id="demand-body">${state.draft || ""}</textarea>
+    <div class="bar" style="display:flex;gap:8px;margin-top:14px">
+      <button class="ghost" id="btn-change-playbook" type="button">重选场景模板</button>
+      <button class="primary" id="btn-submit-demand" type="button">提交需求</button>
+    </div>
+  </div>`;
+}
+
+function render() {
+  document.getElementById("tab-chat").classList.toggle("on", state.face === "chat");
+  document.getElementById("tab-task").classList.toggle("on", state.face === "task");
+  document.getElementById("chat-face").hidden = state.face !== "chat";
+  document.getElementById("task-face").hidden = state.face !== "task";
+  document.querySelectorAll("[data-filter]").forEach((b) => b.classList.toggle("on", b.dataset.filter === state.filter));
+  if (state.face === "chat") renderChat();
+  else renderTask();
+}
+
+document.getElementById("tab-chat").onclick = () => { state.face = "chat"; render(); };
+document.getElementById("tab-task").onclick = () => { state.face = "task"; render(); };
+document.getElementById("hide-tips").onclick = () => document.getElementById("tips").remove();
+document.getElementById("project-select").onchange = (ev) => {
+  state.projectId = ev.target.value;
+  state.employeeId = employees()[0].id;
+  const first = sessions()[0];
+  state.sessionId = first ? first.id : null;
+  render();
+};
+document.getElementById("employee-list").onclick = (ev) => {
+  const btn = ev.target.closest("[data-emp]");
+  if (!btn) return;
+  state.employeeId = btn.dataset.emp;
+  const first = visibleSessions()[0] || sessions()[0];
+  state.sessionId = first ? first.id : null;
+  render();
+};
+document.getElementById("session-list").onclick = (ev) => {
+  const btn = ev.target.closest("[data-sid]");
+  if (!btn) return;
+  state.sessionId = btn.dataset.sid;
+  render();
+};
+document.querySelector(".filter").onclick = (ev) => {
+  const btn = ev.target.closest("[data-filter]");
+  if (!btn) return;
+  state.filter = btn.dataset.filter;
+  const vis = visibleSessions();
+  if (!vis.some((s) => s.id === state.sessionId)) state.sessionId = vis[0] ? vis[0].id : null;
+  render();
+};
+document.getElementById("skill-chips").onclick = (ev) => {
+  const btn = ev.target.closest("[data-skill]");
+  if (!btn) return;
+  const name = btn.dataset.skill;
+  state.skills = state.skills.includes(name) ? state.skills.filter((x) => x !== name) : [...state.skills, name];
+  render();
+};
+document.getElementById("btn-new").onclick = () => {
+  const id = "n" + Date.now();
+  DATA.sessions.unshift({
+    id, projectId: state.projectId, employeeId: state.employeeId, title: "未命名会话",
+    initiator: ME, lastSpeaker: ME, lastActive: "刚刚", lastPrompt: "尚未发送",
+    busy: null, stale: false, turns: []
+  });
+  state.sessionId = id;
+  render();
+};
+document.getElementById("btn-send").onclick = () => {
+  const text = document.getElementById("composer").value.trim();
+  const s = session();
+  if (!s) return;
+  if (s.busy) {
+    toast(`${s.busy.name}正在这条会话里`);
+    return;
+  }
+  if (!text) return;
+  if (s.stale) {
+    s.turns.push({ kind: "notice", text: "上下文未延续，仍在本会话继续。Provider 侧已是新的执行上下文。" });
+    s.stale = false;
+  }
+  s.turns.push({ kind: "human", who: ME, text });
+  s.turns.push({ kind: "agent", who: employee().name, text: "（原型）已记下这一轮是陈默发的。审计按轮次，不按会话所有权。" });
+  s.lastSpeaker = ME;
+  s.lastActive = "刚刚";
+  s.lastPrompt = text;
+  document.getElementById("composer").value = "";
+  render();
+  document.querySelector(".thread").scrollTop = 9999;
+};
+document.getElementById("btn-rename").onclick = () => {
+  const s = session();
+  if (!s || s.initiator.id !== ME.id) {
+    toast("仅发起人可改名");
+    return;
+  }
+  document.getElementById("rename-input").value = s.title;
+  document.getElementById("rename-dialog").classList.add("show");
+};
+document.getElementById("rename-cancel").onclick = () => document.getElementById("rename-dialog").classList.remove("show");
+document.getElementById("rename-ok").onclick = () => {
+  const s = session();
+  const title = document.getElementById("rename-input").value.trim();
+  if (s && title) s.title = title;
+  document.getElementById("rename-dialog").classList.remove("show");
+  render();
+};
+document.getElementById("btn-convert").onclick = () => {
+  const s = session();
+  const lastAgent = [...(s?.turns || [])].reverse().find((t) => t.kind === "agent");
+  state.draft = lastAgent ? `来自对话「${s.title}」\n\n${lastAgent.text}` : "";
+  state.taskMode = null;
+  state.playbook = null;
+  state.face = "task";
+  render();
+};
+document.getElementById("task-main").onclick = (ev) => {
+  const modeBtn = ev.target.closest("[data-mode]");
+  if (modeBtn) { state.taskMode = modeBtn.dataset.mode; state.playbook = null; render(); return; }
+  const pbBtn = ev.target.closest("[data-playbook]");
+  if (pbBtn) { state.playbook = pbBtn.dataset.playbook; render(); return; }
+  if (ev.target.id === "btn-change-mode") { state.taskMode = null; state.playbook = null; render(); }
+  if (ev.target.id === "btn-change-playbook") { state.playbook = null; render(); }
+  if (ev.target.id === "btn-submit-demand") {
+    toast("原型不提交。真实路径会进入项目协调。");
+  }
+};
+
+render();
+</script>
+</body>
+</html>

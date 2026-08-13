@@ -5552,12 +5552,13 @@ func TestSubmitDemandRecordsDemandAndEventWithoutAutoCreatingTask(t *testing.T) 
 	seedDigitalExecutorMember(repo, repo.projects[projectID].TenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-		TenantID:          repo.projects[projectID].TenantID,
-		ProjectID:         projectID,
-		SubmittedByUserID: ownerID,
-		Title:             "验证 Runtime 连接",
-		Content:           "检查心跳和命令回写",
-		SourceType:        DemandSourceManual,
+		TenantID:            repo.projects[projectID].TenantID,
+		ProjectID:           projectID,
+		SubmittedByUserID:   ownerID,
+		Title:               "验证 Runtime 连接",
+		Content:             "检查心跳和命令回写",
+		SourceType:          DemandSourceManual,
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -5651,20 +5652,33 @@ func TestSubmitDemandRejectsUnknownScenarioTemplateKey(t *testing.T) {
 		}
 	})
 
-	t.Run("no key keeps today's behavior", func(t *testing.T) {
+	t.Run("missing key rejected", func(t *testing.T) {
 		service, _, tenantID, projectID, ownerID := newFixture(t)
-		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+		_, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 			TenantID:          tenantID,
 			ProjectID:         projectID,
 			SubmittedByUserID: ownerID,
-			Title:             "验证缺省模板键",
+			Title:             "验证缺省模板键被拒绝",
 			SourceType:        DemandSourceManual,
 		})
-		if err != nil {
-			t.Fatalf("submit demand: %v", err)
+		if !errors.Is(err, ErrInvalidProject) {
+			t.Fatalf("expected ErrInvalidProject for missing scenario_template_key, got %v", err)
 		}
-		if demand.ScenarioTemplateKey != nil {
-			t.Fatalf("expected nil key, got %#v", demand.ScenarioTemplateKey)
+	})
+
+	t.Run("blank key rejected", func(t *testing.T) {
+		service, _, tenantID, projectID, ownerID := newFixture(t)
+		blank := "   "
+		_, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证空白模板键被拒绝",
+			SourceType:          DemandSourceManual,
+			ScenarioTemplateKey: &blank,
+		})
+		if !errors.Is(err, ErrInvalidProject) {
+			t.Fatalf("expected ErrInvalidProject for blank scenario_template_key, got %v", err)
 		}
 	})
 }
@@ -5699,10 +5713,11 @@ func TestSubmitDemandCoordinationMode(t *testing.T) {
 		ownerID := repo.projects[projectID].HumanOwnerUserID
 
 		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-			TenantID:          tenantID,
-			ProjectID:         projectID,
-			SubmittedByUserID: ownerID,
-			Title:             "验证 Runtime 连接",
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证 Runtime 连接",
+			ScenarioTemplateKey: strPtr("test_template"),
 		})
 		require.NoError(t, err)
 		require.Equal(t, CoordinationModePlan, demand.CoordinationMode)
@@ -5716,11 +5731,12 @@ func TestSubmitDemandCoordinationMode(t *testing.T) {
 		ownerID := repo.projects[projectID].HumanOwnerUserID
 
 		demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-			TenantID:          tenantID,
-			ProjectID:         projectID,
-			SubmittedByUserID: ownerID,
-			Title:             "验证 Runtime 连接",
-			CoordinationMode:  CoordinationModeLoop,
+			TenantID:            tenantID,
+			ProjectID:           projectID,
+			SubmittedByUserID:   ownerID,
+			Title:               "验证 Runtime 连接",
+			CoordinationMode:    CoordinationModeLoop,
+			ScenarioTemplateKey: strPtr("test_template"),
 		})
 		require.NoError(t, err)
 		require.Equal(t, CoordinationModeLoop, demand.CoordinationMode)
@@ -5767,6 +5783,7 @@ func TestGetDemandLaunchDetailAggregatesDemandFacts(t *testing.T) {
 	}
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID, Title: "审查 PR",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -6280,6 +6297,7 @@ func TestSubmitDemandPersistsPrimaryOwnerFallbackWhenReviewerOmitted(t *testing.
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
 		Title: "审查 PR", Content: "统计 PR 并分派审查",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -6335,6 +6353,7 @@ func TestSubmitDemandPersistsExplicitReviewerSelectionReason(t *testing.T) {
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
 		Title: "审查 PR", ReviewerUserID: &reviewerID,
 		ReviewerSelectionReason: ReviewerSelectionProjectReviewerDefault,
+		ScenarioTemplateKey:     strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -6389,6 +6408,7 @@ func TestSubmitDemandRejectsInvalidReviewerSelectionReason(t *testing.T) {
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
 		Title: "审查 PR", ReviewerUserID: &reviewerID,
 		ReviewerSelectionReason: ReviewerSelectionReason("invalid_reason"),
+		ScenarioTemplateKey:     strPtr("test_template"),
 	})
 	if !errors.Is(err, ErrInvalidProjectMember) {
 		t.Fatalf("expected invalid project member, got %v", err)
@@ -6434,6 +6454,7 @@ func TestSubmitDemandDiscardsSpoofedReviewerSourceRefs(t *testing.T) {
 			"reviewer_user_id":      "bad",
 			"external_ticket":       "T-1",
 		},
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -6475,7 +6496,8 @@ func TestSubmitDemandFallsBackToHumanOwnerWhenNoReviewer(t *testing.T) {
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
-		Title: "补充证据",
+		Title:               "补充证据",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -6556,7 +6578,8 @@ func TestSubmitDemandRequiresActiveHumanOwnerMemberForFallback(t *testing.T) {
 
 			_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 				TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
-				Title: "补充证据",
+				Title:               "补充证据",
+				ScenarioTemplateKey: strPtr("test_template"),
 			})
 			if !errors.Is(err, ErrInvalidProjectMember) {
 				t.Fatalf("expected invalid project member, got %v", err)
@@ -6618,6 +6641,7 @@ func TestSubmitDemandRejectsDigitalEmployeeReviewer(t *testing.T) {
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
 		Title: "需要审核", ReviewerUserID: &digitalEmployeeID,
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if !errors.Is(err, ErrInvalidProjectMember) {
 		t.Fatalf("expected invalid project member, got %v", err)
@@ -6656,7 +6680,8 @@ func TestSubmitDemandFallsBackToPrimaryOwnerWhenMultipleReviewersExist(t *testin
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID,
-		Title: "多审核人项目",
+		Title:               "多审核人项目",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -7141,11 +7166,12 @@ func TestSubmitDemandSignalsProjectCoordinatorInV1(t *testing.T) {
 	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		SubmittedByUserID: ownerID,
-		Title:             "验证 Runtime 连接",
-		Content:           "检查心跳和命令回写",
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SubmittedByUserID:   ownerID,
+		Title:               "验证 Runtime 连接",
+		Content:             "检查心跳和命令回写",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -7187,11 +7213,12 @@ func TestSubmitDemandRecordsRetryableWorkflowSignalFailure(t *testing.T) {
 	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		SubmittedByUserID: ownerID,
-		Title:             "验证 Runtime 连接",
-		Content:           "检查心跳和命令回写",
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SubmittedByUserID:   ownerID,
+		Title:               "验证 Runtime 连接",
+		Content:             "检查心跳和命令回写",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err == nil {
 		t.Fatal("expected signal error")
@@ -7233,11 +7260,12 @@ func TestSubmitDemandRejectsWithoutDigitalEmployee(t *testing.T) {
 	seedHumanOwnerMember(repo, tenantID, projectID, ownerID)
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		SubmittedByUserID: ownerID,
-		Title:             "验证 Runtime 连接",
-		Content:           "检查心跳和命令回写",
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SubmittedByUserID:   ownerID,
+		Title:               "验证 Runtime 连接",
+		Content:             "检查心跳和命令回写",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if !errors.Is(err, ErrProjectRequiresDigitalEmployee) {
 		t.Fatalf("expected ErrProjectRequiresDigitalEmployee, got %v", err)
@@ -7281,11 +7309,12 @@ func TestSubmitDemandAcceptsWithActiveDigitalEmployee(t *testing.T) {
 	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		SubmittedByUserID: ownerID,
-		Title:             "有员工时应能提交",
-		Content:           "内容",
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SubmittedByUserID:   ownerID,
+		Title:               "有员工时应能提交",
+		Content:             "内容",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)
@@ -7336,11 +7365,12 @@ func TestRetryWorkflowSignalReplaysFailedDemandSignal(t *testing.T) {
 	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		SubmittedByUserID: ownerID,
-		Title:             "验证 Runtime 连接",
-		Content:           "检查心跳和命令回写",
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SubmittedByUserID:   ownerID,
+		Title:               "验证 Runtime 连接",
+		Content:             "检查心跳和命令回写",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err == nil {
 		t.Fatal("expected first signal error")
@@ -7897,11 +7927,12 @@ func TestProjectCoordinationBackendE2ESimulation(t *testing.T) {
 	seedDigitalExecutorMember(repo, tenantID, projectID, uuid.New())
 
 	_, err = service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
-		TenantID:          tenantID,
-		ProjectID:         projectID,
-		SubmittedByUserID: ownerID,
-		Title:             "验证 Runtime 执行回写",
-		Content:           "模拟 Temporal 短暂不可用后的重试恢复",
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SubmittedByUserID:   ownerID,
+		Title:               "验证 Runtime 执行回写",
+		Content:             "模拟 Temporal 短暂不可用后的重试恢复",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err == nil {
 		t.Fatal("expected demand signal failure")
@@ -12401,8 +12432,8 @@ type memoryRepository struct {
 	deleteAuditEvents                []ProjectDeleteAuditEventParams
 	deleteAuditEventErr              error
 	ensureDecisionCardsTerminalCalls []ensureDecisionCardsTerminalCall
-	workspaceDeleteRequests         []WorkspaceDeleteRequest
-	workspaceDeleteAuditEvents      []map[string]any
+	workspaceDeleteRequests          []WorkspaceDeleteRequest
+	workspaceDeleteAuditEvents       []map[string]any
 	// openInboxDecisionIDs tracks which decision IDs currently have an open
 	// inbox projection in memory tests (shared with fakeDecisionInboxProjector).
 	openInboxDecisionIDs map[uuid.UUID]bool
@@ -17316,11 +17347,11 @@ func (f *fakeApprovalResolver) CreateRequest(ctx context.Context, req CreateAppr
 }
 
 type fakeDecisionInboxProjector struct {
-	upserts          []DecisionRequest
-	resolutions      []DecisionRequest
-	upsertErr        error
-	resolveErr       error
-	openBySource     map[uuid.UUID]bool
+	upserts      []DecisionRequest
+	resolutions  []DecisionRequest
+	upsertErr    error
+	resolveErr   error
+	openBySource map[uuid.UUID]bool
 }
 
 func (f *fakeDecisionInboxProjector) UpsertProjectDecisionRequest(ctx context.Context, decision DecisionRequest) error {

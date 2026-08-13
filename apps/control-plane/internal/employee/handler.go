@@ -1505,6 +1505,8 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
+	case errors.Is(err, ErrForbidden):
+		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, ErrConflict), errors.Is(err, ErrPermissionChangeBusy):
 		// 带出错误文本（重名/头像占用/容量满/权限变更遇在役工作等均为受控措辞），前端据关键词映射中文提示。
 		http.Error(w, err.Error(), http.StatusConflict)

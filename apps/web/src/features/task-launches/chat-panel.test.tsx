@@ -140,6 +140,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 function makeEmployee(): DigitalEmployee {
   return {
+    description: "处理客户工单与常见问题解答",
     employee_type: "generalist",
     id: "emp-1",
     name: "Ada",
@@ -232,6 +233,11 @@ function chatAuxRoutesResponse(
   if (projectMatch && method === "GET") {
     return jsonResponse({ ...project, id: projectMatch[1] });
   }
+  if (path === "/api/auth/me" && method === "GET") {
+    return jsonResponse({
+      user: { id: "owner-1", username: "owner", display_name: "负责人", tenant_id: "tenant-1" },
+    });
+  }
   return null;
 }
 
@@ -261,6 +267,9 @@ function createChatFetcher(
     if (auxResponse) {
       return auxResponse;
     }
+    if (path.match(/^\/api\/v1\/digital-employees\/[^/]+\/chat-threads$/) && method === "GET") {
+      return jsonResponse({ items: [] });
+    }
 
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
@@ -280,8 +289,9 @@ function createChatFetcher(
         {
           ...baseRunFields(runId, employeeId),
           status: "queued",
-          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {})
-},
+          chat_thread_id: body.resume_of_run_id ?? runId,
+          ...(body.resume_of_run_id ? { resume_of_run_id: body.resume_of_run_id } : {}),
+        },
         201,
       );
     }
@@ -446,6 +456,10 @@ function createResumeDegradeFetcher() {
       return auxResponse;
     }
 
+    if (path.match(/^\/api\/v1\/digital-employees\/[^/]+\/chat-threads$/) && method === "GET") {
+      return jsonResponse({ items: [] });
+    }
+
     const createMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (createMatch && method === "GET") {
       // 会话恢复查询:这些场景不预置历史会话,返回空列表即"无可恢复内容"。
@@ -460,7 +474,11 @@ function createResumeDegradeFetcher() {
       };
       if (createCallCount === 1) {
         return jsonResponse(
-          { ...baseRunFields("run-1", employeeId), status: "queued" },
+          {
+            ...baseRunFields("run-1", employeeId),
+            chat_thread_id: "run-1",
+            status: "queued",
+          },
           201,
         );
       }
@@ -468,7 +486,11 @@ function createResumeDegradeFetcher() {
         return jsonResponse({ message: "会话已失效，无法继续上下文" }, 400);
       }
       return jsonResponse(
-        { ...baseRunFields("run-2", employeeId), status: "queued" },
+        {
+          ...baseRunFields("run-2", employeeId),
+          chat_thread_id: "run-1",
+          status: "queued",
+        },
         201,
       );
     }
@@ -579,6 +601,31 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
       return auxResponse;
     }
 
+    if (path.match(/^\/api\/v1\/digital-employees\/[^/]+\/chat-threads$/) && method === "GET") {
+      const root = threadItemsAsc[0];
+      if (!root) {
+        return jsonResponse({ items: [] });
+      }
+      const last = threadItemsAsc[threadItemsAsc.length - 1]!;
+      return jsonResponse({
+        items: [
+          {
+            chat_thread_id: String(root.chat_thread_id ?? root.id),
+            title: root.task_title,
+            initiator_user_id: "owner-1",
+            initiator_display_name: "负责人",
+            last_speaker_user_id: "owner-1",
+            last_speaker_display_name: "负责人",
+            last_prompt: last.task_title,
+            last_active_at: "2026-08-13T00:00:00Z",
+            has_active_run: threadItemsAsc.some((item) =>
+              ["queued", "dispatching", "running", "cancelling"].includes(String(item.status ?? "")),
+            ),
+          },
+        ],
+      });
+    }
+
     const runsMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (runsMatch && method === "GET") {
       const employeeId = runsMatch[1];
@@ -655,8 +702,15 @@ describe("ChatPanel", () => {
       />,
     );
 
-    // 1. employee select lists mock employees (name/role)
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    // 1. employee roster lists mock employees with identity (avatar row: name/role),
+    //    and the thread header surfaces the selected employee's role + description
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
+    expect(getByText("客服助手")).toBeTruthy();
+    const roster = document.querySelector('[aria-label="数字员工列表"]');
+    expect(roster).toBeTruthy();
+    const selectedRow = roster!.querySelector('button[aria-pressed="true"]');
+    expect(selectedRow?.textContent).toContain("Ada");
+    expect(document.body.textContent).toContain("处理客户工单与常见问题解答");
 
     // 2. send first question -> POST without resume_of_run_id
     setRunScript("run-1", [
@@ -792,7 +846,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await typeInLabeledField("对话问题", "ceiling 确认");
     await clickButton("发送");
 
@@ -863,7 +917,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await typeInLabeledField("对话问题", "服务端要求确认");
     await clickButton("发送");
 
@@ -893,7 +947,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "会失败的问题");
     await clickButton("发送");
@@ -924,7 +978,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "第一次问题");
     await clickButton("发送");
@@ -963,7 +1017,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "第一个问题");
     await clickButton("发送");
@@ -986,8 +1040,9 @@ describe("ChatPanel", () => {
     expect(bodies[2]).toEqual({
       objective: "第二个问题",
       run_kind: "chat",
-      project_id: "project-1"
-});
+      project_id: "project-1",
+      chat_thread_id: "run-1",
+    });
 
     await waitFor(() => expect(chatThread().textContent).toContain("上下文未延续"));
   });
@@ -1003,7 +1058,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     await typeInLabeledField("对话问题", "第一个问题");
     await clickButton("发送");
@@ -1034,7 +1089,7 @@ describe("ChatPanel", () => {
 
     // 参与门禁：未选项目时员工下拉只出占位，不出任何候选员工
     await waitFor(() => expect(getByText("请先选择项目")).toBeTruthy());
-    expect(queryByText("Ada · 客服助手")).toBeNull();
+    expect(queryByText("Ada")).toBeNull();
     expect(getByLabelText("项目")).toBeTruthy();
 
     await typeInLabeledField("对话问题", "第一个问题");
@@ -1047,7 +1102,7 @@ describe("ChatPanel", () => {
     await act(async () => {
       await queryClient.refetchQueries();
     });
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     // 员工自动选中后锚点会话恢复需要再走一轮查询才能落定
     await act(async () => {
       await queryClient.refetchQueries();
@@ -1066,7 +1121,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     setRunScript("run-1", [{ status: "completed", result: { output: "第一轮回答" } }]);
     await typeInLabeledField("对话问题", "第一个问题");
@@ -1087,7 +1142,7 @@ describe("ChatPanel", () => {
     await act(async () => {
       await queryClient.refetchQueries();
     });
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
 
     setRunScript("run-2", [{ status: "completed", result: { output: "第二轮回答" } }]);
     await typeInLabeledField("对话问题", "第二个问题");
@@ -1130,7 +1185,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -1178,7 +1233,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -1209,13 +1264,13 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
     await waitFor(() => expect(chatThread().textContent).toContain("历史问题一"));
 
-    await clickButton("新对话");
+    await clickButton("新会话");
     expect(chatThread().textContent).not.toContain("历史问题一");
 
     await typeInLabeledField("对话问题", "全新会话的问题");
@@ -1248,7 +1303,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     await act(async () => {
       await queryClient.refetchQueries();
     });
@@ -1270,7 +1325,7 @@ describe("ChatPanel", () => {
       />,
     );
 
-    await waitFor(() => expect(getByText("Ada · 客服助手")).toBeTruthy());
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
     setRunScript("run-1", [
       { status: "running" },
       { status: "completed", result: { output: "快捷键回答" } },

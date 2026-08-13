@@ -95,7 +95,7 @@ describe("SubmitDemandDialog", () => {
       screen.getByPlaceholder("补充验收证据"),
       "验证发布任务",
     );
-    await userEvent.click(screen.getByRole("combobox", { name: "场景模板" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "场景模板（必选）" }));
     await userEvent.click(
       screen.getByRole("option", { name: "软件开发（software_delivery）" }),
     );
@@ -109,7 +109,7 @@ describe("SubmitDemandDialog", () => {
     );
   });
 
-  it("omits scenario_template_key when left unbound", async () => {
+  it("blocks submit when scenario template is missing", async () => {
     vi.mocked(listScenarioTemplates).mockResolvedValue([softwareDelivery]);
     const onSubmit = vi.fn();
     const screen = await renderDialog({ onSubmit });
@@ -117,10 +117,7 @@ describe("SubmitDemandDialog", () => {
     await userEvent.type(screen.getByPlaceholder("补充验收证据"), "常规需求");
     await userEvent.click(screen.getByRole("button", { name: "提交" }));
 
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "常规需求" }),
-    );
-    const call = onSubmit.mock.calls[0]?.[0];
-    expect(call.scenario_template_key).toBeUndefined();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("请选择场景模板")).toBeTruthy();
   });
 });

@@ -28,8 +28,6 @@ import type {
 } from "@/lib/api/projects";
 import { PlaybookCastingPanel } from "./playbook-casting-panel";
 
-const NO_TEMPLATE_VALUE = "__none__";
-
 type SubmitDemandDialogProps = {
   isSubmitting?: boolean;
   onOpenChange: (open: boolean) => void;
@@ -100,6 +98,10 @@ export function SubmitDemandDialog({
       setError("需求标题不能为空");
       return;
     }
+    if (!scenarioTemplateKey.trim()) {
+      setError("请选择场景模板");
+      return;
+    }
     let refs: Record<string, unknown> | undefined;
     try {
       const parsed = JSON.parse(sourceRefs || "{}") as unknown;
@@ -120,7 +122,7 @@ export function SubmitDemandDialog({
         .map((item) => item.trim())
         .filter(Boolean),
       content: content.trim() || undefined,
-      scenario_template_key: scenarioTemplateKey || undefined,
+      scenario_template_key: scenarioTemplateKey.trim(),
       source_refs: refs,
       source_type: sourceType,
       title: title.trim()
@@ -186,18 +188,15 @@ export function SubmitDemandDialog({
               placeholder="每行一个附件或对象存储引用"
             />
           </Field>
-          <Field label="场景模板">
+          <Field label="场景模板（必选）">
             <Select
-              value={scenarioTemplateKey || NO_TEMPLATE_VALUE}
-              onValueChange={(value) =>
-                setScenarioTemplateKey(value === NO_TEMPLATE_VALUE ? "" : value)
-              }
+              value={scenarioTemplateKey || undefined}
+              onValueChange={(value) => setScenarioTemplateKey(value)}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="不绑定（通用）" />
+                <SelectValue placeholder="选择场景模板" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_TEMPLATE_VALUE}>不绑定（通用）</SelectItem>
                 {templateOptions.map((template) => {
                   const r = readinessByKey.get(template.template_key);
                   let suffix = "";

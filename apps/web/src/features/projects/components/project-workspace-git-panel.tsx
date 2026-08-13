@@ -39,12 +39,14 @@ function primaryLabel(status: ProjectWorkspaceGitStatus | undefined): string {
 }
 
 export function ProjectWorkspaceGitBadge({
+  className,
   status,
 }: {
+  className?: string;
   status?: ProjectWorkspaceGitStatus | null;
 }) {
   return (
-    <StatusPill tone={toneForStatus(status ?? undefined)}>
+    <StatusPill className={className} tone={toneForStatus(status ?? undefined)}>
       {primaryLabel(status ?? undefined)}
     </StatusPill>
   );
@@ -65,28 +67,45 @@ export function ProjectWorkspaceGitPanel({
     status?.sampled_at != null ? formatRelativeTime(status.sampled_at) : null;
   const dirty = status?.applicable && status.is_clean === false;
   const entries = status?.uncommitted_entries ?? [];
+  const pillLabel = primaryLabel(status ?? undefined);
+  const errorDetail =
+    status?.sample_error && status.sample_error.trim() !== pillLabel
+      ? status.sample_error
+      : null;
 
   return (
     <div
-      className="mt-3 rounded-[14px] border border-line/80 bg-card-soft/60 px-3 py-2.5"
+      className="mt-3 min-w-0 overflow-hidden rounded-[14px] border border-line/80 bg-card-soft/60 px-3 py-2.5"
       data-testid="project-workspace-git-panel"
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <ProjectWorkspaceGitBadge status={status} />
-        {head ? (
-          <span className="font-mono text-[11px] tabular-nums text-ink-2" title={status?.head_commit}>
-            HEAD {head}
-          </span>
-        ) : null}
-        {status?.current_branch ? (
-          <span className="text-[11px] text-ink-3">{status.current_branch}</span>
-        ) : null}
-        {sampled ? (
-          <span className="text-[11px] text-ink-3">采样 {sampled}</span>
-        ) : null}
+      <div className="flex min-w-0 items-start gap-2">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <ProjectWorkspaceGitBadge
+            className="max-w-full min-w-0 whitespace-normal break-words leading-snug"
+            status={status}
+          />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            {head ? (
+              <span className="font-mono text-[11px] tabular-nums text-ink-2" title={status?.head_commit}>
+                HEAD {head}
+              </span>
+            ) : null}
+            {status?.current_branch ? (
+              <span
+                className="min-w-0 max-w-full break-all font-mono text-[11px] text-ink-3"
+                title={status.current_branch}
+              >
+                {status.current_branch}
+              </span>
+            ) : null}
+            {sampled ? (
+              <span className="text-[11px] text-ink-3">采样 {sampled}</span>
+            ) : null}
+          </div>
+        </div>
         {onRefresh ? (
           <Button
-            className="ml-auto h-7 px-2.5 text-[12px]"
+            className="h-7 shrink-0 px-2.5 text-[12px]"
             disabled={pending || status?.refresh_pending}
             size="sm"
             type="button"
@@ -97,8 +116,8 @@ export function ProjectWorkspaceGitPanel({
           </Button>
         ) : null}
       </div>
-      {status?.sample_error ? (
-        <p className="mt-1.5 text-[11px] text-warn-text">{status.sample_error}</p>
+      {errorDetail ? (
+        <p className="mt-1.5 min-w-0 break-words text-[11px] text-warn-text">{errorDetail}</p>
       ) : null}
       {dirty ? (
         <div className="mt-2">

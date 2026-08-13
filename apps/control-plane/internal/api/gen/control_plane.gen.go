@@ -3891,8 +3891,11 @@ type CreateDigitalEmployeeRequest struct {
 
 // CreateDigitalEmployeeRunRequest defines model for CreateDigitalEmployeeRunRequest.
 type CreateDigitalEmployeeRunRequest struct {
-	AllowedActions   *[]string                 `json:"allowed_actions,omitempty"`
-	ArtifactRefs     *[]map[string]interface{} `json:"artifact_refs,omitempty"`
+	AllowedActions *[]string                 `json:"allowed_actions,omitempty"`
+	ArtifactRefs   *[]map[string]interface{} `json:"artifact_refs,omitempty"`
+
+	// ChatThreadId Join an existing chat thread without provider session resume (e.g. after runtime TTL expiry). Must belong to the same employee and project. Mutually exclusive with opening a brand-new root when set without resume_of_run_id.
+	ChatThreadId     *openapi_types.UUID       `json:"chat_thread_id,omitempty"`
 	ContextRefs      *[]map[string]interface{} `json:"context_refs,omitempty"`
 	ForbiddenActions *[]string                 `json:"forbidden_actions,omitempty"`
 	GraceSec         *int32                    `json:"grace_sec,omitempty"`
@@ -4321,6 +4324,30 @@ type DigitalEmployeeCapabilityOptions struct {
 	Skills        []DigitalEmployeeCapabilityOptionItem `json:"skills"`
 }
 
+// DigitalEmployeeChatThread defines model for DigitalEmployeeChatThread.
+type DigitalEmployeeChatThread struct {
+	ActiveRunnerDisplayName *string             `json:"active_runner_display_name,omitempty"`
+	ActiveRunnerUserId      *openapi_types.UUID `json:"active_runner_user_id,omitempty"`
+	ChatThreadId            openapi_types.UUID  `json:"chat_thread_id"`
+	HasActiveRun            bool                `json:"has_active_run"`
+	InitiatorDisplayName    string              `json:"initiator_display_name"`
+	InitiatorUserId         openapi_types.UUID  `json:"initiator_user_id"`
+	LastActiveAt            time.Time           `json:"last_active_at"`
+
+	// LastPrompt Most recent human turn objective/title
+	LastPrompt             string             `json:"last_prompt"`
+	LastSpeakerDisplayName string             `json:"last_speaker_display_name"`
+	LastSpeakerUserId      openapi_types.UUID `json:"last_speaker_user_id"`
+
+	// Title Thread title (user-named or first-prompt fallback)
+	Title string `json:"title"`
+}
+
+// DigitalEmployeeChatThreadList defines model for DigitalEmployeeChatThreadList.
+type DigitalEmployeeChatThreadList struct {
+	Items []DigitalEmployeeChatThread `json:"items"`
+}
+
 // DigitalEmployeeConfigRevision defines model for DigitalEmployeeConfigRevision.
 type DigitalEmployeeConfigRevision struct {
 	ApprovedAt            *time.Time                          `json:"approved_at,omitempty"`
@@ -4618,10 +4645,16 @@ type DigitalEmployeeRun struct {
 	CapabilityProjection *CapabilityProjectionSnapshot `json:"capability_projection,omitempty"`
 
 	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
-	ChatThreadId        *openapi_types.UUID    `json:"chat_thread_id,omitempty"`
-	CommandId           string                 `json:"command_id"`
-	CompletedAt         *time.Time             `json:"completed_at,omitempty"`
-	CreatedAt           *time.Time             `json:"created_at,omitempty"`
+	ChatThreadId *openapi_types.UUID `json:"chat_thread_id,omitempty"`
+	CommandId    string              `json:"command_id"`
+	CompletedAt  *time.Time          `json:"completed_at,omitempty"`
+	CreatedAt    *time.Time          `json:"created_at,omitempty"`
+
+	// CreatorDisplayName Display name for creator_user_id (server-side join).
+	CreatorDisplayName *string `json:"creator_display_name,omitempty"`
+
+	// CreatorUserId Human user who created this run turn (tasks.creator_id).
+	CreatorUserId       *openapi_types.UUID    `json:"creator_user_id,omitempty"`
 	Diagnostic          map[string]interface{} `json:"diagnostic"`
 	DigitalEmployeeId   openapi_types.UUID     `json:"digital_employee_id"`
 	ErrorCode           *string                `json:"error_code,omitempty"`
@@ -4730,10 +4763,16 @@ type DigitalEmployeeRunListItem struct {
 	CapabilityProjection *CapabilityProjectionSnapshot `json:"capability_projection,omitempty"`
 
 	// ChatThreadId Effective chat conversation id (thread root run id); present on chat runs only.
-	ChatThreadId        *openapi_types.UUID    `json:"chat_thread_id,omitempty"`
-	CommandId           string                 `json:"command_id"`
-	CompletedAt         *time.Time             `json:"completed_at,omitempty"`
-	CreatedAt           *time.Time             `json:"created_at,omitempty"`
+	ChatThreadId *openapi_types.UUID `json:"chat_thread_id,omitempty"`
+	CommandId    string              `json:"command_id"`
+	CompletedAt  *time.Time          `json:"completed_at,omitempty"`
+	CreatedAt    *time.Time          `json:"created_at,omitempty"`
+
+	// CreatorDisplayName Display name for creator_user_id (server-side join).
+	CreatorDisplayName *string `json:"creator_display_name,omitempty"`
+
+	// CreatorUserId Human user who created this run turn (tasks.creator_id).
+	CreatorUserId       *openapi_types.UUID    `json:"creator_user_id,omitempty"`
 	Diagnostic          map[string]interface{} `json:"diagnostic"`
 	DigitalEmployeeId   openapi_types.UUID     `json:"digital_employee_id"`
 	DurationSec         *float32               `json:"duration_sec,omitempty"`
@@ -5576,6 +5615,11 @@ type PatchAutomationRuleRequest struct {
 	ScenarioTemplateKey   *string                 `json:"scenario_template_key,omitempty"`
 	ScheduleKind          *AutomationScheduleKind `json:"schedule_kind,omitempty"`
 	Timezone              *string                 `json:"timezone,omitempty"`
+}
+
+// PatchDigitalEmployeeChatThreadRequest defines model for PatchDigitalEmployeeChatThreadRequest.
+type PatchDigitalEmployeeChatThreadRequest struct {
+	Title string `json:"title"`
 }
 
 // PatchProjectEvidenceRequest defines model for PatchProjectEvidenceRequest.
@@ -8097,8 +8141,8 @@ type SubmitProjectDemandRequest struct {
 	ReviewerSelectionReason *SubmitProjectDemandRequestReviewerSelectionReason `json:"reviewer_selection_reason,omitempty"`
 	ReviewerUserId          *openapi_types.UUID                                `json:"reviewer_user_id,omitempty"`
 
-	// ScenarioTemplateKey 需求级场景模板 key；缺省回落 generic
-	ScenarioTemplateKey *string                  `json:"scenario_template_key,omitempty"`
+	// ScenarioTemplateKey 场景模板 key（必填）。人手发起（任务中枢 / 项目提需求 / 转为任务）必须绑定 active 模板；空值拒绝。不恢复项目级默认剧本。
+	ScenarioTemplateKey string                   `json:"scenario_template_key"`
 	SourceRefs          *map[string]interface{}  `json:"source_refs,omitempty"`
 	SourceType          *ProjectDemandSourceType `json:"source_type,omitempty"`
 	Title               string                   `json:"title"`
@@ -8811,6 +8855,11 @@ type GetDigitalEmployeeOverviewParams struct {
 	Offset            *Offset                           `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ListDigitalEmployeeChatThreadsParams defines parameters for ListDigitalEmployeeChatThreads.
+type ListDigitalEmployeeChatThreadsParams struct {
+	ProjectId openapi_types.UUID `form:"project_id" json:"project_id"`
+}
+
 // ListProviderSessionsForDigitalEmployeeParams defines parameters for ListProviderSessionsForDigitalEmployee.
 type ListProviderSessionsForDigitalEmployeeParams struct {
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
@@ -9357,6 +9406,9 @@ type SetEmployeeTemplateStatusJSONRequestBody = SetEmployeeTemplateStatusRequest
 
 // CreateDigitalEmployeeJSONRequestBody defines body for CreateDigitalEmployee for application/json ContentType.
 type CreateDigitalEmployeeJSONRequestBody = CreateDigitalEmployeeRequest
+
+// PatchDigitalEmployeeChatThreadJSONRequestBody defines body for PatchDigitalEmployeeChatThread for application/json ContentType.
+type PatchDigitalEmployeeChatThreadJSONRequestBody = PatchDigitalEmployeeChatThreadRequest
 
 // CreateDigitalEmployeeConfigRevisionJSONRequestBody defines body for CreateDigitalEmployeeConfigRevision for application/json ContentType.
 type CreateDigitalEmployeeConfigRevisionJSONRequestBody = CreateDigitalEmployeeConfigRevisionRequest
@@ -10412,6 +10464,12 @@ type ServerInterface interface {
 	// Get a digital employee
 	// (GET /api/v1/digital-employees/{employeeId})
 	GetDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
+	// List chat threads for an employee in a project
+	// (GET /api/v1/digital-employees/{employeeId}/chat-threads)
+	ListDigitalEmployeeChatThreads(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListDigitalEmployeeChatThreadsParams)
+	// Rename a chat thread (initiator only)
+	// (PATCH /api/v1/digital-employees/{employeeId}/chat-threads/{threadId})
+	PatchDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, threadId openapi_types.UUID)
 	// Create a digital employee governance config revision
 	// (POST /api/v1/digital-employees/{employeeId}/config-revisions)
 	CreateDigitalEmployeeConfigRevision(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -11381,6 +11439,18 @@ func (_ Unimplemented) DeleteDigitalEmployee(w http.ResponseWriter, r *http.Requ
 // Get a digital employee
 // (GET /api/v1/digital-employees/{employeeId})
 func (_ Unimplemented) GetDigitalEmployee(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List chat threads for an employee in a project
+// (GET /api/v1/digital-employees/{employeeId}/chat-threads)
+func (_ Unimplemented) ListDigitalEmployeeChatThreads(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListDigitalEmployeeChatThreadsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Rename a chat thread (initiator only)
+// (PATCH /api/v1/digital-employees/{employeeId}/chat-threads/{threadId})
+func (_ Unimplemented) PatchDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, threadId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -14239,6 +14309,83 @@ func (siw *ServerInterfaceWrapper) GetDigitalEmployee(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetDigitalEmployee(w, r, employeeId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDigitalEmployeeChatThreads operation middleware
+func (siw *ServerInterfaceWrapper) ListDigitalEmployeeChatThreads(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDigitalEmployeeChatThreadsParams
+
+	// ------------- Required query parameter "project_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "project_id", r.URL.Query(), &params.ProjectId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDigitalEmployeeChatThreads(w, r, employeeId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchDigitalEmployeeChatThread operation middleware
+func (siw *ServerInterfaceWrapper) PatchDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "threadId" -------------
+	var threadId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "threadId", chi.URLParam(r, "threadId"), &threadId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "threadId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchDigitalEmployeeChatThread(w, r, employeeId, threadId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -22321,6 +22468,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}", wrapper.GetDigitalEmployee)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/chat-threads", wrapper.ListDigitalEmployeeChatThreads)
+	})
+	r.Group(func(r chi.Router) {
+		r.Patch(options.BaseURL+"/api/v1/digital-employees/{employeeId}/chat-threads/{threadId}", wrapper.PatchDigitalEmployeeChatThread)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/config-revisions", wrapper.CreateDigitalEmployeeConfigRevision)

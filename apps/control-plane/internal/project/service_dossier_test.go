@@ -63,6 +63,7 @@ func newDossierFixture(t *testing.T) *dossierFixture {
 	}
 	demand, err := service.SubmitDemand(context.Background(), SubmitProjectDemandRequest{
 		TenantID: tenantID, ProjectID: projectID, SubmittedByUserID: ownerID, Title: "修复登录超时",
+		ScenarioTemplateKey: strPtr("test_template"),
 	})
 	if err != nil {
 		t.Fatalf("submit demand: %v", err)

@@ -1828,7 +1828,8 @@ func TestProjectHandlerWithRealServiceE2ESimulation(t *testing.T) {
 
 	submitReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID.String()+"/demands", strings.NewReader(`{
 		"title":"验证 Runtime 执行回写",
-		"content":"模拟 Workflow signal 短暂失败"
+		"content":"模拟 Workflow signal 短暂失败",
+		"scenario_template_key":"test_template"
 	}`))
 	submitReq = withProjectRouteParams(submitReq, map[string]string{"projectId": projectID.String()})
 	submitReq = withConsoleContext(submitReq, tenantID, ownerID)

@@ -233,6 +233,9 @@ type CreateRunRecordRequest struct {
 	// turns; nil for task runs and for a conversation's root turn (whose
 	// effective thread id is its own run id, resolved at read time).
 	ChatThreadID *uuid.UUID
+	// ThreadTitle is set on root chat turns only (first-prompt truncation or
+	// later user rename). Follow-ups leave it nil.
+	ThreadTitle *string
 	// ProjectID is the run's project affiliation (运行必须归属项目 spec 2026-07-26):
 	// persisted to the first-class task_runs.project_id column by every dispatch
 	// path. Required — the column is NOT NULL.

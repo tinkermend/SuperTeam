@@ -1281,6 +1281,7 @@ export type SubmitProjectDemandInput = {
   reviewer_user_id?: string;
   reviewer_selection_reason?: ReviewerSelectionReason;
   coordination_mode?: ProjectCoordinationMode;
+  /** 人手发起必填（服务端校验）；自动化等路径由各自配置钉死。 */
   scenario_template_key?: string;
 };
 

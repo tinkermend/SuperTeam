@@ -52,4 +52,34 @@ describe("ProjectWorkspaceGitPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "刷新现场" }));
     expect(onRefresh).toHaveBeenCalled();
   });
+
+  it("keeps a long branch and offline error inside the panel", async () => {
+    const longBranch = "feature/casting-expansion-merge-state-tracking";
+    const offline = "节点离线，显示的是 476 分钟前的现场";
+    const screen = await render(
+      <ProjectWorkspaceGitPanel
+        pending={false}
+        status={{
+          applicable: true,
+          is_git_repo: true,
+          is_clean: true,
+          head_commit: "c3c5fc7abcdef",
+          current_branch: longBranch,
+          repo_state: "ok",
+          uncommitted_count: 0,
+          sample_error: offline,
+          sampled_at: new Date(Date.now() - 476 * 60_000).toISOString(),
+        }}
+      />,
+    );
+    const branch = screen.getByText(longBranch);
+    await expect.element(branch).toBeInTheDocument();
+    expect(branch.element().className).toMatch(/break-all/);
+    const panel = screen.getByTestId("project-workspace-git-panel").element();
+    expect(panel.className).toMatch(/overflow-hidden/);
+    expect(panel.className).toMatch(/min-w-0/);
+    const errorHits = screen.getByText(offline);
+    await expect.element(errorHits).toBeInTheDocument();
+    expect(document.body.textContent?.split(offline).length).toBe(2);
+  });
 });

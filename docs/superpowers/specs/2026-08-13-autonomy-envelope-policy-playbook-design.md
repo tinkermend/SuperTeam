@@ -2,7 +2,7 @@
 
 - 日期：2026-08-13
 - 状态：**开放问题已全部收口**（2026-08-13 续评；#4 确认走 A：`coordination_policy.autonomy_ceiling`）；模型待按 §9 分期立实施计划。本文不含实现、不含任务中枢 UI
-- 系列：承接「任务中枢三模式」（`2026-07-13-task-hub-tri-mode-design.md`）、「剧本可落地化」（`2026-07-27-workspace-and-playbook-alignment-baseline.md`、`2026-08-04-role-vocabulary-and-casting-design.md`）；与任务中枢 UI 重构（另见 `2026-08-13-task-hub-chat-workbench-ui-draft.md`）**刻意分离**
+- 系列：承接「任务中枢三模式」（`2026-07-13-task-hub-tri-mode-design.md`）、「剧本可落地化」（`2026-07-27-workspace-and-playbook-alignment-baseline.md`、`2026-08-04-role-vocabulary-and-casting-design.md`）；与任务中枢 UI 重构（`2026-08-13-task-hub-workbench-design.md`）**刻意分离**（治理模型在本文，工作台 IA 在彼）
 - 交付性质：治理模型设计（概念定义 + 合成规则 + 落点映射 + 分期）；涉及 Control Plane 策略解析、模板 spec 扩展、一项 schema 退役（§6）
 - 目标读者：评审人（人类）与后续实施会话
 - 已拍板（用户 2026-08-13 对话及续评，逐条不得静默偏离）：

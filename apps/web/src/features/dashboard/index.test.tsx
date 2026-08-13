@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { TaskLaunchView } from "@/features/task-launches";
+import { TaskLaunchPage } from "@/features/task-launches";
 
 vi.mock("@/components/layout/header", () => ({
   Header: ({ children }: { children: ReactNode }) => <header>{children}</header>
@@ -115,16 +115,16 @@ function createQueryClient() {
 async function renderHomepageTaskHub() {
   return render(
     <QueryClientProvider client={createQueryClient()}>
-      <TaskLaunchView apiBaseUrl="http://control-plane.local" title="任务中枢" />
+      <TaskLaunchPage title="任务中枢" />
     </QueryClientProvider>,
   );
 }
 
 describe("Homepage task hub", () => {
-  it("renders the task launch experience as the authenticated homepage", async () => {
+  it("renders the task hub workbench as the authenticated homepage", async () => {
     const screen = await renderHomepageTaskHub();
 
     await expect.element(screen.getByRole("heading", { name: "任务中枢" })).toBeVisible();
-    await expect.element(screen.getByText("提交需求并跟踪流程实例的运行与阻塞")).toBeVisible();
+    await expect.element(screen.getByText("对话协作与任务发起共用项目上下文；右栏挂项目目录现场")).toBeVisible();
   });
 });

@@ -14,10 +14,13 @@ import {
   type SubmitSuccessResult,
 } from "./components/task-launch-form";
 import { ChatPanel, type ConvertToTaskPayload } from "./components/chat-panel";
+import { HubContextRail } from "./components/hub-context-rail";
 import {
-  WorkflowInstancesView,
-  type WorkflowInstancesFilters,
-} from "./components/workflow-instances-view";
+  HubInstanceSummary,
+  TaskHubInstanceRail,
+} from "./components/task-hub-instance-rail";
+import { type WorkflowInstancesFilters } from "./components/workflow-instances-view";
+import "./components/task-hub-chat.css";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import {
@@ -25,20 +28,22 @@ import {
   submitProjectDemand,
   type Project,
   type SubmitProjectDemandInput,
+  type WorkflowInstanceSummary,
 } from "@/lib/api/projects";
 import { missingObjectLabel } from "@/lib/status-labels";
 
-const HUB_SUBTITLE = "提交需求并跟踪流程实例的运行与阻塞";
+const HUB_SUBTITLE = "对话协作与任务发起共用项目上下文；右栏挂项目目录现场";
+
+type HubFace = "chat" | "task";
 
 type TaskLaunchSearch = {
   mode?: LaunchMode;
   project?: string;
-  /** 页签深链：?view=instances 打开「流程实例」；缺省为「提出任务」。 */
-  view?: string;
-  /** 流程实例页签的服务端关键词（防抖落定值）。 */
+  /** 工作台面：chat（默认）| task。兼容旧深链 view=instances → task。 */
+  face?: "chat" | "task";
+  view?: "instances";
   q?: string;
-  /** 流程实例页签的口径：archived（已结束）；缺省 active。 */
-  scope?: string;
+  scope?: "archived";
 };
 
 type TaskLaunchPageProps = {
@@ -46,101 +51,125 @@ type TaskLaunchPageProps = {
   title?: string;
 };
 
+function resolveFace(search: TaskLaunchSearch): HubFace {
+  if (search.face === "task" || search.face === "chat") {
+    return search.face;
+  }
+  // 旧「流程实例」深链落到任务面。
+  if (search.view === "instances") {
+    return "task";
+  }
+  // 旧 mode=chat 深链落到对话面。
+  if (search.mode === "chat") {
+    return "chat";
+  }
+  return "chat";
+}
+
 export function TaskLaunchPage({
   fetcher,
-  title = "任务发起",
+  title = "任务中枢",
 }: TaskLaunchPageProps) {
   const search = useSearch({ strict: false }) as TaskLaunchSearch;
   const navigate = useNavigate();
   const apiBaseUrl = resolveControlPlaneUrl();
-  const view = search.view === "instances" ? "instances" : "compose";
+  const face = resolveFace(search);
 
   const tabBar = (
     <PageTabs aria-label="任务中枢视图" role="tablist">
       <PageTabList>
         <PageTab
-          id="task-hub-tab-compose"
-          active={view === "compose"}
-          aria-controls="task-hub-panel-compose"
-          aria-selected={view === "compose"}
+          id="task-hub-tab-chat"
+          active={face === "chat"}
+          aria-controls="task-hub-panel-chat"
+          aria-selected={face === "chat"}
           onClick={() =>
             navigate({
-              search: { mode: search.mode, project: search.project },
+              search: { project: search.project, face: "chat" },
               to: ".",
             })
           }
           role="tab"
           type="button"
         >
-          提出任务
+          对话
         </PageTab>
         <PageTab
-          id="task-hub-tab-instances"
-          active={view === "instances"}
-          aria-controls="task-hub-panel-instances"
-          aria-selected={view === "instances"}
+          id="task-hub-tab-task"
+          active={face === "task"}
+          aria-controls="task-hub-panel-task"
+          aria-selected={face === "task"}
           onClick={() =>
             navigate({
-              search: { project: search.project, view: "instances" },
+              search: {
+                project: search.project,
+                face: "task",
+                mode:
+                  search.mode === "loop" || search.mode === "plan"
+                    ? search.mode
+                    : "plan",
+                q: search.q,
+                scope: search.scope,
+              },
               to: ".",
             })
           }
           role="tab"
           type="button"
         >
-          流程实例
+          任务
         </PageTab>
       </PageTabList>
     </PageTabs>
   );
 
-  if (view === "instances") {
-    const filters: WorkflowInstancesFilters = {
-      projectId: search.project,
-      q: search.q,
-      scope: search.scope === "archived" ? "archived" : "active",
-    };
-    const handleFiltersChange = (next: WorkflowInstancesFilters) => {
-      void navigate({
-        replace: true,
-        search: {
-          mode: search.mode,
-          project: next.projectId,
-          q: next.q,
-          scope: next.scope === "archived" ? "archived" : undefined,
-          view: "instances",
-        },
-        to: ".",
-      });
-    };
-    return (
-      <TaskLaunchShell
-        description={HUB_SUBTITLE}
-        tabs={tabBar}
-        title={title}
-        width="wide"
-      >
-        <div
-          id="task-hub-panel-instances"
-          role="tabpanel"
-          aria-labelledby="task-hub-tab-instances"
-        >
-          <WorkflowInstancesView
-            apiOptions={{ baseUrl: apiBaseUrl, fetcher }}
-            filters={filters}
-            onFiltersChange={handleFiltersChange}
-          />
-        </div>
-      </TaskLaunchShell>
-    );
-  }
-
   return (
     <TaskLaunchView
       apiBaseUrl={apiBaseUrl}
+      face={face}
       fetcher={fetcher}
-      initialMode={search.mode}
+      initialMode={
+        search.mode === "loop" || search.mode === "plan" ? search.mode : "plan"
+      }
       initialProjectId={search.project}
+      instanceFilters={{
+        projectId: search.project,
+        q: search.q,
+        scope: search.scope === "archived" ? "archived" : "active",
+      }}
+      onFaceChange={(next) => {
+        void navigate({
+          search: {
+            project: search.project,
+            face: next,
+            mode:
+              next === "task"
+                ? search.mode === "loop" || search.mode === "plan"
+                  ? search.mode
+                  : "plan"
+                : undefined,
+            q: next === "task" ? search.q : undefined,
+            scope: next === "task" ? search.scope : undefined,
+          },
+          to: ".",
+        });
+      }}
+      onInstanceFiltersChange={(next) => {
+        void navigate({
+          replace: true,
+          search: {
+            face: "task",
+            mode:
+              search.mode === "loop" || search.mode === "plan"
+                ? search.mode
+                : "plan",
+            project: next.projectId,
+            q: next.q,
+            scope: next.scope === "archived" ? "archived" : undefined,
+          },
+          to: ".",
+        });
+      }}
       tabs={tabBar}
       title={title}
     />
@@ -149,21 +178,28 @@ export function TaskLaunchPage({
 
 type TaskLaunchViewProps = {
   apiBaseUrl: string;
+  face: HubFace;
   fetcher?: typeof fetch;
-  initialMode?: LaunchMode;
+  initialMode?: Exclude<LaunchMode, "chat">;
   initialProjectId?: string;
-  /** 页签条（由 TaskLaunchPage 提供；直接渲染 TaskLaunchView 的测试场景可省略）。 */
+  instanceFilters: WorkflowInstancesFilters;
+  onFaceChange: (face: HubFace) => void;
+  onInstanceFiltersChange: (next: WorkflowInstancesFilters) => void;
   tabs?: ReactNode;
   title?: string;
 };
 
 export function TaskLaunchView({
   apiBaseUrl,
+  face,
   fetcher,
-  initialMode,
+  initialMode = "plan",
   initialProjectId,
+  instanceFilters,
+  onFaceChange,
+  onInstanceFiltersChange,
   tabs,
-  title = "任务发起",
+  title = "任务中枢",
 }: TaskLaunchViewProps) {
   const apiOptions = useMemo<ApiClientOptions>(
     () => ({ baseUrl: apiBaseUrl, fetcher }),
@@ -174,7 +210,7 @@ export function TaskLaunchView({
   );
   /** 搜索/点选过的项目实体缓存：id 可能不在 browse 首页 50 条内。 */
   const [projectById, setProjectById] = useState<Record<string, Project>>({});
-  const [mode, setMode] = useState<LaunchMode>(initialMode ?? "plan");
+  const [mode, setMode] = useState<Exclude<LaunchMode, "chat">>(initialMode);
   const [content, setContent] = useState("");
   const [chatSource, setChatSource] = useState<{
     chatRunId: string;
@@ -184,6 +220,8 @@ export function TaskLaunchView({
     null,
   );
   const [submitError, setSubmitError] = useState("");
+  const [selectedInstance, setSelectedInstance] =
+    useState<WorkflowInstanceSummary | null>(null);
 
   const projectsQuery = useQuery({
     placeholderData: keepPreviousData,
@@ -209,16 +247,11 @@ export function TaskLaunchView({
     for (const project of projectsQuery.data ?? []) {
       rememberProject(project);
     }
-    // rememberProject 是稳定本地 setState 包装；依赖列表数据即可。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectsQuery.data]);
 
   useEffect(() => {
-    if (
-      initialMode === "plan" ||
-      initialMode === "loop" ||
-      initialMode === "chat"
-    ) {
+    if (initialMode === "plan" || initialMode === "loop") {
       setMode(initialMode);
     }
   }, [initialMode]);
@@ -229,15 +262,11 @@ export function TaskLaunchView({
     }
   }, [initialProjectId]);
 
-  // 仅在「尚无选中」时默认第一项；搜索选出的项目可能不在 browse 首页（limit 50），
-  // 不得因不在 activeProjects 就强行改写选中。
-  // 加载中 activeProjects 为空时不要清空已有选中（含 URL 深链）。
   useEffect(() => {
     if (projectsQuery.isLoading) {
       return;
     }
     if (!activeProjects.length) {
-      // 真·零活跃项目：仅当没有缓存实体时才清空（避免误清深链 id）
       if (selectedProjectId && !projectById[selectedProjectId]) {
         setSelectedProjectId("");
       }
@@ -308,6 +337,7 @@ export function TaskLaunchView({
   function handleProjectChange(project: Project) {
     setSelectedProjectId(project.id);
     rememberProject(project);
+    setSelectedInstance(null);
   }
 
   function handleConvertToTask({
@@ -321,12 +351,10 @@ export function TaskLaunchView({
     setChatSource({ chatRunId, digitalEmployeeId });
     setSelectedProjectId(anchorProjectId);
     setSuccessResult(null);
+    onFaceChange("task");
   }
 
-  function handleModeChange(nextMode: LaunchMode) {
-    if (nextMode === "chat") {
-      setChatSource(null);
-    }
+  function handleModeChange(nextMode: Exclude<LaunchMode, "chat">) {
     setMode(nextMode);
   }
 
@@ -340,57 +368,96 @@ export function TaskLaunchView({
       tabs={tabs}
       title={title}
       description={HUB_SUBTITLE}
+      width="wide"
     >
-      <div
-        id="task-hub-panel-compose"
-        role="tabpanel"
-        aria-labelledby="task-hub-tab-compose"
-      >
-        <TaskLaunchForm
-          apiOptions={apiOptions}
-          chatPanel={
-            <ChatPanel
+      {face === "chat" ? (
+        <div
+          id="task-hub-panel-chat"
+          role="tabpanel"
+          aria-labelledby="task-hub-tab-chat"
+          className="hub-face"
+        >
+          <ChatPanel
+            apiOptions={apiOptions}
+            onConvertToTask={handleConvertToTask}
+            onProjectChange={handleProjectChange}
+            projectId={selectedProjectId}
+            projects={activeProjects}
+            resolvedProject={resolvedProject}
+          />
+        </div>
+      ) : (
+        <div
+          id="task-hub-panel-task"
+          role="tabpanel"
+          aria-labelledby="task-hub-tab-task"
+          className="hub-face hub-task"
+        >
+          <div className="hub-body">
+            <TaskHubInstanceRail
               apiOptions={apiOptions}
-              onConvertToTask={handleConvertToTask}
-              onProjectChange={handleProjectChange}
-              projectId={selectedProjectId}
-              projects={activeProjects}
-              resolvedProject={resolvedProject}
+              filters={{
+                ...instanceFilters,
+                projectId: selectedProjectId || instanceFilters.projectId,
+              }}
+              onFiltersChange={onInstanceFiltersChange}
+              onSelect={setSelectedInstance}
+              selectedDemandId={selectedInstance?.demand_id ?? null}
             />
-          }
-          content={content}
-          isSubmitting={submitMutation.isPending}
-          mode={mode}
-          onContentChange={setContent}
-          onModeChange={handleModeChange}
-          onProjectChange={handleProjectChange}
-          onSuccessDismiss={handleSuccessDismiss}
-          onSubmit={(projectId, input) => {
-            setSubmitError("");
-            submitMutation.mutate({
-              input: {
-                ...input,
-                coordination_mode: mode === "loop" ? "loop" : "plan",
-                ...(chatSource
-                  ? {
-                      source_refs: {
-                        chat_run_id: chatSource.chatRunId,
-                        digital_employee_id: chatSource.digitalEmployeeId,
-                      },
+            <section aria-label="任务工作面" className="hub-main">
+              {selectedInstance ? (
+                <div className="hub-task-sheet">
+                  <HubInstanceSummary
+                    instance={selectedInstance}
+                    onBack={() => setSelectedInstance(null)}
+                  />
+                </div>
+              ) : (
+                <TaskLaunchForm
+                  apiOptions={apiOptions}
+                  content={content}
+                  isSubmitting={submitMutation.isPending}
+                  mode={mode}
+                  onContentChange={setContent}
+                  onModeChange={handleModeChange}
+                  onProjectChange={handleProjectChange}
+                  onSuccessDismiss={handleSuccessDismiss}
+                  onSubmit={(projectId, input) => {
+                    setSubmitError("");
+                    const sourceRefs: Record<string, unknown> = {
+                      ...(input.source_refs ?? {}),
+                    };
+                    if (chatSource) {
+                      sourceRefs.chat_run_id = chatSource.chatRunId;
+                      sourceRefs.digital_employee_id =
+                        chatSource.digitalEmployeeId;
                     }
-                  : {}),
-              },
-              projectId,
-            });
-          }}
-          projects={projectsQuery.data ?? []}
-          projectsLoading={projectsQuery.isLoading}
-          resolvedProject={resolvedProject}
-          selectedProjectId={selectedProjectId}
-          submitError={submitError}
-          successResult={successResult}
-        />
-      </div>
+                    submitMutation.mutate({
+                      projectId,
+                      input: {
+                        ...input,
+                        coordination_mode: mode,
+                        source_refs: sourceRefs,
+                      },
+                    });
+                  }}
+                  projects={activeProjects}
+                  projectsLoading={projectsQuery.isLoading}
+                  resolvedProject={resolvedProject}
+                  selectedProjectId={selectedProjectId}
+                  submitError={submitError}
+                  successResult={successResult}
+                />
+              )}
+            </section>
+            <HubContextRail
+              apiOptions={apiOptions}
+              footnote="任务面看需求与阻塞。Plan / Loop 是需求策略，不是页面皮肤。"
+              projectId={selectedProjectId}
+            />
+          </div>
+        </div>
+      )}
     </TaskLaunchShell>
   );
 }

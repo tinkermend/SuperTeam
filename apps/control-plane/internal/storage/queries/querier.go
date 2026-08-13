@@ -287,6 +287,7 @@ type Querier interface {
 	FindProviderSessionForTaskRoot(ctx context.Context, arg FindProviderSessionForTaskRootParams) (string, error)
 	FinishProjectCoordinationJob(ctx context.Context, arg FinishProjectCoordinationJobParams) (ProjectCoordinationJob, error)
 	FinishProjectTaskAttempt(ctx context.Context, arg FinishProjectTaskAttemptParams) (ProjectTaskAttempt, error)
+	GetActiveChatRunOnThread(ctx context.Context, arg GetActiveChatRunOnThreadParams) (GetActiveChatRunOnThreadRow, error)
 	GetActiveDigitalEmployeeRun(ctx context.Context, arg GetActiveDigitalEmployeeRunParams) (TaskRun, error)
 	GetActiveExternalIntegrationTokenBySHA(ctx context.Context, tokenSha256 string) (ExternalIntegrationToken, error)
 	GetActiveRoleVocabularyByKeys(ctx context.Context, arg GetActiveRoleVocabularyByKeysParams) ([]RoleVocabulary, error)
@@ -309,6 +310,7 @@ type Querier interface {
 	GetCurrentTeamConstitutionRevisionNumber(ctx context.Context, arg GetCurrentTeamConstitutionRevisionNumberParams) (int32, error)
 	GetDigitalEmployee(ctx context.Context, arg GetDigitalEmployeeParams) (DigitalEmployee, error)
 	GetDigitalEmployeeAuthzScope(ctx context.Context, arg GetDigitalEmployeeAuthzScopeParams) (GetDigitalEmployeeAuthzScopeRow, error)
+	GetDigitalEmployeeChatThreadRoot(ctx context.Context, arg GetDigitalEmployeeChatThreadRootParams) (GetDigitalEmployeeChatThreadRootRow, error)
 	GetDigitalEmployeeConfigRevision(ctx context.Context, arg GetDigitalEmployeeConfigRevisionParams) (GetDigitalEmployeeConfigRevisionRow, error)
 	// 详情页归属信息：团队显示名 + 绑定项目摘要（与 overview project_summary 同源口径）。
 	GetDigitalEmployeeDetailAffiliation(ctx context.Context, arg GetDigitalEmployeeDetailAffiliationParams) (GetDigitalEmployeeDetailAffiliationRow, error)
@@ -524,6 +526,8 @@ type Querier interface {
 	// 跨员工运行动态流：task_events 按时间倒序，游标 (created_at, id) 支持增量拉取（since 之后的新事件）。
 	// 事件类型到中文标签/状态的映射在 Go 层（employee.ActivityEventPresentation）统一处理。
 	ListDigitalEmployeeActivity(ctx context.Context, arg ListDigitalEmployeeActivityParams) ([]ListDigitalEmployeeActivityRow, error)
+	// 聚合 (employee, project) 下全部 chat 会话；标题/发起人/接续人/末问/活跃态。
+	ListDigitalEmployeeChatThreads(ctx context.Context, arg ListDigitalEmployeeChatThreadsParams) ([]ListDigitalEmployeeChatThreadsRow, error)
 	ListDigitalEmployeeDeleteProjectTaskBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteProjectTaskBlockersParams) ([]ListDigitalEmployeeDeleteProjectTaskBlockersRow, error)
 	ListDigitalEmployeeDeleteRunBlockers(ctx context.Context, arg ListDigitalEmployeeDeleteRunBlockersParams) ([]ListDigitalEmployeeDeleteRunBlockersRow, error)
 	// 数字员工脱离当前团队（移出回候岗 / 换队）前的阻断项。两类：
@@ -979,6 +983,7 @@ type Querier interface {
 	UnbindTeamDigitalEmployees(ctx context.Context, arg UnbindTeamDigitalEmployeesParams) error
 	UpdateAutomationFire(ctx context.Context, arg UpdateAutomationFireParams) (AutomationFire, error)
 	UpdateAutomationRule(ctx context.Context, arg UpdateAutomationRuleParams) (AutomationRule, error)
+	UpdateChatThreadTitle(ctx context.Context, arg UpdateChatThreadTitleParams) (UpdateChatThreadTitleRow, error)
 	// 身份资料写路径：当前仅员工说明（description）；空串落 NULL，与创建 trimOptionalString 口径一致。
 	UpdateDigitalEmployeeProfile(ctx context.Context, arg UpdateDigitalEmployeeProfileParams) (DigitalEmployee, error)
 	// 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。

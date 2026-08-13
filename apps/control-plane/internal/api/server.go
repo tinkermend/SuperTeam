@@ -13,10 +13,10 @@ import (
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/authzcenter"
 	"github.com/superteam/control-plane/internal/automation"
-	"github.com/superteam/control-plane/internal/externalintegration"
 	"github.com/superteam/control-plane/internal/capability"
 	"github.com/superteam/control-plane/internal/cost"
 	"github.com/superteam/control-plane/internal/employee"
+	"github.com/superteam/control-plane/internal/externalintegration"
 	"github.com/superteam/control-plane/internal/feishu"
 	"github.com/superteam/control-plane/internal/inbox"
 	"github.com/superteam/control-plane/internal/oplog"
@@ -423,6 +423,8 @@ func (s *Server) registerRoutes() {
 				r.Post("/digital-employees/{employeeId}/permission-changes", s.employeeHandler.SubmitPermissionChange)
 				r.Post("/digital-employees/{employeeId}/runs", s.employeeHandler.CreateDigitalEmployeeRun)
 				r.Get("/digital-employees/{employeeId}/runs", s.employeeHandler.ListDigitalEmployeeRuns)
+				r.Get("/digital-employees/{employeeId}/chat-threads", s.employeeHandler.ListDigitalEmployeeChatThreads)
+				r.Patch("/digital-employees/{employeeId}/chat-threads/{threadId}", s.employeeHandler.PatchDigitalEmployeeChatThread)
 				r.Get("/digital-employees/{employeeId}/run-stats", s.employeeHandler.GetDigitalEmployeeRunStats)
 				r.Get("/digital-employees/{employeeId}/run-calendar", s.employeeHandler.GetDigitalEmployeeRunCalendar)
 				r.Get("/digital-employees/{employeeId}/runs/{runId}", s.employeeHandler.GetDigitalEmployeeRun)

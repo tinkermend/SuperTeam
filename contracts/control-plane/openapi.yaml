@@ -5711,6 +5711,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DigitalEmployeeRun"
+  /api/v1/digital-employees/{employeeId}/chat-threads:
+    get:
+      operationId: listDigitalEmployeeChatThreads
+      summary: List chat threads for an employee in a project
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: project_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Chat thread list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeChatThreadList"
+  /api/v1/digital-employees/{employeeId}/chat-threads/{threadId}:
+    patch:
+      operationId: patchDigitalEmployeeChatThread
+      summary: Rename a chat thread (initiator only)
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchDigitalEmployeeChatThreadRequest"
+      responses:
+        "200":
+          description: Updated chat thread
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DigitalEmployeeChatThread"
+        "403":
+          description: Only the thread initiator may rename
+        "404":
+          description: Thread not found
   /api/v1/digital-employees/{employeeId}/runs/{runId}:
     get:
       operationId: getDigitalEmployeeRun
@@ -12437,6 +12485,7 @@ components:
       type: object
       required:
         - title
+        - scenario_template_key
       properties:
         title:
           type: string
@@ -12467,7 +12516,10 @@ components:
           default: plan
         scenario_template_key:
           type: string
-          description: 需求级场景模板 key；缺省回落 generic
+          minLength: 1
+          description: >-
+            场景模板 key（必填）。人手发起（任务中枢 / 项目提需求 / 转为任务）必须绑定
+            active 模板；空值拒绝。不恢复项目级默认剧本。
     CreateProjectEvidenceRequest:
       type: object
       required:
@@ -16510,6 +16562,13 @@ components:
           type: string
           format: uuid
           description: Effective chat conversation id (thread root run id); present on chat runs only.
+        creator_user_id:
+          type: string
+          format: uuid
+          description: Human user who created this run turn (tasks.creator_id).
+        creator_display_name:
+          type: string
+          description: Display name for creator_user_id (server-side join).
         project_id:
           type: string
           format: uuid
@@ -16736,6 +16795,14 @@ components:
         resume_of_run_id:
           type: string
           format: uuid
+        chat_thread_id:
+          type: string
+          format: uuid
+          description: >-
+            Join an existing chat thread without provider session resume
+            (e.g. after runtime TTL expiry). Must belong to the same employee
+            and project. Mutually exclusive with opening a brand-new root when
+            set without resume_of_run_id.
         project_id:
           type: string
           format: uuid
@@ -16762,6 +16829,66 @@ components:
             coordination_policy.autonomy_ceiling is pause_at_gate. Automation
             invokers (metadata.automation_rule_id / source_type=automation) are
             exempt. Confirmation stays on the run (metadata), not inbox.
+    DigitalEmployeeChatThread:
+      type: object
+      required:
+        - chat_thread_id
+        - title
+        - initiator_user_id
+        - initiator_display_name
+        - last_speaker_user_id
+        - last_speaker_display_name
+        - last_prompt
+        - last_active_at
+        - has_active_run
+      properties:
+        chat_thread_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          description: Thread title (user-named or first-prompt fallback)
+        initiator_user_id:
+          type: string
+          format: uuid
+        initiator_display_name:
+          type: string
+        last_speaker_user_id:
+          type: string
+          format: uuid
+        last_speaker_display_name:
+          type: string
+        last_prompt:
+          type: string
+          description: Most recent human turn objective/title
+        last_active_at:
+          type: string
+          format: date-time
+        has_active_run:
+          type: boolean
+        active_runner_user_id:
+          type: string
+          format: uuid
+        active_runner_display_name:
+          type: string
+    DigitalEmployeeChatThreadList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DigitalEmployeeChatThread"
+    PatchDigitalEmployeeChatThreadRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
     DigitalEmployeeRunEvent:
       type: object
       required:

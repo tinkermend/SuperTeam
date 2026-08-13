@@ -169,6 +169,22 @@ function createInstancesFetcher() {
         makeProject("project-2", "生产巡检项目"),
       ]);
     }
+    if (url.pathname === "/api/v1/scenario-templates") {
+      return jsonResponse([]);
+    }
+    if (url.pathname === "/api/v1/digital-employees") {
+      return jsonResponse([]);
+    }
+    if (url.pathname.endsWith("/budget-summary")) {
+      return jsonResponse({ exhausted: false, consumed_tokens: 0 });
+    }
+    if (url.pathname.endsWith("/castings") || url.pathname.endsWith("/playbook-readiness")) {
+      return jsonResponse([]);
+    }
+    if (url.pathname.match(/^\/api\/v1\/projects\/[^/]+$/)) {
+      const id = url.pathname.split("/").pop() ?? "project-1";
+      return jsonResponse(makeProject(id, id));
+    }
     return jsonResponse({ message: `Unhandled ${url.pathname}` }, 404);
   });
 }
@@ -284,36 +300,39 @@ afterEach(() => {
 });
 
 describe("TaskLaunchPage tabs", () => {
-  it("renders the compose tab by default and navigates to the instances view on tab click", async () => {
+  it("renders the chat face by default and navigates to the task face on tab click", async () => {
     mocks.search = {};
     const fetcher = createInstancesFetcher();
     await renderWithQueryClient(
       <TaskLaunchPage fetcher={fetcher as typeof fetch} title="任务中枢" />,
     );
 
-    expect(getButton("提出任务").getAttribute("aria-selected")).toBe("true");
-    expect(getButton("流程实例").getAttribute("aria-selected")).toBe("false");
-    // 默认页签仍是提交表单，不渲染河道。
+    expect(getButton("对话").getAttribute("aria-selected")).toBe("true");
+    expect(getButton("任务").getAttribute("aria-selected")).toBe("false");
+    expect(queryByText("在途实例")).toBeNull();
     expect(queryByText("流程实例 · 时间河道")).toBeNull();
 
-    await clickButton("流程实例");
+    await clickButton("任务");
     expect(mocks.navigate).toHaveBeenCalledWith(
       expect.objectContaining({
-        search: expect.objectContaining({ view: "instances" }),
+        search: expect.objectContaining({ face: "task" }),
         to: "."
       }),
     );
   });
 
-  it("renders the river with ?view=instances, requests scope=active and hides the completed KPI", async () => {
+  it("renders the instance rail with legacy ?view=instances, requests scope=active and hides the river KPI deck", async () => {
     mocks.search = { view: "instances" };
     const fetcher = createInstancesFetcher();
     await renderWithQueryClient(
       <TaskLaunchPage fetcher={fetcher as typeof fetch} title="任务中枢" />,
     );
 
-    await waitFor(() => expect(getByText("流程实例 · 时间河道")).toBeTruthy());
-    expect(getButton("流程实例").getAttribute("aria-selected")).toBe("true");
+    await waitFor(() => expect(getByText("在途实例")).toBeTruthy());
+    await waitFor(() => expect(getByText("需求 demand-1")).toBeTruthy());
+    expect(getButton("任务").getAttribute("aria-selected")).toBe("true");
+    expect(queryByText("流程实例 · 时间河道")).toBeNull();
+    expect(queryByText("最长未完成实例")).toBeNull();
 
     const urls = instancesRequestUrls(fetcher);
     expect(urls.length).toBeGreaterThan(0);
@@ -321,10 +340,6 @@ describe("TaskLaunchPage tabs", () => {
     expect(urls[0].searchParams.get("q")).toBeNull();
     expect(urls[0].searchParams.get("project_id")).toBeNull();
 
-    // 运行中口径：服务端排除终态，「已完成」KPI 恒零，隐藏（其 meta 文案不出现）。
-    expect(queryByText("本视图范围")).toBeNull();
-    expect(getByText("最长未完成实例")).toBeTruthy();
-    // 口径页签更名：已结束（不再叫已归档）。
     expect(getButton("已结束")).toBeTruthy();
     expect(queryByText("已归档")).toBeNull();
   });

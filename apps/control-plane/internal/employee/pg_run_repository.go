@@ -603,6 +603,7 @@ func (r *PgRunRepository) CreateRun(ctx context.Context, req CreateRunRecordRequ
 		RunKind:                req.RunKind,
 		ResumeOfRunID:          nullUUIDFromPtr(req.ResumeOfRunID),
 		ChatThreadID:           nullUUIDFromPtr(req.ChatThreadID),
+		ThreadTitle:            textFromPtr(req.ThreadTitle),
 		ProjectID:              req.ProjectID,
 	})
 	if err != nil {
@@ -1230,6 +1231,10 @@ func digitalEmployeeRunListItemFromDetailedRow(row queries.ListDigitalEmployeeRu
 	run.RunKind = row.RunKind
 	run.ResumeOfRunID = uuidPtrFromNull(row.ResumeOfRunID)
 	run.ChatThreadID = effectiveChatThreadID(row.RunKind, row.ChatThreadID, row.ID)
+	run.CreatorUserID = uuidPtrFromNull(row.CreatorID)
+	if name := strings.TrimSpace(row.CreatorDisplayName); name != "" {
+		run.CreatorDisplayName = &name
+	}
 
 	item := DigitalEmployeeRunListItem{
 		Run:              run,
@@ -1402,4 +1407,115 @@ func (r *PgRunRepository) GetTeamConstitutionForDispatch(ctx context.Context, te
 		Prompt:         tenant.RenderConstitutionPrompt(tenant.ConstitutionRulesFromSnapshot(snapshot)),
 		RevisionNumber: row.RevisionNumber,
 	}, nil
+}
+
+func (r *PgRunRepository) ListChatThreads(ctx context.Context, tenantID, employeeID, projectID uuid.UUID) ([]DigitalEmployeeChatThread, error) {
+	rows, err := r.q.ListDigitalEmployeeChatThreads(ctx, queries.ListDigitalEmployeeChatThreadsParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ProjectID:         projectID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DigitalEmployeeChatThread, 0, len(rows))
+	for _, row := range rows {
+		item := DigitalEmployeeChatThread{
+			ChatThreadID:           row.ChatThreadID,
+			Title:                  row.ThreadTitle,
+			InitiatorUserID:        uuidFromNull(row.InitiatorUserID),
+			InitiatorDisplayName:   row.InitiatorDisplayName,
+			LastSpeakerUserID:      uuidFromNull(row.LastSpeakerUserID),
+			LastSpeakerDisplayName: row.LastSpeakerDisplayName,
+			LastPrompt:             row.LastPrompt,
+			LastActiveAt:           timeFromAny(row.LastActiveAt),
+			HasActiveRun:           row.HasActiveRun,
+		}
+		if row.ActiveRunnerUserID.Valid {
+			id := row.ActiveRunnerUserID.UUID
+			item.ActiveRunnerUserID = &id
+			if name := strings.TrimSpace(row.ActiveRunnerDisplayName); name != "" {
+				item.ActiveRunnerDisplayName = &name
+			}
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (r *PgRunRepository) GetChatThreadRoot(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ChatThreadRoot, error) {
+	row, err := r.q.GetDigitalEmployeeChatThreadRoot(ctx, queries.GetDigitalEmployeeChatThreadRootParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ThreadID:          threadID,
+	})
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	title := strings.TrimSpace(stringFromText(row.ThreadTitle))
+	if title == "" {
+		title = row.RootTaskTitle
+	}
+	return &ChatThreadRoot{
+		RootRunID:            row.RootRunID,
+		ProjectID:            row.ProjectID,
+		TaskID:               row.TaskID,
+		InitiatorUserID:      uuidFromNull(row.InitiatorUserID),
+		Title:                title,
+		InitiatorDisplayName: row.InitiatorDisplayName,
+	}, nil
+}
+
+func (r *PgRunRepository) UpdateChatThreadTitle(ctx context.Context, tenantID, employeeID, threadID uuid.UUID, title string) (*ChatThreadRoot, error) {
+	row, err := r.q.UpdateChatThreadTitle(ctx, queries.UpdateChatThreadTitleParams{
+		ThreadTitle:       title,
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ThreadID:          threadID,
+	})
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return &ChatThreadRoot{
+		RootRunID:       threadID,
+		TaskID:          row.ID,
+		InitiatorUserID: uuidFromNull(row.CreatorID),
+		Title:           stringFromText(row.ThreadTitle),
+	}, nil
+}
+
+func (r *PgRunRepository) GetActiveChatRunOnThread(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ActiveChatRunOnThread, error) {
+	row, err := r.q.GetActiveChatRunOnThread(ctx, queries.GetActiveChatRunOnThreadParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ThreadID:          threadID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &ActiveChatRunOnThread{
+		RunID:             row.RunID,
+		RunnerUserID:      uuidFromNull(row.RunnerUserID),
+		RunnerDisplayName: row.RunnerDisplayName,
+		Status:            DigitalEmployeeRunStatus(row.Status),
+	}, nil
+}
+
+func timeFromAny(value any) time.Time {
+	switch typed := value.(type) {
+	case time.Time:
+		return typed
+	case pgtype.Timestamptz:
+		if typed.Valid {
+			return typed.Time
+		}
+	case *time.Time:
+		if typed != nil {
+			return *typed
+		}
+	}
+	return time.Time{}
 }
