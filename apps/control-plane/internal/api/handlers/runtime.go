@@ -450,7 +450,11 @@ func (h *RuntimeHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "runtime websocket closed")
+	closeStatus := websocket.StatusNormalClosure
+	closeReason := "runtime websocket closed"
+	defer func() {
+		_ = conn.Close(closeStatus, closeReason)
+	}()
 
 	connection := h.connectionRegistry.Register(nodeID)
 	defer h.connectionRegistry.Unregister(nodeID, connection.ID)
@@ -464,13 +468,18 @@ func (h *RuntimeHandler) WebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			data, err := json.Marshal(command)
 			if err != nil {
-				conn.Close(websocket.StatusInternalError, "failed to encode runtime command")
+				closeStatus = websocket.StatusInternalError
+				closeReason = "failed to encode runtime command"
 				return
 			}
 			if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
 				return
 			}
 		case <-connection.Done():
+			if connection.WasReplaced() {
+				closeStatus = websocket.StatusPolicyViolation
+				closeReason = runtime.WSCloseReasonReplaced
+			}
 			return
 		case <-ctx.Done():
 			return

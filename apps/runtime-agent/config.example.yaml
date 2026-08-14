@@ -19,6 +19,10 @@ runtime:
   # 最大并发任务数
   max_concurrent_tasks: 3
 
+# 同一主机、同一 node_id 只允许一个 runtime-agent 进程（flock）。
+# 锁文件默认 $HOME/.superteam/runtime-agent/locks/<node_id>.lock
+# 可用环境变量 RUNTIME_AGENT_INSTANCE_LOCK_DIR 改目录（测试用）。
+
 http:
   # Runtime Agent 本地 HTTP/WS 服务监听地址。
   #

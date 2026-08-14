@@ -1,17 +1,33 @@
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use futures_util::StreamExt;
 use http::HeaderValue;
 use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
 use crate::commands::executor::RuntimeCommandExecutor;
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 use crate::controlplane::models::RuntimeCommand;
 
-const COMMAND_LOOP_RECONNECT_DELAY: Duration = Duration::from_secs(5);
+const COMMAND_LOOP_MIN_DELAY: Duration = Duration::from_secs(2);
+const COMMAND_LOOP_MAX_DELAY: Duration = Duration::from_secs(60);
+const COMMAND_LOOP_REPLACED_MIN_DELAY: Duration = Duration::from_secs(30);
+const COMMAND_LOOP_REPLACED_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
+const COMMAND_LOOP_STABLE_AFTER: Duration = Duration::from_secs(3);
+const COMMAND_LOOP_LOG_REPEAT_WINDOW: Duration = Duration::from_secs(30);
+pub const WS_CLOSE_REASON_REPLACED: &str = "replaced by new connection";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CommandLoopDisconnect {
+    Clean,
+    Transient,
+    Replaced,
+}
 
 pub async fn run_command_loop(
     config: RuntimeConfig,
@@ -22,32 +38,60 @@ pub async fn run_command_loop(
     let executor = RuntimeCommandExecutor::with_control_plane_client(config, control_plane.clone());
     crate::workspace_cleanup::spawn_janitor(janitor_config, executor.runs());
 
+    let mut delay = COMMAND_LOOP_MIN_DELAY;
+    let mut last_log: Option<(String, Instant, u32)> = None;
     loop {
         match control_plane.runtime_authorization().await {
             Ok(authorization) => {
-                if let Err(error) =
-                    run_command_loop_once(&executor, &ws_url, &authorization.header).await
-                {
-                    if control_plane
-                        .report_websocket_auth_error_for_generation(
-                            error.as_ref(),
-                            authorization.generation,
-                        )
-                        .await
-                    {
-                        eprintln!(
-                            "Runtime command loop auth expired; waiting for re-authentication"
+                let connected_at = Instant::now();
+                match run_command_loop_once(&executor, &ws_url, &authorization.header).await {
+                    Ok(kind) => {
+                        log_command_loop_event(
+                            &mut last_log,
+                            &format!("Runtime command websocket disconnected ({kind:?})"),
                         );
-                    } else {
-                        eprintln!("Runtime command loop connection failed: {}", error);
+                        delay = next_reconnect_delay(
+                            delay,
+                            kind,
+                            connected_at.elapsed() >= COMMAND_LOOP_STABLE_AFTER,
+                        );
+                    }
+                    Err(error) => {
+                        if control_plane
+                            .report_websocket_auth_error_for_generation(
+                                error.as_ref(),
+                                authorization.generation,
+                            )
+                            .await
+                        {
+                            log_command_loop_event(
+                                &mut last_log,
+                                "Runtime command loop auth expired; waiting for re-authentication",
+                            );
+                            delay = COMMAND_LOOP_MIN_DELAY;
+                        } else {
+                            log_command_loop_event(
+                                &mut last_log,
+                                &format!("Runtime command loop connection failed: {error}"),
+                            );
+                            delay = next_reconnect_delay(
+                                delay,
+                                CommandLoopDisconnect::Transient,
+                                false,
+                            );
+                        }
                     }
                 }
             }
             Err(error) => {
-                eprintln!("Runtime command loop waiting for runtime auth: {}", error);
+                log_command_loop_event(
+                    &mut last_log,
+                    &format!("Runtime command loop waiting for runtime auth: {error}"),
+                );
+                delay = next_reconnect_delay(delay, CommandLoopDisconnect::Transient, false);
             }
         }
-        tokio::time::sleep(COMMAND_LOOP_RECONNECT_DELAY).await;
+        tokio::time::sleep(jitter_delay(delay)).await;
     }
 }
 
@@ -55,7 +99,7 @@ async fn run_command_loop_once(
     executor: &RuntimeCommandExecutor,
     ws_url: &str,
     authorization: &HeaderValue,
-) -> Result<()> {
+) -> Result<CommandLoopDisconnect> {
     let mut request = ws_url.into_client_request()?;
     request
         .headers_mut()
@@ -69,28 +113,98 @@ async fn run_command_loop_once(
         let message = match message {
             Ok(message) => message,
             Err(error) => {
-                eprintln!("Runtime command websocket read failed: {}", error);
-                break;
+                return Ok(classify_ws_error(&error));
             }
         };
-        if !message.is_text() {
-            continue;
+        match message {
+            Message::Close(frame) => {
+                return Ok(classify_close_frame(frame.as_ref()));
+            }
+            Message::Text(text) => {
+                let executor = executor.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = handle_text_command(&executor, &text).await {
+                        eprintln!("Runtime command handling failed: {}", error);
+                    }
+                });
+            }
+            Message::Ping(_) | Message::Pong(_) | Message::Binary(_) | Message::Frame(_) => {}
         }
-        let text = match message.to_text() {
-            Ok(text) => text.to_string(),
-            Err(error) => {
-                eprintln!("Runtime command websocket text decode failed: {}", error);
-                continue;
-            }
-        };
-        let executor = executor.clone();
-        tokio::spawn(async move {
-            if let Err(error) = handle_text_command(&executor, &text).await {
-                eprintln!("Runtime command handling failed: {}", error);
-            }
-        });
     }
-    Ok(())
+    Ok(CommandLoopDisconnect::Clean)
+}
+
+fn classify_close_frame(frame: Option<&CloseFrame>) -> CommandLoopDisconnect {
+    let Some(frame) = frame else {
+        return CommandLoopDisconnect::Clean;
+    };
+    if frame.code == CloseCode::Policy && frame.reason.contains(WS_CLOSE_REASON_REPLACED) {
+        return CommandLoopDisconnect::Replaced;
+    }
+    CommandLoopDisconnect::Clean
+}
+
+fn classify_ws_error(error: &tokio_tungstenite::tungstenite::Error) -> CommandLoopDisconnect {
+    let text = error.to_string();
+    if text.contains(WS_CLOSE_REASON_REPLACED) {
+        return CommandLoopDisconnect::Replaced;
+    }
+    CommandLoopDisconnect::Transient
+}
+
+fn next_reconnect_delay(previous: Duration, kind: CommandLoopDisconnect, stable: bool) -> Duration {
+    match kind {
+        CommandLoopDisconnect::Replaced => {
+            if previous < COMMAND_LOOP_REPLACED_MIN_DELAY {
+                COMMAND_LOOP_REPLACED_MIN_DELAY
+            } else {
+                cap_delay(previous.saturating_mul(2), COMMAND_LOOP_REPLACED_MAX_DELAY)
+            }
+        }
+        CommandLoopDisconnect::Clean if stable => COMMAND_LOOP_MIN_DELAY,
+        CommandLoopDisconnect::Clean | CommandLoopDisconnect::Transient => {
+            if stable {
+                COMMAND_LOOP_MIN_DELAY
+            } else if previous < COMMAND_LOOP_MIN_DELAY {
+                COMMAND_LOOP_MIN_DELAY
+            } else {
+                cap_delay(previous.saturating_mul(2), COMMAND_LOOP_MAX_DELAY)
+            }
+        }
+    }
+}
+
+fn cap_delay(delay: Duration, max: Duration) -> Duration {
+    if delay > max { max } else { delay }
+}
+
+fn jitter_delay(delay: Duration) -> Duration {
+    let nanos = delay.as_nanos().max(1) as u128;
+    let mix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.subsec_nanos() as u128)
+        .unwrap_or(0);
+    let span = (nanos / 2).max(1);
+    let jittered = nanos.saturating_sub(nanos / 4) + (mix % span);
+    Duration::from_nanos(jittered.min(u64::MAX as u128) as u64)
+}
+
+fn log_command_loop_event(state: &mut Option<(String, Instant, u32)>, message: &str) {
+    let now = Instant::now();
+    if let Some((previous, last_at, count)) = state.as_mut() {
+        if previous == message && now.duration_since(*last_at) < COMMAND_LOOP_LOG_REPEAT_WINDOW {
+            *count += 1;
+            return;
+        }
+        if previous == message && *count > 0 {
+            eprintln!("{previous} (repeated {} times)", *count + 1);
+            *last_at = now;
+            *count = 0;
+            return;
+        }
+    }
+    eprintln!("{message}");
+    *state = Some((message.to_string(), now, 0));
 }
 
 async fn handle_text_command(executor: &RuntimeCommandExecutor, text: &str) -> Result<()> {
@@ -112,7 +226,12 @@ fn runtime_ws_url(control_plane_url: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{handle_text_command, run_command_loop_once, runtime_ws_url};
+    use super::{
+        COMMAND_LOOP_MAX_DELAY, COMMAND_LOOP_MIN_DELAY, COMMAND_LOOP_REPLACED_MAX_DELAY,
+        COMMAND_LOOP_REPLACED_MIN_DELAY, CommandLoopDisconnect, WS_CLOSE_REASON_REPLACED,
+        classify_close_frame, handle_text_command, next_reconnect_delay, run_command_loop_once,
+        runtime_ws_url,
+    };
     use crate::commands::executor::RuntimeCommandExecutor;
     use crate::config::RuntimeConfig;
     use crate::controlplane::ControlPlaneClient;
@@ -135,12 +254,53 @@ mod tests {
     use tokio_tungstenite::accept_hdr_async;
     use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+    use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
     const DIGITAL_EMPLOYEE_ID: &str = "22222222-2222-4222-8222-222222222222";
     const EXECUTION_INSTANCE_ID: &str = "22222222-2222-4222-8222-222222222222";
     const TENANT_ID: &str = "00000000-0000-4000-8000-000000000001";
     const TEAM_ID: &str = "11111111-1111-4111-8111-111111111111";
     const RUNTIME_NODE_ID: &str = "44444444-4444-4444-8444-444444444444";
+
+    #[test]
+    fn reconnect_delay_backs_off_and_resets_after_stable() {
+        let first = next_reconnect_delay(
+            COMMAND_LOOP_MIN_DELAY,
+            CommandLoopDisconnect::Transient,
+            false,
+        );
+        assert_eq!(first, Duration::from_secs(4));
+        let capped = (0..10).fold(COMMAND_LOOP_MIN_DELAY, |delay, _| {
+            next_reconnect_delay(delay, CommandLoopDisconnect::Transient, false)
+        });
+        assert_eq!(capped, COMMAND_LOOP_MAX_DELAY);
+        let reset = next_reconnect_delay(capped, CommandLoopDisconnect::Transient, true);
+        assert_eq!(reset, COMMAND_LOOP_MIN_DELAY);
+        let replaced = next_reconnect_delay(
+            COMMAND_LOOP_MIN_DELAY,
+            CommandLoopDisconnect::Replaced,
+            true,
+        );
+        assert_eq!(replaced, COMMAND_LOOP_REPLACED_MIN_DELAY);
+        let replaced_cap = (0..10).fold(COMMAND_LOOP_REPLACED_MIN_DELAY, |delay, _| {
+            next_reconnect_delay(delay, CommandLoopDisconnect::Replaced, false)
+        });
+        assert_eq!(replaced_cap, COMMAND_LOOP_REPLACED_MAX_DELAY);
+    }
+
+    #[test]
+    fn close_frame_policy_replaced_is_classified() {
+        let frame = CloseFrame {
+            code: CloseCode::Policy,
+            reason: WS_CLOSE_REASON_REPLACED.into(),
+        };
+        assert_eq!(
+            classify_close_frame(Some(&frame)),
+            CommandLoopDisconnect::Replaced
+        );
+        assert_eq!(classify_close_frame(None), CommandLoopDisconnect::Clean);
+    }
 
     #[test]
     fn runtime_ws_url_uses_runtime_ws_endpoint() {
@@ -241,6 +401,37 @@ mod tests {
         assert!(!agent_home_dir.join("state").exists());
         assert!(!agent_home_dir.join("sessions").exists());
         assert!(!agent_home_dir.join("runs").exists());
+    }
+
+    #[tokio::test]
+    async fn command_loop_classifies_replaced_close_frame() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let callback = |_request: &Request, response: Response| Ok(response);
+            let mut socket = accept_hdr_async(stream, callback).await.expect("ws accept");
+            socket
+                .close(Some(CloseFrame {
+                    code: CloseCode::Policy,
+                    reason: WS_CLOSE_REASON_REPLACED.into(),
+                }))
+                .await
+                .expect("send replaced close");
+        });
+
+        let config = RuntimeConfig::new("node-1").expect("config");
+        let executor = RuntimeCommandExecutor::new(config);
+        let authorization = HeaderValue::from_static("Bearer session-token");
+        let kind = run_command_loop_once(
+            &executor,
+            &format!("ws://{addr}/api/v1/runtime/ws"),
+            &authorization,
+        )
+        .await
+        .expect("command loop once");
+        assert_eq!(kind, CommandLoopDisconnect::Replaced);
+        server.await.expect("server task");
     }
 
     #[tokio::test]
@@ -378,7 +569,7 @@ printf '%s\n' '{"type":"result","result":"done"}'
         let mut config = RuntimeConfig::new("node-1").expect("config");
         config.runs.log_dir = temp.path().join("run-logs");
         config.workspace.base_dir = temp.path().join("workspaces");
-    config.workspace.base_dir_explicit = true;
+        config.workspace.base_dir_explicit = true;
         config.runtime.control_plane_url = format!("http://{}", http_server.addr);
         config.providers.claude_code.enabled = true;
         config.providers.claude_code.binary_path = fake_claude;

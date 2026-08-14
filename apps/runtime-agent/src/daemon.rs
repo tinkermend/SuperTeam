@@ -45,6 +45,9 @@ impl RuntimeDaemon {
     }
 
     pub async fn run(self) -> Result<()> {
+        let _instance_lock =
+            crate::instance_lock::acquire_node_instance_lock(self.config.node_id())?;
+
         let capabilities = build_capabilities(&self.config, &self.config.tools.probe_names).await;
         let auth = RuntimeAuthState::new(self.config.runtime.node_id.clone());
 

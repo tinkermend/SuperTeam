@@ -11,6 +11,11 @@ import (
 
 const runtimeCommandChannelSize = 16
 
+// WSCloseReasonReplaced is sent on the previous command websocket when the same
+// node_id registers a newer connection. The replaced agent should back off
+// instead of immediately stealing the slot back.
+const WSCloseReasonReplaced = "replaced by new connection"
+
 var ErrRuntimeNotConnected = errors.New("runtime not connected")
 
 type RuntimeCommand struct {
@@ -26,6 +31,7 @@ type RuntimeConnection struct {
 	Commands  chan RuntimeCommand
 	closed    chan struct{}
 	closeOnce sync.Once
+	replaced  bool
 }
 
 type ConnectionRegistry struct {
@@ -53,7 +59,7 @@ func (r *ConnectionRegistry) Register(nodeID string) *RuntimeConnection {
 	r.mu.Unlock()
 
 	if oldConnection != nil {
-		oldConnection.close()
+		oldConnection.closeReplaced()
 	}
 	return connection
 }
@@ -100,8 +106,19 @@ func (c *RuntimeConnection) Done() <-chan struct{} {
 	return c.closed
 }
 
+func (c *RuntimeConnection) WasReplaced() bool {
+	return c.replaced
+}
+
 func (c *RuntimeConnection) close() {
 	c.closeOnce.Do(func() {
+		close(c.closed)
+	})
+}
+
+func (c *RuntimeConnection) closeReplaced() {
+	c.closeOnce.Do(func() {
+		c.replaced = true
 		close(c.closed)
 	})
 }

@@ -1635,6 +1635,71 @@ func TestRuntimeWebSocketClientCloseUnregistersConnection(t *testing.T) {
 	t.Fatalf("expected runtime websocket close to unregister connection")
 }
 
+func TestRuntimeWebSocketReplaceClosesPreviousWithReplacedReason(t *testing.T) {
+	service := &routeRuntimeService{}
+	registry := runtime.NewConnectionRegistry()
+	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler.SetConnectionRegistry(registry)
+	server := NewServerWithRuntimeSessionAuth(
+		handlers.NewTaskHandler(&routeTaskService{}),
+		runtimeHandler,
+		&routeRuntimeAuthService{},
+		service,
+	)
+	httpServer := httptest.NewServer(server)
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/api/v1/runtime/ws"
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer session-token")
+
+	first, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: headers})
+	if err != nil {
+		t.Fatalf("dial first runtime websocket: %v", err)
+	}
+	defer first.Close(websocket.StatusNormalClosure, "test done")
+	waitForRuntimeConnection(t, registry, "node-session")
+
+	second, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: headers})
+	if err != nil {
+		t.Fatalf("dial replacement runtime websocket: %v", err)
+	}
+	defer second.Close(websocket.StatusNormalClosure, "test done")
+	waitForRuntimeConnection(t, registry, "node-session")
+
+	_, _, readErr := first.Read(ctx)
+	if readErr == nil {
+		t.Fatal("expected replaced websocket to close")
+	}
+	if websocket.CloseStatus(readErr) != websocket.StatusPolicyViolation {
+		t.Fatalf("expected policy-violation close on replaced connection, got %v (%v)", websocket.CloseStatus(readErr), readErr)
+	}
+	if !strings.Contains(readErr.Error(), runtime.WSCloseReasonReplaced) {
+		t.Fatalf("expected replaced close reason, got %v", readErr)
+	}
+
+	command := runtime.RuntimeCommand{ID: "cmd-after-replace", Type: "noop"}
+	if err := registry.Dispatch(ctx, "node-session", command); err != nil {
+		t.Fatalf("expected replacement connection to accept dispatch: %v", err)
+	}
+	messageType, data, err := second.Read(ctx)
+	if err != nil {
+		t.Fatalf("read command on replacement websocket: %v", err)
+	}
+	if messageType != websocket.MessageText {
+		t.Fatalf("expected text websocket message, got %v", messageType)
+	}
+	var got runtime.RuntimeCommand
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("decode websocket command: %v; data=%s", err, string(data))
+	}
+	if got.ID != command.ID {
+		t.Fatalf("unexpected command on replacement websocket: %#v", got)
+	}
+}
+
 func waitForRuntimeConnection(t *testing.T, registry *runtime.ConnectionRegistry, nodeID string) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)

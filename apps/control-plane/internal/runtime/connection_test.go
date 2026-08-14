@@ -60,6 +60,12 @@ func TestConnectionRegistryIsConnected(t *testing.T) {
 	if !isConnectionClosed(connection) {
 		t.Fatalf("expected replaced connection to be closed")
 	}
+	if !connection.WasReplaced() {
+		t.Fatalf("expected replaced connection to report WasReplaced")
+	}
+	if replacement.WasReplaced() {
+		t.Fatalf("expected active replacement not to report WasReplaced")
+	}
 
 	registry.Unregister("node-1", connection.ID)
 	if !registry.IsConnected("node-1") {
@@ -98,6 +104,9 @@ func TestConnectionRegistryDispatchAfterUnregisterReturnsErrRuntimeNotConnected(
 	connection := registry.Register("node-1")
 
 	registry.Unregister("node-1", connection.ID)
+	if connection.WasReplaced() {
+		t.Fatalf("unregister must not mark the connection as replaced")
+	}
 
 	err := registry.Dispatch(context.Background(), "node-1", RuntimeCommand{ID: "cmd-1", Type: "noop"})
 	if !errors.Is(err, ErrRuntimeNotConnected) {
