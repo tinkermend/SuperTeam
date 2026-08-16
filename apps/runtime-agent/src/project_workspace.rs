@@ -175,9 +175,8 @@ pub fn resolve_project_workspace(
 pub fn ensure_stable_project_directory(base_dir: &Path, project_name: &str) -> Result<PathBuf> {
     validate_project_directory_name(project_name)?;
     let base = absolutize_base_dir(base_dir)?;
-    std::fs::create_dir_all(&base).with_context(|| {
-        format!("create workspace base dir {}", base.display())
-    })?;
+    std::fs::create_dir_all(&base)
+        .with_context(|| format!("create workspace base dir {}", base.display()))?;
     let path = base.join(project_name);
     match std::fs::create_dir(&path) {
         Ok(()) => Ok(path),
@@ -190,9 +189,8 @@ pub fn ensure_stable_project_directory(base_dir: &Path, project_name: &str) -> R
                 path.display()
             );
         }
-        Err(err) => Err(err).with_context(|| {
-            format!("create exclusive project directory {}", path.display())
-        })?,
+        Err(err) => Err(err)
+            .with_context(|| format!("create exclusive project directory {}", path.display()))?,
     }
 }
 
@@ -266,10 +264,9 @@ pub fn probe_project_directory(
             facts.insert("current_branch".into(), serde_json::Value::String(branch));
         }
     }
-    if let Ok(head) = run_git_stdout_readonly(
-        &path,
-        [OsString::from("rev-parse"), OsString::from("HEAD")],
-    ) {
+    if let Ok(head) =
+        run_git_stdout_readonly(&path, [OsString::from("rev-parse"), OsString::from("HEAD")])
+    {
         facts.insert(
             "head_commit".into(),
             serde_json::Value::String(head.trim().to_string()),
@@ -458,9 +455,8 @@ pub fn clone_into_stable_project_directory(
         anyhow::bail!("repo_url is required");
     }
     let base = absolutize_base_dir(base_dir)?;
-    std::fs::create_dir_all(&base).with_context(|| {
-        format!("create workspace base dir {}", base.display())
-    })?;
+    std::fs::create_dir_all(&base)
+        .with_context(|| format!("create workspace base dir {}", base.display()))?;
     let path = base.join(project_name);
 
     if force {
@@ -469,7 +465,10 @@ pub fn clone_into_stable_project_directory(
             Err(err) if err.kind() == io::ErrorKind::NotFound => {}
             Err(err) => {
                 return Err(err).with_context(|| {
-                    format!("remove project directory before force clone {}", path.display())
+                    format!(
+                        "remove project directory before force clone {}",
+                        path.display()
+                    )
                 });
             }
         }
@@ -504,11 +503,11 @@ pub fn clone_into_stable_project_directory(
         )?;
     }
 
-    if let Some(branch) = default_branch.map(str::trim).filter(|value| !value.is_empty()) {
-        run_git(
-            &path,
-            [OsString::from("checkout"), OsString::from(branch)],
-        )?;
+    if let Some(branch) = default_branch
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        run_git(&path, [OsString::from("checkout"), OsString::from(branch)])?;
     }
     Ok(path)
 }
@@ -522,9 +521,8 @@ pub fn validate_stable_project_workspace(
     validate_project_directory_name(project_name)?;
     let base = absolutize_base_dir(base_dir)?;
     let path = base.join(project_name);
-    let meta = std::fs::symlink_metadata(&path).with_context(|| {
-        format!("project directory missing: {}", path.display())
-    })?;
+    let meta = std::fs::symlink_metadata(&path)
+        .with_context(|| format!("project directory missing: {}", path.display()))?;
     if !meta.is_dir() {
         anyhow::bail!("project path is not a directory: {}", path.display());
     }
@@ -565,7 +563,6 @@ fn absolutize_base_dir(base_dir: &Path) -> Result<PathBuf> {
         .context("resolve current directory for runtime workspace")?
         .join(base_dir))
 }
-
 
 /// Links the employee's materialized skills into the task workspace one skill
 /// key at a time (目录与能力投影修订 spec §2/§3.1). A key already present in
@@ -675,9 +672,8 @@ pub fn unlink_provider_skills(
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {
-                return Err(error).with_context(|| {
-                    format!("stat provider skill {key} at {}", target.display())
-                });
+                return Err(error)
+                    .with_context(|| format!("stat provider skill {key} at {}", target.display()));
             }
         }
     }
@@ -820,13 +816,12 @@ fn materialize_git_worktree(
     // 仓库缓存的本地分支停留在 clone 时刻;fetch 只推进 origin/*。base_ref 若
     // 直接解析本地分支,repo 绑定项目将永远检出旧代码——优先用 origin/{base}。
     let origin_base = format!("origin/{base}");
-    let base = if base != "HEAD"
-        && git_ref_exists(repo_path, &format!("refs/remotes/{origin_base}"))
-    {
-        origin_base
-    } else {
-        base.to_string()
-    };
+    let base =
+        if base != "HEAD" && git_ref_exists(repo_path, &format!("refs/remotes/{origin_base}")) {
+            origin_base
+        } else {
+            base.to_string()
+        };
     let base = base.as_str();
 
     match mode {
@@ -870,7 +865,6 @@ fn materialize_git_worktree(
 
     Ok(())
 }
-
 
 /// Shield projected capability paths from git visibility (capability supply three-layer §7).
 /// Prefer `.git/info/exclude` (local, not committed). Tracked paths fall back to skip-worktree.
@@ -945,8 +939,7 @@ fn append_git_info_exclude(workspace_path: &Path, patterns: &[String]) -> Result
         }
     };
     if let Some(parent) = exclude_path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create {}", parent.display()))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
     let existing = std::fs::read_to_string(&exclude_path).unwrap_or_default();
     let existing_set: std::collections::BTreeSet<&str> = existing
@@ -1723,7 +1716,12 @@ mod tests {
 
         let resolved = resolve_project_workspace(request).unwrap();
         assert!(resolved.workspace_path.ends_with("stable-proj"));
-        assert!(!resolved.workspace_path.to_string_lossy().contains("workspaces/"));
+        assert!(
+            !resolved
+                .workspace_path
+                .to_string_lossy()
+                .contains("workspaces/")
+        );
         assert!(resolved.workspace_path.is_dir());
         assert_eq!(resolved.repo_path, None);
     }
@@ -1943,7 +1941,10 @@ mod tests {
         run_test_git(temp.path(), ["init", "-b", "main", "legacy-erp"]);
         run_test_git(&repo, ["config", "user.email", "test@example.com"]);
         run_test_git(&repo, ["config", "user.name", "Test User"]);
-        run_test_git(&repo, ["remote", "add", "origin", "git@example.com:acme/legacy.git"]);
+        run_test_git(
+            &repo,
+            ["remote", "add", "origin", "git@example.com:acme/legacy.git"],
+        );
         std::fs::write(repo.join("README.md"), "hello\n").unwrap();
         run_test_git(&repo, ["add", "."]);
         run_test_git(&repo, ["commit", "-m", "initial"]);
@@ -1968,12 +1969,18 @@ mod tests {
             serde_json::Value::Bool(true),
             "未提交改动必须如实报给人看,否则认领的是一份看不见的现场"
         );
-        assert_eq!(dirty["repo_state"], serde_json::Value::String("ok".to_string()));
+        assert_eq!(
+            dirty["repo_state"],
+            serde_json::Value::String("ok".to_string())
+        );
         assert_eq!(dirty["uncommitted_count"], serde_json::json!(1));
         let entries = dirty["uncommitted_entries"].as_array().expect("entries");
         assert_eq!(entries[0]["path"], "README.md");
         assert_eq!(entries[0]["category"], "modified");
-        assert_eq!(dirty["uncommitted_truncated"], serde_json::Value::Bool(false));
+        assert_eq!(
+            dirty["uncommitted_truncated"],
+            serde_json::Value::Bool(false)
+        );
     }
 
     #[test]
@@ -1983,7 +1990,10 @@ mod tests {
         std::fs::write(temp.path().join("notes/a.md"), "x").unwrap();
         let facts = probe_project_directory(temp.path(), "notes").unwrap();
         assert_eq!(facts["is_git_repo"], serde_json::Value::Bool(false));
-        assert!(facts.get("dirty").is_none(), "non-git must not be reported clean");
+        assert!(
+            facts.get("dirty").is_none(),
+            "non-git must not be reported clean"
+        );
         assert!(facts.get("uncommitted_entries").is_none());
     }
 
@@ -2000,7 +2010,10 @@ mod tests {
         run_test_git(&repo, ["commit", "-m", "a"]);
         std::fs::create_dir_all(repo.join(".git/rebase-merge")).unwrap();
         let facts = probe_project_directory(temp.path(), "rebasing").unwrap();
-        assert_eq!(facts["repo_state"], serde_json::Value::String("rebase".to_string()));
+        assert_eq!(
+            facts["repo_state"],
+            serde_json::Value::String("rebase".to_string())
+        );
     }
 
     #[test]
@@ -2160,7 +2173,11 @@ mod tests {
         );
 
         // 人把它放回来：第二次派发不该再删。
-        std::fs::write(first.workspace_path.join("opencode.json"), "{\"restored\":true}\n").unwrap();
+        std::fs::write(
+            first.workspace_path.join("opencode.json"),
+            "{\"restored\":true}\n",
+        )
+        .unwrap();
         let second = resolve_project_workspace(request).unwrap();
         assert_eq!(second.workspace_path, first.workspace_path);
         assert!(
@@ -2168,5 +2185,4 @@ mod tests {
             "已有 .git 后再派发不得重放 shield/scope,平台不碰 git 工作树"
         );
     }
-
 }

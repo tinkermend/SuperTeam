@@ -16,26 +16,28 @@ const (
 
 // 各配置项 key。使用点经 Reader 取值时引用这些常量。
 const (
-	KeyArtifactMaxFileSizeBytes           = "artifact.max_file_size_bytes"
-	KeyArtifactPresignUploadTTL           = "artifact.presign_upload_ttl_seconds"
-	KeyArtifactContentGetTTL              = "artifact.content_get_ttl_seconds"
-	KeyArtifactAttachmentMaxFileSizeBytes = "artifact.attachment_max_file_size_bytes"
-	KeyArtifactAttachmentMaxCount         = "artifact.attachment_max_count"
-	KeyArtifactAttachmentTotalMaxBytes    = "artifact.attachment_total_max_bytes"
-	KeySkillUploadMaxBytes                = "skill.upload_max_bytes"
-	KeySkillArchivePresignTTL             = "skill.archive_presign_ttl_seconds"
-	KeySkillArchiveUnpackMaxBytes         = "skill.archive_unpack_max_bytes"
-	KeySkillArchiveUnpackMaxFileCount     = "skill.archive_unpack_max_file_count"
-	KeyRuntimeSessionTTLSeconds           = "runtime.session_ttl_seconds"
-	KeyRuntimeHeartbeatTimeoutSeconds     = "runtime.heartbeat_timeout_seconds"
-	KeyRuntimeWorkspaceBaseDir            = "runtime.workspace_base_dir"
-	KeyAuthSessionTTLSeconds              = "auth.session_ttl_seconds"
-	KeyTaskStuckRunningTimeoutSeconds     = "task.stuck_running_timeout_seconds"
+	KeyArtifactMaxFileSizeBytes                 = "artifact.max_file_size_bytes"
+	KeyArtifactPresignUploadTTL                 = "artifact.presign_upload_ttl_seconds"
+	KeyArtifactContentGetTTL                    = "artifact.content_get_ttl_seconds"
+	KeyArtifactAttachmentMaxFileSizeBytes       = "artifact.attachment_max_file_size_bytes"
+	KeyArtifactAttachmentMaxCount               = "artifact.attachment_max_count"
+	KeyArtifactAttachmentTotalMaxBytes          = "artifact.attachment_total_max_bytes"
+	KeySkillUploadMaxBytes                      = "skill.upload_max_bytes"
+	KeySkillArchivePresignTTL                   = "skill.archive_presign_ttl_seconds"
+	KeySkillArchiveUnpackMaxBytes               = "skill.archive_unpack_max_bytes"
+	KeySkillArchiveUnpackMaxFileCount           = "skill.archive_unpack_max_file_count"
+	KeySkillArchivePreviewMaxBytes              = "skill.archive_preview_max_bytes"
+	KeySkillArchivePreviewMaxArchiveBytes       = "skill.archive_preview_max_archive_bytes"
+	KeyRuntimeSessionTTLSeconds                 = "runtime.session_ttl_seconds"
+	KeyRuntimeHeartbeatTimeoutSeconds           = "runtime.heartbeat_timeout_seconds"
+	KeyRuntimeWorkspaceBaseDir                  = "runtime.workspace_base_dir"
+	KeyAuthSessionTTLSeconds                    = "auth.session_ttl_seconds"
+	KeyTaskStuckRunningTimeoutSeconds           = "task.stuck_running_timeout_seconds"
 	KeyProjectWorkspaceGitSampleIntervalSeconds = "project.workspace_git_sample_interval_seconds"
-	KeyProjectTaskDefaultMaxAttempts       = "project_task.default_max_attempts"
+	KeyProjectTaskDefaultMaxAttempts            = "project_task.default_max_attempts"
 	// KeyCastingGapDiscoveryMaxPerDemand bounds semantic casting-gap discoverer
 	// LLM calls per demand (design 2026-08-05 §3.3 / open detail #2). 0 disables.
-	KeyCastingGapDiscoveryMaxPerDemand = "casting.gap_discovery_max_per_demand"
+	KeyCastingGapDiscoveryMaxPerDemand    = "casting.gap_discovery_max_per_demand"
 	KeyEmployeeMaxPerTeam                 = "employee.max_per_team"
 	KeyTeamConstitutionMaxChars           = "team.constitution_max_chars"
 	KeyRetentionRuntimeEventsDays         = "retention.runtime_events_days"
@@ -152,6 +154,26 @@ var registry = []Definition{
 		DefaultValue: 10000,
 		MinValue:     100,
 		MaxValue:     50000,
+	},
+	{
+		Key:          KeySkillArchivePreviewMaxBytes,
+		Domain:       DomainArtifact,
+		Label:        "技能包单文件预览大小上限",
+		Description:  "控制台只读预览单个文本文件时截断的最大字节数。超限仍返回 200，正文截断并标记 truncated。",
+		ValueType:    ValueTypeBytes,
+		DefaultValue: 256 * 1024,
+		MinValue:     16 * 1024,
+		MaxValue:     2 * 1024 * 1024,
+	},
+	{
+		Key:          KeySkillArchivePreviewMaxArchiveBytes,
+		Domain:       DomainArtifact,
+		Label:        "技能包在线预览整包大小上限",
+		Description:  "超过该字节数的技能包不提供在线预览（entries/content 返回 413），上传与 Runtime 物化不受影响。",
+		ValueType:    ValueTypeBytes,
+		DefaultValue: 8 * 1024 * 1024,
+		MinValue:     1 * 1024 * 1024,
+		MaxValue:     64 * 1024 * 1024,
 	},
 	{
 		Key:    KeyRuntimeHeartbeatTimeoutSeconds,

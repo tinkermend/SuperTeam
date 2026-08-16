@@ -206,6 +206,9 @@ func (s *ProjectStore) PrepareAdversarialReview(ctx context.Context, input Prepa
 	if len(criteria) == 0 {
 		return AdversarialReviewPlan{Reviewed: false}, nil
 	}
+	if s.demandAlreadyHasDedicatedReviewTasks(ctx, task) {
+		return AdversarialReviewPlan{Reviewed: false}, nil
+	}
 	latest, err := s.latestTaskResult(ctx, task)
 	if err != nil {
 		return AdversarialReviewPlan{}, err
@@ -238,6 +241,46 @@ func (s *ProjectStore) PrepareAdversarialReview(ctx context.Context, input Prepa
 		})
 	}
 	return plan, nil
+}
+
+// demandAlreadyHasDedicatedReviewTasks is the in-flight counterpart of
+// skeletonHasDedicatedReviewStep: plans minted before that skip still carry
+// adversarial_review criteria. If the same demand already has 代码审查 / 安全审查
+// (or planned keys with review/security), do not run N LLM judges again.
+//
+// Lifespan: the review/security/审查 substring matching below is a transitional
+// heuristic for plans minted before skeletonHasDedicatedReviewStep existed —
+// it is NOT a durable criteria signal. New code must rely on the structural
+// signal (template_governance role capability / planned key), not extend this
+// list. Remove this function once no in-flight demand predates that skip.
+func (s *ProjectStore) demandAlreadyHasDedicatedReviewTasks(ctx context.Context, task project.ProjectTask) bool {
+	if s.repository == nil || task.DemandID == nil {
+		return false
+	}
+	siblings, err := s.repository.ListDemandLaunchProjectTasks(ctx, task.TenantID, task.ProjectID, *task.DemandID, 200)
+	if err != nil {
+		return false
+	}
+	for _, sibling := range siblings {
+		if sibling.ID == task.ID {
+			continue
+		}
+		if sibling.Status == "cancelled" {
+			continue
+		}
+		key := ""
+		if sibling.PlannedTaskKey != nil {
+			key = strings.ToLower(strings.TrimSpace(*sibling.PlannedTaskKey))
+		}
+		if strings.Contains(key, "revision") {
+			continue
+		}
+		title := strings.ToLower(sibling.Title)
+		if strings.Contains(key, "review") || strings.Contains(key, "security") || strings.Contains(title, "审查") {
+			return true
+		}
+	}
+	return false
 }
 
 // listAdversarialCriteriaForTask narrows the demand+revision criteria snapshot

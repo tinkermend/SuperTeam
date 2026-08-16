@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>方案 A · 剧目卡</title>
+  <link rel="stylesheet" href="./shared.css" />
+  <style>
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; }
+    @media (max-width:900px){ .grid { grid-template-columns:1fr; } }
+    .card {
+      background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+      box-shadow:var(--shadow); padding:18px 18px 14px; display:flex; flex-direction:column; gap:12px;
+      min-height:228px;
+    }
+    .card.disabled { opacity:.72; }
+    .card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .name { font-size:16px; font-weight:700; letter-spacing:-.01em; }
+    .desc { color:var(--ink-2); font-size:13px; margin-top:3px; }
+    .meta { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; }
+    .seats { display:flex; flex-wrap:wrap; gap:6px; }
+    .seat {
+      font-size:11px; padding:3px 8px; border-radius:999px; background:var(--card-soft);
+      color:var(--ink-2); border:1px solid var(--line);
+    }
+    .exits { display:flex; gap:6px; flex-wrap:wrap; }
+    .exit-chip {
+      font-size:11px; font-weight:650; color:var(--brand-deep);
+      background:var(--brand-soft); padding:3px 8px; border-radius:6px;
+    }
+    .card-foot {
+      margin-top:auto; padding-top:10px; border-top:1px solid var(--line);
+      display:flex; justify-content:space-between; align-items:center; gap:8px;
+    }
+    .actions { display:flex; gap:6px; }
+    .section-label { font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="page-head">
+      <div>
+        <h1>场景模板</h1>
+        <p class="sub">每张卡是一份可实例化的骨架：席位谁来、关卡怎么走、能收到哪一档。保存改的是当前配置，这里不记版本树。</p>
+      </div>
+      <a class="btn btn-primary" href="#">+ 新建模板</a>
+    </header>
+    <div class="filters" role="tablist">
+      <button class="chip" aria-pressed="true" data-filter="all">全部 6</button>
+      <button class="chip" aria-pressed="false" data-filter="active">启用 4</button>
+      <button class="chip" aria-pressed="false" data-filter="disabled">停用 2</button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="hint"><b>方案 A 取舍：</b>用卡片把「链」做成首页主角，一眼区分 generic 兜底和真骨架。代价是模板一多，不如表格好按 key / 步数排序比较。</p>
+  </div>
+  <script src="./data.js"></script>
+  <script>
+    const grid = document.getElementById("grid");
+    let filter = "all";
+    function render() {
+      grid.innerHTML = TEMPLATES.filter(t => filter === "all" || t.status === filter).map(t => `
+        <article class="card ${t.status === "disabled" ? "disabled" : ""}">
+          <div class="card-top">
+            <div>
+              <p class="name">${t.name}</p>
+              <p class="desc">${t.desc}</p>
+            </div>
+            <span class="pill ${t.status === "active" ? "pill-ok" : "pill-mute"}"><span class="dot"></span>${t.status === "active" ? "启用" : "停用"}</span>
+          </div>
+          <div>
+            <p class="section-label">骨架</p>
+            ${chainHtml(t)}
+          </div>
+          <div>
+            <p class="section-label">席位</p>
+            <div class="seats">${t.roles.length ? t.roles.map(r => `<span class="seat">${r}</span>`).join("") : `<span class="generic">无角色约束</span>`}</div>
+          </div>
+          <div>
+            <p class="section-label">收口档位</p>
+            <div class="exits">${t.exits.length ? t.exits.map(e => `<span class="exit-chip">${e}</span>`).join("") : `<span class="generic">规划走 generic 行为</span>`}</div>
+          </div>
+          <div class="card-foot">
+            <span class="meta"><span class="key">${t.key}</span><span class="time">${t.updated}</span></span>
+            <div class="actions">
+              <a class="btn btn-ghost btn-sm" href="#">编辑</a>
+              <button class="btn btn-ghost btn-sm">${t.status === "active" ? "停用" : "启用"}</button>
+              <button class="btn btn-danger btn-sm">删除</button>
+            </div>
+          </div>
+        </article>
+      `).join("");
+    }
+    document.querySelectorAll(".chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        filter = btn.dataset.filter;
+        document.querySelectorAll(".chip").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+        render();
+      });
+    });
+    render();
+  </script>
+</body>
+</html>

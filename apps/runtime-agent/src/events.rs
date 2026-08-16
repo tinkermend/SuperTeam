@@ -154,10 +154,7 @@ impl ProviderEvent {
         }
     }
 
-    pub fn native_unmapped(
-        native_type: Option<String>,
-        reason: impl Into<String>,
-    ) -> Self {
+    pub fn native_unmapped(native_type: Option<String>, reason: impl Into<String>) -> Self {
         Self::NativeUnmapped {
             native_type,
             reason: reason.into(),

@@ -246,9 +246,8 @@ mod tests {
 
     #[test]
     fn thread_started_reads_nested_thread_id() {
-        let events =
-            parse_codex_event(r#"{"type":"thread.started","thread":{"id":"thread-1"}}"#)
-                .expect("parse");
+        let events = parse_codex_event(r#"{"type":"thread.started","thread":{"id":"thread-1"}}"#)
+            .expect("parse");
         assert_eq!(
             events,
             vec![ProviderEvent::SessionStarted {

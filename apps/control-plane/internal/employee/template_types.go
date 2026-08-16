@@ -13,6 +13,7 @@ type EmployeeTemplateRecord struct {
 	Label                    string
 	Description              string
 	DefaultRole              string
+	DefaultRoleKeys          []string
 	RecommendedSkills        []string
 	RecommendedMCPServers    []string
 	RecommendedProviderTypes []string
@@ -34,6 +35,7 @@ func (r EmployeeTemplateRecord) ToDefinition() EmployeeTypeDefinition {
 		Label:                    r.Label,
 		Description:              r.Description,
 		DefaultRole:              r.DefaultRole,
+		DefaultRoleKeys:          cloneStringSlice(r.DefaultRoleKeys),
 		RecommendedSkills:        cloneStringSlice(r.RecommendedSkills),
 		RecommendedMCPServers:    cloneStringSlice(r.RecommendedMCPServers),
 		RecommendedProviderTypes: cloneStringSlice(r.RecommendedProviderTypes),
@@ -55,6 +57,7 @@ type CreateEmployeeTemplateParams struct {
 	Label                    string
 	Description              string
 	DefaultRole              string
+	DefaultRoleKeys          []string
 	RecommendedSkills        []string
 	RecommendedMCPServers    []string
 	RecommendedProviderTypes []string
@@ -70,6 +73,7 @@ type UpdateEmployeeTemplateParams struct {
 	Label                    string
 	Description              string
 	DefaultRole              string
+	DefaultRoleKeys          []string
 	RecommendedSkills        []string
 	RecommendedMCPServers    []string
 	RecommendedProviderTypes []string

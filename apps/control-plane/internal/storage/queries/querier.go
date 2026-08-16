@@ -51,12 +51,15 @@ type Querier interface {
 	// "projection not applied" on 同意).
 	CancelOpenPlanReviewDecisionsForDemandExceptRevision(ctx context.Context, arg CancelOpenPlanReviewDecisionsForDemandExceptRevisionParams) ([]CancelOpenPlanReviewDecisionsForDemandExceptRevisionRow, error)
 	CancelProjectDecisionRequestsForDelete(ctx context.Context, arg CancelProjectDecisionRequestsForDeleteParams) ([]uuid.UUID, error)
+	// 与 UpdateProjectTaskStatus 的终态语义一致（清等待指针、写 terminal_event_id），
+	// 额外落 cancel_reason 用于区分系统滞留收敛与人类驳回：只有 system_stranded
+	// 允许在人类点重试时被复活重挂边（ReviveStrandedCancelledProjectTasks）。
+	CancelProjectTaskWithReason(ctx context.Context, arg CancelProjectTaskWithReasonParams) (ProjectTask, error)
 	// Soft-delete cascade: cancel any task that could still light employee overview
 	// blockers (active/waiting/failed). Keep completed/success/cancelled historical rows.
 	// 与 UpdateProjectTaskStatus 的终态分支同口径：进终态即清等待指针，
 	// 否则被级联取消的任务会永久带着上一次等待的决策 id。
 	CancelProjectTasksForDelete(ctx context.Context, arg CancelProjectTasksForDeleteParams) ([]uuid.UUID, error)
-	CancelTask(ctx context.Context, arg CancelTaskParams) (Task, error)
 	// 兜底:软删时 UnbindTeamDigitalEmployees 已清存活员工;这里连已删员工的历史引用一并清。
 	ClearDigitalEmployeesTeamRef(ctx context.Context, arg ClearDigitalEmployeesTeamRefParams) error
 	ClearProjectsTeamRef(ctx context.Context, arg ClearProjectsTeamRefParams) error
@@ -99,12 +102,23 @@ type Querier interface {
 	CountProjectDemandContinuationDepth(ctx context.Context, arg CountProjectDemandContinuationDepthParams) (int32, error)
 	// Aggregates a project's demands into total / non-terminal counts so the coordinator
 	// can decide whether the whole project is ready for human acceptance.
+	//
+	// 恢复路径未关闭的 failed 需求算「非终态」（复跑 3 现场）：开发步一失败，
+	// deriveDemandStatusFromTaskCounts 立刻把需求推成 failed，旧口径据此判定全项目
+	// 终态并开结项卡——而那一刻失败恢复卡还挂着，人类点重试后图还能往下走。
+	// 系统层面还有待办的需求不得计入项目收敛。
 	CountProjectDemandsByTerminality(ctx context.Context, arg CountProjectDemandsByTerminalityParams) (CountProjectDemandsByTerminalityRow, error)
 	CountProjectPlaybookCastingsForEmployee(ctx context.Context, arg CountProjectPlaybookCastingsForEmployeeParams) (int32, error)
 	CountProjectPortfolioItems(ctx context.Context, arg CountProjectPortfolioItemsParams) (int32, error)
 	CountProjectTaskDispatchFailureEvents(ctx context.Context, arg CountProjectTaskDispatchFailureEventsParams) (int64, error)
 	// runnable = 真正还能推进的状态；blocked 是等上游，不能单独把需求钉在「执行中」。
 	// 上游已 failed/cancelled 时下游常滞留 blocked，旧口径把 blocked 算 active，需求就永不失败。
+	//
+	// 已被恢复替换任务取代的行（superseded_by_task_id 非空）不计入：否则重试成功后
+	// 旧的 failed 行仍然把需求钉在 failed（复跑 3 现场：develop#2 completed 而需求 failed）。
+	// 替换任务自身照常计入，所以「替换也失败」仍然推导为 failed。
+	// 取代关系只在替换任务还活着（或已完成）时生效：替换任务若被取消，原失败行重新计入，
+	// 避免「源失败被隐藏 + 全链取消」被推导成干净完成。
 	CountProjectTaskStatusesByDemand(ctx context.Context, arg CountProjectTaskStatusesByDemandParams) (CountProjectTaskStatusesByDemandRow, error)
 	// 观测用:不删,只报当前各类超期行的规模,供日志与人工核对。
 	CountRetentionCandidates(ctx context.Context, runtimeDays int32) (CountRetentionCandidatesRow, error)
@@ -204,8 +218,6 @@ type Querier interface {
 	// 飞书集成:服务凭据、应用配置、身份绑定查询。
 	CreateServiceToken(ctx context.Context, arg CreateServiceTokenParams) (AuthServiceToken, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (AuthSession, error)
-	CreateTask(ctx context.Context, arg CreateTaskParams) (Task, error)
-	CreateTaskEvent(ctx context.Context, arg CreateTaskEventParams) (TaskEvent, error)
 	CreateTaskEventIfAbsent(ctx context.Context, arg CreateTaskEventIfAbsentParams) (CreateTaskEventIfAbsentRow, error)
 	CreateTaskRun(ctx context.Context, arg CreateTaskRunParams) (TaskRun, error)
 	// 宪法保存 = 追加一个新版本（版本号在同团队内递增）。回滚也是新版本，不改写历史。
@@ -261,7 +273,6 @@ type Querier interface {
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
 	DeleteSkillMCPDependenciesForSkill(ctx context.Context, arg DeleteSkillMCPDependenciesForSkillParams) error
 	DeleteSystemConfigOverride(ctx context.Context, arg DeleteSystemConfigOverrideParams) (int64, error)
-	DeleteTask(ctx context.Context, arg DeleteTaskParams) error
 	DeleteTeamMCPBinding(ctx context.Context, arg DeleteTeamMCPBindingParams) error
 	DeleteTeamSkillBindings(ctx context.Context, arg DeleteTeamSkillBindingsParams) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
@@ -345,7 +356,6 @@ type Querier interface {
 	GetLatestProjectDemandSummary(ctx context.Context, arg GetLatestProjectDemandSummaryParams) (ProjectDemandSummary, error)
 	GetLatestProjectEventSequence(ctx context.Context, arg GetLatestProjectEventSequenceParams) (int64, error)
 	GetLatestProviderSessionEventSequence(ctx context.Context, arg GetLatestProviderSessionEventSequenceParams) (int32, error)
-	GetLatestTaskEventSequence(ctx context.Context, arg GetLatestTaskEventSequenceParams) (int32, error)
 	GetLatestTaskRun(ctx context.Context, arg GetLatestTaskRunParams) (TaskRun, error)
 	GetMCPServerDefinition(ctx context.Context, arg GetMCPServerDefinitionParams) (McpServer, error)
 	GetNextDigitalEmployeeConfigRevisionNumber(ctx context.Context, arg GetNextDigitalEmployeeConfigRevisionNumberParams) (int32, error)
@@ -582,6 +592,10 @@ type Querier interface {
 	ListEmployeesHoldingRole(ctx context.Context, arg ListEmployeesHoldingRoleParams) ([]ListEmployeesHoldingRoleRow, error)
 	ListEnabledAutomationRulesByActor(ctx context.Context, arg ListEnabledAutomationRulesByActorParams) ([]AutomationRule, error)
 	ListEnabledAutomationRulesByActorOnProject(ctx context.Context, arg ListEnabledAutomationRulesByActorOnProjectParams) ([]AutomationRule, error)
+	// Recover when the lease is past due, or when Runtime never wrote
+	// lease_expires_at (started/budget heartbeat only) and the attempt has
+	// gone silent past stale_before. NULL leases used to be invisible to the
+	// watchdog, so a dead Provider left the task running forever.
 	ListExpiredRunningProjectTaskAttempts(ctx context.Context, arg ListExpiredRunningProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	// 管理面列表：含 active/revoked，不回显 token_sha256。
 	ListExternalIntegrationTokens(ctx context.Context, arg ListExternalIntegrationTokensParams) ([]ListExternalIntegrationTokensRow, error)
@@ -627,7 +641,6 @@ type Querier interface {
 	// 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。
 	ListPendingOrSentCardUpdatesByResource(ctx context.Context, arg ListPendingOrSentCardUpdatesByResourceParams) ([]FeishuOutbox, error)
 	ListPendingProjectWorkspaceDeleteRequests(ctx context.Context, tenantID uuid.UUID) ([]ProjectWorkspaceDeleteRequest, error)
-	ListPendingTasks(ctx context.Context, arg ListPendingTasksParams) ([]Task, error)
 	// Permission-center read path: reads the approval domain directly (never via the
 	// inbox projection). view=mine → target_user_id = actor; view=team → target_user_id NULL.
 	ListPermissionApprovals(ctx context.Context, arg ListPermissionApprovalsParams) ([]ApprovalRequest, error)
@@ -726,8 +739,12 @@ type Querier interface {
 	// CreateProviderSessionEvent retired (2026-07-21).
 	ListProviderSessionEvents(ctx context.Context, arg ListProviderSessionEventsParams) ([]ProviderSessionEvent, error)
 	ListProviderSessionsForDigitalEmployee(ctx context.Context, arg ListProviderSessionsForDigitalEmployeeParams) ([]ProviderSession, error)
-	// dei retired: required tools are delivered via dispatch payload/MCP config, not employee-node bindings.
-	ListRequiredToolsForNode(ctx context.Context) ([]string, error)
+	// Union of CLI tools declared on skills bound to digital employees that can
+	// run on this runtime node (affinity, project placement, or primary node).
+	// If nobody is mounted yet, fall back to every bound skill in the tenant so
+	// the first dispatch is not blocked on an empty probe set (DEI retirement
+	// used to return no rows and Runtime never learned `git`).
+	ListRequiredToolsForNode(ctx context.Context, arg ListRequiredToolsForNodeParams) ([]string, error)
 	ListRoleVocabulary(ctx context.Context, tenantID uuid.UUID) ([]RoleVocabulary, error)
 	ListRuntimeCapabilities(ctx context.Context, arg ListRuntimeCapabilitiesParams) ([]RuntimeCapability, error)
 	ListRuntimeCapabilitiesForNode(ctx context.Context, arg ListRuntimeCapabilitiesForNodeParams) ([]RuntimeCapability, error)
@@ -766,7 +783,15 @@ type Querier interface {
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, arg ListStaleQueuedProjectTaskAttemptsParams) ([]ProjectTaskAttempt, error)
 	// 上游已全部终态失败/取消，下游仍 blocked：失败恢复若没走「驳回」就不会 cancelFailureDownstream，
 	// 需求会一直 executing。看门狗按与 cancelFailureDownstream 相同口径取消这些下游。
-	ListStrandedBlockedProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
+	//
+	// 恢复路径未关闭时不取消（复跑 3 现场）：上游任务上还挂着 pending 人类决策
+	// （失败恢复卡等）时，人类随时能点重试，此刻取消下游会让重试接不回图。只有恢复
+	// 路径已关闭（人类驳回、预算耗尽、卡已收敛）才轮到看门狗收口。
+	//
+	// 另加失败宽限（A 期真链现场）：任务 21:10:06 失败、看门狗 21:10:08 就收口、
+	// 恢复卡 21:10:09 才建好——只看「卡是否 pending」挡不住这 3 秒竞态。blocker 刚进
+	// 终态时先不收口，把开卡窗口留给协调线程。看门狗是兜底而非秒级回收器。
+	ListStrandedBlockedProjectTasks(ctx context.Context, arg ListStrandedBlockedProjectTasksParams) ([]ProjectTask, error)
 	// 僵尸/孤儿任务:停留在 running/in_progress 但没有当前活跃 attempt(current_attempt_id
 	// 为空),且已滞留超过阈值。正常派发会在秒级内建 attempt 并回填 current_attempt_id,
 	// 故长时间 running 而无 attempt 的任务只可能是 runtime 整体失联未落 attempt、协调线程
@@ -774,11 +799,9 @@ type Querier interface {
 	// 由协调线程开失败恢复决策卡)。阈值(stale_before)由调用方按系统配置 task.stuck_running_timeout 计算。
 	ListStuckOrphanProjectTasks(ctx context.Context, arg ListStuckOrphanProjectTasksParams) ([]ProjectTask, error)
 	ListSystemConfigOverrides(ctx context.Context, tenantID uuid.UUID) ([]ListSystemConfigOverridesRow, error)
-	ListTaskEvents(ctx context.Context, arg ListTaskEventsParams) ([]TaskEvent, error)
 	ListTaskEventsForRun(ctx context.Context, arg ListTaskEventsForRunParams) ([]TaskEvent, error)
 	ListTaskRuns(ctx context.Context, arg ListTaskRunsParams) ([]TaskRun, error)
 	ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsParams) ([]TaskRun, error)
-	ListTasks(ctx context.Context, arg ListTasksParams) ([]Task, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]AuditEvent, error)
 	ListTeamConstitutionRevisions(ctx context.Context, arg ListTeamConstitutionRevisionsParams) ([]ListTeamConstitutionRevisionsRow, error)
 	ListTeamMCPBindings(ctx context.Context, arg ListTeamMCPBindingsParams) ([]ListTeamMCPBindingsRow, error)
@@ -800,7 +823,7 @@ type Querier interface {
 	// SweepStaleQueuedProjectTaskAttempts / SweepExpiredRunningProjectTaskAttempts。
 	// 阈值放宽以避免漏选(per-tenant sweep 内部再按精确阈值过滤,过选无害):
 	// 只要有 queued attempt 未开始、或 running attempt 租约已过期即入选。
-	ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now pgtype.Timestamptz) ([]uuid.UUID, error)
+	ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, arg ListTenantsWithRecoverableProjectTaskAttemptsParams) ([]uuid.UUID, error)
 	ListTopDeniedAuthzActionsSince(ctx context.Context, arg ListTopDeniedAuthzActionsSinceParams) ([]ListTopDeniedAuthzActionsSinceRow, error)
 	ListUnresolvedBlockersForTasks(ctx context.Context, arg ListUnresolvedBlockersForTasksParams) ([]ListUnresolvedBlockersForTasksRow, error)
 	ListUserDisplayNamesByIDs(ctx context.Context, ids []uuid.UUID) ([]ListUserDisplayNamesByIDsRow, error)
@@ -833,6 +856,9 @@ type Querier interface {
 	MarkProjectPlanRevisionDecomposing(ctx context.Context, arg MarkProjectPlanRevisionDecomposingParams) (ProjectPlanRevision, error)
 	MarkProjectRuntimeNodeProvisioned(ctx context.Context, arg MarkProjectRuntimeNodeProvisionedParams) (ProjectRuntimeNode, error)
 	MarkProjectTaskLatestDispatchGate(ctx context.Context, arg MarkProjectTaskLatestDispatchGateParams) (ProjectTask, error)
+	// 源任务被恢复替换任务取代：不再计入需求状态推导（CountProjectTaskStatusesByDemand）。
+	// 行本身保留在图上，时间线与卷宗仍能看到这次失败。
+	MarkProjectTaskSuperseded(ctx context.Context, arg MarkProjectTaskSupersededParams) (ProjectTask, error)
 	MarkProjectWorkspaceGitProbeInflight(ctx context.Context, arg MarkProjectWorkspaceGitProbeInflightParams) error
 	MarkProjectWorkspaceGitSnapshotFailed(ctx context.Context, arg MarkProjectWorkspaceGitSnapshotFailedParams) error
 	MarkQueuedProjectTaskAttemptDispatchStartFailed(ctx context.Context, arg MarkQueuedProjectTaskAttemptDispatchStartFailedParams) (ProjectTaskAttempt, error)
@@ -901,6 +927,13 @@ type Querier interface {
 	// 记录任务结果那几步（非同事务）若失败，任务会退回 waiting_human 但指针已空，
 	// 人类再也点不动"验收通过"。补偿动作必须还原它清掉的每一样东西。
 	RestoreProjectTaskHumanWait(ctx context.Context, arg RestoreProjectTaskHumanWaitParams) (ProjectTask, error)
+	// 恢复替换任务已建：把需求从 failed 拉回 executing。绕过 ProjectDemandStatusCanAdvance
+	// 的单向 rank（failed=5 > executing=3，正常重算永远推不回来），因此收窄为只认 failed。
+	ReviveProjectDemandForRecovery(ctx context.Context, arg ReviveProjectDemandForRecoveryParams) (ProjectDemand, error)
+	// 人类点重试时把「系统滞留收敛」取消的下游拉回 blocked，随后由
+	// RewireProjectTaskDependencies 重新挂到替换任务上。human_reject 与未分型
+	// （cancel_reason IS NULL）一律不动，避免复活人类已经判死的分支。
+	ReviveStrandedCancelledProjectTasks(ctx context.Context, arg ReviveStrandedCancelledProjectTasksParams) ([]ProjectTask, error)
 	RevokeExternalIntegrationToken(ctx context.Context, arg RevokeExternalIntegrationTokenParams) (ExternalIntegrationToken, error)
 	RevokeRuntimeBootstrapKey(ctx context.Context, arg RevokeRuntimeBootstrapKeyParams) (RuntimeBootstrapKey, error)
 	RevokeRuntimeEnrollment(ctx context.Context, arg RevokeRuntimeEnrollmentParams) (RevokeRuntimeEnrollmentRow, error)
@@ -908,7 +941,6 @@ type Querier interface {
 	RevokeServiceToken(ctx context.Context, arg RevokeServiceTokenParams) (AuthServiceToken, error)
 	RevokeUserProjectTeamScopes(ctx context.Context, arg RevokeUserProjectTeamScopesParams) error
 	RewireProjectTaskDependencies(ctx context.Context, arg RewireProjectTaskDependenciesParams) ([]RewireProjectTaskDependenciesRow, error)
-	RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error)
 	ScheduleProjectTaskDispatchRetry(ctx context.Context, arg ScheduleProjectTaskDispatchRetryParams) (ProjectTask, error)
 	// Clear prior dispatch identity so the coordinator re-enters StartProjectTaskRun
 	// for the new attempt (see projectTaskQueuedWithoutRunBinding). Keeping the old
@@ -935,6 +967,7 @@ type Querier interface {
 	SoftDeleteEmployeeTemplate(ctx context.Context, arg SoftDeleteEmployeeTemplateParams) (int64, error)
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) (Project, error)
 	SoftDeleteProjectMCPBindingsForProject(ctx context.Context, arg SoftDeleteProjectMCPBindingsForProjectParams) error
+	SoftDeleteScenarioTemplate(ctx context.Context, arg SoftDeleteScenarioTemplateParams) (ScenarioTemplate, error)
 	// 删除进入待确认态:全站不可见(deleted_at),管理员恢复或确认后才物理删除。
 	SoftDeleteTeam(ctx context.Context, arg SoftDeleteTeamParams) (TenantTeam, error)
 	SoftDeleteTeamMCPBindings(ctx context.Context, arg SoftDeleteTeamMCPBindingsParams) error
@@ -984,7 +1017,7 @@ type Querier interface {
 	UpdateAutomationFire(ctx context.Context, arg UpdateAutomationFireParams) (AutomationFire, error)
 	UpdateAutomationRule(ctx context.Context, arg UpdateAutomationRuleParams) (AutomationRule, error)
 	UpdateChatThreadTitle(ctx context.Context, arg UpdateChatThreadTitleParams) (UpdateChatThreadTitleRow, error)
-	// 身份资料写路径：当前仅员工说明（description）；空串落 NULL，与创建 trimOptionalString 口径一致。
+	// 身份资料写路径：description 空串落 NULL；role 由服务端解析（空串已派生，不得写入空串）。
 	UpdateDigitalEmployeeProfile(ctx context.Context, arg UpdateDigitalEmployeeProfileParams) (DigitalEmployee, error)
 	// 权限中心批准员工治理变更(role/permission_policy)后,由 ActivateConfigRevision 写回员工行。
 	// 值由审批请求的 ContextPayload 承载(方案2:权限变更不进 config_revision),此查询只落库。
@@ -1017,11 +1050,7 @@ type Querier interface {
 	UpdateScenarioTemplateActiveSpec(ctx context.Context, arg UpdateScenarioTemplateActiveSpecParams) (ScenarioTemplate, error)
 	UpdateScenarioTemplateStatus(ctx context.Context, arg UpdateScenarioTemplateStatusParams) (ScenarioTemplate, error)
 	UpdateSessionLastSeen(ctx context.Context, arg UpdateSessionLastSeenParams) (AuthSession, error)
-	UpdateTask(ctx context.Context, arg UpdateTaskParams) (Task, error)
-	UpdateTaskAssignment(ctx context.Context, arg UpdateTaskAssignmentParams) (Task, error)
 	UpdateTaskRun(ctx context.Context, arg UpdateTaskRunParams) (TaskRun, error)
-	UpdateTaskStatus(ctx context.Context, arg UpdateTaskStatusParams) (Task, error)
-	UpdateTaskWorkspace(ctx context.Context, arg UpdateTaskWorkspaceParams) (Task, error)
 	UpdateTenantLevelMembershipRole(ctx context.Context, arg UpdateTenantLevelMembershipRoleParams) (TenantMember, error)
 	UpdateTenantTeam(ctx context.Context, arg UpdateTenantTeamParams) (TenantTeam, error)
 	UpdateTenantTeamConstitution(ctx context.Context, arg UpdateTenantTeamConstitutionParams) (TenantTeam, error)

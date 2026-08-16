@@ -30,6 +30,7 @@ type SpecRole struct {
 type SpecSkeletonStep struct {
 	Step                   string        `json:"step"`
 	Role                   string        `json:"role"`
+	Title                  string        `json:"title,omitempty"`
 	DependsOn              []string      `json:"depends_on,omitempty"`
 	ProducesDefaults       []SpecProduce `json:"produces_defaults,omitempty"`
 	RequiredInputsDefaults []string      `json:"required_inputs_defaults,omitempty"`
@@ -221,6 +222,7 @@ func normalizeV1(raw map[string]any) (SpecV2, error) {
 		step := SpecSkeletonStep{
 			Step:                   asString(stepMap["step"]),
 			Role:                   asString(stepMap["role"]),
+			Title:                  asString(stepMap["title"]),
 			DependsOn:              toStringSlice(stepMap["depends_on"]),
 			RequiredInputsDefaults: toStringSlice(stepMap["required_inputs_defaults"]),
 		}

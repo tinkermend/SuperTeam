@@ -1563,13 +1563,18 @@ func (s *DigitalEmployeeRunService) SweepStalePreConfirmationRuns(ctx context.Co
 	}
 	reaped := 0
 	for _, run := range runs {
-		// 二次核验:列出与清扫之间 run 可能已被 runtime 回执推进。
-		if !isStalePreConfirmationRun(run) {
+		// 二次核验必须重读：列出结果是快照，事件回执可能已把 run 推到 running。
+		fresh, err := s.repository.GetRunByID(ctx, run.TenantID, run.ID)
+		if err != nil {
+			log.Printf("stale run watchdog: refresh %s failed: %v", run.ID, err)
+			continue
+		}
+		if !isStalePreConfirmationRun(fresh) {
 			continue
 		}
 		// 系统清扫无触发用户,审计主体记零值 UUID(系统身份)。
-		if _, err := s.reapStaleRun(ctx, run.TenantID, uuid.Nil, run); err != nil {
-			log.Printf("stale run watchdog: reap %s failed: %v", run.ID, err)
+		if _, err := s.reapStaleRun(ctx, fresh.TenantID, uuid.Nil, fresh); err != nil {
+			log.Printf("stale run watchdog: reap %s failed: %v", fresh.ID, err)
 			continue
 		}
 		reaped++

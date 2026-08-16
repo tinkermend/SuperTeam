@@ -57,6 +57,29 @@ func TestParseSpecV2(t *testing.T) {
 	}
 }
 
+func TestParseSpecV2KeepsSkeletonStepTitle(t *testing.T) {
+	raw := map[string]any{
+		"spec_version": 2,
+		"roles": []any{
+			map[string]any{"key": "releaser", "title": "提交发布", "required_capabilities": []any{"code_implementation"}},
+		},
+		"skeleton": []any{
+			map[string]any{"step": "commit", "role": "releaser", "title": "提交代码", "produces_defaults": []any{map[string]any{"name": "commit_ref"}}},
+			map[string]any{"step": "push", "role": "releaser", "title": "推送远程", "produces_defaults": []any{map[string]any{"name": "push_receipt"}}},
+		},
+		"exits": []any{
+			map[string]any{"deliverable": "push_receipt", "label": "已推送"},
+		},
+	}
+	spec, err := ParseSpec(raw)
+	if err != nil {
+		t.Fatalf("ParseSpec: %v", err)
+	}
+	if spec.Skeleton[0].Title != "提交代码" || spec.Skeleton[1].Title != "推送远程" {
+		t.Fatalf("expected step titles, got %#v", spec.Skeleton)
+	}
+}
+
 func TestParseSpecV1Normalizes(t *testing.T) {
 	raw := literalToMap(t, softwareDeliveryV1Literal)
 

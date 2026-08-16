@@ -62,7 +62,9 @@ impl TerminalWorkspaceCleanup {
 /// 校验 workspace 是 `{base}/workspaces/{proj}/{task}/{attempt}` 恰好三段的
 /// attempt 目录，返回 project 段。这是删除操作的安全闸：不满足即拒绝清理。
 fn task_attempt_project<'a>(base_dir: &Path, workspace_path: &'a Path) -> Option<&'a str> {
-    let rel = workspace_path.strip_prefix(base_dir.join("workspaces")).ok()?;
+    let rel = workspace_path
+        .strip_prefix(base_dir.join("workspaces"))
+        .ok()?;
     let segments: Vec<&str> = rel.iter().filter_map(|s| s.to_str()).collect();
     if segments.len() != 3
         || segments
@@ -250,10 +252,7 @@ fn sweep_one_sessions_tree(
     }
     sessions.sort_by(|a, b| b.0.cmp(&a.0));
     let mut removed = 0usize;
-    for (_, session_dir) in sessions
-        .iter()
-        .skip(config.max_retained_session_outputs)
-    {
+    for (_, session_dir) in sessions.iter().skip(config.max_retained_session_outputs) {
         remove_workspace_dir(session_dir, None);
         removed += 1;
     }
@@ -295,12 +294,7 @@ fn list_dirs(path: &Path) -> Vec<PathBuf> {
     };
     entries
         .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry
-                .file_type()
-                .map(|kind| kind.is_dir())
-                .unwrap_or(false)
-        })
+        .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
         .map(|entry| entry.path())
         .collect()
 }
@@ -398,12 +392,8 @@ mod tests {
         mk(&shallow);
         assert!(TerminalWorkspaceCleanup::plan("on_success", base, &shallow).is_none());
         assert!(
-            TerminalWorkspaceCleanup::plan(
-                "never",
-                base,
-                &base.join("workspaces/p1/t1/a1")
-            )
-            .is_none()
+            TerminalWorkspaceCleanup::plan("never", base, &base.join("workspaces/p1/t1/a1"))
+                .is_none()
         );
     }
 
@@ -511,11 +501,17 @@ mod tests {
         let base = temp.path();
         let project = base.join("acme-app");
         for (name, age_days) in [("cmd-1", 5u64), ("cmd-2", 4), ("cmd-3", 3), ("cmd-4", 1)] {
-            let deliverables = project.join(".superteam/sessions").join(name).join("deliverables");
+            let deliverables = project
+                .join(".superteam/sessions")
+                .join(name)
+                .join("deliverables");
             mk(&deliverables);
             std::fs::write(deliverables.join("out.html"), name).unwrap();
             set_mtime(&deliverables, Duration::from_secs(age_days * 86_400));
-            set_mtime(deliverables.parent().unwrap(), Duration::from_secs(age_days * 86_400));
+            set_mtime(
+                deliverables.parent().unwrap(),
+                Duration::from_secs(age_days * 86_400),
+            );
         }
         let active_project = base.join("busy-app");
         for name in ["old", "new"] {
@@ -560,6 +556,9 @@ mod tests {
         let age = SystemTime::now()
             .duration_since(last_activity(&dir))
             .unwrap();
-        assert!(age < Duration::from_secs(60), "child write counts as activity");
+        assert!(
+            age < Duration::from_secs(60),
+            "child write counts as activity"
+        );
     }
 }

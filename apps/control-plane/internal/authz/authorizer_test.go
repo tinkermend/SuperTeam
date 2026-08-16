@@ -13,8 +13,6 @@ type memoryRepository struct {
 	teamRoles      map[string]string
 	employeeScopes map[uuid.UUID]DigitalEmployeeAuthzScope
 	projectFacts   map[uuid.UUID]ProjectAuthzFacts
-	runtimeOK      bool
-	taskID         uuid.UUID
 	err            error
 }
 
@@ -49,14 +47,6 @@ func (r *memoryRepository) GetDigitalEmployeeAuthzScope(ctx context.Context, par
 		return DigitalEmployeeAuthzScope{}, ErrNoMembership
 	}
 	return scope, nil
-}
-
-func (r *memoryRepository) RuntimeNodeCoversTaskScope(ctx context.Context, params RuntimeScopeParams) (bool, error) {
-	if r.err != nil {
-		return false, r.err
-	}
-	r.taskID = params.TaskID
-	return r.runtimeOK, nil
 }
 
 func (r *memoryRepository) GetProjectAuthzFacts(ctx context.Context, params ProjectAuthzParams) (ProjectAuthzFacts, error) {
@@ -229,7 +219,7 @@ func TestDBAuthorizerDeniesConsoleAccessWithNonConsoleResource(t *testing.T) {
 	decision, err := authorizer.Check(context.Background(), CheckRequest{
 		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
 		Action:   ActionConsoleAccess,
-		Resource: ResourceRef{Type: ResourceTask, ID: "task-1"},
+		Resource: ResourceRef{Type: ResourceTeam, ID: "team-1"},
 		TenantID: tenantID,
 	})
 
@@ -1403,108 +1393,6 @@ func TestDBAuthorizerDeniesTeamAccessWithNilTeamID(t *testing.T) {
 	}
 }
 
-func TestDBAuthorizerAllowsRuntimeClaimWhenScopeCoversTask(t *testing.T) {
-	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
-	taskID := uuid.MustParse("00000000-0000-0000-0000-000000001001")
-	repo := &memoryRepository{runtimeOK: true}
-	authorizer := NewDBAuthorizer(repo)
-
-	decision, err := authorizer.Check(context.Background(), CheckRequest{
-		Actor:    ActorRef{Type: ActorRuntimeNode, ID: "node-1"},
-		Action:   ActionTaskClaim,
-		Resource: ResourceRef{Type: ResourceTask, ID: taskID.String()},
-		TenantID: tenantID,
-		TeamID:   &teamID,
-	})
-
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if !decision.Allowed {
-		t.Fatalf("expected runtime claim to be allowed, got %#v", decision)
-	}
-	if decision.MatchedRule != "runtime.scope" {
-		t.Fatalf("expected runtime.scope rule, got %q", decision.MatchedRule)
-	}
-	if repo.taskID != taskID {
-		t.Fatalf("expected task ID %s to reach repository, got %s", taskID, repo.taskID)
-	}
-}
-
-func TestDBAuthorizerDeniesRuntimeClaimWithNonTaskResource(t *testing.T) {
-	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
-	authorizer := NewDBAuthorizer(&memoryRepository{runtimeOK: true})
-
-	decision, err := authorizer.Check(context.Background(), CheckRequest{
-		Actor:    ActorRef{Type: ActorRuntimeNode, ID: "node-1"},
-		Action:   ActionTaskClaim,
-		Resource: ResourceRef{Type: ResourceConsole, ID: "web"},
-		TenantID: tenantID,
-		TeamID:   &teamID,
-	})
-
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if decision.Allowed {
-		t.Fatalf("expected runtime claim to be denied, got %#v", decision)
-	}
-	if decision.Reason != ReasonInvalidResource {
-		t.Fatalf("expected invalid resource reason, got %q", decision.Reason)
-	}
-}
-
-func TestDBAuthorizerDeniesRuntimeClaimWhenScopeDoesNotCoverTask(t *testing.T) {
-	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
-	taskID := uuid.MustParse("00000000-0000-0000-0000-000000001002")
-	authorizer := NewDBAuthorizer(&memoryRepository{runtimeOK: false})
-
-	decision, err := authorizer.Check(context.Background(), CheckRequest{
-		Actor:    ActorRef{Type: ActorRuntimeNode, ID: "node-1"},
-		Action:   ActionTaskClaim,
-		Resource: ResourceRef{Type: ResourceTask, ID: taskID.String()},
-		TenantID: tenantID,
-		TeamID:   &teamID,
-	})
-
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if decision.Allowed {
-		t.Fatalf("expected runtime claim to be denied, got %#v", decision)
-	}
-	if decision.Reason != ReasonRuntimeScopeMissing {
-		t.Fatalf("expected missing runtime scope reason, got %q", decision.Reason)
-	}
-}
-
-func TestDBAuthorizerDeniesRuntimeClaimWithInvalidTaskResourceID(t *testing.T) {
-	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	teamID := uuid.MustParse("00000000-0000-0000-0000-000000000101")
-	authorizer := NewDBAuthorizer(&memoryRepository{runtimeOK: true})
-
-	decision, err := authorizer.Check(context.Background(), CheckRequest{
-		Actor:    ActorRef{Type: ActorRuntimeNode, ID: "node-1"},
-		Action:   ActionTaskClaim,
-		Resource: ResourceRef{Type: ResourceTask, ID: "task-1"},
-		TenantID: tenantID,
-		TeamID:   &teamID,
-	})
-
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if decision.Allowed {
-		t.Fatalf("expected runtime claim to be denied, got %#v", decision)
-	}
-	if decision.Reason != ReasonInvalidResource {
-		t.Fatalf("expected invalid resource reason, got %q", decision.Reason)
-	}
-}
-
 func TestDBAuthorizerDeniesInvalidUserActorID(t *testing.T) {
 	tenantID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	authorizer := NewDBAuthorizer(&memoryRepository{tenantRoles: map[string]string{}})
@@ -1558,7 +1446,7 @@ func TestDBAuthorizerUnsupportedActionReturnsErrorAndDenyDecision(t *testing.T) 
 	decision, err := authorizer.Check(context.Background(), CheckRequest{
 		Actor:    ActorRef{Type: ActorUser, ID: userID.String()},
 		Action:   "task.delete",
-		Resource: ResourceRef{Type: ResourceTask, ID: "task-1"},
+		Resource: ResourceRef{Type: ResourceTenant, ID: tenantID.String()},
 		TenantID: tenantID,
 	})
 

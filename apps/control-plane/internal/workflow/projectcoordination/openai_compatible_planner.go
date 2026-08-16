@@ -898,11 +898,11 @@ func plannerContextError(parentCtx, requestCtx context.Context, err error) (erro
 		return parentErr, true
 	}
 	if errors.Is(err, context.DeadlineExceeded) && errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
-		return fmt.Errorf("%w: %w", ErrPlannerRequestTimeout, err), false
+		return fmt.Errorf("%w: %w", ErrPlannerRequestTimeout, err), true
 	}
 	var timeoutErr interface{ Timeout() bool }
 	if errors.As(err, &timeoutErr) && timeoutErr.Timeout() {
-		return fmt.Errorf("%w: %w", ErrPlannerRequestTimeout, err), false
+		return fmt.Errorf("%w: %w", ErrPlannerRequestTimeout, err), true
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err, false

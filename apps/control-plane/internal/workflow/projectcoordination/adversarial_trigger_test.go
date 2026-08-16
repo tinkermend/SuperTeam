@@ -62,6 +62,14 @@ type stubAdversarialRepo struct {
 	task     project.ProjectTask
 	criteria []project.DemandAcceptanceCriterion
 	byID     map[uuid.UUID]project.ProjectTask
+	siblings []project.ProjectTask
+}
+
+func (r *stubAdversarialRepo) ListDemandLaunchProjectTasks(ctx context.Context, tenantID, projectID, demandID uuid.UUID, limit int32) ([]project.ProjectTask, error) {
+	if r.siblings != nil {
+		return r.siblings, nil
+	}
+	return nil, nil
 }
 
 func (r *stubAdversarialRepo) GetProjectTask(ctx context.Context, tenantID, projectTaskID uuid.UUID) (project.ProjectTask, error) {
@@ -159,6 +167,34 @@ func TestAdversarialTriggerOnlyForReviewedTask(t *testing.T) {
 	require.False(t, result.Reviewed)
 	require.Empty(t, fake.persisted)
 	require.Equal(t, 0, client.calls)
+}
+
+func TestPrepareAdversarialReviewSkippedWhenDemandHasReviewStep(t *testing.T) {
+	tenantID, projectID := uuid.New(), uuid.New()
+	demandID, planRevisionID := uuid.New(), uuid.New()
+	develop := stubAdversarialTask(tenantID, projectID, demandID, planRevisionID, "develop")
+	reviewKey := "review"
+	review := project.ProjectTask{
+		ID:             uuid.New(),
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		DemandID:       &demandID,
+		Title:          "代码审查",
+		PlannedTaskKey: &reviewKey,
+		Status:         "blocked",
+	}
+	repo := &stubAdversarialRepo{
+		task:     develop,
+		criteria: []project.DemandAcceptanceCriterion{adversarialCriterionRow(demandID, planRevisionID, "crit_adv", VerificationMethodAdversarialReview, "develop")},
+		siblings: []project.ProjectTask{develop, review},
+	}
+	store := &ProjectStore{repository: repo}
+	plan, err := store.PrepareAdversarialReview(context.Background(), PrepareAdversarialReviewInput{
+		TenantID: tenantID, ProjectID: projectID, CompletedTaskID: develop.ID,
+	})
+	require.NoError(t, err)
+	require.False(t, plan.Reviewed)
+	require.Empty(t, plan.Items)
 }
 
 // TestAdversarialReviewForTaskProjectsAggregateAndDetails: a satisfied review

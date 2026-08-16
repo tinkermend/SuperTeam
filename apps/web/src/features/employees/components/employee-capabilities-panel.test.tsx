@@ -235,7 +235,7 @@ describe("EmployeeCapabilitiesPanel skill-level MCP dependency warnings", () => 
     await expect.element(screen.getByText("缺 MCP github-mcp")).toBeVisible();
 
     await userEvent.click(screen.getByRole("combobox", { name: "注册表 MCP" }));
-    await userEvent.click(screen.getByRole("option", { name: /github-mcp/ }));
+    await userEvent.click(screen.getByRole("option", { name: "GitHub MCP" }));
     await screen.getByRole("button", { name: "绑定个人 MCP" }).click();
 
     await vi.waitFor(() => {

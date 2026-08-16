@@ -49,6 +49,7 @@ func (s *Service) CreateEmployeeTemplate(ctx context.Context, params CreateEmplo
 
 	params.Type = normalizedType
 	params.Label = label
+	params.DefaultRoleKeys = normalizeRoleKeys(params.DefaultRoleKeys)
 	params.RecommendedSkills = nonNilStringSlice(params.RecommendedSkills)
 	params.RecommendedMCPServers = nonNilStringSlice(params.RecommendedMCPServers)
 	params.RecommendedProviderTypes = nonNilStringSlice(params.RecommendedProviderTypes)
@@ -56,6 +57,10 @@ func (s *Service) CreateEmployeeTemplate(ctx context.Context, params CreateEmplo
 	params.CapabilityBindings = nonNilMap(params.CapabilityBindings)
 	params.BudgetPolicy = nonNilMap(params.BudgetPolicy)
 	params.Metadata = nonNilMap(params.Metadata)
+
+	if err := s.validateRoleKeys(ctx, params.TenantID, params.DefaultRoleKeys); err != nil {
+		return EmployeeTemplateRecord{}, err
+	}
 
 	return s.repository.CreateEmployeeTemplate(ctx, params)
 }
@@ -69,6 +74,7 @@ func (s *Service) UpdateEmployeeTemplate(ctx context.Context, params UpdateEmplo
 		return EmployeeTemplateRecord{}, fmt.Errorf("%w: label is required", ErrInvalidInput)
 	}
 	params.Label = label
+	params.DefaultRoleKeys = normalizeRoleKeys(params.DefaultRoleKeys)
 	params.RecommendedSkills = nonNilStringSlice(params.RecommendedSkills)
 	params.RecommendedMCPServers = nonNilStringSlice(params.RecommendedMCPServers)
 	params.RecommendedProviderTypes = nonNilStringSlice(params.RecommendedProviderTypes)
@@ -76,6 +82,10 @@ func (s *Service) UpdateEmployeeTemplate(ctx context.Context, params UpdateEmplo
 	params.CapabilityBindings = nonNilMap(params.CapabilityBindings)
 	params.BudgetPolicy = nonNilMap(params.BudgetPolicy)
 	params.Metadata = nonNilMap(params.Metadata)
+
+	if err := s.validateRoleKeys(ctx, params.TenantID, params.DefaultRoleKeys); err != nil {
+		return EmployeeTemplateRecord{}, err
+	}
 
 	return s.repository.UpdateEmployeeTemplate(ctx, params)
 }

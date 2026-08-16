@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>方案 B · 主从台</title>
+  <link rel="stylesheet" href="./shared.css" />
+  <style>
+    .split {
+      display:grid; grid-template-columns:minmax(280px,340px) 1fr; gap:14px; align-items:start;
+    }
+    @media (max-width:900px){ .split { grid-template-columns:1fr; } }
+    .list, .detail {
+      background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+      box-shadow:var(--shadow); overflow:hidden;
+    }
+    .list { padding:8px; }
+    .row {
+      width:100%; text-align:left; background:transparent; border:0; border-radius:12px;
+      padding:10px 12px; cursor:pointer; display:grid; gap:2px; font:inherit; color:inherit;
+    }
+    .row:hover { background:var(--card-soft); }
+    .row[aria-selected="true"] { background:var(--brand-soft); }
+    .row .name { font-weight:700; font-size:14px; }
+    .row .line2 { display:flex; justify-content:space-between; gap:8px; }
+    .detail { padding:20px 22px 18px; min-height:420px; }
+    .detail-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+    .detail h2 { font-size:20px; font-weight:750; letter-spacing:-.02em; }
+    .detail .desc { color:var(--ink-2); margin-top:4px; }
+    .actions { display:flex; gap:6px; flex-wrap:wrap; }
+    .block { margin-top:18px; }
+    .block h3 { font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); margin-bottom:8px; }
+    .ladder { display:grid; gap:8px; }
+    .rung {
+      display:grid; grid-template-columns:18px 1fr; gap:10px; align-items:start;
+    }
+    .rung .mark {
+      width:10px; height:10px; border-radius:50%; margin-top:5px;
+      background:var(--brand); box-shadow:0 0 0 4px var(--brand-soft);
+    }
+    .rung .mark.empty { background:var(--line-strong); box-shadow:none; }
+    .rung .need { color:var(--ink-2); font-size:13px; }
+    .role-grid { display:flex; flex-wrap:wrap; gap:8px; }
+    .role {
+      padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--card-soft);
+      min-width:120px;
+    }
+    .role b { display:block; font-size:13px; }
+    .role span { font-size:11px; color:var(--ink-3); }
+    .empty-detail { color:var(--ink-2); padding:48px 8px; text-align:center; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="page-head">
+      <div>
+        <h1>场景模板</h1>
+        <p class="sub">左列选一份模板，右栏看它将驱动规划的契约。不展开行、不翻版本；要改就进编辑页。</p>
+      </div>
+      <a class="btn btn-primary" href="#">+ 新建模板</a>
+    </header>
+    <div class="filters">
+      <button class="chip" aria-pressed="true" data-filter="all">全部</button>
+      <button class="chip" aria-pressed="false" data-filter="active">启用</button>
+      <button class="chip" aria-pressed="false" data-filter="disabled">停用</button>
+    </div>
+    <div class="split">
+      <div class="list" id="list" role="listbox" aria-label="模板列表"></div>
+      <div class="detail" id="detail"></div>
+    </div>
+    <p class="hint"><b>方案 B 取舍：</b>和编辑页同一套「选中对象 + 契约预览」，适合边对照边决定启停。宽屏才舒服；窄屏会退化成先列表后详情。</p>
+  </div>
+  <script src="./data.js"></script>
+  <script>
+    let filter = "all";
+    let selected = TEMPLATES[1].key;
+    const list = document.getElementById("list");
+    const detail = document.getElementById("detail");
+
+    function visible() {
+      return TEMPLATES.filter(t => filter === "all" || t.status === filter);
+    }
+    function renderList() {
+      const rows = visible();
+      if (!rows.some(t => t.key === selected) && rows[0]) selected = rows[0].key;
+      list.innerHTML = rows.map(t => `
+        <button class="row" role="option" aria-selected="${t.key === selected}" data-key="${t.key}">
+          <span class="name">${t.name}</span>
+          <span class="line2">
+            <span class="key">${t.key}</span>
+            <span class="pill ${t.status === "active" ? "pill-ok" : "pill-mute"}"><span class="dot"></span>${t.status === "active" ? "启用" : "停用"}</span>
+          </span>
+        </button>
+      `).join("");
+      list.querySelectorAll(".row").forEach(btn => {
+        btn.addEventListener("click", () => { selected = btn.dataset.key; render(); });
+      });
+    }
+    function renderDetail() {
+      const t = TEMPLATES.find(x => x.key === selected);
+      if (!t) { detail.innerHTML = `<p class="empty-detail">没有符合筛选的模板</p>`; return; }
+      detail.innerHTML = `
+        <div class="detail-head">
+          <div>
+            <h2>${t.name}</h2>
+            <p class="desc">${t.desc}</p>
+            <p style="margin-top:8px"><span class="key">${t.key}</span> · <span class="time">${t.updated}</span></p>
+          </div>
+          <div class="actions">
+            <a class="btn btn-primary btn-sm" href="#">编辑</a>
+            <button class="btn btn-ghost btn-sm">${t.status === "active" ? "停用" : "启用"}</button>
+            <button class="btn btn-danger btn-sm">删除</button>
+          </div>
+        </div>
+        <div class="block">
+          <h3>分解骨架</h3>
+          ${chainHtml(t)}
+        </div>
+        <div class="block">
+          <h3>席位（项目编制要填的人）</h3>
+          ${t.roles.length ? `<div class="role-grid">${t.roles.map(r => `<div class="role"><b>${r}</b><span>词表席位 · 不在此绑人</span></div>`).join("")}</div>` : `<p class="generic">无角色约束</p>`}
+        </div>
+        <div class="block">
+          <h3>收口档位（浅 → 深）</h3>
+          ${t.exits.length ? `<div class="ladder">${t.exits.map((e,i) => `
+            <div class="rung">
+              <span class="mark ${i === t.exits.length - 1 ? "" : "empty"}"></span>
+              <div>
+                <strong>${e}</strong>
+                <p class="need">规划确认卡可选停在这一档 · 需要：${t.exitNeeds[i] || "无额外席位"}</p>
+              </div>
+            </div>`).join("")}</div>` : `<p class="generic">无收口档位 · 新规划走 generic 行为</p>`}
+        </div>
+      `;
+    }
+    function render() { renderList(); renderDetail(); }
+    document.querySelectorAll(".chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        filter = btn.dataset.filter;
+        document.querySelectorAll(".chip").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+        render();
+      });
+    });
+    render();
+  </script>
+</body>
+</html>

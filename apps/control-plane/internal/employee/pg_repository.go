@@ -723,13 +723,14 @@ func (r *PgRepository) UpdateDigitalEmployeeStatus(ctx context.Context, tenantID
 	return digitalEmployeeRecordFromQuery(employee)
 }
 
-func (r *PgRepository) UpdateDigitalEmployeeProfile(ctx context.Context, tenantID, employeeID uuid.UUID, description *string) (DigitalEmployeeRecord, error) {
+func (r *PgRepository) UpdateDigitalEmployeeProfile(ctx context.Context, tenantID, employeeID uuid.UUID, description *string, role string) (DigitalEmployeeRecord, error) {
 	desc := ""
 	if description != nil {
 		desc = *description
 	}
 	employee, err := r.q.UpdateDigitalEmployeeProfile(ctx, queries.UpdateDigitalEmployeeProfileParams{
 		Description: desc,
+		Role:        role,
 		ID:          employeeID,
 		TenantID:    tenantID,
 	})

@@ -1,4 +1,88 @@
 -- name: ListRequiredToolsForNode :many
--- dei retired: required tools are delivered via dispatch payload/MCP config, not employee-node bindings.
-SELECT ''::text AS tool
-WHERE false;
+-- Union of CLI tools declared on skills bound to digital employees that can
+-- run on this runtime node (affinity, project placement, or primary node).
+-- If nobody is mounted yet, fall back to every bound skill in the tenant so
+-- the first dispatch is not blocked on an empty probe set (DEI retirement
+-- used to return no rows and Runtime never learned `git`).
+WITH node AS (
+    SELECT id, tenant_id
+    FROM runtime_nodes
+    WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+      AND node_id = sqlc.arg('node_id')::varchar
+      AND archived_at IS NULL
+),
+mounted_employees AS (
+    SELECT DISTINCT de.id AS digital_employee_id, de.tenant_id, de.team_id
+    FROM digital_employees de
+    JOIN project_employee_node_affinity aff
+      ON aff.tenant_id = de.tenant_id
+     AND aff.digital_employee_id = de.id
+    JOIN node n
+      ON n.id = aff.runtime_node_id
+     AND n.tenant_id = de.tenant_id
+    WHERE de.deleted_at IS NULL
+    UNION
+    SELECT DISTINCT de.id, de.tenant_id, de.team_id
+    FROM digital_employees de
+    JOIN project_members pm
+      ON pm.tenant_id = de.tenant_id
+     AND pm.principal_id = de.id
+    JOIN project_runtime_nodes prn
+      ON prn.tenant_id = pm.tenant_id
+     AND prn.project_id = pm.project_id
+    JOIN node n
+      ON n.id = prn.runtime_node_id
+     AND n.tenant_id = prn.tenant_id
+    WHERE de.deleted_at IS NULL
+    UNION
+    SELECT DISTINCT de.id, de.tenant_id, de.team_id
+    FROM digital_employees de
+    JOIN project_members pm
+      ON pm.tenant_id = de.tenant_id
+     AND pm.principal_id = de.id
+    JOIN projects p
+      ON p.tenant_id = pm.tenant_id
+     AND p.id = pm.project_id
+    JOIN node n
+      ON n.id = p.primary_runtime_node_id
+     AND n.tenant_id = p.tenant_id
+    WHERE de.deleted_at IS NULL
+),
+eligible AS (
+    SELECT digital_employee_id, tenant_id, team_id FROM mounted_employees
+    UNION
+    SELECT de.id, de.tenant_id, de.team_id
+    FROM digital_employees de
+    JOIN node n ON n.tenant_id = de.tenant_id
+    WHERE de.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM mounted_employees)
+)
+SELECT DISTINCT BTRIM(tool) AS tool
+FROM eligible e
+JOIN team_skill_bindings stb
+  ON stb.tenant_id = e.tenant_id
+ AND stb.team_id = e.team_id
+JOIN skills s
+  ON s.tenant_id = stb.tenant_id
+ AND s.id = stb.skill_id
+ AND s.deleted_at IS NULL
+CROSS JOIN LATERAL jsonb_array_elements_text(
+    COALESCE(s.metadata -> 'runtime_dependencies', '{}'::jsonb) -> 'tools'
+) AS tool
+WHERE BTRIM(tool) <> ''
+UNION
+SELECT DISTINCT BTRIM(tool) AS tool
+FROM eligible e
+JOIN skill_agent_bindings sab
+  ON sab.tenant_id = e.tenant_id
+ AND sab.digital_employee_id = e.digital_employee_id
+ AND sab.status = 'enabled'
+JOIN skills s
+  ON s.tenant_id = sab.tenant_id
+ AND s.id = sab.skill_id
+ AND s.deleted_at IS NULL
+CROSS JOIN LATERAL jsonb_array_elements_text(
+    COALESCE(s.metadata -> 'runtime_dependencies', '{}'::jsonb) -> 'tools'
+) AS tool
+WHERE BTRIM(tool) <> ''
+ORDER BY 1;

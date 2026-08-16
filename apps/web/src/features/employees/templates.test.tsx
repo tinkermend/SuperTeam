@@ -68,6 +68,7 @@ function buildTemplate(overrides: Partial<EmployeeTemplate> = {}): EmployeeTempl
     label: "数据库管理员",
     description: "负责数据库变更、备份、性能诊断和恢复验证",
     default_role: "database_admin",
+    default_role_keys: [],
     recommended_skills: ["database-troubleshooting"],
     recommended_mcp_servers: ["postgres"],
     recommended_provider_types: ["codex"],
@@ -132,6 +133,31 @@ function createTemplatesFetcher({
       return jsonResponse((registryMcpKeys ?? []).map((key) => ({ id: `mcp-${key}`, server_key: key, status: "active" })));
     }
 
+    if (path === "/api/v1/role-vocabulary" && method === "GET") {
+      return jsonResponse([
+        {
+          id: "role-developer",
+          tenant_id: "tenant-1",
+          role_key: "developer",
+          title: "开发",
+          description: "",
+          status: "active",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        {
+          id: "role-reviewer",
+          tenant_id: "tenant-1",
+          role_key: "reviewer",
+          title: "审查",
+          description: "",
+          status: "active",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ]);
+    }
+
     if (path === TEMPLATES_PATH && method === "POST") {
       const created = buildTemplate({
         id: `generated-${nextId++}`,
@@ -139,6 +165,7 @@ function createTemplatesFetcher({
         label: String(body?.label ?? ""),
         description: String(body?.description ?? ""),
         default_role: String(body?.default_role ?? ""),
+        default_role_keys: (body?.default_role_keys as string[]) ?? [],
         recommended_skills: (body?.recommended_skills as string[]) ?? [],
         recommended_mcp_servers: (body?.recommended_mcp_servers as string[]) ?? [],
         recommended_provider_types: (body?.recommended_provider_types as string[]) ?? [],
@@ -330,6 +357,7 @@ describe("TemplateListView", () => {
       label: "自定义评审官",
       description: "",
       default_role: "",
+      default_role_keys: [],
       recommended_skills: [],
       recommended_mcp_servers: [],
       recommended_provider_types: [],
@@ -368,6 +396,7 @@ describe("TemplateListView", () => {
       label: "数据库管理员（更新）",
       description: existing.description,
       default_role: existing.default_role,
+      default_role_keys: existing.default_role_keys,
       recommended_skills: existing.recommended_skills,
       recommended_mcp_servers: existing.recommended_mcp_servers,
       recommended_provider_types: existing.recommended_provider_types

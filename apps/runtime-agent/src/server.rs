@@ -185,9 +185,9 @@ async fn create_run(
         skill_convergence: None,
         // 本地 HTTP 直起的 run 不经项目工作区解析,没有基线 ref 可言。
         workspace_base_ref: None,
-            prompt: request.prompt,
-            system_prompt: None,
-            session_id: request.session_id,
+        prompt: request.prompt,
+        system_prompt: None,
+        session_id: request.session_id,
         continue_session: request.continue_session,
         model: request.model,
         environment: request.environment,

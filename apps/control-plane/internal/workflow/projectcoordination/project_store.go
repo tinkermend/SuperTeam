@@ -304,6 +304,16 @@ type recoveryDependencyRepository interface {
 	RewireProjectTaskDependencies(ctx context.Context, req project.RewireProjectTaskDependenciesRequest) ([]project.ProjectTaskDependency, error)
 }
 
+// recoveryReviveRepository 是失败恢复把图接回来所需的最小写面（迁移 20260816205000）：
+// 取消带原因分型、复活系统滞留收敛的下游、标记被取代的源任务、把需求从 failed 拉回。
+// 与 recoveryDependencyRepository 同为可选断言，避免为此扩张 project.Repository。
+type recoveryReviveRepository interface {
+	CancelProjectTaskWithReason(ctx context.Context, tenantID, projectTaskID uuid.UUID, cancelReason string, eventID *uuid.UUID, currentStatuses []string) (project.ProjectTask, error)
+	ReviveStrandedCancelledProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]project.ProjectTask, error)
+	MarkProjectTaskSuperseded(ctx context.Context, tenantID, projectTaskID, supersededByTaskID uuid.UUID) (project.ProjectTask, error)
+	ReviveProjectDemandForRecovery(ctx context.Context, tenantID, demandID uuid.UUID) (project.ProjectDemand, error)
+}
+
 func NewProjectStoreWithApprovals(repository project.Repository, approvals ApprovalCreator) *ProjectStore {
 	return NewProjectStoreWithApprovalsAndInbox(repository, approvals, nil)
 }
@@ -913,7 +923,7 @@ func (s *ProjectStore) ResolveReadyDownstream(ctx context.Context, input Resolve
 	if s.repository == nil {
 		return nil, ErrActivityStoreRequired
 	}
-	anchorTaskID := input.CompletedTaskID
+	anchorTaskIDs := []uuid.UUID{input.CompletedTaskID}
 	if input.ResolveRevisionRoot {
 		// The completing task may be a rework (revision) whose downstream
 		// dependents are blocked on the revision ROOT (anchored at round 0), not
@@ -928,13 +938,29 @@ func (s *ProjectStore) ResolveReadyDownstream(ctx context.Context, input Resolve
 		if completed.ProjectID != input.ProjectID {
 			return nil, project.ErrProjectNotFound
 		}
-		if rootID, parseErr := uuid.Parse(revisionRootTaskID(completed)); parseErr == nil && rootID != uuid.Nil {
-			anchorTaskID = rootID
+		// 恢复替换任务继承 revision_root_task_id 指向源任务，而失败恢复会把下游边
+		// 重挂到替换任务上（rewireRecoverableDependents）——只按根找依赖就一个也
+		// 找不到，替换任务跑完下游永久 blocked（A 期真链现场）。两个锚点都看，
+		// 真正是否放行仍由 ListUnresolvedBlockersForTasks 判定。
+		if rootID, parseErr := uuid.Parse(revisionRootTaskID(completed)); parseErr == nil &&
+			rootID != uuid.Nil && rootID != input.CompletedTaskID {
+			anchorTaskIDs = append(anchorTaskIDs, rootID)
 		}
 	}
-	dependentIDs, err := s.repository.ListDependentsOfTask(ctx, input.TenantID, input.ProjectID, anchorTaskID)
-	if err != nil {
-		return nil, err
+	dependentIDs := make([]uuid.UUID, 0, len(anchorTaskIDs))
+	seenDependent := map[uuid.UUID]struct{}{}
+	for _, anchorTaskID := range anchorTaskIDs {
+		anchored, err := s.repository.ListDependentsOfTask(ctx, input.TenantID, input.ProjectID, anchorTaskID)
+		if err != nil {
+			return nil, err
+		}
+		for _, dependentID := range anchored {
+			if _, exists := seenDependent[dependentID]; exists {
+				continue
+			}
+			seenDependent[dependentID] = struct{}{}
+			dependentIDs = append(dependentIDs, dependentID)
+		}
 	}
 	if len(dependentIDs) == 0 {
 		return []uuid.UUID{}, nil
@@ -2154,10 +2180,75 @@ func (s *ProjectStore) createRecoveryReplacementTask(ctx context.Context, input 
 	if err := s.ensureReplacementBlockerDependencies(ctx, input.TenantID, input.ProjectID, replacement.ID, sourceBlockers); err != nil {
 		return project.ProjectTask{}, err
 	}
+	// 必须在 rewire 之前：rewireRecoverableDependents 跳过终态下游，被看门狗取消过的
+	// 步骤不先拉回 blocked，替换任务后面就一个也挂不上（复跑 3 现场）。
+	if err := s.reviveStrandedCancelledDownstream(ctx, input, source.ID); err != nil {
+		return project.ProjectTask{}, err
+	}
 	if err := s.rewireRecoverableDependents(ctx, input.TenantID, input.ProjectID, source.ID, replacement.ID); err != nil {
 		return project.ProjectTask{}, err
 	}
+	if err := s.supersedeSourceAndReviveDemand(ctx, input, source, replacement.ID); err != nil {
+		return project.ProjectTask{}, err
+	}
 	return replacement, nil
+}
+
+// reviveStrandedCancelledDownstream 撤销「系统滞留收敛」对下游的取消。看门狗每分钟一轮，
+// 人类点重试时下游可能早已被取消（复跑 3：15:11 取消、18:00 才批重试），而取消是平台动作
+// 不是业务判死，所以重试时全部拉回 blocked 再重挂边。human_reject 与未分型不动。
+// 幂等：已经是 blocked 时 SQL 命不中任何行，不会重复发事件。
+func (s *ProjectStore) reviveStrandedCancelledDownstream(ctx context.Context, input ApplyFailureRecoveryDecisionInput, sourceTaskID uuid.UUID) error {
+	downstreamIDs, err := s.recursiveDownstreamTaskIDs(ctx, input.TenantID, input.ProjectID, sourceTaskID)
+	if err != nil {
+		return err
+	}
+	if len(downstreamIDs) == 0 {
+		return nil
+	}
+	reviveRepository, ok := s.repository.(recoveryReviveRepository)
+	if !ok {
+		return ErrActivityStoreRequired
+	}
+	revived, err := reviveRepository.ReviveStrandedCancelledProjectTasks(ctx, input.TenantID, input.ProjectID, downstreamIDs)
+	if err != nil {
+		return err
+	}
+	for _, task := range revived {
+		if _, err := s.repository.AppendProjectEvent(ctx, coordinatorEvent(input.TenantID, input.ProjectID, project.ProjectEventTaskRevived, task.ID.String(),
+			"系统收敛取消已撤销：人类选择重试，任务重新等待上游", map[string]any{
+				"project_task_id":        task.ID.String(),
+				"source_project_task_id": sourceTaskID.String(),
+				"decision_request_id":    input.DecisionRequestID.String(),
+				"prior_cancel_reason":    project.ProjectTaskCancelReasonSystemStranded,
+			})); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// supersedeSourceAndReviveDemand 让「重试已成功」真的能收敛需求：源失败任务标为被取代
+// （不再计入需求状态推导），需求从 failed 拉回 executing。需求状态只能单向前进，正常
+// 重算推不回来，所以这一步必须显式做。两步都幂等。
+func (s *ProjectStore) supersedeSourceAndReviveDemand(ctx context.Context, input ApplyFailureRecoveryDecisionInput, source project.ProjectTask, replacementTaskID uuid.UUID) error {
+	reviveRepository, ok := s.repository.(recoveryReviveRepository)
+	if !ok {
+		return ErrActivityStoreRequired
+	}
+	if _, err := reviveRepository.MarkProjectTaskSuperseded(ctx, input.TenantID, source.ID, replacementTaskID); err != nil &&
+		!errors.Is(err, project.ErrProjectNotFound) {
+		return err
+	}
+	if source.DemandID == nil || *source.DemandID == uuid.Nil {
+		return nil
+	}
+	if _, err := reviveRepository.ReviveProjectDemandForRecovery(ctx, input.TenantID, *source.DemandID); err != nil &&
+		!errors.Is(err, project.ErrProjectConflict) {
+		// ErrProjectConflict = 需求不在 failed（executing / 已终态），无需复活。
+		return err
+	}
+	return nil
 }
 
 func (s *ProjectStore) ensureRecoveryTaskCreatedEvent(ctx context.Context, input ApplyFailureRecoveryDecisionInput, decisionRequestID, sourceTaskID, replacementTaskID uuid.UUID, action string) error {
@@ -2323,9 +2414,15 @@ func (s *ProjectStore) cancelFailureDownstream(ctx context.Context, input ApplyF
 		if !projectTaskCancellationAllowed(task.Status) {
 			continue
 		}
-		updated, err := s.repository.UpdateProjectTaskStatus(ctx, input.TenantID, taskID, "cancelled", nil, []string{"blocked", "planned", "pending"})
+		// human_reject：人类明确判死这条分支，后续重试不得复活（与看门狗的
+		// system_stranded 相对）。
+		reviveRepository, ok := s.repository.(recoveryReviveRepository)
+		if !ok {
+			return ErrActivityStoreRequired
+		}
+		updated, err := reviveRepository.CancelProjectTaskWithReason(ctx, input.TenantID, taskID, project.ProjectTaskCancelReasonHumanReject, nil, []string{"blocked", "planned", "pending"})
 		if err != nil {
-			if errors.Is(err, project.ErrProjectConflict) {
+			if errors.Is(err, project.ErrProjectConflict) || errors.Is(err, project.ErrProjectNotFound) {
 				continue
 			}
 			return err

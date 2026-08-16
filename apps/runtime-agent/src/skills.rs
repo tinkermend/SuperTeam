@@ -49,7 +49,10 @@ impl SkillArchiveFetcher for PresignSkillArchiveFetcher {
             )
             .await
             .with_context(|| {
-                format!("failed to presign skill archive download: {}", skill.skill_key)
+                format!(
+                    "failed to presign skill archive download: {}",
+                    skill.skill_key
+                )
             })?;
         let response = self
             .http
@@ -59,7 +62,10 @@ impl SkillArchiveFetcher for PresignSkillArchiveFetcher {
             .with_context(|| format!("failed to fetch skill archive: {}", skill.skill_key))?;
         if !response.status().is_success() {
             let status = response.status();
-            anyhow::bail!("skill archive download rejected for {}: {status}", skill.skill_key);
+            anyhow::bail!(
+                "skill archive download rejected for {}: {status}",
+                skill.skill_key
+            );
         }
         let bytes = response
             .bytes()

@@ -623,7 +623,7 @@ type ProjectTaskDispatchRecoveryRepository interface {
 	CountProjectTaskDispatchFailureEvents(ctx context.Context, tenantID, projectID, projectTaskID uuid.UUID) (int64, error)
 	RecoverProjectTaskDispatchFailure(ctx context.Context, req RecoverProjectTaskDispatchFailureWritebackRequest) (ProjectTaskWritebackResult, error)
 	ListStaleQueuedProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, startedBefore time.Time, limit int32) ([]ProjectTaskAttempt, error)
-	ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, limit int32) ([]ProjectTaskAttempt, error)
+	ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, staleBefore time.Time, limit int32) ([]ProjectTaskAttempt, error)
 }
 
 type RecoverProjectTaskDispatchFailureWritebackRequest struct {
@@ -632,6 +632,8 @@ type RecoverProjectTaskDispatchFailureWritebackRequest struct {
 	ProjectTaskID  uuid.UUID
 	FailureEventID uuid.UUID
 	Action         ProjectTaskRecoveryAction
+	// HumanSummary is shown on the recovery inbox card. Empty falls back to a generic line.
+	HumanSummary string
 }
 
 // ProjectTaskHumanWaitReleaseRepository is the transaction boundary for

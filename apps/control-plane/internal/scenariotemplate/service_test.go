@@ -60,6 +60,16 @@ func (f *fakeRepository) GetScenarioTemplateByKey(_ context.Context, _ uuid.UUID
 	return t, nil
 }
 
+func (f *fakeRepository) SoftDeleteScenarioTemplate(_ context.Context, _ uuid.UUID, templateID uuid.UUID) (ScenarioTemplate, error) {
+	for key, template := range f.templates {
+		if template.ID == templateID {
+			delete(f.templates, key)
+			return template, nil
+		}
+	}
+	return ScenarioTemplate{}, ErrScenarioTemplateNotFound
+}
+
 func (f *fakeRepository) CreateScenarioTemplate(_ context.Context, params CreateScenarioTemplateParams) (ScenarioTemplate, error) {
 	if _, ok := f.templates[params.Key]; ok {
 		return ScenarioTemplate{}, ErrConflict
@@ -183,6 +193,23 @@ func TestCreateScenarioTemplateValidatesSpecAndVocabulary(t *testing.T) {
 		}
 		if len(repo.templates) != 0 {
 			t.Fatalf("expected no template row on invalid spec, got %#v", repo.templates)
+		}
+	})
+
+	t.Run("non ascii key rejected", func(t *testing.T) {
+		repo := newFakeRepository()
+		svc := NewService(repo)
+		_, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+			TenantID: uuid.New(),
+			Key:      "运维评审",
+			Name:     "运维评审",
+			Spec:     goodSpec("code_review"),
+		})
+		if !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("expected ErrInvalidInput, got %v", err)
+		}
+		if len(repo.templates) != 0 {
+			t.Fatalf("expected no row, got %#v", repo.templates)
 		}
 	})
 
@@ -680,5 +707,34 @@ func TestPatchNameOnlyRecordsUpdateAuditAction(t *testing.T) {
 	}
 	if _, ok := patchEvent.Details["status"]; ok {
 		t.Fatalf("expected unchanged status to be absent from Details diff, got %#v", patchEvent.Details)
+	}
+}
+
+func TestDeleteScenarioTemplateRemovesFromGetAndListsAudit(t *testing.T) {
+	repo := newFakeRepository()
+	svc := NewService(repo)
+	auditRecorder := &fakeAuditRecorder{}
+	svc.SetAuditRecorder(auditRecorder)
+	tenantID := uuid.New()
+	if _, err := svc.Create(context.Background(), CreateScenarioTemplateRequest{
+		TenantID: tenantID,
+		Key:      "ops_review",
+		Name:     "运维评审",
+		Spec:     goodSpec(""),
+	}); err != nil {
+		t.Fatalf("setup create failed: %v", err)
+	}
+	if err := svc.Delete(context.Background(), DeleteScenarioTemplateRequest{
+		TenantID: tenantID,
+		Key:      "ops_review",
+	}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := svc.GetByKey(context.Background(), tenantID, "ops_review"); !errors.Is(err, ErrScenarioTemplateNotFound) {
+		t.Fatalf("expected not found after delete, got %v", err)
+	}
+	last := auditRecorder.events[len(auditRecorder.events)-1]
+	if last.Action != "delete" {
+		t.Fatalf("expected delete audit, got %#v", last)
 	}
 }

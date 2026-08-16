@@ -309,7 +309,7 @@ describe("ProjectOperationalDetail", () => {
     await expect.element(screen.getByText("完成客户接入验收闭环")).not.toBeInTheDocument();
     await expect.element(screen.getByRole("link", { name: /提交需求/ })).toHaveAttribute(
       "href",
-      "/task-launches?mode=plan&project=project-1",
+      "/task-launches?face=task&mode=plan&project=project-1",
     );
     await expect.element(screen.getByTestId("project-dossier-shell")).toBeVisible();
     await expect.element(screen.getByTestId("demand-process-rail")).toBeVisible();

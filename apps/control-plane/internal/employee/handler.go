@@ -38,6 +38,7 @@ type HandlerService interface {
 	ReassignTeam(ctx context.Context, req ReassignDigitalEmployeeTeamRequest) (*DigitalEmployee, error)
 	CreateConfigRevision(ctx context.Context, req CreateDigitalEmployeeConfigRevisionRequest) (*DigitalEmployeeConfigRevision, error)
 	SubmitPermissionChange(ctx context.Context, req SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error)
+	GetPendingPermissionChange(ctx context.Context, tenantID, employeeID uuid.UUID) (*PendingPermissionChange, error)
 	GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeSchedulingReadiness, error)
 	ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID) ([]EmployeeTemplateRecord, error)
 	GetEmployeeTemplate(ctx context.Context, tenantID, templateID uuid.UUID) (EmployeeTemplateRecord, error)
@@ -713,19 +714,21 @@ func (h *HTTPHandler) UpdateDigitalEmployeeProfile(w http.ResponseWriter, r *htt
 	}
 	var req struct {
 		Description *string `json:"description"`
+		Role        *string `json:"role"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if req.Description == nil {
-		http.Error(w, "description is required", http.StatusBadRequest)
+	if req.Description == nil && req.Role == nil {
+		http.Error(w, "description or role is required", http.StatusBadRequest)
 		return
 	}
 	employee, err := service.UpdateProfile(r.Context(), UpdateProfileRequest{
 		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
 		Description:       req.Description,
+		Role:              req.Role,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -852,19 +855,17 @@ func (h *HTTPHandler) SubmitPermissionChange(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var req struct {
-		Role             *string              `json:"role"`
-		PermissionPolicy map[string]any       `json:"permission_policy"`
+		PermissionPolicy map[string]any `json:"permission_policy"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	approvalReq, err := service.SubmitPermissionChange(r.Context(), SubmitPermissionChangeRequest{
-		TenantID:         tenantID,
+		TenantID:          tenantID,
 		DigitalEmployeeID: employeeID,
-		RequesterUserID:  middleware.GetUserID(r.Context()),
-		Role:             req.Role,
-		PermissionPolicy: req.PermissionPolicy,
+		RequesterUserID:   middleware.GetUserID(r.Context()),
+		PermissionPolicy:  req.PermissionPolicy,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -877,6 +878,47 @@ func (h *HTTPHandler) SubmitPermissionChange(w http.ResponseWriter, r *http.Requ
 		"category":       approvalReq.Category,
 		"target_user_id": approvalReq.TargetUserID,
 	})
+}
+
+func (h *HTTPHandler) GetPendingPermissionChange(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRead, &employeeID, "employee permission change read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	pending, err := service.GetPendingPermissionChange(r.Context(), tenantID, employeeID)
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	if pending == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	body := map[string]any{
+		"request_id":                 pending.RequestID,
+		"status":                     pending.Status,
+		"risk_level":                 pending.RiskLevel,
+		"created_at":                 pending.CreatedAt.UTC().Format(time.RFC3339),
+		"requester_name":             pending.RequesterName,
+		"approver_name":              pending.ApproverName,
+		"current_permission_policy":  pending.CurrentPermissionPolicy,
+		"target_permission_policy":   pending.TargetPermissionPolicy,
+	}
+	if pending.CurrentRole != "" {
+		body["current_role"] = pending.CurrentRole
+	}
+	if pending.TargetRole != "" {
+		body["target_role"] = pending.TargetRole
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func firstLegacyEmployeeConfigField(raw map[string]json.RawMessage) (string, bool) {
@@ -1360,6 +1402,7 @@ type employeeTypeOptionResponse struct {
 	Label                    string         `json:"label"`
 	Description              string         `json:"description"`
 	DefaultRole              string         `json:"default_role"`
+	DefaultRoleKeys          []string       `json:"default_role_keys"`
 	RecommendedSkills        []string       `json:"recommended_skills"`
 	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
@@ -1934,6 +1977,7 @@ func createOptionsResponseFromDomain(options *CreateOptions) createOptionsRespon
 			Label:                    definition.Label,
 			Description:              definition.Description,
 			DefaultRole:              definition.DefaultRole,
+			DefaultRoleKeys:          stringSliceForJSON(definition.DefaultRoleKeys),
 			RecommendedSkills:        stringSliceForJSON(definition.RecommendedSkills),
 			RecommendedMCPServers:    stringSliceForJSON(definition.RecommendedMCPServers),
 			RecommendedProviderTypes: stringSliceForJSON(definition.RecommendedProviderTypes),

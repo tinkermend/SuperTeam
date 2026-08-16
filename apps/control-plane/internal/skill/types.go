@@ -13,6 +13,22 @@ var (
 	ErrTeamAlreadyInherited = errors.New("team already inherited this skill")
 )
 
+// SlugConflictError is returned when creating a skill whose slug already exists.
+type SlugConflictError struct {
+	SkillID uuid.UUID
+	Slug    string
+	Name    string
+}
+
+func (e *SlugConflictError) Error() string {
+	if e == nil {
+		return "skill slug already exists"
+	}
+	return "skill slug already exists: " + e.Slug
+}
+
+func (e *SlugConflictError) Unwrap() error { return ErrInvalidInput }
+
 type Skill struct {
 	ID                  uuid.UUID
 	TenantID            uuid.UUID
@@ -78,12 +94,12 @@ type SkillRuntimeRecord struct {
 // SkillRuntimeConflict records a same-slug multi-source resolution where the
 // non-winning side was dropped. Source marks the winning side (e.g. project_binding).
 type SkillRuntimeConflict struct {
-	Slug            string
-	WinningSkillID  uuid.UUID
-	DroppedSkillID  uuid.UUID
-	WinningSource   string
-	DroppedSource   string
-	Source          string // attestation marker, e.g. project_binding
+	Slug           string
+	WinningSkillID uuid.UUID
+	DroppedSkillID uuid.UUID
+	WinningSource  string
+	DroppedSource  string
+	Source         string // attestation marker, e.g. project_binding
 }
 
 // RuntimeSkillsResult is the control-plane projection of skills for one dispatch.
@@ -160,11 +176,29 @@ type UploadSkillRequest struct {
 	TenantID            uuid.UUID
 	ActorUserID         uuid.UUID
 	Name                string
+	// Slug is the durable skill identity. Empty means derive from SKILL.md
+	// frontmatter name, then zip filename — never from the Chinese display name.
+	Slug                string
 	Description         string
 	Tags                []string
 	TeamIDs             []uuid.UUID
 	RiskLevel           string
 	RuntimeDependencies SkillRuntimeDependencies
+	Archive             []byte
+	Filename            string
+	Version             string
+}
+
+type ReplaceSkillRequest struct {
+	TenantID            uuid.UUID
+	ActorUserID         uuid.UUID
+	SkillID             uuid.UUID
+	Name                string
+	Description         string
+	Version             string
+	Tags                *[]string
+	RiskLevel           *string
+	RuntimeDependencies *SkillRuntimeDependencies
 	Archive             []byte
 	Filename            string
 }
@@ -189,6 +223,34 @@ type UpsertSkillPackageRequest struct {
 	ArchiveSizeBytes    int64
 	ArchiveChecksum     string
 	ArchiveFileCount    int
+}
+
+type ReplaceSkillArchiveRequest struct {
+	TenantID            uuid.UUID
+	ActorUserID         uuid.UUID
+	SkillID             uuid.UUID
+	Name                string
+	Description         string
+	Version             string
+	RiskLevel           *string
+	Tags                *[]string
+	RuntimeDependencies *SkillRuntimeDependencies
+	ArchiveObjectRef    string
+	ArchiveFilename     string
+	ArchiveSizeBytes    int64
+	ArchiveChecksum     string
+	ArchiveFileCount    int
+}
+
+type ReplaceSkillArchiveResult struct {
+	Skill       *Skill
+	OldVersion  string
+	OldChecksum string
+}
+
+type FindSkillBySlugRequest struct {
+	TenantID uuid.UUID
+	Slug     string
 }
 
 type BindTeamSkillRequest struct {

@@ -12,9 +12,9 @@ var (
 	// ErrPermissionApprovalNotConfigured:权限审批接缝未注入(SetPermissionApprovalDependencies 未调用),
 	// 不能提交 role/permission 治理变更。即时字段(persona/能力/预算)不受影响。
 	ErrPermissionApprovalNotConfigured = errors.New("employee permission approval not configured")
-	// ErrPermissionChangeEmpty:提交的治理变更既无 role 也无 permission_policy 改动。
+	// ErrPermissionChangeEmpty:提交的治理变更未提供 permission_policy。
 	ErrPermissionChangeEmpty = errors.New("empty employee permission change")
-	// ErrPermissionChangeBusy:员工当前有进行中工作,role 变更可能影响在役执行,提交即拒(护栏务实版)。
+	// ErrPermissionChangeBusy:员工当前有进行中工作,权限变更可能影响在役执行,提交即拒(护栏务实版)。
 	ErrPermissionChangeBusy = errors.New("employee has active work; resolve before permission change")
 	ErrNotFound                     = errors.New("employee not found")
 	ErrConflict                     = errors.New("employee conflict")
@@ -339,6 +339,7 @@ type EmployeeTypeDefinition struct {
 	Label                    string
 	Description              string
 	DefaultRole              string
+	DefaultRoleKeys          []string
 	RecommendedSkills        []string
 	RecommendedMCPServers    []string
 	RecommendedProviderTypes []string
@@ -517,11 +518,24 @@ type CreateDigitalEmployeeConfigRevisionRequest struct {
 // 变更目标随审批请求 ContextPayload 承载;批准后由 ActivateConfigRevision 写回员工行。
 // Role 为 nil 表示不改 role;PermissionPolicy 为 nil 表示不改 permission_policy。
 type SubmitPermissionChangeRequest struct {
-	TenantID         uuid.UUID
+	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID
-	RequesterUserID  uuid.UUID
-	Role             *string
-	PermissionPolicy map[string]any
+	RequesterUserID   uuid.UUID
+	PermissionPolicy  map[string]any
+}
+
+// PendingPermissionChange is the GET /permission-change payload (pending only).
+type PendingPermissionChange struct {
+	RequestID               uuid.UUID
+	Status                  string
+	RiskLevel               string
+	CreatedAt               time.Time
+	RequesterName           string
+	ApproverName            string
+	CurrentPermissionPolicy map[string]any
+	TargetPermissionPolicy  map[string]any
+	CurrentRole             string
+	TargetRole              string
 }
 
 type PreviewEffectiveConfigRequest struct {
@@ -783,4 +797,5 @@ type UpdateProfileRequest struct {
 	TenantID          uuid.UUID
 	DigitalEmployeeID uuid.UUID
 	Description       *string
+	Role              *string
 }

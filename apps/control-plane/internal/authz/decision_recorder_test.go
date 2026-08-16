@@ -86,12 +86,12 @@ func TestOperationLogDecisionRecorderUsesSucceededResultForAllowedDecision(t *te
 		TeamID:       &teamID,
 		ActorType:    ActorRuntimeNode,
 		ActorID:      "node-1",
-		Action:       ActionTaskClaim,
-		ResourceType: ResourceTask,
+		Action:       ActionConsoleAccess,
+		ResourceType: ResourceConsole,
 		ResourceID:   "00000000-0000-4000-8000-000000000042",
 		Allowed:      true,
 		Reason:       ReasonAllowed,
-		MatchedRule:  "runtime.scope",
+		MatchedRule:  "console.access",
 		Engine:       "db",
 	})
 

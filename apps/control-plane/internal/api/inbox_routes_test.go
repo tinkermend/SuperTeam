@@ -19,8 +19,7 @@ func TestInboxRoutesRequireConsoleAuth(t *testing.T) {
 		t.Fatalf("new auth service: %v", err)
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -47,8 +46,7 @@ func TestInboxRoutesAreRegisteredWhenHandlerIsSet(t *testing.T) {
 	}
 	service := &routeInboxService{badge: inbox.Badge{MineOpenCount: 2, TeamOpenCount: 5, HighRiskCount: 1}}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},

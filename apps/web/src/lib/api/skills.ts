@@ -80,6 +80,7 @@ export type UploadSkillInput = {
   description?: string;
   file: File;
   name?: string;
+  slug?: string;
   risk_level?: string;
   runtime_dependencies?: SkillRuntimeDependencies;
   tags?: string[];
@@ -167,6 +168,10 @@ export async function uploadSkill(
   if (name) {
     formData.set("name", name);
   }
+  const slug = input.slug?.trim();
+  if (slug) {
+    formData.set("slug", slug);
+  }
   if (description) {
     formData.set("description", description);
   }
@@ -207,6 +212,99 @@ export async function installSkill(
   });
 
   return parseJson<InstallSkillResult>(response, "install skill");
+}
+
+export type SkillArchiveEntry = {
+  path: string;
+  kind: "file" | "directory";
+  size_bytes: number;
+  previewable: boolean;
+  content_type: string;
+};
+
+export type SkillArchiveContent = {
+  path: string;
+  content: string;
+  truncated: boolean;
+  size_bytes: number;
+  content_type: string;
+};
+
+export type SkillSlugConflict = {
+  code: string;
+  message: string;
+  skill_id: string;
+  slug: string;
+  name: string;
+};
+
+export async function replaceSkillArchive(
+  options: ApiClientOptions,
+  skillId: string,
+  input: UploadSkillInput & { version?: string },
+): Promise<Skill> {
+  const formData = new FormData();
+  formData.set("file", input.file);
+  const name = input.name?.trim();
+  const description = input.description?.trim();
+  const version = input.version?.trim();
+  const runtimeTools = cleanUploadList(input.runtime_dependencies?.tools);
+  const runtimeEnv = cleanUploadList(input.runtime_dependencies?.env);
+  const tags = cleanUploadList(input.tags);
+  if (name) {
+    formData.set("name", name);
+  }
+  if (description) {
+    formData.set("description", description);
+  }
+  if (version) {
+    formData.set("version", version);
+  }
+  if (input.risk_level) {
+    formData.set("risk_level", input.risk_level);
+  }
+  if (tags.length) {
+    formData.set("tags", tags.join(","));
+  }
+  if (runtimeTools.length) {
+    formData.set("runtime_tools", runtimeTools.join(","));
+  }
+  if (runtimeEnv.length) {
+    formData.set("runtime_env", runtimeEnv.join(","));
+  }
+  const fetcher = options.fetcher ?? fetch;
+  const encodedSkillId = encodeURIComponent(skillId);
+  const response = await fetcher(buildApiUrl(options.baseUrl, `/api/v1/skills/${encodedSkillId}/archive`), {
+    body: formData,
+    credentials: "include",
+    method: "POST",
+  });
+
+  return parseJson<Skill>(response, "replace skill archive");
+}
+
+export async function listSkillArchiveEntries(
+  options: ApiClientOptions,
+  skillId: string,
+): Promise<SkillArchiveEntry[]> {
+  return getJson<SkillArchiveEntry[]>(
+    options,
+    `/api/v1/skills/${encodeURIComponent(skillId)}/archive/entries`,
+    "skill archive entries",
+  );
+}
+
+export async function getSkillArchiveContent(
+  options: ApiClientOptions,
+  skillId: string,
+  path: string,
+): Promise<SkillArchiveContent> {
+  const search = new URLSearchParams({ path });
+  return getJson<SkillArchiveContent>(
+    options,
+    `/api/v1/skills/${encodeURIComponent(skillId)}/archive/content?${search.toString()}`,
+    "skill archive content",
+  );
 }
 
 function cleanUploadList(items?: string[]): string[] {

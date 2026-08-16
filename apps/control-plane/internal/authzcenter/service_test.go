@@ -135,11 +135,11 @@ func TestServiceOverviewUsesDecisionDataAndDBEngine(t *testing.T) {
 	repo := &serviceRepo{
 		totals:    DecisionTotals{Total: 10, Allowed: 7, Denied: 3},
 		diffCount: 2,
-		top:       []ActionCount{{Action: authz.ActionTaskClaim, Count: 3}},
+		top:       []ActionCount{{Action: authz.ActionConsoleAccess, Count: 3}},
 		decisions: []DecisionRecord{{
 			ID:       recentID,
 			TenantID: tenantID,
-			Action:   authz.ActionTaskClaim,
+			Action:   authz.ActionConsoleAccess,
 			Result:   OperationResultFailed,
 		}},
 	}

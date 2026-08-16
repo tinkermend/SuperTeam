@@ -1,32 +1,11 @@
 package handlers
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/runtime"
-	"github.com/superteam/control-plane/internal/task"
 )
-
-type taskResponse struct {
-	ID             string          `json:"id"`
-	TenantID       string          `json:"tenant_id"`
-	TeamID         *string         `json:"team_id,omitempty"`
-	Title          string          `json:"title"`
-	Description    *string         `json:"description,omitempty"`
-	CreatorID      *string         `json:"creator_id,omitempty"`
-	ProviderType   string          `json:"provider_type"`
-	TargetNodeID   *string         `json:"target_node_id,omitempty"`
-	AssignedNodeID *string         `json:"assigned_node_id,omitempty"`
-	Status         task.TaskStatus `json:"status"`
-	WorkspacePath  *string         `json:"workspace_path,omitempty"`
-	Params         json.RawMessage `json:"params"`
-	Priority       int32           `json:"priority"`
-	CancelledAt    *string         `json:"cancelled_at,omitempty"`
-	CreatedAt      string          `json:"created_at"`
-	UpdatedAt      string          `json:"updated_at"`
-}
 
 type runtimeNodeResponse struct {
 	RuntimeNodeID           string                 `json:"runtime_node_id,omitempty"`
@@ -121,27 +100,6 @@ type runtimeCapabilitiesResponse struct {
 	Capabilities []runtimeCapabilityResponse `json:"capabilities"`
 }
 
-func newTaskResponse(t *task.Task) taskResponse {
-	return taskResponse{
-		ID:             t.ID.String(),
-		TenantID:       t.TenantID.String(),
-		TeamID:         optionalUUIDString(t.TeamID),
-		Title:          t.Title,
-		Description:    t.Description,
-		CreatorID:      optionalUUIDString(t.CreatorID),
-		ProviderType:   t.ProviderType,
-		TargetNodeID:   t.TargetNodeID,
-		AssignedNodeID: t.AssignedNodeID,
-		Status:         t.Status,
-		WorkspacePath:  t.WorkspacePath,
-		Params:         normalizeTaskParams(t.Params),
-		Priority:       t.Priority,
-		CancelledAt:    optionalTimeString(t.CancelledAt),
-		CreatedAt:      t.CreatedAt.UTC().Format(timeRFC3339Nano),
-		UpdatedAt:      t.UpdatedAt.UTC().Format(timeRFC3339Nano),
-	}
-}
-
 func optionalUUIDString(value *uuid.UUID) *string {
 	if value == nil {
 		return nil
@@ -163,36 +121,6 @@ func nullUUIDString(value uuid.NullUUID) string {
 		return ""
 	}
 	return value.UUID.String()
-}
-
-func newTaskResponses(tasks []*task.Task) []taskResponse {
-	responses := make([]taskResponse, 0, len(tasks))
-	for _, t := range tasks {
-		responses = append(responses, newTaskResponse(t))
-	}
-	return responses
-}
-
-func normalizeTaskParams(raw []byte) json.RawMessage {
-	trimmed := json.RawMessage(`{}`)
-	if len(raw) == 0 {
-		return trimmed
-	}
-
-	var decoded any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return trimmed
-	}
-	object, ok := decoded.(map[string]any)
-	if !ok {
-		return trimmed
-	}
-
-	normalized, err := json.Marshal(object)
-	if err != nil {
-		return trimmed
-	}
-	return json.RawMessage(normalized)
 }
 
 func newRuntimeNodeResponse(node *runtime.Node) runtimeNodeResponse {

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>新建场景模板 · 关卡链 + 检修台（Soft-Flat）</title>
+<style>
+  :root {
+    --bg:#f6f9ff; --card:#ffffff; --card-soft:#f4f7fc; --card-inner:#fafcff;
+    --ink:#0c1426; --ink-2:#5a6b85; --ink-3:#8b99b3;
+    --line:#e6ecf5; --line-2:#dce4ef; --line-strong:#cdd8e6;
+    --brand:#2f5fff; --brand-deep:#2348e0; --brand-soft:#e9efff;
+    --ok:#15a06b; --ok-soft:#e3f7ec; --warn:#cf7a14; --warn-soft:#fdf0db;
+    --danger:#d14647;
+    --r-card:22px; --r-inner:14px; --r-btn:12px; --r-pill:999px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.06);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",monospace;
+    --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    font-family:var(--sans); color:var(--ink); background:var(--bg);
+    min-height:100vh; font-size:13.5px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  body::before { content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(ellipse 70% 50% at 10% 0%, rgba(47,95,255,.08), transparent 55%),
+      radial-gradient(ellipse 60% 45% at 95% 8%, rgba(124,92,255,.06), transparent 55%); }
+  body::after { content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.45;
+    background-image:linear-gradient(rgba(47,95,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(47,95,255,.04) 1px,transparent 1px);
+    background-size:56px 56px; }
+  .page { position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:20px 24px 64px; }
+
+  .crumb { font-size:12.5px; color:var(--ink-3); margin-bottom:14px; }
+  .crumb a { color:var(--ink-2); text-decoration:none; }
+  .crumb a:hover { color:var(--brand-deep); }
+
+  .head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+  .head h1 { font-size:22px; font-weight:750; letter-spacing:-.01em; }
+  .head p { color:var(--ink-2); margin-top:4px; max-width:60ch; }
+  .head-actions { display:flex; gap:10px; flex-shrink:0; }
+  .btn {
+    font:inherit; cursor:pointer; border-radius:var(--r-btn); padding:9px 16px; font-weight:600;
+    border:1px solid var(--line-strong); background:var(--card); color:var(--ink-2);
+    transition:.15s;
+  }
+  .btn:hover { color:var(--ink); border-color:var(--brand); }
+  .btn.primary { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 4px 14px rgba(47,95,255,.28); }
+  .btn.primary:hover { background:var(--brand-deep); }
+
+  .packs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  .pack {
+    font:inherit; cursor:pointer; border-radius:var(--r-pill); padding:7px 14px; font-weight:550;
+    border:1px solid var(--line-strong); background:var(--card); color:var(--ink-2);
+  }
+  .pack.on { background:var(--brand-soft); border-color:var(--brand); color:var(--brand-deep); font-weight:650; }
+
+  .identity {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:18px 20px; margin-bottom:18px;
+    display:grid; grid-template-columns:1.1fr .6fr 1.3fr; gap:14px;
+  }
+  @media (max-width:900px){ .identity { grid-template-columns:1fr; } }
+  label.f span { display:block; font-size:12px; color:var(--ink-3); margin-bottom:5px; }
+  input, select, textarea {
+    font:inherit; color:var(--ink); width:100%;
+    background:var(--card-inner); border:1px solid var(--line-2); border-radius:10px; padding:8px 11px;
+  }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--brand-soft); border-color:var(--brand); }
+  .key-input { font-family:var(--mono); font-size:12.5px; }
+
+  /* 关卡链 */
+  .chain-card {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:18px 20px 20px; margin-bottom:18px;
+  }
+  .chain-card .cap { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px; }
+  .cap h2 { font-size:14px; font-weight:700; }
+  .cap .hint { font-size:12px; color:var(--ink-3); }
+  .chain { display:flex; align-items:center; gap:0; overflow-x:auto; padding:4px 2px 8px; }
+  .st {
+    font:inherit; text-align:left; cursor:pointer; flex-shrink:0; min-width:148px;
+    background:var(--card-soft); border:1px solid var(--line-2); border-radius:var(--r-inner);
+    padding:10px 12px; transition:.15s; position:relative;
+  }
+  .st:hover { border-color:var(--line-strong); }
+  .st.on { background:var(--brand-soft); border-color:var(--brand); box-shadow:0 0 0 1px var(--brand); }
+  .st .t { font-weight:650; font-size:13.5px; display:flex; align-items:center; gap:6px; }
+  .st .meta { font-size:12px; color:var(--ink-2); margin-top:3px; }
+  .st .exit-dot { width:7px; height:7px; border-radius:50%; background:var(--brand); flex-shrink:0; }
+  .conn { flex-shrink:0; width:26px; height:2px; background:var(--line-strong); position:relative; }
+  .conn::after { content:""; position:absolute; right:-1px; top:-3px; border:4px solid transparent; border-left-color:var(--line-strong); }
+  .st-add {
+    flex-shrink:0; font:inherit; cursor:pointer; min-width:96px; padding:14px 12px;
+    border:1.5px dashed var(--line-strong); border-radius:var(--r-inner); background:transparent;
+    color:var(--brand-deep); font-weight:650;
+  }
+  .st-add:hover { border-color:var(--brand); background:var(--brand-soft); }
+
+  .cols { display:grid; grid-template-columns:1fr 380px; gap:18px; align-items:start; }
+  @media (max-width:960px){ .cols { grid-template-columns:1fr; } }
+
+  .inspector {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:18px 20px;
+  }
+  .inspector h2 { font-size:14px; font-weight:700; margin-bottom:2px; }
+  .inspector .sub { font-size:12px; color:var(--ink-3); margin-bottom:14px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:680px){ .grid2 { grid-template-columns:1fr; } }
+  .checks { display:flex; gap:18px; margin-top:14px; flex-wrap:wrap; }
+  .checks label { display:flex; align-items:center; gap:7px; font-size:13px; cursor:pointer; }
+  .checks input { width:auto; accent-color:var(--brand); }
+  .row-ops { display:flex; gap:8px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+  .row-ops .btn { padding:7px 12px; font-size:12.5px; }
+  .row-ops .danger { color:var(--danger); }
+
+  /* 右栏玻璃摘要 */
+  .glass {
+    background:rgba(255,255,255,.62); backdrop-filter:blur(14px) saturate(1.2);
+    border:1px solid rgba(47,95,255,.18); border-radius:var(--r-card);
+    box-shadow:var(--shadow), inset 0 1px 0 rgba(255,255,255,.7); padding:18px 20px;
+  }
+  .glass h2 { font-size:14px; font-weight:700; margin-bottom:10px; }
+  .summary { background:var(--card-inner); border:1px solid var(--line-2); border-radius:var(--r-inner); padding:12px 14px; font-size:13px; line-height:1.7; color:var(--ink); }
+  .exits-cap { font-size:12px; color:var(--ink-3); margin:16px 0 8px; }
+  .exit-row {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:var(--card-inner); border:1px solid var(--line-2); border-radius:10px;
+    padding:8px 11px; margin-bottom:6px; font-size:13px; cursor:pointer;
+  }
+  .exit-row.live { border-color:var(--brand); background:var(--brand-soft); }
+  .exit-row .pill { font-size:11.5px; border-radius:var(--r-pill); padding:2px 8px; background:var(--brand-soft); color:var(--brand-deep); font-weight:600; }
+  .exit-row.live .pill { background:var(--brand); color:#fff; }
+  .depth-note { font-size:12px; color:var(--ink-2); margin-top:10px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="crumb"><a href="./index.html">场景模板</a> / 新建模板 · 方案一 关卡链 + 检修台</div>
+  <div class="head">
+    <div>
+      <h1>新建场景模板</h1>
+      <p>加任意多站，每站分派一个剧本角色；标了「可作出口」的站，发起任务时可以选择停在那里。</p>
+    </div>
+    <div class="head-actions">
+      <button class="btn" type="button">取消</button>
+      <button class="btn primary" type="button">保存为第 1 版</button>
+    </div>
+  </div>
+
+  <div class="packs" id="packs"></div>
+
+  <div class="identity">
+    <label class="f"><span>名称 *</span><input id="tname" value="生产故障处置" /></label>
+    <label class="f"><span>内部标识 *</span><input id="tkey" class="key-input" value="incident_response" /></label>
+    <label class="f"><span>描述</span><input id="tdesc" value="接报、定界、根因、止血、复盘；止血必须人类确认。" /></label>
+  </div>
+
+  <div class="chain-card">
+    <div class="cap">
+      <h2>关卡链</h2>
+      <span class="hint">点一站在下方编辑 · 蓝点 = 可作出口</span>
+    </div>
+    <div class="chain" id="chain"></div>
+  </div>
+
+  <div class="cols">
+    <section class="inspector" id="inspector"></section>
+    <aside class="glass">
+      <h2>约束摘要</h2>
+      <div class="summary" id="summary"></div>
+      <div class="exits-cap">发起任务时可选深度（点一行模拟这次停在哪）</div>
+      <div id="exits"></div>
+      <p class="depth-note" id="depthNote"></p>
+    </aside>
+  </div>
+</div>
+<script>
+  const ROLES = ["值班","诊断","操作","验证","采集","分析","开发","审查","测试","研究","撰稿"];
+  const VERIFY = { none:"交出即可", independent:"另一角色独立验证", human:"必须人类确认" };
+  const PACKS = {
+    blank:   { name:"空白开做", title:"未命名场景", key:"custom_scene", desc:"", nodes:[ {title:"",role:"",verify:"none",required:true,exit:true} ] },
+    incident:{ name:"故障处置", title:"生产故障处置", key:"incident_response", desc:"接报、定界、根因、止血、复盘；止血必须人类确认。",
+      nodes:[
+        {title:"接报",role:"值班",verify:"none",required:true,exit:true},
+        {title:"定界",role:"诊断",verify:"none",required:true,exit:true},
+        {title:"根因",role:"诊断",verify:"independent",indep:"验证",required:true,exit:true},
+        {title:"止血",role:"操作",verify:"human",required:true,exit:true},
+        {title:"复盘验证",role:"验证",verify:"none",required:false,exit:true},
+      ] },
+    ops:     { name:"运维分析", title:"容量与日志分析", key:"ops_analysis", desc:"采集只读数据，关联分析后给出结论。",
+      nodes:[
+        {title:"采集",role:"采集",verify:"none",required:true,exit:true},
+        {title:"关联",role:"分析",verify:"none",required:true,exit:false},
+        {title:"结论",role:"分析",verify:"human",required:true,exit:true},
+      ] },
+    sw:      { name:"软件交付", title:"软件交付", key:"software_delivery", desc:"开发交出、独立审查、测试后发布。",
+      nodes:[
+        {title:"开发",role:"开发",verify:"none",required:true,exit:true},
+        {title:"审查",role:"审查",verify:"independent",indep:"测试",required:true,exit:true},
+        {title:"测试",role:"测试",verify:"none",required:true,exit:true},
+        {title:"发布",role:"开发",verify:"human",required:true,exit:true},
+      ] },
+  };
+  let pack = "incident";
+  let nodes = PACKS.incident.nodes.map(n => ({...n}));
+  let sel = 1;
+  let depthIdx = -1; // -1 = 最深
+
+  function exits() { return nodes.map((n,i)=>({n,i})).filter(x=>x.n.exit); }
+
+  function renderPacks() {
+    document.getElementById("packs").innerHTML = Object.entries(PACKS).map(([id,p]) =>
+      `<button class="pack ${pack===id?"on":""}" data-id="${id}" type="button">${p.name}</button>`).join("");
+    document.querySelectorAll(".pack").forEach(b => b.onclick = () => {
+      pack = b.dataset.id;
+      const p = PACKS[pack];
+      nodes = p.nodes.map(n => ({...n}));
+      document.getElementById("tname").value = p.title;
+      document.getElementById("tkey").value = p.key;
+      document.getElementById("tdesc").value = p.desc;
+      sel = 0; depthIdx = -1;
+      render();
+    });
+  }
+
+  function renderChain() {
+    const parts = [];
+    nodes.forEach((n,i) => {
+      if (i>0) parts.push(`<span class="conn"></span>`);
+      parts.push(`<button class="st ${i===sel?"on":""}" data-i="${i}" type="button">
+        <span class="t">${n.exit?`<span class="exit-dot"></span>`:""}${n.title||"未命名站"}</span>
+        <span class="meta">${n.role||"未分派"} · ${VERIFY[n.verify]}</span>
+      </button>`);
+    });
+    parts.push(`<span class="conn"></span><button class="st-add" id="addSt" type="button">+ 加一站</button>`);
+    document.getElementById("chain").innerHTML = parts.join("");
+    document.querySelectorAll(".st").forEach(el => el.onclick = () => { sel = Number(el.dataset.i); render(); });
+    document.getElementById("addSt").onclick = () => {
+      nodes.push({title:"新站",role:"",verify:"none",required:true,exit:true});
+      sel = nodes.length-1; render();
+    };
+  }
+
+  function renderInspector() {
+    const n = nodes[sel];
+    const box = document.getElementById("inspector");
+    box.innerHTML = `
+      <h2>第 ${sel+1} 站 · 检修台</h2>
+      <p class="sub">只编辑当前选中的这一站；链上其他站不受影响。</p>
+      <div class="grid2">
+        <label class="f"><span>这一站叫什么</span><input id="fTitle" value="${n.title}" placeholder="如 定界、采集、审查" /></label>
+        <label class="f"><span>谁来接收</span>
+          <select id="fRole"><option value="">选择角色…</option>${ROLES.map(r=>`<option ${r===n.role?"selected":""}>${r}</option>`).join("")}</select>
+        </label>
+        <label class="f"><span>怎么验证</span>
+          <select id="fVerify">${Object.entries(VERIFY).map(([k,v])=>`<option value="${k}" ${k===n.verify?"selected":""}>${v}</option>`).join("")}</select>
+        </label>
+        <label class="f" id="indepWrap" style="${n.verify==="independent"?"":"display:none"}"><span>独立验证角色</span>
+          <select id="fIndep">${ROLES.filter(r=>r!==n.role).map(r=>`<option ${r===n.indep?"selected":""}>${r}</option>`).join("")}</select>
+        </label>
+      </div>
+      <div class="checks">
+        <label><input type="checkbox" id="fReq" ${n.required?"checked":""} /> 必须经过（规划不能漏掉）</label>
+        <label><input type="checkbox" id="fExit" ${n.exit?"checked":""} /> 可作出口（发起时可停在这）</label>
+      </div>
+      <div class="row-ops">
+        <button class="btn" id="opLeft" type="button" ${sel===0?"disabled":""}>← 前移</button>
+        <button class="btn" id="opRight" type="button" ${sel===nodes.length-1?"disabled":""}>后移 →</button>
+        <button class="btn danger" id="opDel" type="button" ${nodes.length<=1?"disabled":""}>删除这一站</button>
+      </div>`;
+    const sync = () => {
+      n.title = document.getElementById("fTitle").value;
+      n.role = document.getElementById("fRole").value;
+      n.verify = document.getElementById("fVerify").value;
+      n.required = document.getElementById("fReq").checked;
+      n.exit = document.getElementById("fExit").checked;
+      const iw = document.getElementById("indepWrap");
+      iw.style.display = n.verify==="independent" ? "" : "none";
+      if (n.verify==="independent") n.indep = document.getElementById("fIndep").value;
+      renderChain(); renderSide();
+    };
+    ["fTitle","fRole","fVerify","fReq","fExit","fIndep"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.oninput = el.onchange = sync;
+    });
+    document.getElementById("opLeft").onclick = () => { [nodes[sel-1],nodes[sel]]=[nodes[sel],nodes[sel-1]]; sel--; render(); };
+    document.getElementById("opRight").onclick = () => { [nodes[sel+1],nodes[sel]]=[nodes[sel],nodes[sel+1]]; sel++; render(); };
+    document.getElementById("opDel").onclick = () => { nodes.splice(sel,1); sel = Math.max(0,sel-1); render(); };
+  }
+
+  function renderSide() {
+    const named = nodes.filter(n=>n.role);
+    const chainTxt = named.map(n=>n.title||n.role).join(" → ");
+    const parts = [];
+    if (named.length===0) parts.push("还没有分派角色。给每一站选「谁来接收」，即可约束这类活必须经过哪些席位。");
+    else {
+      parts.push(`本场景要求：${chainTxt} 必须串上。`);
+      named.forEach(n => {
+        if (n.verify==="human") parts.push(`「${n.title||n.role}」必须人类确认。`);
+        if (n.verify==="independent" && n.indep) parts.push(`「${n.title||n.role}」须由「${n.indep}」独立验证。`);
+      });
+      parts.push("每步具体做法由执行模型决定，但不能跳过这些门。");
+    }
+    document.getElementById("summary").textContent = parts.join("");
+    const ex = exits();
+    if (depthIdx >= ex.length) depthIdx = -1;
+    const liveIdx = depthIdx === -1 ? ex.length-1 : depthIdx;
+    document.getElementById("exits").innerHTML = ex.length===0
+      ? `<p style="font-size:12.5px;color:var(--ink-3)">还没有站被标成出口。</p>`
+      : ex.map((x,k)=>`<div class="exit-row ${k===liveIdx?"live":""}" data-k="${k}">
+          <span>${x.n.title||"未命名站"} · ${x.n.role||"未分派"}</span><span class="pill">出口 ${k+1}</span>
+        </div>`).join("");
+    document.querySelectorAll(".exit-row").forEach(el => el.onclick = () => { depthIdx = Number(el.dataset.k); renderSide(); });
+    const cur = ex[liveIdx];
+    document.getElementById("depthNote").textContent = cur
+      ? `模拟发起：这次最深走到「${cur.n.title||"未命名站"}」，之后的站仍在模板里，只是这单不跑。`
+      : "";
+  }
+
+  function render() { renderPacks(); renderChain(); renderInspector(); renderSide(); }
+  render();
+</script>
+</body>
+</html>

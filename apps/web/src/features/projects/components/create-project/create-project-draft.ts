@@ -298,3 +298,16 @@ export function buildProjectCreateInput(
     team_id: draft.sourceTeamIds[0],
   };
 }
+
+export function sourceKindReviewLabel(draft: ProjectCreateDraft): string {
+  if (draft.sourceKind === "git") {
+    const url = draft.repoUrl.trim();
+    const branch = draft.repoDefaultBranch.trim() || "main";
+    return url ? `${url} @ ${branch}` : "Git（未填 URL）";
+  }
+  if (draft.sourceKind === "attach") {
+    const dir = draft.directoryName.trim();
+    return dir ? `认领已有目录（${dir}）` : "认领已有目录（未填目录名）";
+  }
+  return "非 Git（空目录）";
+}

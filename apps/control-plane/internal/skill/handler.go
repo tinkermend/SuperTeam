@@ -24,6 +24,9 @@ type HandlerService interface {
 	ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error)
 	GetSkill(ctx context.Context, req GetSkillRequest) (*Skill, error)
 	UploadSkill(ctx context.Context, req UploadSkillRequest) (*Skill, error)
+	ReplaceSkillArchive(ctx context.Context, req ReplaceSkillRequest) (*Skill, error)
+	ListSkillArchiveEntries(ctx context.Context, req GetSkillRequest) ([]ArchiveEntry, error)
+	GetSkillArchiveContent(ctx context.Context, req GetSkillRequest, entryPath string) (map[string]any, error)
 	DeleteSkill(ctx context.Context, req DeleteSkillRequest) error
 	BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error)
 	UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error
@@ -141,10 +144,83 @@ func (h *HTTPHandler) UploadSkill(w http.ResponseWriter, r *http.Request) {
 		TenantID:            tenantID,
 		ActorUserID:         middleware.GetUserID(r.Context()),
 		Name:                r.FormValue("name"),
+		Slug:                r.FormValue("slug"),
 		Description:         r.FormValue("description"),
 		Tags:                splitFormList(r.MultipartForm.Value["tags"]),
 		TeamIDs:             parseUUIDList(r.MultipartForm.Value["team_ids"]),
 		RiskLevel:           r.FormValue("risk_level"),
+		RuntimeDependencies: runtimeDependencies,
+		Archive:             archive,
+		Filename:            header.Filename,
+		Version:             r.FormValue("version"),
+	})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, skillResponseFromDomain(skill))
+}
+
+func (h *HTTPHandler) ReplaceSkillArchive(w http.ResponseWriter, r *http.Request) {
+	skillID, ok := skillIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionSkillArchiveReplace, authz.ResourceRef{Type: authz.ResourceSkill, ID: skillID.String()}, "skill archive replace")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	maxUploadBytes := h.uploadMaxBytes(r, tenantID)
+	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	archive, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
+	if err != nil {
+		http.Error(w, "cannot read uploaded file", http.StatusBadRequest)
+		return
+	}
+	if int64(len(archive)) > maxUploadBytes {
+		http.Error(w, fmt.Sprintf("uploaded skill zip exceeds %d bytes", maxUploadBytes), http.StatusBadRequest)
+		return
+	}
+	var runtimeDependencies *SkillRuntimeDependencies
+	if r.FormValue("runtime_tools") != "" || r.FormValue("runtime_env") != "" || r.FormValue("runtime_dependencies") != "" {
+		parsed, err := parseRuntimeDependenciesForm(r)
+		if err != nil {
+			writeHandlerError(w, err)
+			return
+		}
+		runtimeDependencies = &parsed
+	}
+	var tags *[]string
+	if r.MultipartForm != nil && len(r.MultipartForm.Value["tags"]) > 0 {
+		list := splitFormList(r.MultipartForm.Value["tags"])
+		tags = &list
+	}
+	var riskLevel *string
+	if value := strings.TrimSpace(r.FormValue("risk_level")); value != "" {
+		riskLevel = &value
+	}
+	skill, err := service.ReplaceSkillArchive(r.Context(), ReplaceSkillRequest{
+		TenantID:            tenantID,
+		ActorUserID:         middleware.GetUserID(r.Context()),
+		SkillID:             skillID,
+		Name:                r.FormValue("name"),
+		Description:         r.FormValue("description"),
+		Version:             r.FormValue("version"),
+		Tags:                tags,
+		RiskLevel:           riskLevel,
 		RuntimeDependencies: runtimeDependencies,
 		Archive:             archive,
 		Filename:            header.Filename,
@@ -153,7 +229,49 @@ func (h *HTTPHandler) UploadSkill(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, skillResponseFromDomain(skill))
+	writeJSON(w, http.StatusOK, skillResponseFromDomain(skill))
+}
+
+func (h *HTTPHandler) ListSkillArchiveEntries(w http.ResponseWriter, r *http.Request) {
+	skillID, ok := skillIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionSkillRead, authz.ResourceRef{Type: authz.ResourceSkill, ID: skillID.String()}, "skill archive entries read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	entries, err := service.ListSkillArchiveEntries(r.Context(), GetSkillRequest{TenantID: tenantID, SkillID: skillID})
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, entries)
+}
+
+func (h *HTTPHandler) GetSkillArchiveContent(w http.ResponseWriter, r *http.Request) {
+	skillID, ok := skillIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeSkillAction(w, r, authz.ActionSkillRead, authz.ResourceRef{Type: authz.ResourceSkill, ID: skillID.String()}, "skill archive content read")
+	if !ok {
+		return
+	}
+	service, ok := h.serviceFromRequest(w)
+	if !ok {
+		return
+	}
+	body, err := service.GetSkillArchiveContent(r.Context(), GetSkillRequest{TenantID: tenantID, SkillID: skillID}, r.URL.Query().Get("path"))
+	if err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *HTTPHandler) DeleteSkill(w http.ResponseWriter, r *http.Request) {
@@ -413,25 +531,25 @@ func (h *HTTPHandler) authorizeSkillAction(w http.ResponseWriter, r *http.Reques
 }
 
 type skillResponse struct {
-	ID                  string                      `json:"id"`
-	TenantID            string                      `json:"tenant_id"`
-	Slug                string                      `json:"slug"`
-	Name                string                      `json:"name"`
-	Description         string                      `json:"description"`
-	Version             string                      `json:"version"`
-	Source              string                      `json:"source"`
-	RiskLevel           string                      `json:"risk_level"`
-	IconKey             string                      `json:"icon_key"`
-	ColorToken          string                      `json:"color_token"`
-	Tags                []string                    `json:"tags"`
-	ArchiveObjectRef    string                      `json:"archive_object_ref"`
-	ArchiveFilename     string                      `json:"archive_filename"`
-	ArchiveSizeBytes    int64                       `json:"archive_size_bytes"`
-	ArchiveChecksum     string                      `json:"archive_checksum_sha256"`
-	ArchiveFileCount    int                         `json:"archive_file_count"`
-	RuntimeDependencies SkillRuntimeDependencies    `json:"runtime_dependencies"`
-	CreatedBy           string                      `json:"created_by"`
-	CreatedByName       string                      `json:"created_by_name"`
+	ID                  string                        `json:"id"`
+	TenantID            string                        `json:"tenant_id"`
+	Slug                string                        `json:"slug"`
+	Name                string                        `json:"name"`
+	Description         string                        `json:"description"`
+	Version             string                        `json:"version"`
+	Source              string                        `json:"source"`
+	RiskLevel           string                        `json:"risk_level"`
+	IconKey             string                        `json:"icon_key"`
+	ColorToken          string                        `json:"color_token"`
+	Tags                []string                      `json:"tags"`
+	ArchiveObjectRef    string                        `json:"archive_object_ref"`
+	ArchiveFilename     string                        `json:"archive_filename"`
+	ArchiveSizeBytes    int64                         `json:"archive_size_bytes"`
+	ArchiveChecksum     string                        `json:"archive_checksum_sha256"`
+	ArchiveFileCount    int                           `json:"archive_file_count"`
+	RuntimeDependencies SkillRuntimeDependencies      `json:"runtime_dependencies"`
+	CreatedBy           string                        `json:"created_by"`
+	CreatedByName       string                        `json:"created_by_name"`
 	TeamBindings        []skillTeamBindingResponse    `json:"team_bindings"`
 	AgentBindings       []skillAgentBindingResponse   `json:"agent_bindings"`
 	ProjectBindings     []skillProjectBindingResponse `json:"project_bindings"`
@@ -587,7 +705,6 @@ func skillProjectBindingResponses(items []*SkillProjectBinding) []skillProjectBi
 	return out
 }
 
-
 func runtimeDependenciesForResponse(deps SkillRuntimeDependencies) SkillRuntimeDependencies {
 	if deps.Tools == nil {
 		deps.Tools = []string{}
@@ -732,7 +849,6 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-
 func (h *HTTPHandler) ListProjectSkillBindings(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := projectIDFromRequest(w, r)
 	if !ok {
@@ -852,8 +968,20 @@ func projectSkillBindingResponseFromDomain(item ProjectSkillBinding) projectSkil
 	return resp
 }
 
-
 func writeHandlerError(w http.ResponseWriter, err error) {
+	var conflict *SlugConflictError
+	if errors.As(err, &conflict) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code":     "skill_slug_conflict",
+			"message":  "技能 slug 已存在，请对该技能使用「更新技能包」",
+			"skill_id": conflict.SkillID.String(),
+			"slug":     conflict.Slug,
+			"name":     conflict.Name,
+		})
+		return
+	}
 	// 结构化 coded error 优先（apierror 约定）：命中即输出 {code, message} JSON。
 	if apierror.Write(w, err) {
 		return

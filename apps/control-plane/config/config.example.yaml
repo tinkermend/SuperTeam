@@ -27,6 +27,7 @@ redis:
 objectStore:
   # 本地开发默认：RustFS（docker-compose.rustfs.dev.yml / docs/ops/local-rustfs.md）。
   # 本地 S3 兼容实现通常需要 path-style。
+  # 控制面启动不会自动建桶。新环境先跑：./scripts/ops/init-object-store.sh
   endpoint: "http://127.0.0.1:9000"
   region: "us-east-1"
   bucket: "superteam-artifacts"

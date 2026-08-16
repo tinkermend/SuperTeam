@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A · 深度尺</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --wall: #141c28;
+      --fog: #cfd6e0;
+      --paper: #e8edf3;
+      --ink: #f4f7fb;
+      --muted: #8b97a8;
+      --ember: #e85d04;
+      --ice: #7bdff2;
+      --line: rgba(255,255,255,.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(900px 500px at 80% -10%, rgba(232,93,4,.18), transparent 50%),
+        var(--wall);
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "PingFang SC", sans-serif;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 28px;
+    }
+    a { color: var(--muted); text-decoration: none; font-size: 13px; }
+    h1 { font-family: Syne, sans-serif; font-size: 40px; margin: 0 28px 4px; letter-spacing: -.04em; }
+    .sub { margin: 0 28px 22px; color: var(--muted); max-width: 62ch; }
+    .packs { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 28px 28px; }
+    .pack {
+      border: 1px solid var(--line); background: transparent; color: var(--fog);
+      border-radius: 999px; padding: 8px 14px; cursor: pointer; font: inherit;
+    }
+    .pack.on { border-color: var(--ember); color: var(--ember); }
+    .name-row { display: grid; grid-template-columns: 1.4fr .8fr; gap: 12px; margin: 0 28px 32px; }
+    input[type=text], select {
+      width: 100%; background: #1c2736; border: 1px solid var(--line); color: var(--ink);
+      border-radius: 10px; padding: 10px 12px; font: inherit;
+    }
+    label span { display:block; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+    .ruler-wrap { padding: 0 28px 40px; }
+    .beads {
+      display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding-bottom: 12px;
+    }
+    .bead {
+      min-width: 168px; max-width: 188px;
+      background: #1c2736; border: 1px solid var(--line); border-radius: 18px;
+      padding: 14px; margin-right: 10px; position: relative;
+    }
+    .bead.exit { outline: 2px solid var(--ice); }
+    .bead h3 { font-family: Syne, sans-serif; font-size: 18px; margin: 0 0 8px; }
+    .idx { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ember); }
+    .bead select, .bead input { margin-top: 6px; font-size: 13px; }
+    .tiny { display:flex; gap:6px; margin-top:10px; }
+    .tiny button, .add-bead {
+      background: transparent; color: var(--fog); border: 1px solid var(--line);
+      border-radius: 8px; padding: 6px 8px; cursor: pointer; font: inherit; font-size: 12px;
+    }
+    .add-bead {
+      min-width: 120px; border-style: dashed; display: grid; place-content: center;
+      font-family: Syne, sans-serif; font-size: 16px; color: var(--ember);
+    }
+    .depth {
+      margin-top: 28px; background: #0f1620; border-radius: 20px; padding: 20px 22px;
+    }
+    .depth-top { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+    .depth-top b { font-family: Syne, sans-serif; font-size: 22px; }
+    input[type=range] { width: 100%; margin-top: 16px; accent-color: var(--ice); }
+    .ticks { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:6px; }
+    .save {
+      position: fixed; right: 24px; bottom: 24px; height: 48px; padding: 0 22px;
+      border: 0; border-radius: 12px; background: var(--ember); color: #1a0b00;
+      font-weight: 700; cursor: pointer; font-family: Syne, sans-serif; font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="./index.html">← 方案总览</a>
+    <span style="color:var(--muted);font-size:12px;letter-spacing:.16em">PROTOTYPE A · DEPTH RULER</span>
+  </header>
+  <h1>把关卡摆上尺，深度以后再选</h1>
+  <p class="sub">这不是开发流水线。下面默认是一次故障处置——你随时改成运维分析、软件交付，或从空白加出完全自己的站。站数不封顶。</p>
+  <div class="packs" id="packs"></div>
+  <div class="name-row">
+    <label><span>场景叫什么</span><input id="tname" type="text" value="生产故障处置" /></label>
+    <label><span>内部标识</span><input id="tkey" type="text" value="incident_response" /></label>
+  </div>
+  <div class="ruler-wrap">
+    <div class="beads" id="beads"></div>
+    <div class="depth">
+      <div class="depth-top">
+        <b id="depthLabel">发起时最深可停在：—</b>
+        <span style="color:var(--ice);font-size:13px">只有勾了「可作出口」的站会出现在任务发起的深度选项里</span>
+      </div>
+      <input id="depth" type="range" min="0" max="0" value="0" />
+      <div class="ticks" id="ticks"></div>
+    </div>
+  </div>
+  <button class="save" type="button">保存为第 1 版</button>
+  <script>
+    const ROLES = ["值班","诊断","操作","验证","采集","分析","开发","审查","测试","研究","撰稿"];
+    const PACKS = {
+      blank: { name: "空白开做", title: "未命名场景", key: "custom", nodes: [] },
+      incident: {
+        name: "故障处置", title: "生产故障处置", key: "incident_response",
+        nodes: [
+          { title: "接报", role: "值班", exit: true },
+          { title: "定界", role: "诊断", exit: true },
+          { title: "根因", role: "诊断", exit: true },
+          { title: "止血", role: "操作", exit: true },
+          { title: "复盘验证", role: "验证", exit: true },
+        ],
+      },
+      ops: {
+        name: "运维分析", title: "容量与日志分析", key: "ops_analysis",
+        nodes: [
+          { title: "采集", role: "采集", exit: true },
+          { title: "关联", role: "分析", exit: false },
+          { title: "结论", role: "分析", exit: true },
+        ],
+      },
+      sw: {
+        name: "软件交付", title: "软件交付", key: "software_delivery",
+        nodes: [
+          { title: "开发", role: "开发", exit: true },
+          { title: "审查", role: "审查", exit: true },
+          { title: "测试", role: "测试", exit: true },
+          { title: "发布", role: "开发", exit: true },
+        ],
+      },
+    };
+    let pack = "incident";
+    let nodes = PACKS.incident.nodes.map((n) => ({ ...n, verify: "none" }));
+    function loadPack(id) {
+      pack = id;
+      const p = PACKS[id];
+      document.getElementById("tname").value = p.title;
+      document.getElementById("tkey").value = p.key;
+      nodes = p.nodes.map((n) => ({ ...n, verify: n.title === "止血" ? "human" : "none" }));
+      if (nodes.length === 0) nodes = [{ title: "", role: "", exit: true, verify: "none" }];
+      render();
+    }
+    function exits() { return nodes.map((n, i) => ({ i, n })).filter((x) => x.n.exit); }
+    function renderPacks() {
+      document.getElementById("packs").innerHTML = Object.entries(PACKS).map(([id, p]) =>
+        `<button class="pack ${pack===id?"on":""}" data-id="${id}">${p.name}</button>`
+      ).join("");
+      document.querySelectorAll(".pack").forEach((b) => b.onclick = () => loadPack(b.dataset.id));
+    }
+    function render() {
+      renderPacks();
+      const box = document.getElementById("beads");
+      box.innerHTML = nodes.map((n, i) => `
+        <article class="bead ${n.exit?"exit":""}">
+          <div class="idx">STATION ${String(i+1).padStart(2,"0")}</div>
+          <input value="${n.title}" placeholder="这一站叫什么" data-i="${i}" data-k="title" />
+          <select data-i="${i}" data-k="role">
+            <option value="">分派角色…</option>
+            ${ROLES.map((r) => `<option ${r===n.role?"selected":""}>${r}</option>`).join("")}
+          </select>
+          <select data-i="${i}" data-k="verify">
+            <option value="none" ${n.verify==="none"?"selected":""}>交出即可</option>
+            <option value="independent" ${n.verify==="independent"?"selected":""}>另一角色验</option>
+            <option value="human" ${n.verify==="human"?"selected":""}>必须人类确认</option>
+          </select>
+          <label style="display:flex;gap:6px;align-items:center;margin-top:10px;font-size:12px;color:var(--fog)">
+            <input type="checkbox" data-i="${i}" data-k="exit" ${n.exit?"checked":""} /> 可作出口
+          </label>
+          <div class="tiny">
+            <button data-act="left" data-i="${i}">←</button>
+            <button data-act="right" data-i="${i}">→</button>
+            <button data-act="del" data-i="${i}">删</button>
+          </div>
+        </article>
+      `).join("") + `<button class="add-bead" id="add">+ 加一站</button>`;
+      box.querySelectorAll("[data-k]").forEach((el) => {
+        el.oninput = el.onchange = () => {
+          const i = Number(el.dataset.i);
+          if (el.dataset.k === "exit") nodes[i].exit = el.checked;
+          else nodes[i][el.dataset.k] = el.value;
+          renderDepth();
+          el.closest(".bead").classList.toggle("exit", nodes[i].exit);
+        };
+      });
+      box.querySelectorAll("[data-act]").forEach((el) => {
+        el.onclick = () => {
+          const i = Number(el.dataset.i);
+          if (el.dataset.act === "del" && nodes.length > 1) nodes.splice(i, 1);
+          if (el.dataset.act === "left" && i > 0) [nodes[i-1], nodes[i]] = [nodes[i], nodes[i-1]];
+          if (el.dataset.act === "right" && i < nodes.length-1) [nodes[i+1], nodes[i]] = [nodes[i], nodes[i+1]];
+          render();
+        };
+      });
+      document.getElementById("add").onclick = () => {
+        nodes.push({ title: "新站", role: "", exit: true, verify: "none" });
+        render();
+      };
+      renderDepth();
+    }
+    function renderDepth() {
+      const ex = exits();
+      const range = document.getElementById("depth");
+      range.max = Math.max(0, ex.length - 1);
+      if (Number(range.value) > range.max) range.value = range.max;
+      const cur = ex[Number(range.value)] || ex[ex.length-1];
+      document.getElementById("depthLabel").textContent = cur
+        ? `发起时最深可停在：${cur.n.title || "未命名站"}`
+        : "先把至少一站标成出口";
+      document.getElementById("ticks").innerHTML = ex.map((x) => `<span>${x.n.title || "站"}</span>`).join("");
+      range.oninput = renderDepth;
+    }
+    render();
+  </script>
+</body>
+</html>

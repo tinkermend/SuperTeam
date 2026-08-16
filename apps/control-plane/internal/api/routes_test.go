@@ -22,7 +22,6 @@ import (
 	"github.com/superteam/control-plane/internal/platform"
 	"github.com/superteam/control-plane/internal/project"
 	"github.com/superteam/control-plane/internal/runtime"
-	"github.com/superteam/control-plane/internal/task"
 	"nhooyr.io/websocket"
 )
 
@@ -30,8 +29,7 @@ const routeTaskID = "11111111-1111-1111-1111-111111111111"
 
 func TestRuntimeRoutesAreRegistered(t *testing.T) {
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 	)
 
 	tests := []struct {
@@ -41,11 +39,6 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 	}{
 		{method: http.MethodPost, path: "/api/v1/runtime/register", body: `{"node_id":"node-1","name":"node 1","supported_providers":["codex"],"max_slots":1}`},
 		{method: http.MethodPost, path: "/api/v1/runtime/heartbeat", body: `{"current_load":0}`},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/claim"},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/events", body: `{"events":[]}`},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/complete", body: `{"result":{}}`},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/fail", body: `{"error":"failed"}`},
-		{method: http.MethodPost, path: "/api/v1/runtime/tasks/" + routeTaskID + "/lease"},
 		{method: http.MethodGet, path: "/api/v1/runtime/nodes"},
 		{method: http.MethodGet, path: "/api/v1/runtime/nodes/node-1"},
 		{method: http.MethodPost, path: "/api/v1/runtime/enrollments/hello", body: `{"node_id":"node-1","bootstrap_key":"bootstrap-secret","name":"node 1","supported_providers":["codex"],"max_slots":1}`},
@@ -75,8 +68,7 @@ func TestRuntimeRoutesAreRegistered(t *testing.T) {
 
 func TestRuntimeProjectTaskAttemptRoutesRegistered(t *testing.T) {
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 	)
 	server.SetProjectHandler(project.NewHandler(&routeProjectService{}))
 	attemptID := "11111111-1111-4111-8111-111111111111"
@@ -119,8 +111,7 @@ func TestRuntimeProjectTaskAttemptRoutesRegistered(t *testing.T) {
 func TestRuntimeEnrollmentHelloUsesCurrentContractPathWithoutRuntimeSessionAuth(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 	)
 
@@ -153,8 +144,7 @@ func TestRuntimeEnrollmentHelloUsesCurrentContractPathWithoutRuntimeSessionAuth(
 func TestRuntimeEnrollmentManagementRoutesRequireConsoleUserAuth(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 	)
 
 	tests := []struct {
@@ -189,8 +179,7 @@ func TestRuntimeEnrollmentManagementRoutesRequireConsoleUserAuth(t *testing.T) {
 func TestRuntimeOverviewRoutesRequireConsoleAuth(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 	)
 
 	tests := []struct {
@@ -230,8 +219,7 @@ func TestRuntimeEnrollmentManagementRoutesUseConsoleUserAuth(t *testing.T) {
 	service := &routeRuntimeService{}
 	authorizer := &routeAuthorizer{allowed: true}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		authService,
 		nil,
 		authorizer,
@@ -391,13 +379,12 @@ func TestRuntimeOverviewAndEventsResponsesUseRuntimeConsoleShape(t *testing.T) {
 		},
 		runtimeEvents: []runtime.RuntimeEvent{zeroNodeEvent, nodeEvent},
 	}
-	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler := handlers.NewRuntimeHandler(service)
 	registry := runtime.NewConnectionRegistry()
 	connection := registry.Register("node-1")
 	defer registry.Unregister("node-1", connection.ID)
 	runtimeHandler.SetConnectionRegistry(registry)
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
 		runtimeHandler,
 		authService,
 		nil,
@@ -484,8 +471,7 @@ func TestRuntimeEventsRejectInvalidFilters(t *testing.T) {
 			}
 			service := &routeRuntimeService{}
 			server := NewServerWithAuthz(
-				handlers.NewTaskHandler(&routeTaskService{}),
-				handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+						handlers.NewRuntimeHandler(service),
 				authService,
 				nil,
 				&routeAuthorizer{allowed: true},
@@ -543,8 +529,7 @@ func TestRuntimeEnrollmentManagementRoutesRequireAuthorization(t *testing.T) {
 	service := &routeRuntimeService{}
 	authorizer := &routeAuthorizer{allowed: false}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		authService,
 		nil,
 		authorizer,
@@ -610,8 +595,7 @@ func TestRuntimeEnrollmentManagementRoutesPassTenantAndActorToRuntimeService(t *
 	service := &routeRuntimeService{}
 	authorizer := &routeAuthorizer{allowed: true}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		authService,
 		nil,
 		authorizer,
@@ -650,8 +634,7 @@ func TestRuntimeEnrollmentManagementRoutesPassTenantAndActorToRuntimeService(t *
 
 func TestLegacyRuntimeClaimRouteIsNotRegistered(t *testing.T) {
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/claim", nil)
@@ -673,8 +656,7 @@ func TestAuthRoutesAreRegistered(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	server := NewServerWithAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 	)
 
@@ -732,8 +714,7 @@ func TestCurrentUserRequiresConsoleAuthorization(t *testing.T) {
 	}
 	authorizer := &routeAuthorizer{allowed: false}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -779,46 +760,6 @@ func TestCurrentUserRequiresConsoleAuthorization(t *testing.T) {
 	}
 }
 
-func TestServerWithAuthzGatesRuntimeClaim(t *testing.T) {
-	authService, err := auth.NewService(newRouteAuthRepo())
-	if err != nil {
-		t.Fatalf("new auth service: %v", err)
-	}
-	tenantID := platform.DefaultTenantID
-	taskID := uuid.MustParse(routeTaskID)
-	taskService := &routeTaskService{
-		tasks: []*task.Task{{
-			ID:           taskID,
-			TenantID:     tenantID,
-			ProviderType: "codex",
-		}},
-	}
-	authorizer := &routeAuthorizer{allowed: false}
-	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(taskService),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, taskService, &routePoller{}),
-		authService,
-		&routeRuntimeAuthService{},
-		authorizer,
-	)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/runtime/tasks/claim?timeout=1", nil)
-	req.Header.Set("Authorization", "Bearer test-token")
-	req.Header.Set("X-Node-ID", "node-1")
-	resp := httptest.NewRecorder()
-	server.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusNoContent {
-		t.Fatalf("expected denied runtime claim to return 204, got %d: %s", resp.Code, resp.Body.String())
-	}
-	if taskService.assignedTaskID != uuid.Nil {
-		t.Fatalf("expected denied runtime claim not to assign task, got %s", taskService.assignedTaskID)
-	}
-	if len(authorizer.checks) != 0 {
-		t.Fatalf("expected default no-op runtime claim to skip task authz checks, got %#v", authorizer.checks)
-	}
-}
-
 func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 	authRepo := newRouteAuthRepo()
 	authService, err := auth.NewService(authRepo)
@@ -829,8 +770,7 @@ func TestAuthUserManagementRoutesAreRegistered(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	server := NewServerWithAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 	)
 
@@ -931,8 +871,7 @@ func TestAuthUserManagementRejectsUnauthenticatedRequests(t *testing.T) {
 		t.Fatalf("new auth service: %v", err)
 	}
 	server := NewServerWithAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 	)
 
@@ -951,8 +890,7 @@ func TestLoginLogsRejectUnauthenticatedRequests(t *testing.T) {
 		t.Fatalf("new auth service: %v", err)
 	}
 	server := NewServerWithAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 	)
 
@@ -977,8 +915,7 @@ func TestLogRoutesRequireConsoleAuthorization(t *testing.T) {
 	}
 	authorizer := &routeAuthorizer{allowed: false}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -1017,8 +954,7 @@ func TestAuthzCenterOverviewRejectsUnauthenticatedRequests(t *testing.T) {
 	repo := &routeAuthzCenterRepo{}
 	service := authzcenter.NewService(repo, &routeAuthorizer{allowed: true})
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1046,8 +982,7 @@ func TestAuthzCenterOverviewAllowsAuthenticatedAdmin(t *testing.T) {
 	repo := &routeAuthzCenterRepo{}
 	service := authzcenter.NewService(repo, &routeAuthorizer{allowed: true})
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1088,8 +1023,7 @@ func TestAuthzCenterOverviewDeniedAuthorizationReturnsForbidden(t *testing.T) {
 	authorizer := &routeAuthorizer{allowed: false}
 	service := authzcenter.NewService(repo, authorizer)
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -1124,8 +1058,7 @@ func TestAuthzCenterRuntimeScopeCreateRecordsCheckAndOperationLog(t *testing.T) 
 	authorizer := &routeAuthorizer{allowed: true}
 	service := authzcenter.NewService(repo, authorizer)
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -1169,8 +1102,7 @@ func TestAuthzCenterRuntimeScopeCreateRecordsCheckAndOperationLog(t *testing.T) 
 
 func TestRuntimeRoutesUseAuthenticatedNodeIdentity(t *testing.T) {
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		&routeRuntimeAuthService{},
 	)
 
@@ -1198,8 +1130,7 @@ func TestRuntimeRoutesUseAuthenticatedNodeIdentity(t *testing.T) {
 func TestRuntimeRoutesHeartbeatIncludesRequiredTools(t *testing.T) {
 	service := &routeRuntimeService{requiredTools: []string{"gh", "jq"}}
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 	)
 
@@ -1228,8 +1159,7 @@ func TestRuntimeRoutesHeartbeatIncludesRequiredTools(t *testing.T) {
 func TestRuntimeRoutesAcceptRuntimeSessionTokenIdentity(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1255,8 +1185,7 @@ func TestRuntimeRoutesAcceptRuntimeSessionTokenIdentity(t *testing.T) {
 func TestRuntimeRoutesFallbackToLegacyWhenSessionTokenInvalid(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1281,8 +1210,7 @@ func TestRuntimeRoutesFallbackToLegacyWhenSessionTokenInvalid(t *testing.T) {
 
 func TestRuntimeRoutesRejectMissingRuntimeAuth(t *testing.T) {
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		&routeRuntimeAuthService{},
 	)
 
@@ -1300,8 +1228,7 @@ func TestRuntimeRoutesRejectMissingRuntimeAuth(t *testing.T) {
 func TestRuntimeBootstrapHelloBodyCannotAccessProtectedRuntimeRoutes(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1326,8 +1253,7 @@ func TestRuntimeBootstrapHelloBodyCannotAccessProtectedRuntimeRoutes(t *testing.
 func TestRuntimeSessionRenewRequiresSessionAuthAndReturnsBareSession(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1366,8 +1292,7 @@ func TestRuntimeSessionRenewRequiresSessionAuthAndReturnsBareSession(t *testing.
 func TestRuntimeSessionCanonicalRenewValidatesPathSessionID(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1405,8 +1330,7 @@ func TestRuntimeSessionCanonicalRenewValidatesPathSessionID(t *testing.T) {
 func TestRuntimeCapabilitiesRejectPathNodeMismatch(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1429,8 +1353,7 @@ func TestRuntimeCapabilitiesRejectPathNodeMismatch(t *testing.T) {
 func TestRuntimeCapabilitiesSuccessReturnsTopLevelArray(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1456,8 +1379,7 @@ func TestRuntimeCapabilitiesSuccessReturnsTopLevelArray(t *testing.T) {
 func TestRuntimeWebSocketRequiresRuntimeSessionAuth(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1474,8 +1396,7 @@ func TestRuntimeWebSocketRequiresRuntimeSessionAuth(t *testing.T) {
 func TestRuntimeWebSocketRejectsLegacyRuntimeToken(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1494,8 +1415,7 @@ func TestRuntimeWebSocketRejectsLegacyRuntimeToken(t *testing.T) {
 func TestRuntimeWebSocketReturnsServiceUnavailableWhenRegistryMissing(t *testing.T) {
 	service := &routeRuntimeService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(service),
 		&routeRuntimeAuthService{},
 		service,
 	)
@@ -1513,10 +1433,9 @@ func TestRuntimeWebSocketReturnsServiceUnavailableWhenRegistryMissing(t *testing
 func TestRuntimeWebSocketSendsDispatchedCommand(t *testing.T) {
 	service := &routeRuntimeService{}
 	registry := runtime.NewConnectionRegistry()
-	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler := handlers.NewRuntimeHandler(service)
 	runtimeHandler.SetConnectionRegistry(registry)
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
 		runtimeHandler,
 		&routeRuntimeAuthService{},
 		service,
@@ -1564,10 +1483,9 @@ func TestRuntimeWebSocketSendsDispatchedCommand(t *testing.T) {
 func TestRuntimeWebSocketRejectsCrossOriginHandshake(t *testing.T) {
 	service := &routeRuntimeService{}
 	registry := runtime.NewConnectionRegistry()
-	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler := handlers.NewRuntimeHandler(service)
 	runtimeHandler.SetConnectionRegistry(registry)
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
 		runtimeHandler,
 		&routeRuntimeAuthService{},
 		service,
@@ -1594,10 +1512,9 @@ func TestRuntimeWebSocketRejectsCrossOriginHandshake(t *testing.T) {
 func TestRuntimeWebSocketClientCloseUnregistersConnection(t *testing.T) {
 	service := &routeRuntimeService{}
 	registry := runtime.NewConnectionRegistry()
-	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler := handlers.NewRuntimeHandler(service)
 	runtimeHandler.SetConnectionRegistry(registry)
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
 		runtimeHandler,
 		&routeRuntimeAuthService{},
 		service,
@@ -1638,10 +1555,9 @@ func TestRuntimeWebSocketClientCloseUnregistersConnection(t *testing.T) {
 func TestRuntimeWebSocketReplaceClosesPreviousWithReplacedReason(t *testing.T) {
 	service := &routeRuntimeService{}
 	registry := runtime.NewConnectionRegistry()
-	runtimeHandler := handlers.NewRuntimeHandler(service, &routeTaskService{}, &routePoller{})
+	runtimeHandler := handlers.NewRuntimeHandler(service)
 	runtimeHandler.SetConnectionRegistry(registry)
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
 		runtimeHandler,
 		&routeRuntimeAuthService{},
 		service,
@@ -1714,8 +1630,7 @@ func waitForRuntimeConnection(t *testing.T, registry *runtime.ConnectionRegistry
 
 func TestRuntimeRegisterRejectsMismatchedAuthenticatedNodeIdentity(t *testing.T) {
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		&routeRuntimeAuthService{},
 	)
 
@@ -1916,85 +1831,6 @@ func (s *routeRuntimeService) UpsertCapabilities(ctx context.Context, token stri
 	}}, nil
 }
 
-func (s *fakeRuntimeService) GetOverview(ctx context.Context, filter runtime.RuntimeOverviewFilter) (*runtime.RuntimeOverview, error) {
-	return &runtime.RuntimeOverview{}, nil
-}
-
-func (s *fakeRuntimeService) ListRuntimeEvents(ctx context.Context, filter runtime.ListRuntimeEventsFilter) ([]runtime.RuntimeEvent, error) {
-	return []runtime.RuntimeEvent{}, nil
-}
-
-func (s *fakeRuntimeService) ListRuntimeCapabilitiesForNode(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.RuntimeCapability, error) {
-	return []runtime.RuntimeCapability{}, nil
-}
-
-func (s *fakeRuntimeService) ListProviderNativeConfigs(ctx context.Context, tenantID uuid.UUID, nodeID string) ([]runtime.ProviderNativeConfigListItem, error) {
-	return nil, nil
-}
-func (s *fakeRuntimeService) GetProviderNativeConfigSnapshot(ctx context.Context, tenantID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error) {
-	return nil, runtime.ErrProviderNativeConfigNotFound
-}
-func (s *fakeRuntimeService) PullProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string) (*runtime.ProviderNativeConfigDetail, error) {
-	return nil, runtime.ErrProviderNativeConfigOffline
-}
-func (s *fakeRuntimeService) PushProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string, values map[string]any, expectedHash string) (*runtime.ProviderNativeConfigDetail, error) {
-	return nil, runtime.ErrProviderNativeConfigOffline
-}
-
-
-type routeTaskService struct {
-	tasks          []*task.Task
-	assignedTaskID uuid.UUID
-}
-
-func (s *routeTaskService) CreateTask(ctx context.Context, req task.CreateTaskRequest) (*task.Task, error) {
-	return &task.Task{ID: uuid.New(), Title: req.Title, ProviderType: req.ProviderType}, nil
-}
-
-func (s *routeTaskService) GetTask(ctx context.Context, taskID uuid.UUID) (*task.Task, error) {
-	return &task.Task{ID: taskID, ProviderType: "codex"}, nil
-}
-
-func (s *routeTaskService) ListTasks(ctx context.Context, filter task.ListTasksFilter) ([]*task.Task, error) {
-	if s.tasks == nil {
-		return []*task.Task{}, nil
-	}
-	tasks := make([]*task.Task, 0, len(s.tasks))
-	for _, t := range s.tasks {
-		if filter.ProviderType != nil && t.ProviderType != *filter.ProviderType {
-			continue
-		}
-		if filter.Status != nil && t.Status != "" && t.Status != *filter.Status {
-			continue
-		}
-		tasks = append(tasks, t)
-	}
-	return tasks, nil
-}
-
-func (s *routeTaskService) AppendTaskEvent(ctx context.Context, req task.AppendTaskEventRequest) (*task.TaskEvent, error) {
-	return &task.TaskEvent{TaskID: req.TaskID, EventType: req.EventType, Payload: req.Payload}, nil
-}
-
-func (s *routeTaskService) UpdateTaskStatus(ctx context.Context, req task.UpdateTaskStatusRequest) (*task.Task, error) {
-	return &task.Task{ID: req.TaskID, Status: req.NewStatus}, nil
-}
-
-func (s *routeTaskService) CancelTask(ctx context.Context, taskID uuid.UUID, cancelledBy *string, reason *string) (*task.Task, error) {
-	return &task.Task{ID: taskID, Status: task.TaskStatusCancelled}, nil
-}
-
-func (s *routeTaskService) AssignTask(ctx context.Context, req task.AssignTaskRequest) (*task.Task, error) {
-	s.assignedTaskID = req.TaskID
-	return &task.Task{ID: req.TaskID, AssignedNodeID: &req.AssignedNodeID}, nil
-}
-
-type routePoller struct{}
-
-func (p *routePoller) WaitForTask(ctx context.Context, nodeID string) (*task.Task, error) {
-	<-ctx.Done()
-	return nil, ctx.Err()
-}
 
 type routeRuntimeAuthService struct{}
 

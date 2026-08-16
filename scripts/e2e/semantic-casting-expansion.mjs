@@ -221,13 +221,6 @@ async function tryCompleteTask(cookie, task, empId, conclusion) {
         },
       },
     },
-    {
-      path: `/api/v1/runtime/tasks/${task.id}/complete`,
-      body: {
-        digital_employee_id: empId,
-        conclusion,
-      },
-    },
   ];
   for (const a of attempts) {
     if (a.path.includes("/x/")) continue;

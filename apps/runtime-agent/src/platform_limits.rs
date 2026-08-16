@@ -158,7 +158,10 @@ mod tests {
             limits.artifact_max_file_bytes,
             crate::artifacts::MAX_ARTIFACT_FILE_BYTES
         );
-        assert_eq!(limits.skill_archive_max_bytes, crate::skills::MAX_ARCHIVE_SIZE);
+        assert_eq!(
+            limits.skill_archive_max_bytes,
+            crate::skills::MAX_ARCHIVE_SIZE
+        );
         assert!(limits.version.is_none());
         assert!(limits.workspace_base_dir.is_none());
     }

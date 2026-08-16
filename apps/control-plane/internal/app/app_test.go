@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,7 +19,6 @@ import (
 	"github.com/superteam/control-plane/internal/config"
 	"github.com/superteam/control-plane/internal/employee"
 	"github.com/superteam/control-plane/internal/project"
-	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
 	temporalclient "go.temporal.io/sdk/client"
@@ -53,40 +51,11 @@ func TestHealthOnlyRouterIsExplicit(t *testing.T) {
 	}
 }
 
-func TestRunContainerClosesPollerWhenContextIsCanceled(t *testing.T) {
-	poller := runtimepkg.NewPoller()
-	container := &Container{
-		Poller: poller,
-		Server: api.NewServer(nil, nil),
-	}
-
-	waitErr := make(chan error, 1)
-	go func() {
-		_, err := poller.WaitForTask(context.Background(), "node-1")
-		waitErr <- err
-	}()
-
-	waitForActivePoller(t, poller)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	if err := runContainer(ctx, container, "127.0.0.1:0"); err != nil {
-		t.Fatalf("expected clean shutdown, got %v", err)
-	}
-
-	if err := <-waitErr; !errors.Is(err, runtimepkg.ErrPollerClosed) {
-		t.Fatalf("expected poller waiter to be closed, got %v", err)
-	}
-}
-
 func TestRunContainerStartsAndStopsWorkflowWorker(t *testing.T) {
-	poller := runtimepkg.NewPoller()
 	worker := &recordingWorkflowWorker{}
 	client := &recordingTemporalClient{}
 	container := &Container{
-		Poller:              poller,
-		Server:              api.NewServer(nil, nil),
+		Server:              api.NewServer(nil),
 		CoordinationWorker:  worker,
 		TemporalClientClose: client.Close,
 	}
@@ -114,8 +83,7 @@ func TestRunContainerClosesTemporalClientWhenWorkerStartFails(t *testing.T) {
 	worker := &recordingWorkflowWorker{startErr: startErr}
 	client := &recordingTemporalClient{}
 	container := &Container{
-		Poller:              runtimepkg.NewPoller(),
-		Server:              api.NewServer(nil, nil),
+		Server:              api.NewServer(nil),
 		CoordinationWorker:  worker,
 		TemporalClientClose: client.Close,
 	}
@@ -365,26 +333,6 @@ func TestProjectArtifactLockerReturnsEventIDOnArtifactServiceError(t *testing.T)
 	}
 	if result.EventID == nil || *result.EventID != eventID {
 		t.Fatalf("expected retention event id on failure %s, got %#v", eventID, result.EventID)
-	}
-}
-
-func waitForActivePoller(t *testing.T, poller *runtimepkg.Poller) {
-	t.Helper()
-
-	deadline := time.After(time.Second)
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		if poller.ActiveWaiters() > 0 {
-			return
-		}
-
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for active poller waiter")
-		case <-ticker.C:
-		}
 	}
 }
 

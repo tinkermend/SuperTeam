@@ -32,8 +32,7 @@ func TestTeamRoutesUseConsoleTenant(t *testing.T) {
 	}
 	service := &routeTeamService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -303,8 +302,7 @@ func (s *routeCapabilityService) PutProjectMCPBindings(context.Context, capabili
 func TestTeamRoutesRequireConsoleAuth(t *testing.T) {
 	service := &routeTeamService{}
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 	)
 	server.SetTenantHandler(tenant.NewHandler(service))
 
@@ -330,8 +328,7 @@ func TestTeamRoutesRejectInvalidListPagination(t *testing.T) {
 	}
 	service := &routeTeamService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -373,8 +370,7 @@ func TestTeamRoutesRequireManagementAuthorization(t *testing.T) {
 	service := &routeTeamService{}
 	authorizer := &routeAuthorizer{allowed: false}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -466,8 +462,7 @@ func TestTeamMemberRoutesUseConsoleTenant(t *testing.T) {
 	}
 	service := &routeTeamService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -536,8 +531,7 @@ func TestUpdateTeamConstitutionUsesGovernanceEditAuthorization(t *testing.T) {
 	service := &routeTeamService{}
 	authorizer := &routeAuthorizer{allowed: true}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -587,8 +581,7 @@ func TestTeamAuditRouteUsesTeamAuditRead(t *testing.T) {
 	service := &routeTeamService{}
 	authorizer := &routeAuthorizer{allowed: true}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -637,8 +630,7 @@ func TestTeamOverviewAllowedActionsFilterDeniedDecisions(t *testing.T) {
 		},
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -679,8 +671,7 @@ func TestTeamRoutesSanitizeInternalErrors(t *testing.T) {
 	}
 	service := &routeTeamService{listErr: errors.New("database password leaked")}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -714,8 +705,7 @@ func TestTeamRoutesSanitizeAuthorizationBackendErrors(t *testing.T) {
 	}
 	service := &routeTeamService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{err: errors.New("policy backend DSN leaked")},
@@ -752,8 +742,7 @@ func TestTeamRoutesRejectUnconfiguredAuthorizationBeforeService(t *testing.T) {
 	}
 	service := &routeTeamService{}
 	server := NewServerWithAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 	)
 	server.SetTenantHandler(tenant.NewHandler(service))
@@ -781,8 +770,7 @@ func TestTeamRouteRejectsUnconfiguredService(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -812,8 +800,7 @@ func TestTeamRoutesDoNotSubstituteConsoleUserAsHumanOwner(t *testing.T) {
 	}
 	service := &routeTeamService{rejectMissingOwner: true}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},

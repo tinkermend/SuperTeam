@@ -54,9 +54,11 @@ import {
 import { ApiRequestError } from "@/lib/api/client";
 import { apiErrorMessage } from "@/lib/api/api-error";
 import { listTeams } from "@/lib/api/teams";
+import { listRoleVocabulary, type RoleVocabularyEntry } from "@/lib/api/casting";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { providerDisplayName } from "./provider-label";
+import { firstRoleTitle, RoleKeysPicker } from "./role-keys-picker";
 import {
   findTemplateByType,
   orderedEmployeeTypes,
@@ -93,6 +95,7 @@ type WizardDraft = {
   persona_memory_markdown: string;
   risk_level: string;
   role: string;
+  role_keys: string[];
   runtime_binding: string;
   runtime_node_id: string;
   provider_type: string;
@@ -109,7 +112,7 @@ type EnvironmentVariableDraftRow = {
 
 type ValidationErrors = Partial<
   Record<
-    "avatar_asset_id" | "daily_token_limit" | "employee_type" | "name" | "role" | "runtime" | "team_id",
+    "avatar_asset_id" | "daily_token_limit" | "employee_type" | "name" | "role" | "role_keys" | "runtime" | "team_id",
     string
   >
 >;
@@ -135,6 +138,7 @@ const emptyDraft: WizardDraft = {
   provider_type: "",
   risk_level: "medium",
   role: "",
+  role_keys: [],
   runtime_binding: "",
   runtime_node_id: "",
   team_id: "",
@@ -173,7 +177,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
   const avatarAssets = useQuery({
     queryKey: ["digital-employee-avatar-assets"],
     queryFn: () => listDigitalEmployeeAvatarAssets({ baseUrl: apiBaseUrl, fetcher })
-});
+  });
+  const roleVocabulary = useQuery({
+    queryKey: ["role-vocabulary"],
+    queryFn: () => listRoleVocabulary({ baseUrl: apiBaseUrl, fetcher })
+  });
   // 头像独占：已被在册员工占用的头像不进入候选。
   const availableAvatarAssets = useMemo(
     () => (avatarAssets.data ?? []).filter((asset) => asset.status === "active" && !asset.in_use),
@@ -239,7 +247,11 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
             employee_type: draft.employee_type,
             name: draft.name.trim(),
             avatar_asset_id: draft.avatar_asset_id,
-            role: draft.role.trim(),
+            role:
+              draft.role.trim() ||
+              firstRoleTitle(draft.role_keys, roleVocabulary.data ?? []) ||
+              draft.employee_type,
+            role_keys: draft.role_keys,
             ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
             ...(blankCustom ? { metadata: { creation_mode: "blank_custom" } } : {}),
             budget_policy: budgetPolicyFromDraft(draft),
@@ -334,7 +346,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
     }
 
     setFlowStep("configure");
-    if (nextErrors.avatar_asset_id || nextErrors.employee_type || nextErrors.name || nextErrors.role) {
+    if (nextErrors.avatar_asset_id || nextErrors.employee_type || nextErrors.name || nextErrors.role || nextErrors.role_keys) {
       setStepIndex(0);
     } else if (nextErrors.daily_token_limit) {
       setStepIndex(1);
@@ -419,7 +431,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
         title="创建数字员工"
         subtitle={flowStep === "template"
           ? "先选择创建方式，再完成配置并确认创建。"
-          : "按职责定位、能力选择和必选 Provider 类型完成员工画像。"
+          : "按职责描述、能力选择和必选 Provider 类型完成员工画像。"
         }
       />
       <Main width="canvas">
@@ -501,7 +513,7 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       <div>
                         <h2 className="text-lg font-semibold text-ink">员工画像蓝图</h2>
                         <p className="mt-0.5 text-sm text-ink-3">
-                        按职责定位、可用能力和 Provider 类型完成员工画像。
+                        按职责描述、可用能力和 Provider 类型完成员工画像。
                       </p>
                     </div>
                   </div>
@@ -522,6 +534,9 @@ export function CreateEmployeeView({ apiBaseUrl, fetcher }: CreateEmployeeViewPr
                       avatarAssets={availableAvatarAssets}
                       draft={draft}
                       errors={errors}
+                      roleVocabulary={roleVocabulary.data ?? []}
+                      roleVocabularyError={roleVocabulary.isError}
+                      roleVocabularyLoading={roleVocabulary.isPending}
                       selectedType={selectedType}
                       teamCapacityError={teamCapacityBlocked ? teamCapacityCheck?.message : undefined}
                       teamOptions={teamOptions}
@@ -715,7 +730,7 @@ function CreationPathPanel({
 },
     {
       title: "空白自定义",
-      description: "直接定义自定义身份，逐项手动配置职责定位、能力和 Provider 类型。",
+      description: "直接定义自定义身份，逐项手动配置职责描述、能力和 Provider 类型。",
       icon: FileText,
       mode: "blank_custom" as const,
       badge: "可用",
@@ -935,7 +950,8 @@ function TemplateSelectionPanel({
               <span className="font-semibold text-ink">已选模板摘要</span>
               <Chip>团队 {selectedTeamName || "无（租户级）"}</Chip>
               <Chip>模板 {selectedType?.label ?? (draft.employee_type || "未选择")}</Chip>
-              <Chip>默认角色 {draft.role || selectedType?.default_role || "未生成"}</Chip>
+              <Chip>剧本角色 {draft.role_keys.length ? draft.role_keys.join("、") : "未选择"}</Chip>
+              <Chip>职责描述 {draft.role || selectedType?.default_role || "未生成"}</Chip>
               <Chip>风险 {riskLabel(draft.risk_level || "medium")}</Chip>
             </div>
             <p className="mt-2 text-sm text-ink-3">
@@ -1140,7 +1156,8 @@ function CreationPreflightPanel({
             label="专业类型"
             value={draft.creation_mode === "blank_custom" ? BLANK_CUSTOM_TITLE : (selectedType?.label ?? draft.employee_type) || "未选择"}
           />
-          <SummaryItem label="职责定位" value={draft.role || "未填写"} />
+          <SummaryItem label="剧本角色" value={draft.role_keys.length ? draft.role_keys.join("、") : "未选择"} />
+          <SummaryItem label="职责描述" value={draft.role || "未填写"} />
           <SummaryItem label="风险等级" value={riskLabel(draft.risk_level || "medium")} />
           <SummaryItem
             label="能力选择"
@@ -1214,7 +1231,7 @@ function ConfirmCreationStep({
               <InlineSummary label="专业模板" value={selectedType?.label ?? (draft.employee_type || "未选择")} />
             ) : null}
             <InlineSummary label="名称" value={draft.name.trim() || "未填写"} />
-            <InlineSummary label="职责定位" value={draft.role || "未填写"} />
+            <InlineSummary label="职责描述" value={draft.role || "未填写"} />
             <InlineSummary
               label="员工说明"
               value={draft.description.trim() || "未填写"}
@@ -1264,6 +1281,9 @@ function IdentityStep({
   avatarAssets,
   draft,
   errors,
+  roleVocabulary,
+  roleVocabularyError,
+  roleVocabularyLoading,
   selectedType,
   teamCapacityError,
   teamOptions,
@@ -1274,6 +1294,9 @@ function IdentityStep({
   avatarAssets: DigitalEmployeeAvatarAsset[];
   draft: WizardDraft;
   errors: ValidationErrors;
+  roleVocabulary: RoleVocabularyEntry[];
+  roleVocabularyError: boolean;
+  roleVocabularyLoading: boolean;
   selectedType?: DigitalEmployeeTypeOption;
   teamCapacityError?: string;
   teamOptions: Array<{ id: string; name: string }>;
@@ -1287,7 +1310,7 @@ function IdentityStep({
     <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-lg font-semibold text-ink">身份</h2>
-        <p className="text-sm text-ink-3">确定团队、名称、职责定位与员工说明。负责人由后端按当前登录身份注入。</p>
+        <p className="text-sm text-ink-3">确定团队、名称、剧本角色与员工说明。负责人由后端按当前登录身份注入。</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="归属团队" error={errors.team_id ?? teamCapacityError}>
@@ -1315,13 +1338,27 @@ function IdentityStep({
             value={draft.name}
           />
         </Field>
-        <Field label="职责定位" error={errors.role}>
+        <div className="md:col-span-2">
+          <Field label="剧本角色" error={errors.role_keys}>
+            <RoleKeysPicker
+              options={roleVocabulary}
+              selected={draft.role_keys}
+              loading={roleVocabularyLoading}
+              error={roleVocabularyError}
+              required
+              onChange={(role_keys) => onUpdate({ role_keys })}
+            />
+            <p className="text-xs text-ink-3">决定该员工能出现在哪些场景编制席位上，可兼多角色。</p>
+          </Field>
+        </div>
+        <Field label="职责描述" error={errors.role}>
           <Input
             aria-invalid={Boolean(errors.role)}
             id="employee-role"
             onChange={(event) => onUpdate({ role: event.target.value })}
             value={draft.role}
           />
+          <p className="text-xs text-ink-3">仅用于列表展示，不参与编制。未填时用所选剧本角色名称。</p>
         </Field>
         <Field label="风险等级">
           <select
@@ -1797,7 +1834,7 @@ const labelId: Record<string, string> = {
   "人格记忆.md": "persona-memory-markdown",
   名称: "employee-name",
   归属团队: "employee-team",
-  职责定位: "employee-role",
+  职责描述: "employee-role",
   员工说明: "employee-description",
   风险等级: "employee-risk",
   "每日 Token 预算上限": "daily-token-limit"
@@ -1824,7 +1861,8 @@ function applyTypeDefaults(
     employee_type: typeOption.type,
     persona_memory_markdown: typeOption.persona_memory_markdown ?? "",
     risk_level: stringValue(policyDefaults?.approval_policy?.min_risk_for_human) || "medium",
-    role: typeOption.default_role || typeOption.type
+    role: typeOption.default_role || typeOption.type,
+    role_keys: [...(typeOption.default_role_keys ?? [])]
 };
 }
 
@@ -1841,7 +1879,8 @@ function applyBlankCustomDefaults(current: WizardDraft): WizardDraft {
     employee_type: BLANK_CUSTOM_EMPLOYEE_TYPE,
     persona_memory_markdown: "",
     risk_level: "medium",
-    role: ""
+    role: "",
+    role_keys: []
 };
 }
 
@@ -1991,7 +2030,7 @@ function validateStep(step: StepName, draft: WizardDraft): ValidationErrors {
     if (!draft.avatar_asset_id.trim()) errors.avatar_asset_id = "头像不能为空";
     if (!draft.employee_type.trim()) errors.employee_type = "员工类型不能为空";
     if (!draft.name.trim()) errors.name = "名称不能为空";
-    if (!draft.role.trim()) errors.role = "职责定位不能为空";
+    if (draft.role_keys.length === 0) errors.role_keys = "请至少选择一个剧本角色";
     return errors;
   }
   if (step === "能力") {

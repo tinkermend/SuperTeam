@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>方案 C · 问答生长</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;650;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f3f1ec;
+      --ink: #1c1916;
+      --muted: #6b645c;
+      --card: #fffcf7;
+      --brand: #2f5fff;
+      --line: #e6e0d6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Outfit, "PingFang SC", sans-serif;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+    }
+    a.back { color: var(--muted); text-decoration: none; font-size: 13px; }
+    button { font: inherit; cursor: pointer; }
+    .save {
+      height: 40px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--ink);
+      color: #fff;
+      font-weight: 650;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 42% 58%;
+      min-height: 0;
+    }
+    .strip {
+      padding: 24px 28px 40px;
+      border-right: 1px solid var(--line);
+      overflow: auto;
+    }
+    .receipt {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 22px 18px 28px;
+      min-height: 100%;
+      background-image: repeating-linear-gradient(
+        180deg,
+        transparent,
+        transparent 27px,
+        rgba(28,25,22,.04) 28px
+      );
+    }
+    .receipt h2 {
+      font-size: 13px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-weight: 650;
+    }
+    .node {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      margin-bottom: 18px;
+      opacity: .35;
+    }
+    .node.live { opacity: 1; }
+    .dot {
+      width: 14px;
+      height: 14px;
+      margin-top: 6px;
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      background: var(--card);
+    }
+    .node.live .dot { background: var(--brand); border-color: var(--brand); }
+    .ask {
+      padding: 48px 56px 64px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      max-width: 640px;
+    }
+    .step {
+      font-size: 13px;
+      color: var(--muted);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 40px;
+      letter-spacing: -0.04em;
+      font-weight: 800;
+      line-height: 1.15;
+      margin: 0 0 28px;
+    }
+    input.name {
+      width: 100%;
+      font-size: 28px;
+      font-weight: 650;
+      border: 0;
+      border-bottom: 2px solid var(--ink);
+      background: transparent;
+      padding: 8px 0;
+      color: inherit;
+    }
+    .choices { display: flex; flex-wrap: wrap; gap: 10px; }
+    .choice {
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-weight: 500;
+    }
+    .choice.on {
+      border-color: var(--brand);
+      color: var(--brand);
+      box-shadow: inset 0 0 0 1px var(--brand);
+    }
+    .nav {
+      display: flex;
+      gap: 10px;
+      margin-top: 36px;
+    }
+    .nav button {
+      height: 42px;
+      padding: 0 18px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--card);
+    }
+    .nav .next {
+      background: var(--brand);
+      color: #fff;
+      border-color: var(--brand);
+    }
+    .done { font-size: 18px; line-height: 1.7; }
+    @media (max-width: 860px) {
+      .split { grid-template-columns: 1fr; }
+      .strip { border-right: 0; border-bottom: 1px solid var(--line); }
+      h1 { font-size: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="back" href="./index.html">← 三套方案</a>
+    <button class="save" type="button">完成并保存</button>
+  </header>
+  <div class="split">
+    <aside class="strip">
+      <div class="receipt">
+        <h2>正在长出来的模板</h2>
+        <div id="receipt"></div>
+      </div>
+    </aside>
+    <section class="ask" id="ask"></section>
+  </div>
+  <script>
+    const roles = ["开发", "审查", "测试", "发布"];
+    const state = {
+      name: "运维评审",
+      nodes: [
+        { title: "开发", recv: "开发", verify: "交出即可", required: true },
+      ],
+    };
+    let cursor = 0;
+    const questions = [
+      { id: "name", title: "这类活叫什么？" },
+      { id: "first", title: "第一站，谁来接？" },
+      { id: "verify", title: "这一站离开前，谁来验？" },
+      { id: "gate", title: "这一站能不能跳过？" },
+      { id: "more", title: "后面还要不要加一站？" },
+    ];
+    function currentNode() {
+      return state.nodes[state.nodes.length - 1];
+    }
+    function renderReceipt() {
+      document.getElementById("receipt").innerHTML = `
+        <p style="font-weight:800;font-size:22px;margin:0 0 18px">${state.name || "未命名"}</p>
+        ${state.nodes.map((n, i) => `
+          <div class="node live">
+            <div class="dot"></div>
+            <div>
+              <div style="font-weight:650">${n.title || "新站"}</div>
+              <div style="font-size:13px;color:var(--muted)">${n.recv}接 · ${n.verify} · ${n.required ? "不可跳过" : "可省略"}</div>
+            </div>
+          </div>
+        `).join("")}
+        ${cursor < 8 ? `<div class="node"><div class="dot"></div><div>下一站还没问</div></div>` : ""}
+      `;
+    }
+    function setAsk(html) {
+      document.getElementById("ask").innerHTML = html;
+    }
+    function chips(list, current, onPick) {
+      return `<div class="choices">${list.map((x) =>
+        `<button type="button" class="choice ${x===current?"on":""}" data-v="${x}">${x}</button>`
+      ).join("")}</div>`;
+    }
+    function renderAsk() {
+      const q = questions[Math.min(cursor, questions.length - 1)];
+      const n = currentNode();
+      if (cursor === 0) {
+        setAsk(`
+          <div class="step">问题 1</div>
+          <h1>${q.title}</h1>
+          <input class="name" id="name" value="${state.name}" />
+          <div class="nav"><button class="next" id="go">下一问</button></div>
+        `);
+        document.getElementById("go").onclick = () => {
+          state.name = document.getElementById("name").value;
+          cursor = 1;
+          draw();
+        };
+        document.getElementById("name").oninput = (e) => { state.name = e.target.value; renderReceipt(); };
+        return;
+      }
+      if (q.id === "first") {
+        setAsk(`
+          <div class="step">问题 ${cursor + 1}</div>
+          <h1>${state.nodes.length === 1 && !n.recv ? "第一站谁来接？" : "这一站谁来接？"}</h1>
+          ${chips(roles, n.recv)}
+          <div class="nav"><button id="back">上一问</button><button class="next" id="go">下一问</button></div>
+        `);
+      } else if (q.id === "verify") {
+        setAsk(`
+          <div class="step">问题 ${cursor + 1}</div>
+          <h1>「${n.title || n.recv}」离开前，谁来验？</h1>
+          ${chips(["交出即可", "另一角色独立验", "必须人类确认"], n.verify)}
+          <div class="nav"><button id="back">上一问</button><button class="next" id="go">下一问</button></div>
+        `);
+      } else if (q.id === "gate") {
+        setAsk(`
+          <div class="step">问题 ${cursor + 1}</div>
+          <h1>规划的时候，能不能绕过这一站？</h1>
+          ${chips(["不能跳过", "可以按退出点省略"], n.required ? "不能跳过" : "可以按退出点省略")}
+          <div class="nav"><button id="back">上一问</button><button class="next" id="go">下一问</button></div>
+        `);
+      } else {
+        setAsk(`
+          <div class="step">问题 ${cursor + 1}</div>
+          <h1>后面还要加关卡吗？</h1>
+          <div class="choices">
+            <button type="button" class="choice" id="add">加一站</button>
+            <button type="button" class="choice on" id="finish">就这些站</button>
+          </div>
+          <p class="done" id="summary"></p>
+          <div class="nav"><button id="back">上一问</button></div>
+        `);
+        document.getElementById("summary").textContent =
+          `${state.name}：` + state.nodes.map((x) => `${x.recv}接，${x.verify}`).join(" → ");
+        document.getElementById("add").onclick = () => {
+          state.nodes.push({ title: "下一站", recv: "审查", verify: "交出即可", required: true });
+          cursor = 1;
+          draw();
+        };
+        document.getElementById("finish").onclick = () => {
+          const line = `${state.name}：` + state.nodes.map((x) => `${x.recv}接，${x.verify}`).join(" → ");
+          setAsk(`<div class="step">可以保存了</div><h1>关卡已经说清楚。</h1><p class="done">${line}</p>`);
+        };
+      }
+      document.querySelectorAll(".choice[data-v]").forEach((el) => {
+        el.onclick = () => {
+          const v = el.dataset.v;
+          if (q.id === "first") { n.recv = v; n.title = v; }
+          if (q.id === "verify") n.verify = v;
+          if (q.id === "gate") n.required = v === "不能跳过";
+          draw();
+        };
+      });
+      const back = document.getElementById("back");
+      if (back) back.onclick = () => { cursor = Math.max(0, cursor - 1); draw(); };
+      const go = document.getElementById("go");
+      if (go) go.onclick = () => {
+        if (q.id === "first") cursor = 2;
+        else if (q.id === "verify") cursor = 3;
+        else if (q.id === "gate") cursor = 4;
+        draw();
+      };
+    }
+    function draw() { renderReceipt(); renderAsk(); }
+    draw();
+  </script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>场景模板创建 · 原型索引</title>
+  <style>
+    :root {
+      --bg:#f6f9ff; --card:#ffffff; --card-soft:#f4f7fc;
+      --ink:#0c1426; --ink-2:#5a6b85; --ink-3:#8b99b3;
+      --line:#e6ecf5; --line-strong:#cdd8e6;
+      --brand:#2f5fff; --brand-deep:#2348e0; --brand-soft:#e9efff;
+      --r-card:22px; --r-inner:14px;
+      --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.06);
+      --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:var(--sans); background:var(--bg); color:var(--ink); line-height:1.55; font-size:14px; }
+    body::before { content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+      background:radial-gradient(ellipse 70% 50% at 12% 0%, rgba(47,95,255,.08), transparent 55%); }
+    main { position:relative; z-index:1; max-width:980px; margin:0 auto; padding:44px 24px 80px; }
+    h1 { font-size:24px; font-weight:750; letter-spacing:-.01em; margin-bottom:8px; }
+    .lede { color:var(--ink-2); max-width:66ch; }
+    h2 { font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); margin:36px 0 12px; }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+    @media (max-width:880px){ .grid { grid-template-columns:1fr; } }
+    a.card {
+      display:flex; flex-direction:column; gap:8px;
+      background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+      box-shadow:var(--shadow); padding:20px; color:inherit; text-decoration:none; min-height:180px;
+      transition:.15s;
+    }
+    a.card:hover { border-color:var(--brand); }
+    .kicker { font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--brand-deep); }
+    a.card h3 { font-size:17px; font-weight:700; }
+    a.card p { color:var(--ink-2); font-size:13.5px; flex:1; }
+    .old { opacity:.75; }
+    .old a.card { min-height:auto; padding:14px 16px; }
+    .note {
+      margin-top:32px; background:var(--card); border:1px solid var(--line);
+      border-left:3px solid var(--brand); border-radius:var(--r-inner); padding:14px 18px; color:var(--ink-2);
+    }
+    .note b { color:var(--ink); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>新建场景模板 · 原型索引</h1>
+    <p class="lede">
+      功能模型：自定义任意多站，每站分派一个剧本角色（席位，不绑人）；标了「可作出口」的站，发起任务时可选深度停在那里。下面三套贴合项目 Soft-Flat 设计基线（近白冷灰底 + 白卡弥散阴影 + 品牌蓝强调 + 玻璃只做低密度外壳）。
+    </p>
+
+    <h2>Soft-Flat 三方案（当前）</h2>
+    <div class="grid">
+      <a class="card" href="./soft-a-chain-inspector.html">
+        <span class="kicker">方案一 · 关卡链 + 检修台</span>
+        <h3>链是主角，表单只服务当前站</h3>
+        <p>顶部横向关卡链（节点母题），点一站在下方检修台编辑；右侧玻璃卡放约束摘要与深度模拟。最直观。</p>
+      </a>
+      <a class="card" href="./soft-b-master-detail.html">
+        <span class="kicker">方案二 · 主从编排台</span>
+        <h3>队列 + 详情 + 发起预览表</h3>
+        <p>左列站队列（含出口/人类门徽标），右侧编辑选中站；下方脆数据面表格逐行预览发起时的深度选项。信息密度最高，最贴现有工作台惯例。</p>
+      </a>
+      <a class="card" href="./soft-c-vocab-canvas.html">
+        <span class="kicker">方案三 · 词表画布</span>
+        <h3>点角色 → 点接收位，即分派</h3>
+        <p>左栏角色词表常驻（带在编人数），中间竖向节点画布沿主轴生长，右侧玻璃摘要。分派动作最轻，适合角色多的租户。</p>
+      </a>
+    </div>
+
+    <div class="note">
+      <b>与任务发起的关系：</b>模板作者声明哪些站「可作出口」；发起人之后只在这些出口里选深度（五站模板这次可以只跑到「定界」）。三套原型的深度模拟均按此实现，站数均不封顶，默认演示为运维故障处置，可切运维分析 / 软件交付 / 空白。
+    </div>
+    <div class="note">
+      <b>落地方案：</b>正式重构设计稿见 <a href="./redesign-spec.md">redesign-spec.md</a>——以方案二为骨架、方案一链条压缩为顶部只读概览条，全页路由取代弹窗，含 spec-composer 映射扩展与分阶段计划。
+    </div>
+
+    <h2>此前的风格探索稿（留档）</h2>
+    <div class="grid old">
+      <a class="card" href="./concept-a-depth-ruler.html"><span class="kicker">v2 · 深度尺</span><p>暗色概念稿，不贴设计系统</p></a>
+      <a class="card" href="./concept-b-war-room.html"><span class="kicker">v2 · 战情板</span><p>暗房钉板概念稿</p></a>
+      <a class="card" href="./concept-c-patchbay.html"><span class="kicker">v2 · 配线架</span><p>高对比配线概念稿</p></a>
+    </div>
+  </main>
+</body>
+</html>

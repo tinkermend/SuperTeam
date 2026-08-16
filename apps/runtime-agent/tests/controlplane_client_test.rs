@@ -36,7 +36,7 @@ fn test_heartbeat_request_serialization() {
     let req = HeartbeatRequest {
         current_load: 2,
         status: NodeStatus::Online,
-            supports_platform_limits: true,
+        supports_platform_limits: true,
     };
 
     let json = serde_json::to_string(&req).unwrap();
@@ -305,7 +305,7 @@ async fn test_heartbeat_integration() {
     let heartbeat_req = HeartbeatRequest {
         current_load: 1,
         status: NodeStatus::Online,
-            supports_platform_limits: true,
+        supports_platform_limits: true,
     };
 
     let result = client.heartbeat(heartbeat_req).await;

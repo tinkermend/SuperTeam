@@ -4132,6 +4132,215 @@ func TestApplyFailureRecoveryRetryCreatesAppendOnlySubgraph(t *testing.T) {
 	require.Len(t, recoveryReplacementTasks(repo, failedTaskID), 1)
 }
 
+// 复跑 3 现场：看门狗先把下游收成 cancelled(system_stranded)，人类后点重试。
+// 重试必须把这些下游拉回 blocked 并重挂到替换任务上，否则替换任务后面一个步骤都不挂，
+// 跑完也收敛不了需求。同时需求要从 failed 拉回 executing，源任务标为被取代。
+func TestApplyFailureRecoveryRetryRevivesSystemStrandedDownstreamAndRevivesDemand(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	failedTaskID := uuid.New()
+	reviewID := uuid.New()
+	commitID := uuid.New()
+	decisionID := uuid.New()
+	failedTaskIDPtr := failedTaskID
+	systemStranded := project.ProjectTaskCancelReasonSystemStranded
+
+	failedTask := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, failedTaskID, "failed")
+	failedTask.AssignedDigitalEmployeeID = &employeeID
+	failedTask.PlannedTaskKey = strPtr("develop")
+	reviewTask := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, reviewID, "cancelled")
+	reviewTask.CancelReason = &systemStranded
+	commitTask := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, commitID, "cancelled")
+	commitTask.CancelReason = &systemStranded
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		demands: []project.ProjectDemand{{
+			ID: demandID, TenantID: tenantID, ProjectID: projectID, Status: project.ProjectDemandStatusFailed,
+		}},
+		tasks: []project.ProjectTask{failedTask, reviewTask, commitTask},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, reviewID, failedTaskID),
+			projectStoreDependency(tenantID, projectID, jobID, commitID, reviewID),
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &failedTaskIDPtr,
+			DecisionType:   "task_failure_recovery",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	_, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+		Payload:           map[string]any{"recovery_action": "retry"},
+	})
+	require.NoError(t, err)
+
+	replacement := requireRecoveryReplacementTask(t, repo, failedTaskID)
+	// 直接下游拉回 blocked 并改挂替换任务；隔一层的下游同样复活，等自己的上游。
+	require.Equal(t, "blocked", repo.taskStatus(reviewID))
+	require.Equal(t, "blocked", repo.taskStatus(commitID))
+	requireDependency(t, repo.taskDependencies, reviewID, replacement.ID)
+	requireNoDependency(t, repo.taskDependencies, reviewID, failedTaskID)
+	require.Len(t, eventsByType(repo.events, project.ProjectEventTaskRevived), 2)
+
+	// 源任务标被取代 + 需求从 failed 拉回，否则替换任务跑完需求仍是 failed。
+	require.Equal(t, replacement.ID, *repo.mustTask(failedTaskID).SupersededByTaskID)
+	require.Equal(t, 1, repo.demandRevivedForRecovery)
+	require.Equal(t, project.ProjectDemandStatusExecuting, repo.demands[0].Status)
+}
+
+// A 期真链现场：恢复替换任务继承 revision_root_task_id 指向源任务，而重挂边把下游
+// 移到了替换任务上。协调线程完成时按 ResolveRevisionRoot=true 释放下游，只按根找依赖
+// 就一个也找不到——替换任务 completed 而 review 永久 blocked。两个锚点都要看。
+func TestResolveReadyDownstreamReleasesRewiredDependentsUnderRevisionRootAnchor(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	sourceID := uuid.New()
+	replacementID := uuid.New()
+	reviewID := uuid.New()
+
+	source := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, sourceID, "failed")
+	replacement := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, replacementID, "completed")
+	// 替换任务的血缘根指回源任务（recoveryPlannerMetadata 的既有行为，为了会话接续）。
+	replacement.PlannerMetadata = map[string]any{
+		"revision_root_task_id": sourceID.String(),
+		"source_task_id":        sourceID.String(),
+	}
+	review := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, reviewID, "blocked")
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		tasks:         []project.ProjectTask{source, replacement, review},
+		// 边已被 rewireRecoverableDependents 移到替换任务上。
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, reviewID, replacementID),
+		},
+	}
+	repo.setTaskLatestResult(replacementID,
+		projectStoreTaskResult(tenantID, projectID, replacementID, project.TaskResultDecisionCompleteAccepted, "accepted"))
+	store := NewProjectStore(repo)
+
+	ready, err := store.ResolveReadyDownstream(context.Background(), ResolveReadyDownstreamInput{
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		CompletedTaskID:     replacementID,
+		ResolveRevisionRoot: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{reviewID}, ready)
+	require.Equal(t, "planned", repo.taskStatus(reviewID))
+}
+
+// 人类驳回下游写的是 human_reject：后续再点重试不得复活这些分支。
+func TestApplyFailureRecoveryRetryDoesNotReviveHumanRejectedDownstream(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	failedTaskID := uuid.New()
+	reviewID := uuid.New()
+	decisionID := uuid.New()
+	failedTaskIDPtr := failedTaskID
+	humanReject := project.ProjectTaskCancelReasonHumanReject
+
+	employeeID := uuid.New()
+	failedTask := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, failedTaskID, "failed")
+	failedTask.AssignedDigitalEmployeeID = &employeeID
+	reviewTask := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, reviewID, "cancelled")
+	reviewTask.CancelReason = &humanReject
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		tasks:         []project.ProjectTask{failedTask, reviewTask},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, reviewID, failedTaskID),
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &failedTaskIDPtr,
+			DecisionType:   "task_failure_recovery",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	_, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "approved",
+		Payload:           map[string]any{"recovery_action": "retry"},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, "cancelled", repo.taskStatus(reviewID))
+	require.Empty(t, eventsByType(repo.events, project.ProjectEventTaskRevived))
+}
+
+// 人类选 cancel_downstream 时，取消必须落 human_reject（而不是留空或系统分型）。
+func TestApplyFailureRecoveryCancelDownstreamMarksHumanReject(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	failedTaskID := uuid.New()
+	downstreamID := uuid.New()
+	decisionID := uuid.New()
+	failedTaskIDPtr := failedTaskID
+
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		tasks: []project.ProjectTask{
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, failedTaskID, "failed"),
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, downstreamID, "blocked"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, downstreamID, failedTaskID),
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &failedTaskIDPtr,
+			DecisionType:   "task_failure_recovery",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	_, err := store.ApplyFailureRecoveryDecision(context.Background(), ApplyFailureRecoveryDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "rejected",
+	})
+	require.NoError(t, err)
+
+	downstream := repo.mustTask(downstreamID)
+	require.Equal(t, "cancelled", downstream.Status)
+	require.NotNil(t, downstream.CancelReason)
+	require.Equal(t, project.ProjectTaskCancelReasonHumanReject, *downstream.CancelReason)
+}
+
 func TestApplyFailureRecoveryRetryReturnsNoReadyIDsWhenReplacementBlocked(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -6195,6 +6404,7 @@ type projectStoreMemoryRepository struct {
 	decisionRequests                      []project.DecisionRequest
 	createDecisionRequestErr              error
 	missingActivePlacement                bool
+	demandRevivedForRecovery              int
 
 	acceptanceReady   bool
 	acceptanceRecords []project.ProjectAcceptanceRecord
@@ -7665,6 +7875,94 @@ func (r *projectStoreMemoryRepository) UpdateProjectTaskStatus(ctx context.Conte
 		return task, nil
 	}
 	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+// CancelProjectTaskWithReason 与真实实现同口径：取消并落原因分型。
+func (r *projectStoreMemoryRepository) CancelProjectTaskWithReason(ctx context.Context, tenantID, projectTaskID uuid.UUID, cancelReason string, eventID *uuid.UUID, currentStatuses []string) (project.ProjectTask, error) {
+	task, err := r.UpdateProjectTaskStatus(ctx, tenantID, projectTaskID, "cancelled", eventID, currentStatuses)
+	if err != nil {
+		return project.ProjectTask{}, err
+	}
+	for i, existing := range r.tasks {
+		if existing.TenantID != tenantID || existing.ID != projectTaskID {
+			continue
+		}
+		reason := cancelReason
+		existing.CancelReason = &reason
+		r.tasks[i] = existing
+		return existing, nil
+	}
+	return task, nil
+}
+
+// ReviveStrandedCancelledProjectTasks 只复活 system_stranded 的取消，human_reject
+// 与未分型保持终态。
+func (r *projectStoreMemoryRepository) ReviveStrandedCancelledProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]project.ProjectTask, error) {
+	wanted := make(map[uuid.UUID]struct{}, len(taskIDs))
+	for _, id := range taskIDs {
+		wanted[id] = struct{}{}
+	}
+	revived := make([]project.ProjectTask, 0, len(taskIDs))
+	for i, task := range r.tasks {
+		if task.TenantID != tenantID || task.ProjectID != projectID {
+			continue
+		}
+		if _, ok := wanted[task.ID]; !ok {
+			continue
+		}
+		if task.Status != "cancelled" || task.CancelReason == nil ||
+			*task.CancelReason != project.ProjectTaskCancelReasonSystemStranded {
+			continue
+		}
+		task.Status = "blocked"
+		task.CancelReason = nil
+		task.TerminalEventID = nil
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[i] = task
+		revived = append(revived, task)
+	}
+	return revived, nil
+}
+
+func (r *projectStoreMemoryRepository) MarkProjectTaskSuperseded(ctx context.Context, tenantID, projectTaskID, supersededByTaskID uuid.UUID) (project.ProjectTask, error) {
+	for i, task := range r.tasks {
+		if task.TenantID != tenantID || task.ID != projectTaskID {
+			continue
+		}
+		replacement := supersededByTaskID
+		task.SupersededByTaskID = &replacement
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[i] = task
+		return task, nil
+	}
+	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+// ReviveProjectDemandForRecovery 只认 failed；非 failed 返回冲突（调用方按无需复活处理）。
+func (r *projectStoreMemoryRepository) ReviveProjectDemandForRecovery(ctx context.Context, tenantID, demandID uuid.UUID) (project.ProjectDemand, error) {
+	for i, demand := range r.demands {
+		if demand.ID != demandID || demand.TenantID != tenantID {
+			continue
+		}
+		if demand.Status != project.ProjectDemandStatusFailed {
+			return project.ProjectDemand{}, project.ErrProjectConflict
+		}
+		demand.Status = project.ProjectDemandStatusExecuting
+		r.demands[i] = demand
+		r.demandRevivedForRecovery++
+		return demand, nil
+	}
+	if r.demand.ID == demandID && r.demand.TenantID == tenantID {
+		if r.demand.Status != project.ProjectDemandStatusFailed {
+			return project.ProjectDemand{}, project.ErrProjectConflict
+		}
+		r.demand.Status = project.ProjectDemandStatusExecuting
+		r.demandRevivedForRecovery++
+		return r.demand, nil
+	}
+	// 真实 SQL 的 WHERE 收窄到 status='failed'，命不中（含需求行不存在）一律 no rows
+	// → ErrProjectConflict；夹具照此口径，否则会把「无需复活」误报成致命错误。
+	return project.ProjectDemand{}, project.ErrProjectConflict
 }
 
 // ListDemandLaunchDecisionRequests mirrors the real repository's coordination-job/task

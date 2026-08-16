@@ -13,7 +13,6 @@ import {
   WorkSurface,
   type Tone,
 } from "@/components/superteam";
-import { ProjectWorkspaceGitBadge } from "./project-workspace-git-badge";
 import type {
   ProjectPortfolioItem,
   ProjectPortfolioResponse,
@@ -541,7 +540,6 @@ export function ProjectPortfolioCompactRow({
           >
             {projectStatusLabel(project.status)}
           </StatusPill>
-          <ProjectWorkspaceGitBadge status={item.workspace_git} />
         </div>
         <div className="mt-1 flex min-w-0 items-center gap-2">
           <span className="min-w-0 max-w-[8rem] truncate text-[11px] text-ink-3">

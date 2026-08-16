@@ -11,6 +11,7 @@ func customAgentEmployeeTypeDefinition() EmployeeTypeDefinition {
 		Label:                    "自定义数字员工",
 		Description:              "由用户直接定义职责定位、能力扩展、治理策略和执行器类型的自定义数字员工。",
 		DefaultRole:              "",
+		DefaultRoleKeys:          []string{},
 		RecommendedSkills:        []string{},
 		RecommendedMCPServers:    []string{},
 		RecommendedProviderTypes: []string{"codex", "opencode", "claude-code"},

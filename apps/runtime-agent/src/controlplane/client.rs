@@ -9,13 +9,13 @@ use crate::runtime_auth::{
 use super::models::{
     EnrollHelloRequest, EnrollHelloResponse, HeartbeatRequest, HeartbeatResponse,
     PresignArtifactUploadRequest, PresignDownloadResponse, PresignRawLogUploadRequest,
-    PresignSkillArchiveDownloadRequest, PresignUploadResponse, ProjectTaskAttestationWriteback,
-    ProjectTaskBudgetHeartbeatResponse, ProjectTaskBudgetHeartbeatWriteback,
-    ProjectTaskAttemptWritebackKind, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
+    PresignSkillArchiveDownloadRequest, PresignUploadResponse, ProjectTaskAttemptWritebackKind,
+    ProjectTaskAttestationWriteback, ProjectTaskBudgetHeartbeatResponse,
+    ProjectTaskBudgetHeartbeatWriteback, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
     ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RegisterNodeRequest,
-    RegisterNodeResponse,
-    RuntimeCapabilitiesRequest, RuntimeCapabilityInput, RuntimeCapabilityResponse,
-    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeSessionResponse,
+    RegisterNodeResponse, RuntimeCapabilitiesRequest, RuntimeCapabilityInput,
+    RuntimeCapabilityResponse, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
+    RuntimeSessionResponse,
 };
 
 #[derive(Clone)]
@@ -388,6 +388,11 @@ impl ControlPlaneClient {
 
         if !response.status().is_success() {
             let status = response.status();
+            // 命令可能已因 complete 写回而终态；409 后仍须继续 fail attempt，
+            // 否则项目任务会停在 running（工件上传失败发生在 complete 之后）。
+            if status == StatusCode::CONFLICT {
+                return Ok(());
+            }
             let body = response.text().await.unwrap_or_default();
             return Err(self
                 .runtime_error("Fail runtime command", status, body, Some(auth.generation))
@@ -559,9 +564,7 @@ impl ControlPlaneClient {
             ProjectTaskAttemptWritebackKind::Complete => {
                 self.project_task_attempt_complete_url(attempt_id)
             }
-            ProjectTaskAttemptWritebackKind::Fail => {
-                self.project_task_attempt_fail_url(attempt_id)
-            }
+            ProjectTaskAttemptWritebackKind::Fail => self.project_task_attempt_fail_url(attempt_id),
             ProjectTaskAttemptWritebackKind::WaitHuman => {
                 self.project_task_attempt_wait_human_url(attempt_id)
             }

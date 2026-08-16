@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>方案 B · 对戏表</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #12161c;
+      --panel: #1a1f28;
+      --line: #2c3442;
+      --ink: #e8e4dc;
+      --muted: #9aa3b2;
+      --tungsten: #d4a574;
+      --ok: #8fbf9a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "PingFang SC", sans-serif;
+    }
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 28px 36px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    a.back { color: var(--muted); text-decoration: none; font-size: 13px; }
+    .prod {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: 42px;
+      letter-spacing: 0.06em;
+      line-height: 1;
+    }
+    .prod small {
+      display: block;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      color: var(--tungsten);
+      margin-bottom: 6px;
+    }
+    .actions { display: flex; gap: 10px; }
+    button {
+      font: inherit;
+      cursor: pointer;
+    }
+    .ghost, .solid {
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 2px;
+    }
+    .ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+    .solid { background: var(--tungsten); color: #1a120c; border: 0; font-weight: 600; }
+    .sheet {
+      padding: 8px 36px 80px;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 16px;
+      padding: 20px 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .meta input {
+      display: block;
+      width: 100%;
+      margin-top: 6px;
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink);
+      font: inherit;
+      padding: 6px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      text-align: left;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      color: var(--tungsten);
+      font-weight: 500;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--tungsten);
+    }
+    td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+    }
+    tr:hover td { background: #1f2530; }
+    .scene {
+      font-family: "Bebas Neue", sans-serif;
+      font-size: 28px;
+      color: var(--tungsten);
+      width: 72px;
+    }
+    input.cell, select.cell {
+      width: 100%;
+      background: transparent;
+      border: 0;
+      color: var(--ink);
+      font: inherit;
+      padding: 8px 0;
+    }
+    select.cell option { color: #111; }
+    .gate {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .tele {
+      position: sticky;
+      bottom: 0;
+      margin: 28px -36px 0;
+      padding: 16px 36px;
+      background: #0e1218;
+      border-top: 1px solid var(--line);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    .tele b { color: var(--tungsten); font-weight: 600; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <a class="back" href="./index.html">← 三套方案</a>
+      <div class="prod"><small>CALL SHEET · SCENE TEMPLATE</small>运维评审</div>
+    </div>
+    <div class="actions">
+      <button class="ghost" type="button" id="add">+ 加一场</button>
+      <button class="solid" type="button">锁定为第 1 版</button>
+    </div>
+  </header>
+  <div class="sheet">
+    <div class="meta">
+      <div>剧情摘要<input value="线上变更：开发交出 → 审查签字 → 发布。模板只定席位，项目再对号入座。" /></div>
+      <div>内部标识<input value="ops_review" /></div>
+      <div>编制单位<input value="角色词表 · 不写人名" /></div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>场次</th>
+          <th>这一站叫什么</th>
+          <th>谁上台接</th>
+          <th>谁在侧幕验</th>
+          <th>门</th>
+        </tr>
+      </thead>
+      <tbody id="body"></tbody>
+    </table>
+    <div class="tele">
+      <div id="line"></div>
+      <div class="hint">借鉴片场 Call Sheet、GitHub required reviewers、Linear 的 Assignee / Reviewer 分列：扫一眼编制，而不是读完一张表单。</div>
+    </div>
+  </div>
+  <script>
+    const roles = [
+      { key: "developer", title: "开发" },
+      { key: "reviewer", title: "审查" },
+      { key: "tester", title: "测试" },
+      { key: "publisher", title: "发布" },
+      { key: "human", title: "人类确认" },
+      { key: "none", title: "本席交出即可" },
+    ];
+    const rows = [
+      { title: "开发", recv: "developer", verify: "none", required: true },
+      { title: "审查", recv: "reviewer", verify: "human", required: true },
+      { title: "发布", recv: "publisher", verify: "tester", required: true },
+    ];
+    function options(selected, extra) {
+      const list = extra || roles.filter((r) => r.key !== "human" && r.key !== "none");
+      return list.map((r) => `<option value="${r.key}" ${r.key===selected?"selected":""}>${r.title}</option>`).join("");
+    }
+    function titleOf(key) {
+      return roles.find((r) => r.key === key)?.title || key;
+    }
+    function render() {
+      document.getElementById("body").innerHTML = rows.map((r, i) => `
+        <tr>
+          <td class="scene">${String(i + 1).padStart(2, "0")}</td>
+          <td><input class="cell" data-k="title" data-i="${i}" value="${r.title}" /></td>
+          <td><select class="cell" data-k="recv" data-i="${i}">${options(r.recv)}</select></td>
+          <td><select class="cell" data-k="verify" data-i="${i}">${options(r.verify, [
+            { key: "none", title: "本席交出即可" },
+            { key: "human", title: "人类确认" },
+            { key: "tester", title: "测试独立验" },
+            { key: "reviewer", title: "审查独立验" },
+          ])}</select></td>
+          <td><label class="gate"><input type="checkbox" data-k="required" data-i="${i}" ${r.required?"checked":""} /> 不可跳过</label></td>
+        </tr>
+      `).join("");
+      document.querySelectorAll("[data-k]").forEach((el) => {
+        el.oninput = el.onchange = () => {
+          const i = Number(el.dataset.i);
+          if (el.dataset.k === "required") rows[i].required = el.checked;
+          else rows[i][el.dataset.k] = el.value;
+          writeLine();
+        };
+      });
+      writeLine();
+    }
+    function writeLine() {
+      document.getElementById("line").innerHTML = rows.map((r, i) =>
+        `<b>${String(i+1).padStart(2,"0")} ${r.title}</b>　接：${titleOf(r.recv)}　验：${titleOf(r.verify)}　${r.required ? "门关着" : "可省略"}`
+      ).join("  /  ");
+    }
+    document.getElementById("add").onclick = () => {
+      rows.push({ title: "新场次", recv: "developer", verify: "none", required: true });
+      render();
+    };
+    render();
+  </script>
+</body>
+</html>

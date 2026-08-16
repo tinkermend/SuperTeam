@@ -15,21 +15,20 @@ use crate::commands::registry::{ActiveRunLookup, RuntimeCommandRegistry, Runtime
 use crate::config::RuntimeConfig;
 use crate::controlplane::ControlPlaneClient;
 use crate::controlplane::models::{
-    EnsureInstanceCommand, EnsureProjectDirectoryCommand, CloneProjectRepositoryCommand,
-    ProjectTaskAttestationWriteback,
-    ProjectTaskBudgetHeartbeatWriteback, ProjectTaskCompleteWriteback, ProjectTaskFailWriteback,
-    ProjectTaskStartWriteback, ProjectTaskWaitHumanWriteback, RemoveProjectDirectoryCommand,
-    ValidateProjectWorkspaceCommand,
-    RuntimeCommand, RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback,
-    RuntimeCommandType, TaskResultContract,
+    CloneProjectRepositoryCommand, EnsureInstanceCommand, EnsureProjectDirectoryCommand,
+    ProjectTaskAttestationWriteback, ProjectTaskBudgetHeartbeatWriteback,
+    ProjectTaskCompleteWriteback, ProjectTaskFailWriteback, ProjectTaskStartWriteback,
+    ProjectTaskWaitHumanWriteback, RemoveProjectDirectoryCommand, RuntimeCommand,
+    RuntimeCommandEventWriteback, RuntimeCommandTerminalWriteback, RuntimeCommandType,
+    TaskResultContract, ValidateProjectWorkspaceCommand,
 };
 use crate::events::{
-    attempt_stream_diagnostics, ErrorEnvelope, PROVIDER_EVENT_SCHEMA_VERSION, ProviderEvent,
+    ErrorEnvelope, PROVIDER_EVENT_SCHEMA_VERSION, ProviderEvent, attempt_stream_diagnostics,
 };
 use crate::instances::{EnsureInstanceRequest, ensure_instance};
 use crate::providers::catalog;
 use crate::providers::error_map::{
-    self, code as error_code, envelope_from_anyhow, envelope_for_code,
+    self, code as error_code, envelope_for_code, envelope_from_anyhow,
 };
 use crate::providers::{ProviderAdapter, ProviderEventStream, ProviderRequest, ProviderRunHandle};
 use crate::runs::{RunEventRecord, RunSpec, RunStatus, RuntimeCommandRunContext, RuntimeRunStore};
@@ -369,15 +368,16 @@ impl RuntimeCommandExecutor {
         // agent_home_dir; every failure exit from here until the run is actually started
         // (and the drain/attach paths below take over rollback duty) must roll it back
         // best-effort rather than leaving a stale injected config behind.
-        let session_policy_value = serde_json::to_value(&payload.session_policy).map_err(|error| {
-            rollback_session_projections_best_effort(
-                &payload.command_id,
-                Some(command_workspace.agent_home_dir.as_path()),
-                Some(command_workspace.workspace_path.as_path()),
-                Some(payload.command_id.as_str()),
-            );
-            self.recorded_error(&payload.command_id, error.into())
-        })?;
+        let session_policy_value =
+            serde_json::to_value(&payload.session_policy).map_err(|error| {
+                rollback_session_projections_best_effort(
+                    &payload.command_id,
+                    Some(command_workspace.agent_home_dir.as_path()),
+                    Some(command_workspace.workspace_path.as_path()),
+                    Some(payload.command_id.as_str()),
+                );
+                self.recorded_error(&payload.command_id, error.into())
+            })?;
 
         let mut environment: BTreeMap<String, String> = payload
             .environment
@@ -497,7 +497,10 @@ impl RuntimeCommandExecutor {
             }
         }
         let raw_sink = self.build_raw_sink(&run_id, payload.tenant_id.as_deref(), &project_task);
-        let provider_run = match provider.start(provider_request(&spec), raw_sink.clone()).await {
+        let provider_run = match provider
+            .start(provider_request(&spec), raw_sink.clone())
+            .await
+        {
             Ok(provider_run) => provider_run,
             Err(error) => {
                 let envelope = envelope_for_code(
@@ -720,7 +723,8 @@ impl RuntimeCommandExecutor {
             match serde_json::from_value(command.payload.clone()) {
                 Ok(request) => request,
                 Err(error) => {
-                    let message = format!("invalid ensure_project_directory command payload: {error}");
+                    let message =
+                        format!("invalid ensure_project_directory command payload: {error}");
                     self.write_command_failure(&command.id, message.clone())
                         .await?;
                     return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
@@ -736,7 +740,8 @@ impl RuntimeCommandExecutor {
                     "workspace_path".to_string(),
                     serde_json::Value::String(path.display().to_string()),
                 );
-                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                if let Some(project_id) =
+                    request.project_id.filter(|value| !value.trim().is_empty())
                 {
                     result.insert(
                         "project_id".to_string(),
@@ -749,10 +754,7 @@ impl RuntimeCommandExecutor {
                 );
                 self.write_command_completed(
                     &command.id,
-                    Some(format!(
-                        "ensured project directory {}",
-                        path.display()
-                    )),
+                    Some(format!("ensured project directory {}", path.display())),
                     Some(result),
                 )
                 .await?;
@@ -779,7 +781,8 @@ impl RuntimeCommandExecutor {
             match serde_json::from_value(command.payload.clone()) {
                 Ok(request) => request,
                 Err(error) => {
-                    let message = format!("invalid remove_project_directory command payload: {error}");
+                    let message =
+                        format!("invalid remove_project_directory command payload: {error}");
                     self.write_command_failure(&command.id, message.clone())
                         .await?;
                     return Err(self.recorded_error(&command.id, anyhow::anyhow!(message)));
@@ -795,7 +798,8 @@ impl RuntimeCommandExecutor {
                     "project_name".to_string(),
                     serde_json::Value::String(request.project_name.clone()),
                 );
-                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                if let Some(project_id) =
+                    request.project_id.filter(|value| !value.trim().is_empty())
                 {
                     result.insert(
                         "project_id".to_string(),
@@ -858,7 +862,8 @@ impl RuntimeCommandExecutor {
                     "project_name".to_string(),
                     serde_json::Value::String(request.project_name),
                 );
-                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                if let Some(project_id) =
+                    request.project_id.filter(|value| !value.trim().is_empty())
                 {
                     result.insert(
                         "project_id".to_string(),
@@ -916,7 +921,8 @@ impl RuntimeCommandExecutor {
                     "project_name".to_string(),
                     serde_json::Value::String(request.project_name),
                 );
-                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                if let Some(project_id) =
+                    request.project_id.filter(|value| !value.trim().is_empty())
                 {
                     result.insert(
                         "project_id".to_string(),
@@ -966,7 +972,8 @@ impl RuntimeCommandExecutor {
         ) {
             Ok(facts) => {
                 let mut result = facts;
-                if let Some(project_id) = request.project_id.filter(|value| !value.trim().is_empty())
+                if let Some(project_id) =
+                    request.project_id.filter(|value| !value.trim().is_empty())
                 {
                     result.insert(
                         "project_id".to_string(),
@@ -1115,7 +1122,8 @@ impl RuntimeCommandExecutor {
                         serde_json::Value::String(actual_hash.clone()),
                     );
                 }
-                if let crate::provider_native_config::ConfigError::Unmanageable { reason } = &error {
+                if let crate::provider_native_config::ConfigError::Unmanageable { reason } = &error
+                {
                     result.insert(
                         "unmanageable_reason".to_string(),
                         serde_json::Value::String(reason.clone()),
@@ -1126,7 +1134,11 @@ impl RuntimeCommandExecutor {
                     message,
                     error.error_code(),
                     "config",
-                    if result.is_empty() { None } else { Some(result) },
+                    if result.is_empty() {
+                        None
+                    } else {
+                        Some(result)
+                    },
                 )
                 .await?;
                 Ok(RuntimeCommandOutcome {
@@ -1391,10 +1403,7 @@ impl RuntimeCommandExecutor {
         self.ensure_command_instance_post_inject(payload, &agent_home_dir)
             .await
             .map_err(|error| {
-                rollback_session_mcp_config_best_effort(
-                    command_id,
-                    Some(agent_home_dir.as_path()),
-                );
+                rollback_session_mcp_config_best_effort(command_id, Some(agent_home_dir.as_path()));
                 self.recorded_error(command_id, error)
             })
     }
@@ -1607,9 +1616,7 @@ impl RuntimeCommandExecutor {
                 if !run_is_cancelled(&runs, &run_id).await {
                     let envelope =
                         envelope_from_anyhow(&error, failure_spec.registry_provider_type());
-                    let _ = runs
-                        .finish_failed(&run_id, envelope.message.clone())
-                        .await;
+                    let _ = runs.finish_failed(&run_id, envelope.message.clone()).await;
                     // A failed run still produced a transcript; the failure
                     // writeback must carry its pointer.
                     finalize_raw_log(&failure_raw_sink, failure_writeback.as_ref()).await;
@@ -1624,7 +1631,8 @@ impl RuntimeCommandExecutor {
                                     provider_started_at
                                         .elapsed()
                                         .as_millis()
-                                        .min(i64::MAX as u128) as i64,
+                                        .min(i64::MAX as u128)
+                                        as i64,
                                 ),
                             )
                             .await;
@@ -1705,6 +1713,48 @@ fn spawn_project_task_budget_heartbeat(
             tokio::select! {
                 _ = child_stop.cancelled() => break,
                 _ = tokio::time::sleep(interval) => {
+                    match handle.try_wait().await {
+                        Ok(Some(_)) => {
+                            let envelope = envelope_for_code(
+                                error_code::PROVIDER_PROTOCOL_ERROR,
+                                "provider process exited while the event stream was still open",
+                                writeback.provider_type.as_str(),
+                            );
+                            emit_turn_error_marker(
+                                &runs,
+                                Some(&writeback),
+                                &run_id,
+                                &envelope,
+                                None,
+                                &environment,
+                            )
+                            .await;
+                            writeback
+                                .record_attestation(
+                                    &spec,
+                                    "provider_terminal",
+                                    "failed",
+                                    None,
+                                    Some(
+                                        started_at
+                                            .elapsed()
+                                            .as_millis()
+                                            .min(i64::MAX as u128)
+                                            as i64,
+                                    ),
+                                )
+                                .await;
+                            let _ = writeback.fail_with_envelope(envelope, None).await;
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            eprintln!(
+                                "Project task provider wait failed for command {}: {}",
+                                writeback.command_id, error
+                            );
+                        }
+                    }
                     match writeback.record_budget_heartbeat(started_at.elapsed()).await {
                         Ok(true) => {
                             let envelope = envelope_for_code(
@@ -1993,17 +2043,12 @@ impl RuntimeCommandWritebackSink {
             None => crate::redaction::redact(&value),
         });
         let total_tokens = self.usage_tokens.load(Ordering::Relaxed);
-        self.client
-            .complete_runtime_command(
-                &self.command_id,
-                &command_completed_terminal(
-                    summary.clone(),
-                    provider_session_id.clone(),
-                    total_tokens,
-                    diagnostics,
-                ),
-            )
-            .await?;
+        let terminal = command_completed_terminal(
+            summary.clone(),
+            provider_session_id.clone(),
+            total_tokens,
+            diagnostics,
+        );
         if let Some(project_task) = &self.project_task {
             let raw_log = self.raw_log.lock().ok().and_then(|guard| guard.clone());
             // 捕获 (发送结果, 写回类别, 原始请求体) —— 失败时把请求体落盘由后台 worker
@@ -2015,6 +2060,9 @@ impl RuntimeCommandWritebackSink {
                     summary.as_deref(),
                     provider_session_id.as_deref(),
                 ) {
+                self.client
+                    .complete_runtime_command(&self.command_id, &terminal)
+                    .await?;
                 writeback.raw_log = raw_log;
                 let result = self
                     .client
@@ -2026,17 +2074,36 @@ impl RuntimeCommandWritebackSink {
                     serde_json::to_value(&writeback).ok(),
                 )
             } else {
-                // 采集+上传发生在 complete writeback 之前(证据地基 spec §3.4):
-                // 控制平面收到 result 时对象已在存储中,可在同一事务里物化。
-                // 上传失败 → 整个 completion 失败,任务不得声称拥有从未落库的证据。
-                let mut collected_refs =
-                    self.collect_and_upload_artifacts(summary.as_deref()).await?;
+                // 采集+上传必须在命令 complete 之前(证据地基 spec §3.4):
+                // 上传失败不得把 run 先标完成再 `?` 退出——否则 drain 的 fail
+                // 路径对已完成命令打 409，attempt 终态被跳过，任务永久 running。
+                let mut collected_refs = self
+                    .collect_and_upload_artifacts(summary.as_deref())
+                    .await
+                    .map_err(|error| {
+                        eprintln!(
+                            "artifact upload failed for command {}: {error:#}",
+                            self.command_id
+                        );
+                        error
+                    })?;
                 // 声明式交付物与证据同格整批失败(v2 spec §2):契约承诺的
                 // 交付物不允许"声称交付了但没落库"。
-                collected_refs.extend(self.collect_and_upload_declared().await?);
+                collected_refs.extend(self.collect_and_upload_declared().await.map_err(
+                    |error| {
+                        eprintln!(
+                            "declared deliverable upload failed for command {}: {error:#}",
+                            self.command_id
+                        );
+                        error
+                    },
+                )?);
                 // 输出附件是 best-effort(输出附件 spec §1.5):单个附件失败
                 // 降级为可见的 skip note,绝不拖垮 completion。
                 collected_refs.extend(self.collect_and_upload_attachments().await);
+                self.client
+                    .complete_runtime_command(&self.command_id, &terminal)
+                    .await?;
                 let mut writeback = project_task_complete_writeback(
                     project_task,
                     &self.command_id,
@@ -2059,7 +2126,11 @@ impl RuntimeCommandWritebackSink {
                 self.enqueue_failed_writeback(project_task, kind, body, error)
                     .await;
             }
+            return Ok(());
         }
+        self.client
+            .complete_runtime_command(&self.command_id, &terminal)
+            .await?;
         Ok(())
     }
 
@@ -2110,15 +2181,14 @@ impl RuntimeCommandWritebackSink {
         let Some(context) = &self.artifact_collection else {
             return Ok(Vec::new());
         };
-        let artifacts = crate::artifacts::collect_artifacts(
-            &crate::artifacts::ArtifactCollectionInputs {
+        let artifacts =
+            crate::artifacts::collect_artifacts(&crate::artifacts::ArtifactCollectionInputs {
                 raw_log_path: context.raw_log_path.clone(),
                 workspace_path: context.workspace_path.clone(),
                 conclusion,
                 environment: &context.environment,
-            },
-        )
-        .await;
+            })
+            .await;
         crate::artifacts::upload_artifacts(&self.client, artifacts).await
     }
 
@@ -2812,7 +2882,11 @@ fn project_task_attestation_writeback(
         // skill key collisions (project-native path wins). Both must be auditable (S7).
         let mut conflicts: Vec<serde_json::Value> = Vec::new();
         if let Some(ctx) = &spec.command_context {
-            if let Some(arr) = ctx.metadata.get("skill_conflicts").and_then(|v| v.as_array()) {
+            if let Some(arr) = ctx
+                .metadata
+                .get("skill_conflicts")
+                .and_then(|v| v.as_array())
+            {
                 for item in arr {
                     conflicts.push(item.clone());
                 }
@@ -4044,8 +4118,7 @@ async fn drain_provider_events(
                                 provider_started_at
                                     .elapsed()
                                     .as_millis()
-                                    .min(i64::MAX as u128)
-                                    as i64,
+                                    .min(i64::MAX as u128) as i64,
                             ),
                         )
                         .await;
@@ -4397,7 +4470,10 @@ mod tests {
         assert!(contract.acceptance_results.is_empty());
         backfill_partial_contract_gaps(&mut contract, &context, "cmd-1", None);
         assert_eq!(contract.acceptance_results.len(), 2);
-        assert_eq!(contract.acceptance_results[0]["criterion"], json!("cities.json"));
+        assert_eq!(
+            contract.acceptance_results[0]["criterion"],
+            json!("cities.json")
+        );
         assert_eq!(contract.acceptance_results[0]["status"], json!("passed"));
         assert_eq!(
             contract.acceptance_results[0]["evidence_refs"],
@@ -5008,7 +5084,10 @@ mod tests {
             writeback.payload["attempt_ref"],
             serde_json::json!({ "command_id": "cmd-1", "attempt_id": "attempt-1" })
         );
-        assert_eq!(writeback.payload["ts"], serde_json::json!("2026-08-10T00:00:00Z"));
+        assert_eq!(
+            writeback.payload["ts"],
+            serde_json::json!("2026-08-10T00:00:00Z")
+        );
         // 业务键不受影响
         assert_eq!(writeback.payload["text"], serde_json::json!("hello"));
     }
@@ -5052,8 +5131,7 @@ mod tests {
             event: ProviderEvent::ToolStarted {
                 tool_id: "tu-2".to_string(),
                 name: "Bash".to_string(),
-                input_excerpt: "{\"command\":\"curl -H 'X-Key: supersecretvalue123'\"}"
-                    .to_string(),
+                input_excerpt: "{\"command\":\"curl -H 'X-Key: supersecretvalue123'\"}".to_string(),
                 input_truncated: false,
             },
             recorded_at_ms: 0,
@@ -5229,8 +5307,12 @@ mod tests {
     #[test]
     fn command_completed_terminal_writes_unmapped_diagnostics() {
         let diagnostics = attempt_stream_diagnostics("claude-code", 3);
-        let terminal =
-            command_completed_terminal(Some("done".to_string()), None, 0, Some(diagnostics.clone()));
+        let terminal = command_completed_terminal(
+            Some("done".to_string()),
+            None,
+            0,
+            Some(diagnostics.clone()),
+        );
 
         let result = terminal.result.expect("result map");
         assert_eq!(result["diagnostics"]["unmapped_native_count"], 3);
@@ -5241,11 +5323,7 @@ mod tests {
 
     #[test]
     fn command_failed_terminal_from_envelope_writes_diagnostics() {
-        let envelope = envelope_for_code(
-            error_code::RATE_LIMIT,
-            "rate limit",
-            "claude-code",
-        );
+        let envelope = envelope_for_code(error_code::RATE_LIMIT, "rate limit", "claude-code");
         let diagnostics = attempt_stream_diagnostics("claude-code", 2);
         let terminal = command_failed_terminal_from_envelope(&envelope, Some(diagnostics));
         let diagnostic = terminal.diagnostic.expect("terminal diagnostic");

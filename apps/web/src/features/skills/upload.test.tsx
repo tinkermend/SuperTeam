@@ -141,6 +141,27 @@ describe("SkillUploadView", () => {
     await userEvent.fill(screen.getByLabelText("技能中文名称"), "接口文档生成");
 
     await expect.element(publishButton).not.toBeDisabled();
+    await expect.element(screen.getByLabelText("技能标识")).toHaveValue("skill-api-doc");
+  });
+
+  it("submits the durable slug separately from the Chinese display name", async () => {
+    const captured: Record<string, FormDataEntryValue | null> = {};
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const formData = init?.body as FormData;
+      captured.name = formData.get("name");
+      captured.slug = formData.get("slug");
+      return jsonResponse(uploadedSkill, 201);
+    });
+    const screen = await renderUploadView({ fetcher });
+
+    await userEvent.upload(screen.getByLabelText("技能 zip 包"), new File(["zip"], "ecc-coding-standards.zip", { type: "application/zip" }));
+    await userEvent.fill(screen.getByLabelText("技能中文名称"), "ECC 编码规范");
+    await expect.element(screen.getByLabelText("技能标识")).toHaveValue("ecc-coding-standards");
+    await userEvent.click(screen.getByRole("button", { name: "发布到技能市场" }));
+
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalled());
+    expect(captured.name).toBe("ECC 编码规范");
+    expect(captured.slug).toBe("ecc-coding-standards");
   });
 
   it("shows a compact package status band and ready publish summary", async () => {

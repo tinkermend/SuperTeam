@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, LayoutTemplate, Plus } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
@@ -22,6 +23,7 @@ import {
   listScenarioTemplateVersions,
   listScenarioTemplates,
   patchScenarioTemplate,
+  deleteScenarioTemplate,
   scenarioTemplateAcceptanceCriteria,
   scenarioTemplateExits,
   scenarioTemplateRoles,
@@ -31,17 +33,15 @@ import {
 import { getScenarioTemplateRoleView } from "@/lib/api/casting";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { formatRelativeTime } from "@/lib/format-time";
-import { CreateScenarioTemplateDialog } from "./create-dialog";
-import { CreateScenarioTemplateVersionDialog } from "./version-dialog";
 
 export function ScenarioTemplatesPage() {
   const apiBaseUrl = resolveControlPlaneUrl();
   const queryClient = useQueryClient();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [versionEditRow, setVersionEditRow] = useState<ScenarioTemplate | null>(null);
   const [statusToggleRow, setStatusToggleRow] = useState<ScenarioTemplate | null>(null);
   const [statusToggleError, setStatusToggleError] = useState<string | null>(null);
+  const [deleteRow, setDeleteRow] = useState<ScenarioTemplate | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const templates = useQuery({
     queryKey: ["scenario-templates"],
@@ -67,6 +67,24 @@ export function ScenarioTemplatesPage() {
     }
 });
 
+  const deleteMutation = useMutation({
+    mutationFn: (key: string) => deleteScenarioTemplate({ baseUrl: apiBaseUrl }, key),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["scenario-templates"] });
+      setDeleteError(null);
+      setDeleteRow(null);
+    },
+    onError: (error: unknown) => {
+      setDeleteError(
+        error instanceof ApiRequestError && error.detail
+          ? error.detail
+          : error instanceof Error
+            ? error.message
+            : "删除失败",
+      );
+    }
+});
+
   const rows = templates.data ?? [];
   const isInitialLoading = templates.isPending && rows.length === 0;
   const isBlockingError = templates.isError && rows.length === 0;
@@ -84,9 +102,11 @@ export function ScenarioTemplatesPage() {
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         <div className="flex min-w-0 flex-col gap-6">
           <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
-            <Button className="h-11 self-start px-5" onClick={() => setShowCreate(true)}>
-              <Plus data-icon="inline-start" />
-              新建模板
+            <Button asChild className="h-11 self-start px-5">
+              <Link to="/scenario-templates/new">
+                <Plus data-icon="inline-start" />
+                新建模板
+              </Link>
             </Button>
           </div>
 
@@ -135,10 +155,13 @@ export function ScenarioTemplatesPage() {
                           current === row.template_key ? null : row.template_key,
                         )
                       }
-                      onRequestVersion={() => setVersionEditRow(row)}
                       onRequestStatusToggle={() => {
                         setStatusToggleError(null);
                         setStatusToggleRow(row);
+                      }}
+                      onRequestDelete={() => {
+                        setDeleteError(null);
+                        setDeleteRow(row);
                       }}
                     />
                   ))}
@@ -148,20 +171,6 @@ export function ScenarioTemplatesPage() {
           </WorkSurface>
         </div>
       </Main>
-
-      <CreateScenarioTemplateDialog
-        apiBaseUrl={apiBaseUrl}
-        open={showCreate}
-        onOpenChange={setShowCreate}
-      />
-
-      <CreateScenarioTemplateVersionDialog
-        apiBaseUrl={apiBaseUrl}
-        template={versionEditRow}
-        onOpenChange={(open) => {
-          if (!open) setVersionEditRow(null);
-        }}
-      />
 
       <ConfirmDialog
         open={statusToggleRow !== null}
@@ -204,6 +213,32 @@ export function ScenarioTemplatesPage() {
           }
         }}
       />
+      <ConfirmDialog
+        open={deleteRow !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteRow(null);
+            setDeleteError(null);
+          }
+        }}
+        title={`删除 ${deleteRow?.name ?? ""}？`}
+        desc={
+          <div className="flex flex-col gap-2">
+            <p>
+              删除后列表和任务发起不再出现「{deleteRow?.name}」。已经按它规划过的需求仍保留当时的标识。
+            </p>
+            {deleteError ? <p className="text-danger">{deleteError}</p> : null}
+          </div>
+        }
+        confirmText="确认删除"
+        destructive
+        isLoading={deleteMutation.isPending}
+        handleConfirm={() => {
+          if (deleteRow) {
+            deleteMutation.mutate(deleteRow.template_key);
+          }
+        }}
+      />
     </>
   );
 }
@@ -213,15 +248,15 @@ function ScenarioTemplateRow({
   row,
   expanded,
   onToggle,
-  onRequestVersion,
-  onRequestStatusToggle
+  onRequestStatusToggle,
+  onRequestDelete
 }: {
   apiBaseUrl: string;
   row: ScenarioTemplate;
   expanded: boolean;
   onToggle: () => void;
-  onRequestVersion: () => void;
   onRequestStatusToggle: () => void;
+  onRequestDelete: () => void;
 }) {
   const roles = scenarioTemplateRoles(row);
   const skeleton = scenarioTemplateSkeleton(row);
@@ -298,12 +333,13 @@ function ScenarioTemplateRow({
         </Td>
         <Td>
           <div className="flex justify-end gap-1" onClick={(event) => event.stopPropagation()}>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onRequestVersion}
-            >
-              升版
+            <Button asChild variant="outline" size="sm">
+              <Link
+                to="/scenario-templates/$templateKey/edit"
+                params={{ templateKey: row.template_key }}
+              >
+                编辑
+              </Link>
             </Button>
             <Button
               variant={row.status === "active" ? "outline" : "primary"}
@@ -311,6 +347,9 @@ function ScenarioTemplateRow({
               onClick={onRequestStatusToggle}
             >
               {row.status === "active" ? "停用" : "启用"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={onRequestDelete}>
+              删除
             </Button>
           </div>
         </Td>

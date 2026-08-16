@@ -711,6 +711,149 @@ func createCriterionVerdictFixture(t *testing.T, repo Repository, tenantID, proj
 // convergence gate: a demand whose only task is completed still holds at
 // acceptance_pending (not completed) while its snapshotted blocking
 // criterion has no verdict at all — awaiting human sign-off.
+// 复跑 3 现场的真库回归：开发步失败 → 看门狗取消下游(system_stranded) → 人类重试建
+// 替换任务 → 复活下游并把源任务标被取代 → 替换任务完成后需求必须回到 executing，
+// 而不是被旧的 failed 行永久钉住。同时验证 human_reject 的取消不会被复活。
+func TestSupersededTaskExcludedFromDemandRecomputeAndStrandedRevive(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	pgRepo := repo.(*PgRepository)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixtureWithStatusAndSourceRefs(t, repo, tenantID, projectID, ProjectDemandStatusExecuting, nil)
+
+	newTask := func(title, status string) ProjectTask {
+		task, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+			TenantID:  tenantID,
+			ProjectID: projectID,
+			DemandID:  &demandID,
+			Title:     title,
+			Status:    status,
+			RiskLevel: "low",
+		})
+		require.NoError(t, err)
+		return task
+	}
+	develop := newTask("开发实现", ProjectTaskStatusFailed)
+	review := newTask("代码审查", ProjectTaskStatusBlocked)
+	security := newTask("安全审查", ProjectTaskStatusBlocked)
+	for _, edge := range [][2]uuid.UUID{{review.ID, develop.ID}, {security.ID, review.ID}} {
+		_, err := pgRepo.CreateProjectTaskDependency(ctx, CreateProjectTaskDependencyRequest{
+			TenantID:        tenantID,
+			ProjectID:       projectID,
+			DependentTaskID: edge[0],
+			BlockerTaskID:   edge[1],
+		})
+		require.NoError(t, err)
+	}
+
+	// 基线：开发失败 + 下游 blocked ⇒ 需求 failed（既有口径，不改）。
+	require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+	demand, err := repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusFailed, demand.Status)
+
+	// 看门狗收口：两个下游都落 system_stranded；再插一个 human_reject 作对照。
+	for _, task := range []ProjectTask{review, security} {
+		cancelled, err := pgRepo.CancelProjectTaskWithReason(ctx, tenantID, task.ID,
+			ProjectTaskCancelReasonSystemStranded, nil, []string{ProjectTaskStatusBlocked})
+		require.NoError(t, err)
+		require.Equal(t, ProjectTaskStatusCancelled, cancelled.Status)
+		require.Equal(t, ProjectTaskCancelReasonSystemStranded, *cancelled.CancelReason)
+	}
+	rejected := newTask("推送远程", ProjectTaskStatusBlocked)
+	_, err = pgRepo.CancelProjectTaskWithReason(ctx, tenantID, rejected.ID,
+		ProjectTaskCancelReasonHumanReject, nil, []string{ProjectTaskStatusBlocked})
+	require.NoError(t, err)
+
+	// 人类点重试：替换任务 + 源任务标被取代 + 复活下游 + 需求拉回。
+	replacement := newTask("开发实现（重试）", ProjectTaskStatusPlanned)
+	superseded, err := pgRepo.MarkProjectTaskSuperseded(ctx, tenantID, develop.ID, replacement.ID)
+	require.NoError(t, err)
+	require.Equal(t, replacement.ID, *superseded.SupersededByTaskID)
+
+	revived, err := pgRepo.ReviveStrandedCancelledProjectTasks(ctx, tenantID, projectID,
+		[]uuid.UUID{review.ID, security.ID, rejected.ID})
+	require.NoError(t, err)
+	require.Len(t, revived, 2, "human_reject 的取消不得被复活")
+	for _, task := range revived {
+		require.Equal(t, ProjectTaskStatusBlocked, task.Status)
+		require.Nil(t, task.CancelReason)
+	}
+	rejectedAfter, err := repo.GetProjectTask(ctx, tenantID, rejected.ID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectTaskStatusCancelled, rejectedAfter.Status)
+
+	revivedDemand, err := pgRepo.ReviveProjectDemandForRecovery(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusExecuting, revivedDemand.Status)
+	_, err = pgRepo.ReviveProjectDemandForRecovery(ctx, tenantID, demandID)
+	require.ErrorIs(t, err, ErrProjectConflict, "非 failed 时应报冲突而不是重复改写")
+
+	// 替换任务完成：源任务的 failed 行已被取代，需求应留在 executing 等下游，
+	// 而不是回到 failed（修复前正是这里让 develop#2 completed 而需求永久 failed）。
+	_, err = repo.UpdateProjectTaskStatus(ctx, tenantID, replacement.ID, ProjectTaskStatusCompleted, nil,
+		[]string{ProjectTaskStatusPlanned})
+	require.NoError(t, err)
+	require.NoError(t, pgRepo.RecomputeProjectDemandStatus(ctx, tenantID, projectID, demandID))
+	demand, err = repo.GetProjectDemand(ctx, tenantID, demandID)
+	require.NoError(t, err)
+	require.Equal(t, ProjectDemandStatusExecuting, demand.Status)
+}
+
+// 恢复卡还挂着的 failed 需求不算项目收敛：否则开发步一失败就开结项卡（复跑 3 现场）。
+func TestProjectDemandsNotTerminalWhileTaskRecoveryDecisionPending(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+	projectID := createProjectFixture(t, repo, tenantID)
+	demandID := createDemandFixtureWithStatusAndSourceRefs(t, repo, tenantID, projectID, ProjectDemandStatusFailed, nil)
+	task, err := repo.CreateProjectTask(ctx, CreateProjectTaskRequest{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		DemandID:  &demandID,
+		Title:     "开发实现",
+		Status:    ProjectTaskStatusFailed,
+		RiskLevel: "low",
+	})
+	require.NoError(t, err)
+
+	ready, err := repo.AreAllProjectDemandsTerminal(ctx, tenantID, projectID)
+	require.NoError(t, err)
+	require.True(t, ready, "无待处置决策时 failed 需求仍算终态")
+
+	taskID := task.ID
+	decision, err := repo.CreateDecisionRequest(ctx, CreateDecisionRequestRequest{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		ApprovalRequestID: uuid.New(),
+		ProjectTaskID:     &taskID,
+		TargetUserID:      uuid.New(),
+		DecisionType:      "task_failure_recovery",
+		TitleSnapshot:     "项目任务失败需要恢复决策",
+		StatusSnapshot:    "pending",
+	})
+	require.NoError(t, err)
+
+	ready, err = repo.AreAllProjectDemandsTerminal(ctx, tenantID, projectID)
+	require.NoError(t, err)
+	require.False(t, ready, "恢复卡未关闭时不得判定项目可结项")
+	open, err := repo.CountNonTerminalProjectDemands(ctx, tenantID, projectID)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), open)
+
+	_, err = repo.ResolveDecisionRequest(ctx, ResolveDecisionRequestRepositoryRequest{
+		TenantID:         tenantID,
+		ProjectID:        projectID,
+		ID:               decision.ID,
+		StatusSnapshot:   "approved",
+		ResolvedByUserID: uuid.New(),
+	})
+	require.NoError(t, err)
+
+	ready, err = repo.AreAllProjectDemandsTerminal(ctx, tenantID, projectID)
+	require.NoError(t, err)
+	require.True(t, ready, "恢复卡收敛后恢复既有结项判据")
+}
+
 func TestRecomputeHoldsAtAcceptancePendingWhenBlockingUnsigned(t *testing.T) {
 	repo, tenantID := newProjectRepositoryTestStore(t)
 	pgRepo := repo.(*PgRepository)
@@ -2885,6 +3028,7 @@ func TestPgRepositoryRecoverDispatchFailureMovesToWaitingHuman(t *testing.T) {
 		ProjectID:      projectID,
 		ProjectTaskID:  task.ID,
 		FailureEventID: failureEvent.ID,
+		HumanSummary:   dispatchRecoveryCardSummary(failureEvent),
 		Action: ProjectTaskRecoveryAction{
 			Action:        ProjectTaskRecoveryActionWaitingHuman,
 			FailureFamily: FailureFamilyInvalidContract,
@@ -2899,6 +3043,7 @@ func TestPgRepositoryRecoverDispatchFailureMovesToWaitingHuman(t *testing.T) {
 	require.NotNil(t, result.Task.WaitingRequestID)
 	require.Equal(t, ProjectEventTaskRecoveryRequested, result.Event.EventType)
 	require.Equal(t, "project_task_recovery", result.Decision.DecisionType)
+	require.Contains(t, result.Decision.SummarySnapshot, "invalid run input")
 }
 
 func TestCreateProjectTaskGraphCreatesTasksEdgesAndEvents(t *testing.T) {
@@ -3646,18 +3791,16 @@ func TestProjectTaskGraphReadReturnsGraphScopedSidecarsAfterUnrelatedRows(t *tes
 		},
 	})
 	require.NoError(t, err)
-	runtimeTask, err := pgRepo.q.CreateTask(ctx, queries.CreateTaskParams{
-		TenantID:     nullUUID(&tenantID),
-		Title:        "runtime graph task",
-		Status:       "pending",
-		Priority:     1,
-		ProviderType: "codex",
-		Params:       []byte(`{}`),
-	})
+	runtimeTaskID := uuid.New()
+	insertTx, err := pgRepo.db.Begin(ctx)
 	require.NoError(t, err)
+	_, err = insertTx.Exec(ctx, `INSERT INTO tasks (tenant_id, title, status, priority, provider_type, params)
+		VALUES ($1, 'runtime graph task', 'pending', 1, 'codex', '{}'::jsonb)`, tenantID)
+	require.NoError(t, err)
+	require.NoError(t, insertTx.Commit(ctx))
 	run, err := pgRepo.q.CreateTaskRun(ctx, queries.CreateTaskRunParams{
 		TenantID: nullUUID(&tenantID),
-		TaskID:   runtimeTask.ID,
+		TaskID:   runtimeTaskID,
 		NodeID:   "graph-node",
 		Status:   "running",
 	})
@@ -3665,7 +3808,7 @@ func TestProjectTaskGraphReadReturnsGraphScopedSidecarsAfterUnrelatedRows(t *tes
 	_, err = repo.BindProjectTaskRun(ctx, BindProjectTaskRunRequest{
 		TenantID:             tenantID,
 		ProjectTaskID:        graphTaskID,
-		RuntimeTaskID:        runtimeTask.ID,
+		RuntimeTaskID:        runtimeTaskID,
 		DigitalEmployeeRunID: run.ID,
 		CurrentStatuses:      []string{"planned"},
 	})
@@ -3731,7 +3874,7 @@ func TestProjectTaskGraphReadReturnsGraphScopedSidecarsAfterUnrelatedRows(t *tes
 	require.Len(t, graph.DecisionRequests, 202)
 	require.Len(t, graph.Runs, 1)
 	require.Equal(t, run.ID, *graph.Runs[0].DigitalEmployeeRunID)
-	require.Equal(t, runtimeTask.ID, *graph.Runs[0].RuntimeTaskID)
+	require.Equal(t, runtimeTaskID, *graph.Runs[0].RuntimeTaskID)
 	require.NotEmpty(t, graph.StageSummaries)
 	require.Equal(t, int32(2), graph.StageSummaries[0].TotalNodes+graph.StageSummaries[1].TotalNodes)
 	nodesByTaskID := make(map[uuid.UUID]ProjectTaskGraphNode, len(graph.Nodes))

@@ -91,6 +91,7 @@ export function EmployeeDetailHeader({
               </p>
             ) : null}
             <p className="mt-1 text-[13px] text-ink-2">
+              <span className="text-ink-3">职责描述 · </span>
               <span className="font-medium text-ink">{employee.role}</span>
               <span className="text-ink-3"> · Provider {providerDisplayName(employee.provider_type)}</span>
             </p>

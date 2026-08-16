@@ -133,6 +133,20 @@ func (r *PgRepository) UpdateScenarioTemplateStatus(ctx context.Context, params 
 	return scenarioTemplateFromRow(row), nil
 }
 
+func (r *PgRepository) SoftDeleteScenarioTemplate(ctx context.Context, tenantID, templateID uuid.UUID) (ScenarioTemplate, error) {
+	row, err := r.q.SoftDeleteScenarioTemplate(ctx, queries.SoftDeleteScenarioTemplateParams{
+		TenantID: tenantID,
+		ID:       templateID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ScenarioTemplate{}, ErrScenarioTemplateNotFound
+		}
+		return ScenarioTemplate{}, err
+	}
+	return scenarioTemplateFromRow(row), nil
+}
+
 func (r *PgRepository) ListScenarioTemplateVersions(ctx context.Context, tenantID, templateID uuid.UUID) ([]ScenarioTemplateVersion, error) {
 	rows, err := r.q.ListScenarioTemplateVersions(ctx, queries.ListScenarioTemplateVersionsParams{
 		TenantID:   tenantID,

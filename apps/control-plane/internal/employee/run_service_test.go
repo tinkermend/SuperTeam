@@ -2850,6 +2850,11 @@ func (f *fakeRunServiceRepository) GetRunByID(_ context.Context, tenantID, runID
 	if f.createdRun != nil && f.createdRun.TenantID == tenantID && f.createdRun.ID == runID {
 		return cloneRun(f.createdRun), nil
 	}
+	for _, listedRun := range f.runs {
+		if listedRun != nil && listedRun.TenantID == tenantID && listedRun.ID == runID {
+			return cloneRun(listedRun), nil
+		}
+	}
 	return nil, ErrNotFound
 }
 
@@ -3417,6 +3422,38 @@ func TestSweepStalePreConfirmationRuns(t *testing.T) {
 	}
 	if repo.listedWith.IsZero() {
 		t.Fatalf("expected lister consulted with a cutoff")
+	}
+}
+
+func TestSweepStalePreConfirmationRunsSkipsWhenRefreshShowsRunning(t *testing.T) {
+	base := newFakeRunServiceRepository()
+	runID := uuid.New()
+	listed := &DigitalEmployeeRun{
+		ID:                runID,
+		TenantID:          runServiceTenantID,
+		TaskID:            uuid.New(),
+		DigitalEmployeeID: runServiceEmployeeID,
+		Status:            DigitalEmployeeRunStatusDispatching,
+		UpdatedAt:         time.Now().Add(-2 * staleDispatchTTL),
+	}
+	confirmed := &DigitalEmployeeRun{
+		ID:                runID,
+		TenantID:          runServiceTenantID,
+		TaskID:            listed.TaskID,
+		DigitalEmployeeID: runServiceEmployeeID,
+		Status:            DigitalEmployeeRunStatusRunning,
+		UpdatedAt:         time.Now().Add(-2 * staleDispatchTTL),
+	}
+	base.runs = []*DigitalEmployeeRun{confirmed}
+	repo := &watchdogRepository{fakeRunServiceRepository: base, staleRuns: []*DigitalEmployeeRun{listed}}
+	service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+	reaped := service.SweepStalePreConfirmationRuns(context.Background())
+	if reaped != 0 {
+		t.Fatalf("expected live run not reaped after refresh, got %d", reaped)
+	}
+	if len(base.statusUpdates) != 0 {
+		t.Fatalf("expected no status update, got %#v", base.statusUpdates)
 	}
 }
 

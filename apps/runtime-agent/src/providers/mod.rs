@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -105,6 +106,31 @@ struct ChildStreamState {
     unmapped_native_count: u64,
 }
 
+fn emit_stream_diagnostics(state: &ChildStreamState) {
+    if state.unmapped_native_count == 0 && state.unparseable_line_count == 0 {
+        return;
+    }
+    let threshold = unmapped_alert_threshold();
+    let total = state
+        .unmapped_native_count
+        .saturating_add(state.unparseable_line_count);
+    if threshold > 0 && total >= threshold {
+        note_drift_alert();
+        eprintln!(
+            "ALERT provider_stream_drift provider={} unmapped_native={} unparseable_line={} threshold={}",
+            state.provider_name,
+            state.unmapped_native_count,
+            state.unparseable_line_count,
+            threshold,
+        );
+    } else {
+        eprintln!(
+            "{}: stream diagnostics unmapped_native={} unparseable_line={}",
+            state.provider_name, state.unmapped_native_count, state.unparseable_line_count
+        );
+    }
+}
+
 /// Default unmapped/unparseable lines per attempt before a WARN alert is emitted.
 pub const DEFAULT_UNMAPPED_ALERT_THRESHOLD: u64 = 5;
 
@@ -113,7 +139,10 @@ static DRIFT_ALERT_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 /// Env `SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD` (0 disables alerting).
 pub fn unmapped_alert_threshold() -> u64 {
     match std::env::var("SUPERTEAM_PROVIDER_UNMAPPED_ALERT_THRESHOLD") {
-        Ok(raw) => raw.trim().parse().unwrap_or(DEFAULT_UNMAPPED_ALERT_THRESHOLD),
+        Ok(raw) => raw
+            .trim()
+            .parse()
+            .unwrap_or(DEFAULT_UNMAPPED_ALERT_THRESHOLD),
         Err(_) => DEFAULT_UNMAPPED_ALERT_THRESHOLD,
     }
 }
@@ -142,6 +171,13 @@ impl ProviderRunHandle {
             .await
             .map_err(|error| anyhow::anyhow!("failed to cancel provider process: {error}"))
     }
+
+    /// Reap the provider PID if it has already exited (including zombies).
+    /// `None` means the process is still running as far as waitpid can tell.
+    pub async fn try_wait(&self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        let mut child = self.child.lock().await;
+        child.try_wait()
+    }
 }
 
 pub struct ProviderRun {
@@ -153,6 +189,12 @@ pub struct ProviderRun {
 /// reaches the raw transcript line by line; only this in-memory tail is bounded,
 /// so a provider spamming stderr cannot exhaust the agent's memory.
 const STDERR_TAIL_LIMIT_BYTES: usize = 256 * 1024;
+
+/// If the provider PID has exited but a grandchild still holds stdout, `next_line`
+/// never EOFs and the attempt stays running forever while budget heartbeats keep
+/// the Control Plane watchdog from treating it as silent. Poll `try_wait` so a
+/// dead parent is reaped even when the pipe stays open.
+const CHILD_EXIT_POLL: Duration = Duration::from_secs(2);
 
 pub fn stream_child_events(
     provider_name: &'static str,
@@ -202,7 +244,29 @@ pub fn stream_child_events(
                 return Some((Ok(event), Some(state)));
             }
 
-            match state.lines.next_line().await {
+            let line = tokio::select! {
+                line = state.lines.next_line() => line,
+                _ = tokio::time::sleep(CHILD_EXIT_POLL) => {
+                    let exited = {
+                        let mut child = state.child.lock().await;
+                        match child.try_wait() {
+                            Ok(Some(status)) => Some(status),
+                            Ok(None) => None,
+                            Err(error) => {
+                                return Some((Err(error.into()), None));
+                            }
+                        }
+                    };
+                    if let Some(status) = exited {
+                        emit_stream_diagnostics(&state);
+                        let stderr = read_stderr(state.stderr_task).await;
+                        return provider_exit_result(state.provider_name, Ok(status), stderr)
+                            .map(|result| (result, None));
+                    }
+                    continue;
+                }
+            };
+            match line {
                 Ok(Some(line)) => {
                     // Before parsing: a parser error or an unknown event type
                     // must never cost us the original bytes.
@@ -232,29 +296,7 @@ pub fn stream_child_events(
                     }
                 }
                 Ok(None) => {
-                    if state.unmapped_native_count > 0 || state.unparseable_line_count > 0 {
-                        let threshold = unmapped_alert_threshold();
-                        let total = state
-                            .unmapped_native_count
-                            .saturating_add(state.unparseable_line_count);
-                        if threshold > 0 && total >= threshold {
-                            note_drift_alert();
-                            eprintln!(
-                                "ALERT provider_stream_drift provider={} unmapped_native={} unparseable_line={} threshold={}",
-                                state.provider_name,
-                                state.unmapped_native_count,
-                                state.unparseable_line_count,
-                                threshold,
-                            );
-                        } else {
-                            eprintln!(
-                                "{}: stream diagnostics unmapped_native={} unparseable_line={}",
-                                state.provider_name,
-                                state.unmapped_native_count,
-                                state.unparseable_line_count
-                            );
-                        }
-                    }
+                    emit_stream_diagnostics(&state);
                     let status = state.child.lock().await.wait().await;
                     let stderr = read_stderr(state.stderr_task).await;
                     return provider_exit_result(state.provider_name, status, stderr)
@@ -297,10 +339,16 @@ pub(crate) fn parse_line_json(provider_name: &str, line: &str) -> Option<serde_j
 }
 
 async fn read_stderr(stderr_task: JoinHandle<std::io::Result<String>>) -> String {
-    match stderr_task.await {
-        Ok(Ok(stderr)) => stderr.trim().to_string(),
-        Ok(Err(error)) => format!("failed to read stderr: {error}"),
-        Err(error) => format!("failed to join stderr reader: {error}"),
+    // Grandchildren may keep stderr open after the provider PID exits. Do not
+    // wait forever for EOF; the exit status is already known.
+    const STDERR_JOIN_TIMEOUT: Duration = Duration::from_millis(400);
+    tokio::select! {
+        joined = stderr_task => match joined {
+            Ok(Ok(stderr)) => stderr.trim().to_string(),
+            Ok(Err(error)) => format!("failed to read stderr: {error}"),
+            Err(error) => format!("failed to join stderr reader: {error}"),
+        },
+        _ = tokio::time::sleep(STDERR_JOIN_TIMEOUT) => String::new(),
     }
 }
 

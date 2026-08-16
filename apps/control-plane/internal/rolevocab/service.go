@@ -51,6 +51,25 @@ func (s *Service) List(ctx context.Context, tenantID uuid.UUID) ([]Entry, error)
 	return out, nil
 }
 
+// TitleForKey returns the vocabulary title for a role key (any status). Missing key is not an error.
+func (s *Service) TitleForKey(ctx context.Context, tenantID uuid.UUID, roleKey string) (string, error) {
+	key := strings.TrimSpace(roleKey)
+	if tenantID == uuid.Nil || key == "" {
+		return "", nil
+	}
+	row, err := s.q.GetRoleVocabularyByKey(ctx, queries.GetRoleVocabularyByKeyParams{
+		TenantID: tenantID,
+		RoleKey:  key,
+	})
+	if err != nil {
+		if errorsIsNoRows(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(row.Title), nil
+}
+
 func (s *Service) ListActive(ctx context.Context, tenantID uuid.UUID) ([]Entry, error) {
 	if tenantID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)

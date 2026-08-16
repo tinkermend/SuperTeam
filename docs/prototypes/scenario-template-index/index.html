@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>场景模板首页 · 原型索引</title>
+  <style>
+    :root {
+      --bg:#f6f9ff; --card:#ffffff;
+      --ink:#0c1426; --ink-2:#5a6b85; --ink-3:#8b99b3;
+      --line:#e6ecf5; --brand:#2f5fff; --brand-deep:#2348e0;
+      --r-card:22px; --r-inner:14px;
+      --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.06);
+      --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:var(--sans); background:var(--bg); color:var(--ink); line-height:1.55; font-size:14px; }
+    body::before { content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+      background:radial-gradient(ellipse 70% 50% at 12% 0%, rgba(47,95,255,.08), transparent 55%); }
+    main { position:relative; z-index:1; max-width:980px; margin:0 auto; padding:44px 24px 80px; }
+    h1 { font-size:24px; font-weight:750; letter-spacing:-.01em; margin-bottom:8px; }
+    .lede { color:var(--ink-2); max-width:72ch; }
+    h2 { font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); margin:36px 0 12px; }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+    @media (max-width:880px){ .grid { grid-template-columns:1fr; } }
+    a.card {
+      display:flex; flex-direction:column; gap:8px;
+      background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+      box-shadow:var(--shadow); padding:20px; color:inherit; text-decoration:none; min-height:200px;
+      transition:.15s;
+    }
+    a.card:hover { border-color:var(--brand); }
+    .kicker { font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--brand-deep); }
+    a.card h3 { font-size:17px; font-weight:700; }
+    a.card p { color:var(--ink-2); font-size:13.5px; flex:1; }
+    .note {
+      margin-top:20px; background:var(--card); border:1px solid var(--line);
+      border-left:3px solid var(--brand); border-radius:var(--r-inner); padding:14px 18px; color:var(--ink-2);
+    }
+    .note b { color:var(--ink); }
+    ul { margin:8px 0 0 18px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>场景模板首页 · 三套布局原型</h1>
+    <p class="lede">
+      首页只回答：租户有哪些场景骨架、各自要哪些席位、能收到哪一档、能不能给新规划用。
+      点进编辑页才改配置。三套都去掉「版本历史」。
+    </p>
+
+    <h2>产品口径（已按现实现核对）</h2>
+    <div class="note">
+      <b>落地：</b>已选方案 C。接口核对与 UI 准则见 <a href="./redesign-spec.md">redesign-spec.md</a>。校正后的视觉以链入表 HTML 为准。
+    </div>
+    <div class="note">
+      <b>版本历史为什么不该出现在首页：</b>
+      <ul>
+        <li>作者动作是「保存更改」，不是「发新版」。后台仍写不可变版本行，只为进行中的规划钉住当时的 spec。</li>
+        <li>列表展开里的 v1 / v2 / 当前版本，既不能回滚、也不能对照 diff，只会让人以为编辑会攒出版本树。</li>
+        <li>展开区还把「角色」画了两遍（spec 原文 + 服务端角色视图）。预览应只留一条：席位、骨架链、收口档位。</li>
+      </ul>
+    </div>
+
+    <h2>三套布局</h2>
+    <div class="grid">
+      <a class="card" href="./a-playbill-catalog.html">
+        <span class="kicker">方案 A · 剧目卡</span>
+        <h3>每张卡就是一份骨架链</h3>
+        <p>目录型。卡片主角是关卡链与收口点，适合扫「这类活怎么走」。密度最低，辨识最快。</p>
+      </a>
+      <a class="card" href="./b-master-detail.html">
+        <span class="kicker">方案 B · 主从台</span>
+        <h3>左列选模板，右栏看编制契约</h3>
+        <p>与编辑页主从编排同一心智。列表不展开、不跳页也能看席位 / 链 / 收口。信息密度中等。</p>
+      </a>
+      <a class="card" href="./c-inline-rail-table.html">
+        <span class="kicker">方案 C · 链入表（已选）</span>
+        <h3>表格扫读，骨架画在行内</h3>
+        <p>已按真实列表 spec 校正，并作为落地视觉。规范见 redesign-spec.md。</p>
+      </a>
+    </div>
+  </main>
+</body>
+</html>

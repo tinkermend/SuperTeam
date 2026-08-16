@@ -51,7 +51,10 @@ printf '%s\n' '{"type":"result","result":"done"}'
     let provider = ClaudeProvider::new(script);
 
     let events: Vec<ProviderEvent> = provider
-        .run(request(temp.path()), std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink))
+        .run(
+            request(temp.path()),
+            std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink),
+        )
         .await
         .expect("run fake claude")
         .try_collect()
@@ -91,7 +94,10 @@ printf '%s\n' '{"type":"turn.completed"}'
     let provider = OpenCodeProvider::new(script);
 
     let events: Vec<ProviderEvent> = provider
-        .run(request(temp.path()), std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink))
+        .run(
+            request(temp.path()),
+            std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink),
+        )
         .await
         .expect("run fake opencode")
         .try_collect()
@@ -131,7 +137,10 @@ printf '%s\n' '{"type":"turn.completed","summary":"done"}'
     let provider = CodexProvider::new(script);
 
     let events: Vec<ProviderEvent> = provider
-        .run(request(temp.path()), std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink))
+        .run(
+            request(temp.path()),
+            std::sync::Arc::new(superteam_runtime_agent::raw_log::NoopRawSink),
+        )
         .await
         .expect("run fake codex")
         .try_collect()
@@ -202,10 +211,11 @@ printf '%s\n' '{"type":"result","result":"done"}'
         .expect("unparseable line must not fail the run");
 
     // The malformed line produced no event but was still captured.
-    assert!(events.iter().any(|event| matches!(
-        event,
-        ProviderEvent::ToolCompleted { is_error: true, .. }
-    )));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, ProviderEvent::ToolCompleted { is_error: true, .. }))
+    );
 
     let lines = sink.lines.lock().unwrap();
     let stdout: Vec<&str> = lines
@@ -215,5 +225,9 @@ printf '%s\n' '{"type":"result","result":"done"}'
         .collect();
     assert_eq!(stdout.len(), 4, "every stdout line reaches the raw sink");
     assert!(stdout.contains(&"not json at all"));
-    assert!(lines.iter().any(|(stream, line)| stream == "stderr" && line == "warning to stderr"));
+    assert!(
+        lines
+            .iter()
+            .any(|(stream, line)| stream == "stderr" && line == "warning to stderr")
+    );
 }

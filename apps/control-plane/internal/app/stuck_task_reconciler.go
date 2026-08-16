@@ -57,7 +57,7 @@ func startStuckTaskReconciler(ctx context.Context, projectService *project.Servi
 		if _, err := projectService.SweepStrandedBlockedProjectTasks(ctx, stuckTaskReapBatchLimit); err != nil && ctx.Err() == nil {
 			slog.Warn("stuck task reconciler: stranded blocked downstream cancel failed", "error", err)
 		}
-		if _, err := projectService.SweepStuckProjectTaskAttemptsAllTenants(ctx, now); err != nil && ctx.Err() == nil {
+		if _, err := projectService.SweepStuckProjectTaskAttemptsAllTenants(ctx, now, staleBefore); err != nil && ctx.Err() == nil {
 			slog.Warn("stuck task reconciler: attempt recovery sweep failed", "error", err)
 		}
 	}

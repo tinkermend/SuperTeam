@@ -1,11 +1,10 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { EmptyState, ErrorState, LoadingState, StatusPill } from "@/components/superteam";
+import { ErrorState, LoadingState, StatusPill } from "@/components/superteam";
 import type { ApiClientOptions } from "@/lib/api/client";
 import {
   listWorkflowInstances,
-  type WorkflowInstanceScope,
   type WorkflowInstanceSummary,
 } from "@/lib/api/projects";
 import { formatRelativeTime } from "@/lib/format-time";

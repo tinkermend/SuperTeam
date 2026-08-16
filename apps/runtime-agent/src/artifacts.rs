@@ -351,7 +351,15 @@ pub async fn collect_attachments(
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| relative.clone());
         collection.attachments.push(CollectedAttachment {
-            artifact: build_artifact("execution_output", name, content_type, false, false, 0, bytes),
+            artifact: build_artifact(
+                "execution_output",
+                name,
+                content_type,
+                false,
+                false,
+                0,
+                bytes,
+            ),
             relative_path: relative,
             source: None,
         });
@@ -496,8 +504,7 @@ async fn collect_from_declared_root(
             continue;
         }
         total_bytes += bytes.len() as u64;
-        let content_type =
-            attachment_content_type(&relative).unwrap_or("application/octet-stream");
+        let content_type = attachment_content_type(&relative).unwrap_or("application/octet-stream");
         let name = Path::new(&relative)
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -614,9 +621,10 @@ fn attachment_content_type(relative_path: &str) -> Option<&'static str> {
 
 pub(crate) fn has_excluded_component(relative_path: &str) -> bool {
     Path::new(relative_path).components().any(|component| {
-        component.as_os_str().to_str().is_some_and(|name| {
-            name.starts_with('.') || ATTACHMENT_EXCLUDED_DIRS.contains(&name)
-        })
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|name| name.starts_with('.') || ATTACHMENT_EXCLUDED_DIRS.contains(&name))
     })
 }
 
@@ -845,11 +853,7 @@ async fn git_capture(workspace: &Path, args: &[&str]) -> Option<String> {
         return None;
     }
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 /// Uncommitted tracked changes in the attempt worktree; None when clean or
@@ -1191,8 +1195,7 @@ mod tests {
             .attachments
             .iter()
             .find(|attachment| {
-                attachment.relative_path
-                    == ".superteam/sessions/cmd-a/deliverables/report.html"
+                attachment.relative_path == ".superteam/sessions/cmd-a/deliverables/report.html"
             })
             .unwrap();
         assert_eq!(report.artifact.artifact_type, "declared");
@@ -1300,7 +1303,10 @@ mod tests {
             .iter()
             .find(|item| item.relative_path.ends_with("new.html"))
             .unwrap();
-        assert_eq!(session_item.source.as_deref(), Some(DECLARED_SOURCE_SESSION));
+        assert_eq!(
+            session_item.source.as_deref(),
+            Some(DECLARED_SOURCE_SESSION)
+        );
         let legacy_item = collection
             .attachments
             .iter()

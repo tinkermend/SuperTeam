@@ -54,7 +54,10 @@ impl std::fmt::Display for ConfigError {
         match self {
             Self::Validation(msg) => write!(f, "validation_error: {msg}"),
             Self::Conflict { actual_hash } => {
-                write!(f, "conflict: file content hash mismatch (actual={actual_hash})")
+                write!(
+                    f,
+                    "conflict: file content hash mismatch (actual={actual_hash})"
+                )
             }
             Self::Unmanageable { reason } => write!(f, "unmanageable: {reason}"),
             Self::Io(msg) => write!(f, "io_error: {msg}"),
@@ -216,7 +219,8 @@ fn validate_resolved_path(
     let root_canon = root.canonicalize().unwrap_or(root);
     // For non-existent paths, canonicalize parent + file name.
     let path_check = if path.exists() {
-        path.canonicalize().map_err(|e| ConfigError::Io(e.to_string()))?
+        path.canonicalize()
+            .map_err(|e| ConfigError::Io(e.to_string()))?
     } else {
         let parent = path
             .parent()
@@ -235,7 +239,10 @@ fn validate_resolved_path(
     };
     let root_str = root_canon.to_string_lossy();
     let path_str = path_check.to_string_lossy();
-    if path_str != root_str && !path_str.starts_with(&format!("{root_str}/")) && !path_str.starts_with(&format!("{root_str}\\")) {
+    if path_str != root_str
+        && !path_str.starts_with(&format!("{root_str}/"))
+        && !path_str.starts_with(&format!("{root_str}\\"))
+    {
         // OPENCODE_CONFIG may point at a file whose parent is the "root"; allow exact file under root or equal.
         if !path_str.starts_with(root_str.as_ref()) {
             return Err(ConfigError::Validation(format!(
@@ -254,7 +261,10 @@ pub struct Manageability {
 }
 
 /// Determine whether this surface can be managed via file on this node.
-pub fn assess_manageability(provider_type: &str, config_key: &str) -> Result<Manageability, ConfigError> {
+pub fn assess_manageability(
+    provider_type: &str,
+    config_key: &str,
+) -> Result<Manageability, ConfigError> {
     let _ = surface_spec(provider_type, config_key)?;
     match (provider_type, config_key) {
         (PROVIDER_CLAUDE_CODE, CONFIG_KEY_AUTH) => {
@@ -356,7 +366,10 @@ fn time_format_rfc3339(unix_secs: i64) -> String {
 }
 
 /// Read managed keys only (never returns full file body).
-pub fn read_config(provider_type: &str, config_key: &str) -> Result<ConfigSurfaceResult, ConfigError> {
+pub fn read_config(
+    provider_type: &str,
+    config_key: &str,
+) -> Result<ConfigSurfaceResult, ConfigError> {
     let spec = surface_spec(provider_type, config_key)?;
     let path = resolve_path(provider_type, config_key)?;
     let manageability = assess_manageability(provider_type, config_key)?;
@@ -529,9 +542,8 @@ fn extract_json_managed(
     config_key: &str,
     content: &str,
 ) -> Result<Map<String, Value>, ConfigError> {
-    let value: Value = serde_json::from_str(content).map_err(|e| {
-        ConfigError::Validation(format!("invalid json: {e}"))
-    })?;
+    let value: Value = serde_json::from_str(content)
+        .map_err(|e| ConfigError::Validation(format!("invalid json: {e}")))?;
     let obj = value
         .as_object()
         .ok_or_else(|| ConfigError::Validation("json root must be object".into()))?;
@@ -700,9 +712,8 @@ fn apply_json_values(
     let mut root: Value = if !exists || content.trim().is_empty() {
         Value::Object(Map::new())
     } else {
-        serde_json::from_str(content).map_err(|e| {
-            ConfigError::Validation(format!("invalid json: {e}"))
-        })?
+        serde_json::from_str(content)
+            .map_err(|e| ConfigError::Validation(format!("invalid json: {e}")))?
     };
     let obj = root
         .as_object_mut()
@@ -722,9 +733,9 @@ fn apply_json_values(
                     let env = obj
                         .entry("env")
                         .or_insert_with(|| Value::Object(Map::new()));
-                    let env_obj = env.as_object_mut().ok_or_else(|| {
-                        ConfigError::Validation("env must be object".into())
-                    })?;
+                    let env_obj = env
+                        .as_object_mut()
+                        .ok_or_else(|| ConfigError::Validation("env must be object".into()))?;
                     set_or_remove(env_obj, env_key, val);
                     // Do not delete non-allowlisted env keys.
                     if env_obj.is_empty() {
@@ -894,7 +905,9 @@ fn apply_toml_values(
 
 fn json_to_toml_value(val: &Value) -> Result<TomlValue, ConfigError> {
     match val {
-        Value::Null => Err(ConfigError::Validation("null cannot convert to toml value".into())),
+        Value::Null => Err(ConfigError::Validation(
+            "null cannot convert to toml value".into(),
+        )),
         Value::Bool(b) => Ok(TomlValue::from(*b)),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
@@ -942,10 +955,7 @@ pub fn receipt_safe_result(result: &ConfigSurfaceResult) -> BTreeMap<String, Val
     map.insert("exists".into(), Value::Bool(result.exists));
     map.insert("manageable".into(), Value::Bool(result.manageable));
     if let Some(reason) = &result.unmanageable_reason {
-        map.insert(
-            "unmanageable_reason".into(),
-            Value::String(reason.clone()),
-        );
+        map.insert("unmanageable_reason".into(), Value::String(reason.clone()));
     }
     map.insert(
         "file_content_hash".into(),
@@ -1037,10 +1047,7 @@ mod tests {
             "XDG_CONFIG_HOME",
             "XDG_DATA_HOME",
         ];
-        let saved: Vec<_> = keys
-            .iter()
-            .map(|k| (*k, env::var_os(k)))
-            .collect();
+        let saved: Vec<_> = keys.iter().map(|k| (*k, env::var_os(k))).collect();
         unsafe {
             env::set_var("HOME", &home);
             env::remove_var("CODEX_HOME");
@@ -1222,8 +1229,7 @@ wire_api = "responses"
                 expected_file_content_hash: read.file_content_hash,
             })
             .unwrap();
-            let after: Value =
-                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert_eq!(
                 after["env"]["ANTHROPIC_BASE_URL"].as_str(),
                 Some("https://new.example")
@@ -1375,10 +1381,7 @@ wire_api = "responses"
             .unwrap();
             let manage = assess_manageability(PROVIDER_CODEX, CONFIG_KEY_AUTH).unwrap();
             assert!(!manage.manageable);
-            assert_eq!(
-                manage.reason.as_deref(),
-                Some("credentials_store_keyring")
-            );
+            assert_eq!(manage.reason.as_deref(), Some("credentials_store_keyring"));
             let auth_path = codex.join("auth.json");
             let mut values = Map::new();
             values.insert("OPENAI_API_KEY".into(), Value::String("x".into()));
@@ -1439,8 +1442,7 @@ wire_api = "responses"
                 expected_file_content_hash: hash,
             })
             .unwrap();
-            let after: Value =
-                serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+            let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
             assert!(after.get("fallbackModel").is_none());
             assert_eq!(after["model"].as_str(), Some("a"));
         });
@@ -1478,5 +1480,4 @@ wire_api = "responses"
         let transit = receipt_transit_result(&result);
         assert!(transit.contains_key("managed_values"));
     }
-
 }

@@ -121,14 +121,39 @@ function jsonResponse(body: unknown, status = 200) {
 function createSkillFetcher({
   skill = skillFixture,
   dependencies = [] as SkillMcpDependency[],
-  mcpServerDefinitions = [] as McpServerDefinition[]
+  mcpServerDefinitions = [] as McpServerDefinition[],
+  archiveEntriesStatus = 200,
 }: {
   skill?: Skill;
   dependencies?: SkillMcpDependency[];
   mcpServerDefinitions?: McpServerDefinition[];
+  archiveEntriesStatus?: number;
 } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
+    if (url.pathname === `/api/v1/skills/${skill.id}/archive/entries`) {
+      if (archiveEntriesStatus === 413) {
+        return jsonResponse(
+          {
+            code: "skill_archive_preview_too_large",
+            message: "技能包过大，平台不提供在线预览，请在本地解压查看",
+          },
+          413,
+        );
+      }
+      return jsonResponse([
+        { path: "SKILL.md", kind: "file", size_bytes: 32, previewable: true, content_type: "text/markdown" },
+      ]);
+    }
+    if (url.pathname === `/api/v1/skills/${skill.id}/archive/content`) {
+      return jsonResponse({
+        path: "SKILL.md",
+        content: "# 需求澄清\n",
+        truncated: false,
+        size_bytes: 12,
+        content_type: "text/markdown",
+      });
+    }
     if (url.pathname === `/api/v1/skills/${skill.id}`) {
       return jsonResponse(skill);
     }
@@ -314,5 +339,13 @@ describe("SkillDetailView", () => {
 }),
       );
     });
+  });
+
+  it("shows Chinese fallback when the archive is too large to preview", async () => {
+    const screen = await renderSkillDetail(createSkillFetcher({ archiveEntriesStatus: 413 }));
+    await expect.element(screen.getByRole("alert")).toBeVisible();
+    expect(screen.getByRole("alert").element().textContent).toContain("技能包过大");
+    expect(screen.getByRole("alert").element().textContent).toContain("平台不提供在线预览，请在本地解压查看");
+    expect(document.body.textContent).not.toContain("request failed");
   });
 });

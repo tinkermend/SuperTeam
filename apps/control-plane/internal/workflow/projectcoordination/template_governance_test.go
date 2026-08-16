@@ -144,8 +144,8 @@ func TestValidateSkeletonAdherenceGenericNoop(t *testing.T) {
 // TestGovernanceRoleIndependenceViolation uses a non-migratable role_independence
 // fixture (develop/review have no skeleton dependency edge — both feed integrate),
 // so the original enforceRoleIndependence shared-employee rejection is exercised.
-// (software_delivery's own role_independence is now migrated to adversarial_review —
-// see TestGovernanceReviewIndependenceSatisfiedByJudges — so it no longer rejects.)
+// (software_delivery keeps role_independence on dedicated review steps instead of
+// injecting adversarial_review — see TestGovernanceReviewIndependenceUsesEmployeesWhenReviewStepExists.)
 func TestGovernanceRoleIndependenceViolation(t *testing.T) {
 	employeeA := uuid.New()
 	employeeB := uuid.New()
@@ -698,11 +698,10 @@ func independentReviewTemplateSnapshot(t *testing.T) *ScenarioTemplateSnapshot {
 // role_independence) producing "analysis" — for Part B autonomous-exit tests.
 const singleAutonomousStepLiteral = `{"spec_version":2,"roles":[{"key":"analyst","title":"分析","required_capabilities":["analyze"]}],"skeleton":[{"step":"analyze","role":"analyst","produces_defaults":[{"name":"analysis","kind":"conclusion"}]}],"exits":[{"deliverable":"analysis","label":"分析结论"}],"constraints":[],"collapse_rules":[],"default_acceptance_criteria":[]}`
 
-// TestGovernanceMigratesReviewerRoleToAdversarial: the software_delivery template's
-// role_independence[reviewer,developer] (reviewer's review step depends_on the
-// developer's develop step) is migrated into a blocking adversarial_review criterion
-// on the reviewed (develop) task. Re-running governance is idempotent (no duplicate).
-func TestGovernanceMigratesReviewerRoleToAdversarial(t *testing.T) {
+// TestGovernanceDoesNotInjectAdversarialWhenSkeletonHasReviewStep: software_delivery
+// already schedules a reviewer step. Four-eyes stay on that task + role_independence
+// (distinct employees); do not also inject N LLM judges on develop.
+func TestGovernanceDoesNotInjectAdversarialWhenSkeletonHasReviewStep(t *testing.T) {
 	employeeA := uuid.New()
 	employeeB := uuid.New()
 	develop := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
@@ -710,7 +709,7 @@ func TestGovernanceMigratesReviewerRoleToAdversarial(t *testing.T) {
 	review := planTaskWithIO("review", []string{"develop"}, []string{"review_verdict"}, []string{"head_commit"})
 	review.SelectedEmployeeID = employeeB
 	plan := RouteDecisionPlan{
-		Reason:          "migrate reviewer role",
+		Reason:          "dedicated review step owns four-eyes",
 		TemplateKey:     "software_delivery",
 		ExitDeliverable: "review_verdict",
 		Tasks:           []PlannedTask{develop, review},
@@ -722,53 +721,42 @@ func TestGovernanceMigratesReviewerRoleToAdversarial(t *testing.T) {
 
 	require.NoError(t, EnforceScenarioTemplateGovernance(snapshot, &plan))
 
-	injected := adversarialCriterionSatisfiedBy(plan.PlanAcceptanceCriteria, "develop")
-	require.NotNil(t, injected, "expected an adversarial_review criterion satisfied_by develop, got %#v", plan.PlanAcceptanceCriteria)
-	require.Equal(t, CriterionSeverityBlocking, injected.Severity)
-	require.Equal(t, VerificationMethodAdversarialReview, injected.VerificationMethod)
-	require.NotEmpty(t, injected.Statement)
-	note := constraintNoteWithKind(plan.ConstraintNotes, "adversarial_review")
+	require.Nil(t, adversarialCriterionSatisfiedBy(plan.PlanAcceptanceCriteria, "develop"))
+	note := constraintNoteWithKind(plan.ConstraintNotes, "review_steps_own_four_eyes")
 	require.NotNil(t, note)
-
-	// Idempotent: a second governance pass must not duplicate the criterion.
-	before := len(plan.PlanAcceptanceCriteria)
-	require.NoError(t, EnforceScenarioTemplateGovernance(snapshot, &plan))
-	require.Equal(t, before, len(plan.PlanAcceptanceCriteria))
 }
 
-// TestGovernanceReviewIndependenceSatisfiedByJudges: a migrated role_independence
-// (reviewer reviews developer via dependency) no longer rejects even when
-// reviewer/developer share an employee — the AI judges provide independence. An
-// UN-migratable role_independence (no dependency edge between the two roles) still
-// rejects the shared employee via the original enforceRoleIndependence path.
-func TestGovernanceReviewIndependenceSatisfiedByJudges(t *testing.T) {
-	// Migrated: reviewer/developer same employee → allowed.
+// TestGovernanceReviewIndependenceUsesEmployeesWhenReviewStepExists: a reviewer
+// step in the skeleton keeps enforceRoleIndependence. Same employee on both
+// roles is still a four-eyes violation (judges no longer stand in).
+func TestGovernanceReviewIndependenceUsesEmployeesWhenReviewStepExists(t *testing.T) {
 	employeeA := uuid.New()
 	employeeB := uuid.New()
 	develop := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
 	develop.SelectedEmployeeID = employeeA
 	review := planTaskWithIO("review", []string{"develop"}, []string{"review_verdict"}, []string{"head_commit"})
-	review.SelectedEmployeeID = employeeA // same employee as develop
-	migratedPlan := RouteDecisionPlan{
-		Reason:          "shared employee, but migrated",
+	review.SelectedEmployeeID = employeeA
+	plan := RouteDecisionPlan{
+		Reason:          "shared employee with dedicated review step",
 		TemplateKey:     "software_delivery",
 		ExitDeliverable: "review_verdict",
 		Tasks:           []PlannedTask{develop, review},
 	}
-	migratedSnapshot := CoordinationSnapshot{
+	snapshot := CoordinationSnapshot{
 		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
 		DigitalEmployeePool: activeExecutorPool(employeeA, employeeB),
 	}
-	require.NoError(t, EnforceScenarioTemplateGovernance(migratedSnapshot, &migratedPlan))
-	require.NotNil(t, adversarialCriterionSatisfiedBy(migratedPlan.PlanAcceptanceCriteria, "develop"))
+	err := EnforceScenarioTemplateGovernance(snapshot, &plan)
+	require.ErrorIs(t, err, ErrInvalidRouteDecision)
+	require.Contains(t, err.Error(), "role_independence")
+	require.Nil(t, adversarialCriterionSatisfiedBy(plan.PlanAcceptanceCriteria, "develop"))
 
 	// Un-migratable: develop/review share an employee but have no skeleton
-	// dependency edge between them (both feed integrate) → reviewer/reviewed is
-	// undeterminable → not migrated → original enforceRoleIndependence still rejects.
+	// dependency edge between them (both feed integrate) → still rejects.
 	develop2 := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
 	develop2.SelectedEmployeeID = employeeA
 	review2 := planTaskWithIO("review", nil, []string{"review_verdict"}, nil)
-	review2.SelectedEmployeeID = employeeA // shared with develop
+	review2.SelectedEmployeeID = employeeA
 	integrate := planTaskWithIO("integrate", []string{"develop", "review"}, []string{"integrated_release"}, []string{"branch_ref", "review_verdict"})
 	integrate.SelectedEmployeeID = employeeB
 	unmigratedPlan := RouteDecisionPlan{
@@ -781,7 +769,7 @@ func TestGovernanceReviewIndependenceSatisfiedByJudges(t *testing.T) {
 		ScenarioTemplate:    independentReviewTemplateSnapshot(t),
 		DigitalEmployeePool: activeExecutorPool(employeeA, employeeB),
 	}
-	err := EnforceScenarioTemplateGovernance(unmigratedSnapshot, &unmigratedPlan)
+	err = EnforceScenarioTemplateGovernance(unmigratedSnapshot, &unmigratedPlan)
 	require.ErrorIs(t, err, ErrInvalidRouteDecision)
 	require.Contains(t, err.Error(), "role_independence")
 	require.Nil(t, adversarialCriterionSatisfiedBy(unmigratedPlan.PlanAcceptanceCriteria, "develop"))
@@ -906,10 +894,11 @@ func TestExitEvidenceAllowsHumanGatedStageOpinion(t *testing.T) {
 	require.True(t, releaseTask.RequiresHumanApproval)
 }
 
-// TestExitEvidenceSatisfiedByInjectedAdversarial: a develop step that would be an
-// opinion-only autonomous exit on its own is saved by Part A's injected
-// adversarial_review criterion — proving Part B runs AFTER Part A's injection.
-func TestExitEvidenceSatisfiedByInjectedAdversarial(t *testing.T) {
+// TestExitEvidenceWithDedicatedReviewStep: review_verdict exit with a real
+// reviewer step does not need an injected adversarial_review on develop. A
+// human_judgment criterion on develop alone is allowed because the review
+// task is the four-eyes gate.
+func TestExitEvidenceWithDedicatedReviewStep(t *testing.T) {
 	employeeA := uuid.New()
 	employeeB := uuid.New()
 	develop := planTaskWithIO("develop", nil, []string{"branch_ref", "head_commit"}, nil)
@@ -917,20 +906,26 @@ func TestExitEvidenceSatisfiedByInjectedAdversarial(t *testing.T) {
 	review := planTaskWithIO("review", []string{"develop"}, []string{"review_verdict"}, []string{"head_commit"})
 	review.SelectedEmployeeID = employeeB
 	plan := RouteDecisionPlan{
-		Reason:          "opinion exit saved by injected adversarial",
+		Reason:          "opinion on develop is fine when review step exists",
 		TemplateKey:     "software_delivery",
 		ExitDeliverable: "review_verdict",
 		Tasks:           []PlannedTask{develop, review},
-		// A pre-existing human_judgment criterion on develop: on its own this
-		// would make develop an all-opinion autonomous exit (Part B reject), but
-		// Part A injects an adversarial_review on develop first.
-		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{{
-			ID:                 "develop_human_ok",
-			Statement:          "人类认为分支变更合理",
-			SatisfiedBy:        []string{"develop"},
-			VerificationMethod: VerificationMethodHumanJudgment,
-			Severity:           CriterionSeverityBlocking,
-		}},
+		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
+			{
+				ID:                 "develop_tests",
+				Statement:          "自动化测试通过",
+				SatisfiedBy:        []string{"develop"},
+				VerificationMethod: VerificationMethodAutomatedTest,
+				Severity:           CriterionSeverityBlocking,
+			},
+			{
+				ID:                 "develop_human_ok",
+				Statement:          "人类认为分支变更合理",
+				SatisfiedBy:        []string{"develop"},
+				VerificationMethod: VerificationMethodHumanJudgment,
+				Severity:           CriterionSeverityBlocking,
+			},
+		},
 	}
 	snapshot := CoordinationSnapshot{
 		ScenarioTemplate:    softwareDeliveryTemplateSnapshot(t),
@@ -938,7 +933,7 @@ func TestExitEvidenceSatisfiedByInjectedAdversarial(t *testing.T) {
 	}
 
 	require.NoError(t, EnforceScenarioTemplateGovernance(snapshot, &plan))
-	require.NotNil(t, adversarialCriterionSatisfiedBy(plan.PlanAcceptanceCriteria, "develop"))
+	require.Nil(t, adversarialCriterionSatisfiedBy(plan.PlanAcceptanceCriteria, "develop"))
 }
 
 func TestValidateRouteDecisionPlanRejectsSkeletonNonConformance(t *testing.T) {

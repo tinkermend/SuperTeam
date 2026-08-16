@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -16,7 +15,6 @@ import (
 	"github.com/superteam/control-plane/internal/api/middleware"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/runtime"
-	"github.com/superteam/control-plane/internal/task"
 	"nhooyr.io/websocket"
 )
 
@@ -41,27 +39,19 @@ type RuntimeService interface {
 	PushProviderNativeConfig(ctx context.Context, tenantID, actorID uuid.UUID, nodeID, providerType, configKey string, values map[string]any, expectedHash string) (*runtime.ProviderNativeConfigDetail, error)
 }
 
-type Poller interface {
-	WaitForTask(ctx context.Context, nodeID string) (*task.Task, error)
-}
-
 type RuntimeHandler struct {
 	runtimeService     RuntimeService
-	taskService        TaskService
-	poller             Poller
 	authorizer         authz.Authorizer
 	connectionRegistry *runtime.ConnectionRegistry
 }
 
-func NewRuntimeHandler(runtimeService RuntimeService, taskService TaskService, poller Poller, authorizer ...authz.Authorizer) *RuntimeHandler {
+func NewRuntimeHandler(runtimeService RuntimeService, authorizer ...authz.Authorizer) *RuntimeHandler {
 	var az authz.Authorizer
 	if len(authorizer) > 0 {
 		az = authorizer[0]
 	}
 	return &RuntimeHandler{
 		runtimeService: runtimeService,
-		taskService:    taskService,
-		poller:         poller,
 		authorizer:     az,
 	}
 }
@@ -518,179 +508,6 @@ func (h *RuntimeHandler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(newRuntimeHeartbeatResponse(resp))
-}
-
-func (h *RuntimeHandler) ClaimTask(w http.ResponseWriter, r *http.Request) {
-	nodeID := middleware.GetNodeID(r.Context())
-	if nodeID == "" {
-		http.Error(w, "node_id not found in context", http.StatusUnauthorized)
-		return
-	}
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *RuntimeHandler) PushEvents(w http.ResponseWriter, r *http.Request) {
-	taskID, ok := taskIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-
-	var req struct {
-		Events []json.RawMessage `json:"events"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	for _, rawEvent := range req.Events {
-		var event struct {
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal(rawEvent, &event); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if event.Type == "" {
-			http.Error(w, "event type is required", http.StatusBadRequest)
-			return
-		}
-		if _, err := h.taskService.AppendTaskEvent(r.Context(), task.AppendTaskEventRequest{
-			TaskID:    taskID,
-			EventType: event.Type,
-			Payload:   []byte(rawEvent),
-		}); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	w.WriteHeader(http.StatusAccepted)
-}
-
-func (h *RuntimeHandler) CompleteTask(w http.ResponseWriter, r *http.Request) {
-	taskID, ok := taskIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-	if r.Body != nil {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		body = bytes.TrimSpace(body)
-		if len(body) > 0 && !json.Valid(body) {
-			err := errors.New("invalid JSON body")
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-
-	reason := "runtime completed task"
-	updatedTask, err := h.taskService.UpdateTaskStatus(r.Context(), task.UpdateTaskStatusRequest{
-		TaskID:    taskID,
-		NewStatus: task.TaskStatusCompleted,
-		Reason:    &reason,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newTaskResponse(updatedTask))
-}
-
-func (h *RuntimeHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
-	taskID, ok := taskIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-
-	var req struct {
-		Status string `json:"status"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	newStatus := task.TaskStatus(req.Status)
-	if !newStatus.IsValid() {
-		http.Error(w, "invalid status", http.StatusBadRequest)
-		return
-	}
-
-	updatedTask, err := h.taskService.UpdateTaskStatus(r.Context(), task.UpdateTaskStatusRequest{
-		TaskID:    taskID,
-		NewStatus: newStatus,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newTaskResponse(updatedTask))
-}
-
-func (h *RuntimeHandler) FailTask(w http.ResponseWriter, r *http.Request) {
-	taskID, ok := taskIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-
-	var req struct {
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if req.Error == "" {
-		http.Error(w, "error is required", http.StatusBadRequest)
-		return
-	}
-
-	updatedTask, err := h.taskService.UpdateTaskStatus(r.Context(), task.UpdateTaskStatusRequest{
-		TaskID:    taskID,
-		NewStatus: task.TaskStatusFailed,
-		Reason:    &req.Error,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newTaskResponse(updatedTask))
-}
-
-func (h *RuntimeHandler) RenewLease(w http.ResponseWriter, r *http.Request) {
-	taskID, ok := taskIDFromRequest(w, r)
-	if !ok {
-		return
-	}
-
-	if _, err := h.taskService.GetTask(r.Context(), taskID); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	// Persistent lease records are not modeled in this foundation stage.
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func taskIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		http.Error(w, "invalid task id", http.StatusBadRequest)
-		return uuid.Nil, false
-	}
-	return id, true
 }
 
 func enrollmentIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {

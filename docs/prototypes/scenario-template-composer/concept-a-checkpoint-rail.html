@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>方案 A · 关卡轨</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #e8ecf1;
+      --ink: #152033;
+      --muted: #5a6a80;
+      --rail: #1a2744;
+      --gold: #c9a227;
+      --paper: #f7f5f0;
+      --brand: #2f5fff;
+      --line: rgba(21,32,51,.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(ellipse 80% 40% at 50% -10%, rgba(201,162,39,.12), transparent 50%),
+        var(--bg);
+      color: var(--ink);
+      font-family: "IBM Plex Sans", "PingFang SC", sans-serif;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 28px;
+    }
+    a.back { color: var(--muted); text-decoration: none; font-size: 13px; }
+    .save {
+      border: 0;
+      background: var(--rail);
+      color: #fff;
+      height: 40px;
+      padding: 0 18px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .hero {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 8px 28px 0;
+    }
+    .eyebrow { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+    h1 {
+      font-family: Syne, sans-serif;
+      font-size: 42px;
+      letter-spacing: -0.04em;
+      margin: 6px 0 18px;
+      font-weight: 800;
+    }
+    .identity {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+    input, textarea, select {
+      font: inherit;
+      color: inherit;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      width: 100%;
+    }
+    label span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .rail-wrap {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 0 28px 28px;
+    }
+    .rail {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 8px 8px 0;
+    }
+    .rail::before {
+      content: "";
+      position: absolute;
+      left: 40px;
+      right: 40px;
+      top: 28px;
+      height: 4px;
+      background: var(--rail);
+      border-radius: 4px;
+    }
+    .st {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      background: none;
+      border: 0;
+      cursor: pointer;
+      color: inherit;
+      font: inherit;
+    }
+    .disc {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 4px solid var(--rail);
+    }
+    .st.on .disc { background: var(--gold); border-color: var(--rail); }
+    .st .name { font-family: Syne, sans-serif; font-weight: 700; font-size: 15px; }
+    .st .meta { font-size: 12px; color: var(--muted); }
+    .add-st {
+      position: relative;
+      z-index: 1;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px dashed var(--rail);
+      background: var(--bg);
+      cursor: pointer;
+      margin-top: 0;
+      align-self: flex-start;
+      margin-top: 14px;
+    }
+    .platform {
+      margin-top: 28px;
+      background: var(--paper);
+      border-radius: 22px;
+      padding: 28px;
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 28px;
+      box-shadow: 0 20px 50px rgba(21,32,51,.08);
+    }
+    .code {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 12px;
+      letter-spacing: .08em;
+      color: var(--gold);
+    }
+    h2 { font-family: Syne, sans-serif; margin: 4px 0 16px; font-size: 26px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 14px; }
+    .readback {
+      border-left: 3px solid var(--gold);
+      padding-left: 16px;
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    @media (max-width: 800px) {
+      .identity, .platform, .row { grid-template-columns: 1fr; }
+      h1 { font-size: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="back" href="./index.html">← 三套方案</a>
+    <button class="save" type="button">保存为第 1 版</button>
+  </header>
+  <div class="hero">
+    <div class="eyebrow">场景模板 · 关卡轨</div>
+    <h1 contenteditable="true">运维评审</h1>
+    <div class="identity">
+      <label><span>这是什么活</span>
+        <textarea rows="2">线上变更必须经过开发交出、独立审查、再发布。人不在模板里绑死，项目编制时再对号入座。</textarea>
+      </label>
+      <label><span>内部标识（可后改）</span>
+        <input value="ops_review" />
+      </label>
+    </div>
+  </div>
+  <div class="rail-wrap">
+    <div class="rail" id="rail"></div>
+    <div class="platform" id="platform"></div>
+  </div>
+  <script>
+    const roles = [
+      { key: "developer", title: "开发" },
+      { key: "reviewer", title: "审查" },
+      { key: "tester", title: "测试" },
+      { key: "publisher", title: "发布" },
+    ];
+    const nodes = [
+      { title: "开发", role: "developer", verify: "none", required: true },
+      { title: "审查", role: "reviewer", verify: "human", required: true },
+      { title: "发布", role: "publisher", verify: "independent", required: true, independent: "tester" },
+    ];
+    let selected = 1;
+    const verifyLabel = {
+      none: "交出即可",
+      independent: "另一席位验",
+      human: "人类确认",
+    };
+    function roleTitle(key) {
+      return roles.find((r) => r.key === key)?.title || "未选";
+    }
+    function renderRail() {
+      const rail = document.getElementById("rail");
+      rail.innerHTML = nodes.map((n, i) => `
+        <button class="st ${i === selected ? "on" : ""}" data-i="${i}" type="button">
+          <span class="disc"></span>
+          <span class="name">${n.title}</span>
+          <span class="meta">${roleTitle(n.role)} · ${verifyLabel[n.verify]}</span>
+        </button>
+      `).join("") + `<button class="add-st" id="add" type="button" title="加一站"></button>`;
+      rail.querySelectorAll(".st").forEach((el) => {
+        el.onclick = () => { selected = Number(el.dataset.i); render(); };
+      });
+      document.getElementById("add").onclick = () => {
+        nodes.push({ title: "新关卡", role: "", verify: "none", required: true });
+        selected = nodes.length - 1;
+        render();
+      };
+    }
+    function renderPlatform() {
+      const n = nodes[selected];
+      const platform = document.getElementById("platform");
+      platform.innerHTML = `
+        <div>
+          <div class="code">STATION ${String(selected + 1).padStart(2, "0")}</div>
+          <h2>停在这一站，只改这一站</h2>
+          <label><span>节点名称</span><input id="title" value="${n.title}" /></label>
+          <div class="row" style="margin-top:12px">
+            <label><span>谁来接收</span>
+              <select id="role">${roles.map((r) => `<option value="${r.key}" ${r.key===n.role?"selected":""}>${r.title}</option>`).join("")}</select>
+            </label>
+            <label><span>怎么验证</span>
+              <select id="verify">
+                <option value="none" ${n.verify==="none"?"selected":""}>本角色交出即可</option>
+                <option value="independent" ${n.verify==="independent"?"selected":""}>另一角色独立验证</option>
+                <option value="human" ${n.verify==="human"?"selected":""}>必须人类确认</option>
+              </select>
+            </label>
+          </div>
+          <div id="ind"></div>
+          <label class="check"><input type="checkbox" id="req" ${n.required?"checked":""} /> 必须经过，规划不能漏</label>
+        </div>
+        <div>
+          <div class="code">READBACK</div>
+          <p class="readback" id="readback"></p>
+          <p class="hint">借鉴 GitHub Checks 时间线 + Apple 快捷指令：轨是工作对象，表单只服务当前站。</p>
+        </div>
+      `;
+      const sync = () => {
+        n.title = document.getElementById("title").value;
+        n.role = document.getElementById("role").value;
+        n.verify = document.getElementById("verify").value;
+        n.required = document.getElementById("req").checked;
+        const indWrap = document.getElementById("ind");
+        if (n.verify === "independent") {
+          if (!indWrap.innerHTML) {
+            indWrap.innerHTML = `<label style="display:block;margin-top:12px"><span>独立验证角色</span>
+              <select id="indRole">${roles.filter((r)=>r.key!==n.role).map((r)=>`<option value="${r.key}" ${r.key===n.independent?"selected":""}>${r.title}</option>`).join("")}</select></label>`;
+            document.getElementById("indRole").onchange = (e) => { n.independent = e.target.value; writeReadback(); };
+          }
+        } else {
+          indWrap.innerHTML = "";
+        }
+        writeReadback();
+        renderRail();
+        bindPlatform();
+      };
+      const bindPlatform = () => {
+        ["title","role","verify","req"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.oninput = el.onchange = sync;
+        });
+      };
+      bindPlatform();
+      writeReadback();
+      if (n.verify === "independent") sync();
+    }
+    function writeReadback() {
+      const el = document.getElementById("readback");
+      if (!el) return;
+      el.textContent = nodes.map((n, i) => {
+        const gate = n.required ? "不能跳过" : "可按退出点省略";
+        const v = n.verify === "human" ? "人类确认后才能离开"
+          : n.verify === "independent" ? `${roleTitle(n.independent || "tester")}独立验证`
+          : `${roleTitle(n.role)}交出即可`;
+        return `${i + 1}. ${n.title}：${roleTitle(n.role)}来接，${v}，${gate}。`;
+      }).join(" ");
+    }
+    function render() { renderRail(); renderPlatform(); }
+    render();
+  </script>
+</body>
+</html>

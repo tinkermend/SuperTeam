@@ -3950,6 +3950,85 @@ func (r *PgRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID, pr
 	return r.updateProjectTaskStatusWithQueries(ctx, r.q, tenantID, projectTaskID, status, eventID, currentStatuses)
 }
 
+// CancelProjectTaskWithReason 取消任务并落取消原因分型。system_stranded（看门狗滞留
+// 收敛）在人类点重试时可被 ReviveStrandedCancelledProjectTasks 复活；human_reject 不行。
+func (r *PgRepository) CancelProjectTaskWithReason(ctx context.Context, tenantID, projectTaskID uuid.UUID, cancelReason string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
+	row, err := r.q.CancelProjectTaskWithReason(ctx, queries.CancelProjectTaskWithReasonParams{
+		TenantID:        tenantID,
+		ID:              projectTaskID,
+		CancelReason:    cancelReason,
+		LatestEventID:   nullUUID(eventID),
+		CurrentStatuses: currentStatuses,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
+}
+
+// ReviveStrandedCancelledProjectTasks 把系统滞留收敛取消的下游拉回 blocked，供恢复
+// 替换任务重挂边。返回真正被复活的行；未命中（human_reject / 未分型 / 非 cancelled）
+// 不在返回集内，调用方据此发事件。
+func (r *PgRepository) ReviveStrandedCancelledProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectTask, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.q.ReviveStrandedCancelledProjectTasks(ctx, queries.ReviveStrandedCancelledProjectTasksParams{
+		TenantID:  tenantID,
+		ProjectID: projectID,
+		TaskIds:   taskIDs,
+	})
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	tasks := make([]ProjectTask, 0, len(rows))
+	for _, row := range rows {
+		task, err := taskFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
+// MarkProjectTaskSuperseded 把源任务标为「已被恢复替换任务取代」，使其不再计入需求
+// 状态推导（否则旧的 failed 行会把需求永久钉在 failed）。行本身留在图上。
+func (r *PgRepository) MarkProjectTaskSuperseded(ctx context.Context, tenantID, projectTaskID, supersededByTaskID uuid.UUID) (ProjectTask, error) {
+	row, err := r.q.MarkProjectTaskSuperseded(ctx, queries.MarkProjectTaskSupersededParams{
+		TenantID:           tenantID,
+		ID:                 projectTaskID,
+		SupersededByTaskID: supersededByTaskID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		return ProjectTask{}, projectRepositoryError(err)
+	}
+	return taskFromRecord(row)
+}
+
+// ReviveProjectDemandForRecovery 把需求从 failed 拉回 executing（恢复替换任务已建）。
+// 需求状态只能单向前进（ProjectDemandStatusCanAdvance），正常重算推不回来，所以这里
+// 直接改写并收窄为只认 failed。非 failed 返回 ErrProjectConflict，调用方按「无需复活」处理。
+func (r *PgRepository) ReviveProjectDemandForRecovery(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
+	row, err := r.q.ReviveProjectDemandForRecovery(ctx, queries.ReviveProjectDemandForRecoveryParams{
+		TenantID: tenantID,
+		ID:       demandID,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProjectDemand{}, ErrProjectConflict
+		}
+		return ProjectDemand{}, projectRepositoryError(err)
+	}
+	return demandFromRecord(row)
+}
+
 // RestoreProjectTaskHumanWait 是验收写回失败时的补偿动作：退回 waiting_human 并还原
 // 等待指针（终态写回会把它们清空，只还原状态会让重试永久卡在 approve 守卫上）。
 func (r *PgRepository) RestoreProjectTaskHumanWait(ctx context.Context, tenantID, projectTaskID uuid.UUID, waitingReason *string, waitingRequestID *uuid.UUID) (ProjectTask, error) {
@@ -5416,11 +5495,12 @@ func (r *PgRepository) ListStaleQueuedProjectTaskAttempts(ctx context.Context, t
 	return attempts, nil
 }
 
-func (r *PgRepository) ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, limit int32) ([]ProjectTaskAttempt, error) {
+func (r *PgRepository) ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, staleBefore time.Time, limit int32) ([]ProjectTaskAttempt, error) {
 	rows, err := r.q.ListExpiredRunningProjectTaskAttempts(ctx, queries.ListExpiredRunningProjectTaskAttemptsParams{
-		TenantID: tenantID,
-		Now:      pgtype.Timestamptz{Time: now, Valid: true},
-		Limit:    limit,
+		TenantID:    tenantID,
+		Now:         pgtype.Timestamptz{Time: now, Valid: true},
+		StaleBefore: pgtype.Timestamptz{Time: staleBefore, Valid: true},
+		Limit:       limit,
 	})
 	if err != nil {
 		return nil, projectRepositoryError(err)
@@ -5514,11 +5594,20 @@ func (r *PgRepository) ListPendingDecisionsMissingOpenInbox(ctx context.Context,
 	return out, nil
 }
 
-func (r *PgRepository) ListStrandedBlockedProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
+// ListStrandedBlockedProjectTasks 见 queries/project.sql：除「上游全终态失败」外，
+// 还排除上游挂着 pending 决策、以及上游刚进终态（failureGrace 宽限）的情况。
+func (r *PgRepository) ListStrandedBlockedProjectTasks(ctx context.Context, limit int32, failureGrace time.Duration) ([]ProjectTask, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := r.q.ListStrandedBlockedProjectTasks(ctx, limit)
+	graceSeconds := int32(failureGrace / time.Second)
+	if graceSeconds < 0 {
+		graceSeconds = 0
+	}
+	rows, err := r.q.ListStrandedBlockedProjectTasks(ctx, queries.ListStrandedBlockedProjectTasksParams{
+		BatchLimit:          limit,
+		FailureGraceSeconds: graceSeconds,
+	})
 	if err != nil {
 		return nil, projectRepositoryError(err)
 	}
@@ -5545,8 +5634,11 @@ func (r *PgRepository) BindProjectTaskWaitingRequest(ctx context.Context, tenant
 // ListTenantsWithRecoverableProjectTaskAttempts returns the distinct tenants that
 // currently have a queued-but-unstarted or lease-expired running attempt, so the
 // reconciler can drive the per-tenant attempt sweeps only where there is work.
-func (r *PgRepository) ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
-	tenants, err := r.q.ListTenantsWithRecoverableProjectTaskAttempts(ctx, pgtype.Timestamptz{Time: now, Valid: true})
+func (r *PgRepository) ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now time.Time, staleBefore time.Time) ([]uuid.UUID, error) {
+	tenants, err := r.q.ListTenantsWithRecoverableProjectTaskAttempts(ctx, queries.ListTenantsWithRecoverableProjectTaskAttemptsParams{
+		Now:         pgtype.Timestamptz{Time: now, Valid: true},
+		StaleBefore: pgtype.Timestamptz{Time: staleBefore, Valid: true},
+	})
 	if err != nil {
 		return nil, projectRepositoryError(err)
 	}
@@ -5630,6 +5722,10 @@ func (r *PgRepository) recoverDispatchFailureWaitingHumanWithQueries(ctx context
 	if err != nil {
 		return ProjectTaskWritebackResult{}, err
 	}
+	summary := strings.TrimSpace(req.HumanSummary)
+	if summary == "" {
+		summary = "项目任务分派失败，需要人工恢复决策"
+	}
 	event, err := r.appendProjectEventWithQueries(ctx, q, AppendProjectEventRequest{
 		TenantID:     req.TenantID,
 		ProjectID:    req.ProjectID,
@@ -5638,7 +5734,7 @@ func (r *PgRepository) recoverDispatchFailureWaitingHumanWithQueries(ctx context
 		ActorID:      task.ID.String(),
 		ResourceType: strPtr("project_task"),
 		ResourceID:   strPtr(task.ID.String()),
-		Summary:      "项目任务分派失败，需要人工恢复决策",
+		Summary:      summary,
 		Payload: map[string]any{
 			"project_task_id":          task.ID.String(),
 			"dispatch_failed_event_id": req.FailureEventID.String(),
@@ -5657,7 +5753,7 @@ func (r *PgRepository) recoverDispatchFailureWaitingHumanWithQueries(ctx context
 		TargetUserID:      projectRecord.HumanOwnerUserID,
 		DecisionType:      "project_task_recovery",
 		TitleSnapshot:     task.Title,
-		SummarySnapshot:   "项目任务分派失败，需要人工恢复决策",
+		SummarySnapshot:   summary,
 		RiskLevelSnapshot: stringValue(task.RiskLevel),
 		StatusSnapshot:    "pending",
 		CreatedEventID:    &event.ID,
@@ -7698,6 +7794,8 @@ func taskFromRecord(row queries.ProjectTask) (ProjectTask, error) {
 		StatusChangedAt:            row.StatusChangedAt.Time,
 		DismissedAt:                ptrTime(row.DismissedAt),
 		DismissedBy:                ptrUUID(row.DismissedBy),
+		CancelReason:               ptrText(row.CancelReason),
+		SupersededByTaskID:         ptrUUID(row.SupersededByTaskID),
 		CreatedAt:                  row.CreatedAt.Time,
 		UpdatedAt:                  row.UpdatedAt.Time,
 	}, nil

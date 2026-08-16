@@ -82,7 +82,6 @@ type ProjectDemandsSectionProps = {
   selectedDemandId?: string;
   /** ?view= 中栏视图；缺省时间线（叙事优先，图为副视图）。 */
   view?: DemandDossierView;
-  onViewChange?: (view: DemandDossierView) => void;
 };
 
 /**
@@ -130,13 +129,11 @@ export function ProjectDemandsSection({
   pane,
   projectId,
   selectedDemandId,
-  view = "timeline",
-  onViewChange
+  view = "timeline"
 }: ProjectDemandsSectionProps) {
   const selectedDemand =
     demands.find((demand) => demand.id === selectedDemandId) ?? demands[0];
   const navigate = useNavigate();
-  const sectionQueryClient = useQueryClient();
   const [railSearch, setRailSearch] = useState("");
   const goToDemand = useCallback(
     (demandId: string) => {
@@ -281,6 +278,7 @@ export function ProjectDemandsSection({
                 apiOptions={apiOptions}
                 graph={graph}
                 projectId={projectId}
+                scenarioTemplateKey={selectedDemand.scenario_template_key}
               />
             </>
           ) : null}
@@ -445,11 +443,13 @@ function DemandBlockingBanner({ graph }: { graph: ProjectTaskGraph | undefined }
 function DemandGapPanel({
   apiOptions,
   graph,
-  projectId
+  projectId,
+  scenarioTemplateKey
 }: {
   apiOptions: ApiClientOptions;
   graph: ProjectTaskGraph | undefined;
   projectId: string;
+  scenarioTemplateKey?: string;
 }) {
   const queryClient = useQueryClient();
   const [staffDialogOpen, setStaffDialogOpen] = useState(false);
@@ -531,6 +531,7 @@ function DemandGapPanel({
           }}
           open={staffDialogOpen}
           projectId={projectId}
+          scenarioTemplateKey={scenarioTemplateKey}
         />
       ) : null}
       <ConfirmDialog

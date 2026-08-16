@@ -523,8 +523,8 @@ async fn serve_failing_project_task_completion(
         .route(
             "/api/v1/runtime/project-task-attempts/{attempt_id}/complete",
             post(reject_project_task_complete_writeback),
-        )
-        .with_state(capture);
+        );
+    let app = with_object_store_stub(app, addr).with_state(capture);
     let task = tokio::spawn(async move {
         axum::serve(listener, app)
             .await
@@ -1618,7 +1618,10 @@ EOF
         .expect("artifact_refs array")
         .iter()
         .any(|entry| entry["ref"] == "file://artifact-one");
-    assert!(self_reported, "self-reported artifact ref must be preserved");
+    assert!(
+        self_reported,
+        "self-reported artifact ref must be preserved"
+    );
     assert_eq!(
         project_complete.payload["confidence_factors"]["provider_confidence"],
         "high"
@@ -2156,7 +2159,6 @@ printf '%s\n' '{{"type":"result","result":"done"}}'
         std::fs::canonicalize(std::fs::read_to_string(cwd_file).unwrap().trim_end()).unwrap(),
         std::fs::canonicalize(&expected_workspace).unwrap()
     );
-
 }
 
 #[tokio::test]

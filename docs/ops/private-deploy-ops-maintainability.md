@@ -19,7 +19,7 @@
 | 依赖服务有 Compose，**一等业务进程无镜像** | 全仓一等 `Dockerfile*` 不存在；仅有 `docker-compose.dev.yml` |
 | Compose **只起基础设施**，不启 CP / Web / Runtime / Temporal / Connector | `docker-compose.dev.yml`：postgres / redis / minio / openfga |
 | 应用启停靠 `scripts/dev-services.sh` + 本机 `go run` / `cargo run` / `pnpm dev` | `package.json`、`dev-services.sh` |
-| 对象存储路径已产品化（CP 配置 + presign），私有化桶与 **桶 CORS 引导** 仍缺交付工具 | `config.example.yaml` `objectStore`；`TODO.md` 生产桶 CORS |
+| 对象存储路径已产品化（CP 配置 + presign）；建桶/CORS 有 `init-object-store.sh` / `bucket-cors`，**不是**整站 bootstrap | `scripts/ops/init-object-store.sh`；`cmd/object-store-init`；`cmd/bucket-cors` |
 | CORS / 反代同源方向已在代码与 TODO 中显式化，**生产反代样例未入库** | `http.allowedOrigins` + `environment: prod`；nginx 同源 TODO |
 | 健康检查偏浅；Runtime `/health` 运维绑定文档缺失 | CP `GET /health` 基本 ok；hardening spec「零可观测性」 |
 
@@ -55,7 +55,7 @@ Agents.md 分层约束对交付同样成立：Runtime 不承载业务策略；Co
 |---|---|---|
 | **Compose（仅 dev 依赖）** | `docker-compose.dev.yml` | postgres:16、redis:7、minio(+mc 建桶 `superteam-artifacts` 且 **anonymous download**)、openfga(+migrate, **sqlite 卷**)。**无** CP/Web/Runtime/Temporal 服务定义 |
 | **本地启停** | `scripts/dev-services.sh` | 启停 temporal / control-plane / web / runtime-agent / feishu-connector；迁移 atlas；OpenFGA 可 compose 或 local；pid/log 在 `.scratch/`。**明确是开发脚本**，非客户交付入口 |
-| **OpenFGA 引导** | `scripts/openfga-bootstrap.sh` | 建 store + 写 model + smoke check，吐出 `OPENFGA_*` env；偏 shadow 试验 |
+| **对象存储初始化** | `scripts/ops/init-object-store.sh` / `cmd/object-store-init` | 读 CP `objectStore`（yaml + `S3_*`）幂等建桶 + CORS；`--check` / `--skip-cors`。**不**代替站点 bootstrap（migrate/管理员仍是 P0-4） |
 | **CP 配置样例** | `apps/control-plane/config/config.example.yaml` | `environment`、`http`（含 CORS）、`postgres`、`redis`、`objectStore`、`employeeEnv`、`temporal`、`authz`、`auth`、`planner` |
 | **Runtime 配置样例** | `apps/runtime-agent/config.example.yaml` | `control_plane_url`、`bootstrap_key`、`http.addr`、workspace、providers、logging；**对象存储凭证不在 Runtime 配置中**——上传/下载走 CP presign（见 `src/artifacts.rs` / `raw_log.rs` / `skills.rs` 与 `config.rs` 说明） |
 | **Web 构建** | `pnpm build:web` / Vite；`VITE_CONTROL_PLANE_URL` | 静态资源构建；API 基址见 `apps/web/src/lib/config/control-plane-url.ts`（默认同 hostname `:8080`） |
@@ -105,13 +105,13 @@ Agents.md 分层约束对交付同样成立：Runtime 不承载业务策略；Co
 1. **架构**：Runtime / 浏览器 **不持长期对象存储密钥**；上传下载走 CP 签发的 **presigned URL**（artifact / raw-log / skill 等 API 已在 openapi）。
 2. **浏览器预览陷阱**：`GET .../artifacts/{id}/content` 默认 302 到 presign；fetch 跨域重定向后 Origin 变 `null`。产品已提供 `format=json` 两步取 URL（见 followups / openapi 注释），以降低对桶放行 `null` 的依赖。
 3. **dev Compose MinIO**：`mc anonymous set download` 对 `superteam-artifacts` —— **开发便利，生产不可照搬**（应私有桶 + presign + 明确 CORS）。
-4. **TODO**：`apps/control-plane/cmd/bucket-cors/` 幂等引导（未做）；规则模板见 `docs/superpowers/specs/2026-07-19-execution-output-attachments-followups.md` §2。
+4. **桶 CORS / 建桶**：`apps/control-plane/cmd/bucket-cors` 幂等写 CORS；`scripts/ops/init-object-store.sh`（`cmd/object-store-init`）读同一份 CP `objectStore` 配置，幂等建桶后再写 CORS。控制面进程启动仍不会自动 CreateBucket。规则模板见 `docs/superpowers/specs/2026-07-19-execution-output-attachments-followups.md` §2。
 
 ### 1.5 健康与可观测性
 
 | 组件 | 现状 | 私有化缺口 |
 |---|---|---|
-| CP `/health` | 返回 service/status ok 类载荷 | 不探 postgres/redis/objectStore/temporal；负载均衡「绿」≠ 可调度 |
+| CP `/health` | 返回 service/status；HeadBucket 失败时 503 且带 `object_store` | 可用 `?deep=1`（与默认同样探桶）；进程活着但桶没建会红 |
 | Runtime `/health` | 探针 Provider 可用性 | 默认监听与文档不完整；daemon 场景常 unbound（TODO） |
 | OpenFGA | `/healthz` | compose 已用 |
 | Metrics / 追踪 | hardening：**go.mod 无 prometheus/otel** | 企业运维无标准拉数面 |
@@ -188,7 +188,7 @@ deploy/
 | 桶策略 | **私有**；禁止 dev 的 anonymous download；生命周期/配额另议 |
 | CORS | 对 Web origin 放行 GET/HEAD（及预检需要的头）；`format=json` 路径下优先常规 origin，避免依赖 `null` |
 | 网络 | CP 与 Runtime 均需能访问 **presign 返回的 URL 主机名**（内外网 endpoint 分裂时要配公共可达 endpoint 或反向代理） |
-| 初始化 | Compose 侧 init 任务：建桶 + 应用 CORS；或 `bucket-cors` 命令读 CP 同款 S3 配置 |
+| 初始化 | `./scripts/ops/init-object-store.sh` 读 CP 同款 `objectStore`（yaml + `S3_*`）：幂等建桶 + CORS；`--check` 只读；`--skip-cors` 只建桶。Compose `minio-init` 仅 MinIO 开发栈且会匿名下载，生产不可照搬 |
 
 ### 2.5 反代与跨域：两条合法拓扑
 
@@ -266,7 +266,7 @@ deploy/
 |---|---|---|
 | **生产 Compose + 镜像构建定义** | 交付物 | 标准化安装 |
 | **`bootstrap-site`** | 脚本/CLI | 健康等待、migrate、初始管理员、打印 Runtime 注册步骤 |
-| **`bucket-cors`（TODO 已立项）** | CP `cmd` 或脚本 | 幂等写桶 CORS；`--check` 只读审计 |
+| **`bucket-cors` / `object-store-init`** | CP `cmd` + `scripts/ops/init-object-store.sh` | 幂等建桶（init）与写桶 CORS；`--check` 只读审计 |
 | **配置契约文档 + `.env.example`** | 文档 | 全量键、默认值、prod 必填、密钥生成命令 |
 | **nginx/Caddy 同源样例** | 配置 | 消除 CORS 类现场事故 |
 | **`superteam doctor`** | CLI | 同源自检：TCP/HTTP、presign put/get 小对象、Temporal namespace、authz engine |
@@ -362,7 +362,7 @@ deploy/
 | P0-3 | **生产配置契约包** | example 存在但不等于交付清单；dev 密钥习惯危险 | 漏配导致启动失败或安全事故 | `.env.example` + prod yaml 样例 + 必填表；`CONTROL_PLANE_ENV=prod` 矩阵测过 |
 | P0-4 | **站点 bootstrap 脚本** | 迁移/管理员/节点步骤散落 | 降低实施对作者的依赖 | 一键：wait healthy → atlas apply → 初始租户/管理员 → 打印 Runtime 注册 |
 | P0-5 | **对象存储私有化路径** | dev MinIO 匿名读；无 rustfs/MinIO 生产样例 | 工件/技能不可用则平台空转 | Compose 可起 S3 兼容；CP 指向它；私有桶；上传下载冒烟通过 |
-| P0-6 | **桶 CORS 引导** | TODO 未做；现场易哑火预览 | Console 预览/下载类故障高频 | `bucket-cors --check` 可审计；apply 幂等；文档与 followups §2 一致 |
+| P0-6 | **桶 CORS 引导** | 命令已有（`bucket-cors` / `init-object-store.sh`）；现场仍须跑一次 | Console 预览/下载类故障高频 | `bucket-cors --check` 可审计；apply 幂等；文档与 followups §2 一致 |
 | P0-7 | **反代样例 + 拓扑选择文档** | nginx 同源仅 TODO | 避免家家现场重踩 CORS | 仓内 nginx 样例；手册写清拓扑 A/B 与 `allowedOrigins` / `VITE_*` 关系 |
 | P0-8 | **发布版本清单** | 无「版本=镜像 digest+迁移+契约」 | 升级与排障无锚点 | 每个 release 附 SBOM/清单文件；升级脚本只消费清单 |
 

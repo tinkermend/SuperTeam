@@ -617,14 +617,23 @@ mod tests {
 
         let prompt = payload.provider_prompt().expect("prompt");
 
-        assert!(prompt.contains("不得直连生产库"), "constitution missing: {prompt}");
-        assert!(prompt.contains("我是数据库运维员工。"), "persona missing: {prompt}");
+        assert!(
+            prompt.contains("不得直连生产库"),
+            "constitution missing: {prompt}"
+        );
+        assert!(
+            prompt.contains("我是数据库运维员工。"),
+            "persona missing: {prompt}"
+        );
         assert!(prompt.contains("巡检慢查询"), "task missing: {prompt}");
         // 顺序：团队约束 → 员工人格 → 任务本身。
         let constitution_at = prompt.find("不得直连生产库").unwrap();
         let persona_at = prompt.find("我是数据库运维员工。").unwrap();
         let task_at = prompt.find("巡检慢查询").unwrap();
-        assert!(constitution_at < persona_at && persona_at < task_at, "unexpected order: {prompt}");
+        assert!(
+            constitution_at < persona_at && persona_at < task_at,
+            "unexpected order: {prompt}"
+        );
     }
 
     /// 没有宪法与人格时提示词保持原样，不加任何包裹——避免给裸任务凭空套标题。
@@ -653,7 +662,10 @@ mod tests {
             "巡检慢查询",
         );
         let system = payload.system_prompt().expect("constitution");
-        assert!(system.contains("不得直连生产库"), "constitution missing: {system}");
+        assert!(
+            system.contains("不得直连生产库"),
+            "constitution missing: {system}"
+        );
     }
 
     #[test]

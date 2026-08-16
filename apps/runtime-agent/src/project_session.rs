@@ -15,10 +15,11 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::payload::RuntimeMCPServerPayload;
-use crate::mcp_config::{
-    materialize_session_mcp_config, prepare_codex_session_overlay,
+use crate::mcp_config::{materialize_session_mcp_config, prepare_codex_session_overlay};
+use crate::project_workspace::{
+    SkillLinkReport, link_provider_skills, shield_projected_capability_paths,
+    unlink_provider_skills,
 };
-use crate::project_workspace::{SkillLinkReport, link_provider_skills, shield_projected_capability_paths, unlink_provider_skills};
 use crate::workspace_files::atomic_write;
 
 /// 稳定项目目录内的平台私有会话树（与 `.git/info/exclude` 的 `.superteam/**` 对齐）。
@@ -51,7 +52,9 @@ pub struct ProjectSessionInstall {
 }
 
 pub fn session_dir(workspace_path: &Path, command_id: &str) -> Result<PathBuf> {
-    Ok(workspace_path.join(SESSIONS_DIR).join(validated_command_id(command_id)?))
+    Ok(workspace_path
+        .join(SESSIONS_DIR)
+        .join(validated_command_id(command_id)?))
 }
 
 pub fn manifest_path(workspace_path: &Path, command_id: &str) -> Result<PathBuf> {
@@ -210,9 +213,7 @@ pub fn unload_project_session(workspace_path: &Path, command_id: &str) -> Result
 /// 删掉会话目录里除 `deliverables/` 以外的一切（MCP / manifest / overlay）。
 /// 交付物子树为空或不存在时连会话目录一起去掉，避免空壳堆积。
 fn retain_session_deliverables_and_remove_rest(dir: &Path) -> Result<()> {
-    for entry in fs::read_dir(dir)
-        .with_context(|| format!("read session dir {}", dir.display()))?
-    {
+    for entry in fs::read_dir(dir).with_context(|| format!("read session dir {}", dir.display()))? {
         let entry = entry.with_context(|| format!("read session dir entry {}", dir.display()))?;
         if entry.file_name() == DELIVERABLES_SUBDIR {
             continue;
@@ -263,7 +264,8 @@ fn write_manifest(workspace_path: &Path, manifest: &ProjectSessionManifest) -> R
         fs::create_dir_all(parent)
             .with_context(|| format!("create session manifest dir {}", parent.display()))?;
     }
-    let bytes = serde_json::to_vec_pretty(manifest).context("serialize project session manifest")?;
+    let bytes =
+        serde_json::to_vec_pretty(manifest).context("serialize project session manifest")?;
     atomic_write(&path, &bytes)?;
     Ok(())
 }
@@ -274,7 +276,9 @@ pub fn merge_provider_overlay_env(
     overlay: &BTreeMap<String, String>,
 ) {
     for (key, value) in overlay {
-        environment.entry(key.clone()).or_insert_with(|| value.clone());
+        environment
+            .entry(key.clone())
+            .or_insert_with(|| value.clone());
     }
 }
 
@@ -436,7 +440,11 @@ mod tests {
             .get("OPENCODE_CONFIG")
             .expect("OPENCODE_CONFIG");
         assert!(Path::new(cfg).exists());
-        assert!(!install.provider_overlay_env.contains_key("OPENCODE_CONFIG_DIR"));
+        assert!(
+            !install
+                .provider_overlay_env
+                .contains_key("OPENCODE_CONFIG_DIR")
+        );
         unload_project_session(&workspace, "cmd-oc").unwrap();
     }
 
@@ -448,8 +456,9 @@ mod tests {
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&workspace).unwrap();
 
-        let install = install_project_session(&home, &workspace, "cmd-codex-empty", "codex", &[], &[])
-            .unwrap();
+        let install =
+            install_project_session(&home, &workspace, "cmd-codex-empty", "codex", &[], &[])
+                .unwrap();
         assert!(
             !install.provider_overlay_env.contains_key("CODEX_HOME"),
             "empty MCP must not redirect CODEX_HOME (would risk auth/home disruption)"
@@ -471,7 +480,11 @@ mod tests {
             install_project_session(&home, &workspace, "cmd-oc-empty", "opencode", &[], &[])
                 .unwrap();
         assert!(!install.provider_overlay_env.contains_key("OPENCODE_CONFIG"));
-        assert!(!install.provider_overlay_env.contains_key("OPENCODE_CONFIG_DIR"));
+        assert!(
+            !install
+                .provider_overlay_env
+                .contains_key("OPENCODE_CONFIG_DIR")
+        );
         assert!(install.mcp_config_path.is_none());
         unload_project_session(&workspace, "cmd-oc-empty").unwrap();
     }

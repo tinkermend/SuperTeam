@@ -4,18 +4,24 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 const strandedBlockedCancelSummary = "系统收敛：前置任务已失败或取消，下游无法继续，取消滞留阻塞任务"
 
+// strandedBlockedFailureGrace 是上游进终态后的收口宽限。A 期真链现场：任务 21:10:06
+// 失败、看门狗 21:10:08 就把下游取消、恢复卡 21:10:09 才建好——只看「卡是否 pending」
+// 挡不住这几秒竞态。看门狗是兜底，不需要秒级回收，给协调线程留足开卡窗口。
+const strandedBlockedFailureGrace = 5 * time.Minute
+
 // StrandedBlockedProjectTaskRepairer lists blocked tasks whose every blocker is
 // already failed/cancelled, so the watchdog can cancel them the same way
 // cancelFailureDownstream does on an explicit human reject.
 type StrandedBlockedProjectTaskRepairer interface {
-	ListStrandedBlockedProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error)
-	UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error)
+	ListStrandedBlockedProjectTasks(ctx context.Context, limit int32, failureGrace time.Duration) ([]ProjectTask, error)
+	CancelProjectTaskWithReason(ctx context.Context, tenantID, projectTaskID uuid.UUID, cancelReason string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error)
 	AppendProjectEvent(ctx context.Context, req AppendProjectEventRequest) (ProjectEvent, error)
 	RecomputeProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID) error
 }
@@ -23,6 +29,10 @@ type StrandedBlockedProjectTaskRepairer interface {
 // SweepStrandedBlockedProjectTasks cancels blocked downstream tasks whose
 // upstream blockers are all terminal-failed. Without this, demand recompute
 // used to treat blocked as "still working" and the demand stayed executing.
+//
+// 取消一律落 cancel_reason=system_stranded：这是平台动作而非业务判死，人类点重试时
+// 这些下游会被复活重挂边（ListStrandedBlockedProjectTasks 同时排除「上游还挂着
+// pending 人类决策」的任务，所以正常情况下轮不到这里去和重试抢）。
 func (s *Service) SweepStrandedBlockedProjectTasks(ctx context.Context, limit int32) (int, error) {
 	repairer, ok := s.repository.(StrandedBlockedProjectTaskRepairer)
 	if !ok {
@@ -31,7 +41,7 @@ func (s *Service) SweepStrandedBlockedProjectTasks(ctx context.Context, limit in
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	tasks, err := repairer.ListStrandedBlockedProjectTasks(ctx, limit)
+	tasks, err := repairer.ListStrandedBlockedProjectTasks(ctx, limit, strandedBlockedFailureGrace)
 	if err != nil {
 		return 0, err
 	}
@@ -83,12 +93,13 @@ func (s *Service) cancelStrandedBlockedProjectTask(ctx context.Context, repairer
 			"project_task_id": task.ID.String(),
 			"repair":          "stranded_blocked_downstream",
 			"prior_status":    task.Status,
+			"cancel_reason":   ProjectTaskCancelReasonSystemStranded,
 		},
 	})
 	if err != nil {
 		return err
 	}
-	updated, err := repairer.UpdateProjectTaskStatus(ctx, task.TenantID, task.ID, ProjectTaskStatusCancelled, &event.ID, []string{ProjectTaskStatusBlocked, "planned", "pending"})
+	updated, err := repairer.CancelProjectTaskWithReason(ctx, task.TenantID, task.ID, ProjectTaskCancelReasonSystemStranded, &event.ID, []string{ProjectTaskStatusBlocked, "planned", "pending"})
 	if err != nil {
 		if errors.Is(err, ErrProjectNotFound) {
 			return ErrProjectConflict

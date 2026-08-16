@@ -37,7 +37,6 @@ type Server struct {
 	// config.Config.ResolvedAllowedOrigins)。留空即不放行任何跨源来源——安全
 	// 默认值应当是"拒绝",放行必须来自显式配置。
 	allowedOrigins                 []string
-	taskHandler                    *handlers.TaskHandler
 	runtimeHandler                 *handlers.RuntimeHandler
 	runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
 	runtimeAuthService             middleware.AuthService
@@ -70,14 +69,13 @@ type Server struct {
 	objectStoreBucket              string
 }
 
-func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
+func NewServer(runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
 	var authService middleware.AuthService
 	if len(runtimeAuthService) > 0 {
 		authService = runtimeAuthService[0]
 	}
 
 	s := &Server{
-		taskHandler:        taskHandler,
 		runtimeHandler:     runtimeHandler,
 		runtimeAuthService: authService,
 	}
@@ -87,34 +85,32 @@ func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.Runti
 }
 
 func NewServerWithRuntimeSessionAuth(
-	taskHandler *handlers.TaskHandler,
 	runtimeHandler *handlers.RuntimeHandler,
 	runtimeAuthService middleware.AuthService,
 	runtimeSessionAuth middleware.RuntimeSessionAuthService,
 ) *Server {
-	server := NewServer(taskHandler, runtimeHandler, runtimeAuthService)
+	server := NewServer(runtimeHandler, runtimeAuthService)
 	server.runtimeSessionAuth = runtimeSessionAuth
 	server.registerRoutes()
 	return server
 }
 
-func NewServerWithAuth(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, authService *auth.Service, runtimeAuthService ...middleware.AuthService) *Server {
+func NewServerWithAuth(runtimeHandler *handlers.RuntimeHandler, authService *auth.Service, runtimeAuthService ...middleware.AuthService) *Server {
 	var runtimeAuth middleware.AuthService
 	if len(runtimeAuthService) > 0 {
 		runtimeAuth = runtimeAuthService[0]
 	}
-	return NewServerWithAuthz(taskHandler, runtimeHandler, authService, runtimeAuth, nil)
+	return NewServerWithAuthz(runtimeHandler, authService, runtimeAuth, nil)
 }
 
 func NewServerWithAuthz(
-	taskHandler *handlers.TaskHandler,
 	runtimeHandler *handlers.RuntimeHandler,
 	authService *auth.Service,
 	runtimeAuthService middleware.AuthService,
 	authorizer authz.Authorizer,
 	authzCenterHandlers ...*authzcenter.HTTPHandler,
 ) *Server {
-	server := NewServer(taskHandler, runtimeHandler, runtimeAuthService)
+	server := NewServer(runtimeHandler, runtimeAuthService)
 	server.authService = authService
 	server.authorizer = authorizer
 	if len(authzCenterHandlers) > 0 {
@@ -123,15 +119,11 @@ func NewServerWithAuthz(
 	if authorizer != nil && runtimeHandler != nil {
 		runtimeHandler.SetAuthorizer(authorizer)
 	}
-	if authorizer != nil && taskHandler != nil {
-		taskHandler.SetAuthorizer(authorizer)
-	}
 	server.registerRoutes()
 	return server
 }
 
 func NewServerWithAuthzAndRuntimeSessionAuth(
-	taskHandler *handlers.TaskHandler,
 	runtimeHandler *handlers.RuntimeHandler,
 	authService *auth.Service,
 	runtimeAuthService middleware.AuthService,
@@ -139,7 +131,7 @@ func NewServerWithAuthzAndRuntimeSessionAuth(
 	authorizer authz.Authorizer,
 	authzCenterHandlers ...*authzcenter.HTTPHandler,
 ) *Server {
-	server := NewServerWithAuthz(taskHandler, runtimeHandler, authService, runtimeAuthService, authorizer, authzCenterHandlers...)
+	server := NewServerWithAuthz(runtimeHandler, authService, runtimeAuthService, authorizer, authzCenterHandlers...)
 	server.runtimeSessionAuth = runtimeSessionAuth
 	server.registerRoutes()
 	return server
@@ -332,17 +324,6 @@ func (s *Server) registerRoutes() {
 	}
 
 	s.router.Route("/api/v1", func(r chi.Router) {
-		r.Route("/tasks", func(r chi.Router) {
-			if s.authService != nil {
-				r.Use(middleware.ConsoleUserAuth(s.authService))
-			}
-			r.Post("/", s.taskHandler.CreateTask)
-			r.Get("/", s.taskHandler.ListTasks)
-			r.Get("/{id}", s.taskHandler.GetTask)
-			r.Put("/{id}/status", s.taskHandler.UpdateTaskStatus)
-			r.Post("/{id}/cancel", s.taskHandler.CancelTask)
-		})
-
 		// 外部服务通道:仅服务凭据可达,业务动作以 on-behalf-of 绑定用户判权。
 		if s.feishuConnectorHandler != nil && s.serviceAuthService != nil {
 			r.Route("/connector", func(r chi.Router) {
@@ -434,6 +415,7 @@ func (s *Server) registerRoutes() {
 				r.Put("/digital-employees/{employeeId}/team", s.employeeHandler.ReassignDigitalEmployeeTeam)
 				r.Post("/digital-employees/{employeeId}/config-revisions", s.employeeHandler.CreateDigitalEmployeeConfigRevision)
 				r.Post("/digital-employees/{employeeId}/permission-changes", s.employeeHandler.SubmitPermissionChange)
+				r.Get("/digital-employees/{employeeId}/permission-change", s.employeeHandler.GetPendingPermissionChange)
 				r.Post("/digital-employees/{employeeId}/runs", s.employeeHandler.CreateDigitalEmployeeRun)
 				r.Get("/digital-employees/{employeeId}/runs", s.employeeHandler.ListDigitalEmployeeRuns)
 				r.Get("/digital-employees/{employeeId}/chat-threads", s.employeeHandler.ListDigitalEmployeeChatThreads)
@@ -614,6 +596,9 @@ func (s *Server) registerRoutes() {
 				r.Post("/skills/uploads", s.skillHandler.UploadSkill)
 				r.Get("/skills/{skillId}", s.skillHandler.GetSkill)
 				r.Delete("/skills/{skillId}", s.skillHandler.DeleteSkill)
+				r.Post("/skills/{skillId}/archive", s.skillHandler.ReplaceSkillArchive)
+				r.Get("/skills/{skillId}/archive/entries", s.skillHandler.ListSkillArchiveEntries)
+				r.Get("/skills/{skillId}/archive/content", s.skillHandler.GetSkillArchiveContent)
 				r.Post("/skills/{skillId}/install", s.skillHandler.InstallSkill)
 				r.Get("/teams/{teamId}/skills", s.skillHandler.ListTeamSkills)
 				r.Post("/teams/{teamId}/skills", s.skillHandler.BindTeamSkill)
@@ -680,6 +665,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.GetScenarioTemplate)
 				r.Get("/scenario-templates/{templateKey}/role-view", s.scenarioTemplateHandler.GetScenarioTemplateRoleView)
 				r.Patch("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.PatchScenarioTemplate)
+				r.Delete("/scenario-templates/{templateKey}", s.scenarioTemplateHandler.DeleteScenarioTemplate)
 				r.Post("/scenario-templates/{templateKey}/versions", s.scenarioTemplateHandler.CreateScenarioTemplateVersion)
 				r.Get("/scenario-templates/{templateKey}/versions", s.scenarioTemplateHandler.ListScenarioTemplateVersions)
 			})
@@ -761,12 +747,6 @@ func (s *Server) registerRoutes() {
 					r.Use(middleware.RuntimeSessionOrLegacyAuth(s.runtimeSessionAuth, s.runtimeAuthService))
 				}
 				r.Post("/heartbeat", s.runtimeHandler.Heartbeat)
-				r.Post("/tasks/claim", s.runtimeHandler.ClaimTask)
-				r.Put("/tasks/{id}/status", s.runtimeHandler.UpdateTaskStatus)
-				r.Post("/tasks/{id}/events", s.runtimeHandler.PushEvents)
-				r.Post("/tasks/{id}/complete", s.runtimeHandler.CompleteTask)
-				r.Post("/tasks/{id}/fail", s.runtimeHandler.FailTask)
-				r.Post("/tasks/{id}/lease", s.runtimeHandler.RenewLease)
 			})
 		})
 	})

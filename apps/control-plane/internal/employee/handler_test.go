@@ -131,6 +131,10 @@ func (s *fakeTemplateHandlerService) SubmitPermissionChange(ctx context.Context,
 	return nil, nil
 }
 
+func (s *fakeTemplateHandlerService) GetPendingPermissionChange(ctx context.Context, tenantID, employeeID uuid.UUID) (*PendingPermissionChange, error) {
+	return nil, nil
+}
+
 func (s *fakeTemplateHandlerService) GetSchedulingReadiness(ctx context.Context, tenantID, employeeID uuid.UUID) (*DigitalEmployeeSchedulingReadiness, error) {
 	return nil, nil
 }

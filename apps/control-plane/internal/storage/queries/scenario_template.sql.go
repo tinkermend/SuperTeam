@@ -236,6 +236,41 @@ func (q *Queries) ListScenarioTemplates(ctx context.Context, tenantID uuid.UUID)
 	return items, nil
 }
 
+const SoftDeleteScenarioTemplate = `-- name: SoftDeleteScenarioTemplate :one
+UPDATE scenario_templates
+SET deleted_at = NOW(),
+    status = 'disabled'
+WHERE tenant_id = $1::uuid
+  AND id = $2::uuid
+  AND deleted_at IS NULL
+RETURNING id, tenant_id, template_key, name, description, spec, status, deleted_at, created_by, created_at, updated_at, active_version
+`
+
+type SoftDeleteScenarioTemplateParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	ID       uuid.UUID `json:"id"`
+}
+
+func (q *Queries) SoftDeleteScenarioTemplate(ctx context.Context, arg SoftDeleteScenarioTemplateParams) (ScenarioTemplate, error) {
+	row := q.db.QueryRow(ctx, SoftDeleteScenarioTemplate, arg.TenantID, arg.ID)
+	var i ScenarioTemplate
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.TemplateKey,
+		&i.Name,
+		&i.Description,
+		&i.Spec,
+		&i.Status,
+		&i.DeletedAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ActiveVersion,
+	)
+	return i, err
+}
+
 const UpdateScenarioTemplateActiveSpec = `-- name: UpdateScenarioTemplateActiveSpec :one
 UPDATE scenario_templates
 SET spec = $1::jsonb,

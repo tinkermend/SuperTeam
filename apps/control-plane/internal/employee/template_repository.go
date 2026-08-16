@@ -66,6 +66,10 @@ func (r *PgRepository) CreateEmployeeTemplate(ctx context.Context, params Create
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
+	defaultRoleKeys, err := jsonbFromStringSlice(params.DefaultRoleKeys)
+	if err != nil {
+		return EmployeeTemplateRecord{}, err
+	}
 	capabilityBindings, err := jsonbFromMap(params.CapabilityBindings, "capability_bindings")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
@@ -85,6 +89,7 @@ func (r *PgRepository) CreateEmployeeTemplate(ctx context.Context, params Create
 		Label:                    params.Label,
 		Description:              params.Description,
 		DefaultRole:              params.DefaultRole,
+		DefaultRoleKeys:          defaultRoleKeys,
 		RecommendedSkills:        recommendedSkills,
 		RecommendedMcpServers:    recommendedMCPServers,
 		RecommendedProviderTypes: recommendedProviderTypes,
@@ -112,6 +117,10 @@ func (r *PgRepository) UpdateEmployeeTemplate(ctx context.Context, params Update
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
+	defaultRoleKeys, err := jsonbFromStringSlice(params.DefaultRoleKeys)
+	if err != nil {
+		return EmployeeTemplateRecord{}, err
+	}
 	capabilityBindings, err := jsonbFromMap(params.CapabilityBindings, "capability_bindings")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
@@ -131,6 +140,7 @@ func (r *PgRepository) UpdateEmployeeTemplate(ctx context.Context, params Update
 		Label:                    params.Label,
 		Description:              params.Description,
 		DefaultRole:              params.DefaultRole,
+		DefaultRoleKeys:          defaultRoleKeys,
 		RecommendedSkills:        recommendedSkills,
 		RecommendedMcpServers:    recommendedMCPServers,
 		RecommendedProviderTypes: recommendedProviderTypes,
@@ -196,6 +206,10 @@ func employeeTemplateRecordFromRow(row queries.DigitalEmployeeTemplate) (Employe
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
 	}
+	defaultRoleKeys, err := stringSliceFromJSONB(row.DefaultRoleKeys, "default_role_keys")
+	if err != nil {
+		return EmployeeTemplateRecord{}, err
+	}
 	capabilityBindings, err := mapFromJSONB(row.CapabilityBindings, "capability_bindings")
 	if err != nil {
 		return EmployeeTemplateRecord{}, err
@@ -215,6 +229,7 @@ func employeeTemplateRecordFromRow(row queries.DigitalEmployeeTemplate) (Employe
 		Label:                    row.Label,
 		Description:              row.Description,
 		DefaultRole:              row.DefaultRole,
+		DefaultRoleKeys:          defaultRoleKeys,
 		RecommendedSkills:        recommendedSkills,
 		RecommendedMCPServers:    recommendedMCPServers,
 		RecommendedProviderTypes: recommendedProviderTypes,

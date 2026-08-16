@@ -58,7 +58,13 @@ impl WritebackQueue {
     fn item_path(&self, attempt_id: &str) -> PathBuf {
         let sanitized: String = attempt_id
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         self.dir.join(format!("{sanitized}.json"))
     }
@@ -87,11 +93,7 @@ impl WritebackQueue {
 
     /// 扫描队列目录,重放每一项一次。成功/确定性失败/超龄 → 删项;瞬时失败 → 留待下轮。
     /// 逐项失败只记日志不中断。返回本轮实际重放成功(flush)的条数。
-    pub async fn drain_once(
-        &self,
-        client: &ControlPlaneClient,
-        max_age: Duration,
-    ) -> usize {
+    pub async fn drain_once(&self, client: &ControlPlaneClient, max_age: Duration) -> usize {
         let mut read_dir = match tokio::fs::read_dir(&self.dir).await {
             Ok(rd) => rd,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return 0,

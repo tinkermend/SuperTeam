@@ -4,11 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"errors"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path"
 	"regexp"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/superteam/control-plane/internal/apierror"
 	"github.com/superteam/control-plane/internal/oplog"
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/systemconfig"
@@ -27,6 +29,8 @@ type Repository interface {
 	ListSkills(ctx context.Context, req ListSkillsRequest) ([]*Skill, error)
 	GetSkill(ctx context.Context, req GetSkillRequest) (*Skill, error)
 	UpsertSkillPackage(ctx context.Context, req UpsertSkillPackageRequest) (*Skill, error)
+	ReplaceSkillArchive(ctx context.Context, req ReplaceSkillArchiveRequest) (*ReplaceSkillArchiveResult, error)
+	FindSkillBySlug(ctx context.Context, req FindSkillBySlugRequest) (*Skill, error)
 	DeleteSkill(ctx context.Context, req DeleteSkillRequest) error
 	BindSkillToTeam(ctx context.Context, req BindTeamSkillRequest) (*Skill, error)
 	UnbindSkillFromTeam(ctx context.Context, req BindTeamSkillRequest) error
@@ -49,11 +53,11 @@ type RequiredToolsRepository interface {
 type ObjectStore interface {
 	PutObject(ctx context.Context, key string, body io.Reader, options storage.PutObjectOptions) (storage.ObjectRef, error)
 	DeleteObject(ctx context.Context, key string) error
+	GetObject(ctx context.Context, key string) (io.ReadCloser, error)
 	// PresignGet 为 runtime 的 skill 归档直取签发短时 URL(证据地基 spec §8
 	// 修订 1:runtime 零对象存储凭证);完整性由归档 sha256 复核保证。
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
 }
-
 
 // CapabilityBindingEventRecorder records project capability binding changes (best-effort).
 type CapabilityBindingEventRecorder interface {
@@ -233,15 +237,15 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid zip archive", ErrInvalidInput)
 	}
-
-	rootPrefix := commonRootPrefix(reader.File)
-	skillMarkdownContent, fileCount, err := extractSkillMarkdown(reader, rootPrefix)
+	inspected, err := inspectSkillArchive(reader)
 	if err != nil {
 		return nil, err
 	}
-	if skillMarkdownContent == "" {
+	if inspected.Markdown == "" {
 		return nil, fmt.Errorf("%w: zip archive must include SKILL.md", ErrInvalidInput)
 	}
+	skillMarkdownContent := inspected.Markdown
+	fileCount := inspected.FileCount
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -258,15 +262,22 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 	if description == "" {
 		description = firstParagraphFromMarkdown(skillMarkdownContent)
 	}
-	slug := slugify(name)
+	slug := deriveSkillSlug(req.Slug, skillNameFromMarkdown(skillMarkdownContent), req.Filename)
 	if slug == "" {
-		slug = slugify(skillNameFromMarkdown(skillMarkdownContent))
+		return nil, fmt.Errorf("%w: skill slug is required (set slug, or use an ASCII SKILL.md name / zip filename)", ErrInvalidInput)
 	}
-	if slug == "" {
-		slug = slugify(strings.TrimSuffix(path.Base(req.Filename), path.Ext(req.Filename)))
+	doc := parseSkillMarkdown(skillMarkdownContent)
+	version, err := resolveSkillVersion(req.Version, doc.FrontmatterVersion, "v0.1.0")
+	if err != nil {
+		return nil, err
 	}
-	if slug == "" {
-		return nil, fmt.Errorf("%w: skill slug is required", ErrInvalidInput)
+
+	existing, err := s.repository.FindSkillBySlug(ctx, FindSkillBySlugRequest{TenantID: req.TenantID, Slug: slug})
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, &SlugConflictError{SkillID: existing.ID, Slug: existing.Slug, Name: existing.Name}
 	}
 
 	sum := sha256.Sum256(req.Archive)
@@ -287,7 +298,7 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 		Slug:                slug,
 		Name:                name,
 		Description:         description,
-		Version:             "v0.1.0",
+		Version:             version,
 		Source:              "upload",
 		RiskLevel:           riskLevelOrDefault(req.RiskLevel),
 		IconKey:             iconKeyForSkill(slug),
@@ -306,6 +317,257 @@ func (s *Service) UploadSkill(ctx context.Context, req UploadSkillRequest) (*Ski
 		return nil, err
 	}
 	return skill, nil
+}
+
+func (s *Service) ReplaceSkillArchive(ctx context.Context, req ReplaceSkillRequest) (*Skill, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if s.objectStore == nil {
+		return nil, fmt.Errorf("%w: object store is not configured", ErrInvalidInput)
+	}
+	if req.TenantID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	if req.SkillID == uuid.Nil {
+		return nil, fmt.Errorf("%w: skill_id is required", ErrInvalidInput)
+	}
+	if len(req.Archive) == 0 {
+		return nil, fmt.Errorf("%w: zip archive is required", ErrInvalidInput)
+	}
+	current, err := s.repository.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID})
+	if err != nil {
+		return nil, err
+	}
+	runtimeDependencies := current.RuntimeDependencies
+	if req.RuntimeDependencies != nil {
+		normalized, err := normalizeRuntimeDependencies(*req.RuntimeDependencies)
+		if err != nil {
+			return nil, err
+		}
+		runtimeDependencies = normalized
+	}
+	reader, err := zip.NewReader(bytes.NewReader(req.Archive), int64(len(req.Archive)))
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid zip archive", ErrInvalidInput)
+	}
+	inspected, err := inspectSkillArchive(reader)
+	if err != nil {
+		return nil, err
+	}
+	if inspected.Markdown == "" {
+		return nil, fmt.Errorf("%w: zip archive must include SKILL.md", ErrInvalidInput)
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = skillNameFromMarkdown(inspected.Markdown)
+	}
+	if name == "" {
+		name = current.Name
+	}
+	description := strings.TrimSpace(req.Description)
+	if description == "" {
+		description = firstParagraphFromMarkdown(inspected.Markdown)
+	}
+	if description == "" {
+		description = current.Description
+	}
+	derivedSlug := deriveSkillSlug("", skillNameFromMarkdown(inspected.Markdown), req.Filename)
+	if derivedSlug != "" && derivedSlug != current.Slug {
+		return nil, apierror.New("skill_slug_immutable", http.StatusBadRequest, "更新不得改 slug；若这是另一个技能请走新建")
+	}
+	doc := parseSkillMarkdown(inspected.Markdown)
+	version, err := resolveSkillVersion(req.Version, doc.FrontmatterVersion, current.Version)
+	if err != nil {
+		return nil, err
+	}
+	riskLevel := current.RiskLevel
+	if req.RiskLevel != nil {
+		riskLevel = riskLevelOrDefault(*req.RiskLevel)
+	}
+	tags := current.Tags
+	if req.Tags != nil {
+		tags = normalizeStringList(*req.Tags)
+	}
+	sum := sha256.Sum256(req.Archive)
+	checksum := hex.EncodeToString(sum[:])
+	objectKey := fmt.Sprintf("skills/%s/%s/%s.zip", req.TenantID, current.Slug, checksum)
+	ref, err := s.objectStore.PutObject(ctx, objectKey, bytes.NewReader(req.Archive), storage.PutObjectOptions{
+		ContentType: "application/zip",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to store skill archive: %v", ErrInvalidInput, err)
+	}
+	result, err := s.repository.ReplaceSkillArchive(ctx, ReplaceSkillArchiveRequest{
+		TenantID:            req.TenantID,
+		ActorUserID:         req.ActorUserID,
+		SkillID:             req.SkillID,
+		Name:                name,
+		Description:         description,
+		Version:             version,
+		RiskLevel:           &riskLevel,
+		Tags:                &tags,
+		RuntimeDependencies: &runtimeDependencies,
+		ArchiveObjectRef:    ref.URI,
+		ArchiveFilename:     req.Filename,
+		ArchiveSizeBytes:    int64(len(req.Archive)),
+		ArchiveChecksum:     checksum,
+		ArchiveFileCount:    inspected.FileCount,
+	})
+	if err != nil {
+		_ = s.objectStore.DeleteObject(ctx, objectKey)
+		return nil, err
+	}
+	skill := result.Skill
+	s.recordArchiveReplace(ctx, req.TenantID, req.ActorUserID, skill, result.OldVersion, result.OldChecksum)
+	return skill, nil
+}
+
+func (s *Service) recordArchiveReplace(ctx context.Context, tenantID, actor uuid.UUID, skill *Skill, oldVersion, oldChecksum string) {
+	if skill == nil {
+		return
+	}
+	details := map[string]any{
+		"slug":                   skill.Slug,
+		"name":                   skill.Name,
+		"old_version":            oldVersion,
+		"new_version":            skill.Version,
+		"old_checksum":           oldChecksum,
+		"new_checksum":           skill.ArchiveChecksum,
+		"archive_filename":       skill.ArchiveFilename,
+		"archive_size_bytes":     skill.ArchiveSizeBytes,
+		"binding_team_count":     len(skill.TeamBindings),
+		"binding_employee_count": len(skill.AgentBindings),
+		"binding_project_count":  len(skill.ProjectBindings),
+	}
+	oplog.WriteBestEffort(ctx, s.oplogLogger, oplog.Record{
+		TenantID:     tenantID,
+		UserID:       actor,
+		Module:       oplog.ModuleSkills,
+		ResourceType: "skill",
+		ResourceID:   skill.ID.String(),
+		Action:       "skill.archive.replace",
+		Result:       oplog.ResultSucceeded,
+		Details:      details,
+	})
+}
+
+func (s *Service) ListSkillArchiveEntries(ctx context.Context, req GetSkillRequest) ([]ArchiveEntry, error) {
+	inspected, err := s.openSkillArchiveForPreview(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return inspected.Entries, nil
+}
+
+func (s *Service) GetSkillArchiveContent(ctx context.Context, req GetSkillRequest, entryPath string) (map[string]any, error) {
+	inspected, err := s.openSkillArchiveForPreview(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	normalized := normalizeFilePath(entryPath)
+	var entry *ArchiveEntry
+	for i := range inspected.Entries {
+		if inspected.Entries[i].Path == normalized {
+			entry = &inspected.Entries[i]
+			break
+		}
+	}
+	if entry == nil || entry.Kind != "file" {
+		return nil, apierror.New("skill_archive_path_not_found", http.StatusNotFound, "技能包中没有该文件")
+	}
+	file := inspected.filesByPath[normalized]
+	if file == nil {
+		return nil, apierror.New("skill_archive_path_not_found", http.StatusNotFound, "技能包中没有该文件")
+	}
+	if !entry.Previewable {
+		return nil, apierror.New("skill_archive_not_previewable", http.StatusUnsupportedMediaType, "该文件不是文本，无法在线预览")
+	}
+	raw, err := readZipFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("%w: cannot read archive file", ErrInvalidInput)
+	}
+	maxBytes := s.previewMaxBytes(ctx, req.TenantID)
+	content, truncated := truncatePreview(raw, maxBytes)
+	return map[string]any{
+		"path":         normalized,
+		"content":      content,
+		"truncated":    truncated,
+		"size_bytes":   entry.SizeBytes,
+		"content_type": entry.ContentType,
+	}, nil
+}
+
+func (s *Service) openSkillArchiveForPreview(ctx context.Context, req GetSkillRequest) (*archiveInspection, error) {
+	if s == nil || s.repository == nil {
+		return nil, fmt.Errorf("%w: skill repository is not configured", ErrInvalidInput)
+	}
+	if s.objectStore == nil {
+		return nil, fmt.Errorf("%w: object store is not configured", ErrInvalidInput)
+	}
+	skill, err := s.repository.GetSkill(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	maxArchive := s.previewMaxArchiveBytes(ctx, req.TenantID)
+	if skill.ArchiveSizeBytes > maxArchive {
+		return nil, apierror.New("skill_archive_preview_too_large", http.StatusRequestEntityTooLarge, "技能包过大，平台不提供在线预览，请在本地解压查看")
+	}
+	archiveBytes, err := s.readArchiveObject(ctx, req.TenantID, skill.ArchiveObjectRef)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := zip.NewReader(bytes.NewReader(archiveBytes), int64(len(archiveBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid zip archive", ErrInvalidInput)
+	}
+	maxFiles := s.unpackMaxFileCount(ctx, req.TenantID)
+	if int64(len(reader.File)) > maxFiles {
+		return nil, fmt.Errorf("%w: zip archive exceeds file count limit", ErrInvalidInput)
+	}
+	return inspectSkillArchive(reader)
+}
+
+func (s *Service) readArchiveObject(ctx context.Context, tenantID uuid.UUID, archiveObjectRef string) ([]byte, error) {
+	ref := strings.TrimSpace(archiveObjectRef)
+	if ref == "" {
+		return nil, fmt.Errorf("%w: archive_object_ref is required", ErrInvalidInput)
+	}
+	key := ref
+	if strings.HasPrefix(ref, "s3://") {
+		key = extractObjectKeyFromURI(ref)
+	}
+	expectedPrefix := fmt.Sprintf("skills/%s/", tenantID)
+	if !strings.HasPrefix(key, expectedPrefix) {
+		return nil, fmt.Errorf("%w: archive_object_ref is outside the tenant's skills prefix", ErrInvalidInput)
+	}
+	body, err := s.objectStore.GetObject(ctx, key)
+	if err != nil {
+		return nil, fmt.Errorf("get skill archive: %w", err)
+	}
+	defer body.Close()
+	return io.ReadAll(body)
+}
+
+func (s *Service) previewMaxBytes(ctx context.Context, tenantID uuid.UUID) int64 {
+	if s.systemConfig == nil {
+		return systemconfig.DefaultFor(systemconfig.KeySkillArchivePreviewMaxBytes)
+	}
+	return s.systemConfig.Int64(ctx, tenantID, systemconfig.KeySkillArchivePreviewMaxBytes)
+}
+
+func (s *Service) previewMaxArchiveBytes(ctx context.Context, tenantID uuid.UUID) int64 {
+	if s.systemConfig == nil {
+		return systemconfig.DefaultFor(systemconfig.KeySkillArchivePreviewMaxArchiveBytes)
+	}
+	return s.systemConfig.Int64(ctx, tenantID, systemconfig.KeySkillArchivePreviewMaxArchiveBytes)
+}
+
+func (s *Service) unpackMaxFileCount(ctx context.Context, tenantID uuid.UUID) int64 {
+	if s.systemConfig == nil {
+		return systemconfig.DefaultFor(systemconfig.KeySkillArchiveUnpackMaxFileCount)
+	}
+	return s.systemConfig.Int64(ctx, tenantID, systemconfig.KeySkillArchiveUnpackMaxFileCount)
 }
 
 func (s *Service) DeleteSkill(ctx context.Context, req DeleteSkillRequest) error {
@@ -629,33 +891,6 @@ func (s *Service) ListRequiredToolsForNode(ctx context.Context, tenantID uuid.UU
 	return repository.ListRequiredToolsForNode(ctx, tenantID, nodeID)
 }
 
-func extractSkillMarkdown(reader *zip.Reader, rootPrefix string) (string, int, error) {
-	var skillMarkdownContent string
-	fileCount := 0
-	for _, file := range reader.File {
-		rawPath := strings.TrimPrefix(file.Name, rootPrefix)
-		if file.FileInfo().IsDir() || isIgnoredArchiveEntry(rawPath) {
-			continue
-		}
-		fileCount++
-		normalizedPath := normalizeFilePath(rawPath)
-		if normalizedPath == "SKILL.md" {
-			rc, err := file.Open()
-			if err != nil {
-				return "", 0, fmt.Errorf("%w: cannot read SKILL.md", ErrInvalidInput)
-			}
-			var buf bytes.Buffer
-			if _, err := buf.ReadFrom(rc); err != nil {
-				_ = rc.Close()
-				return "", 0, fmt.Errorf("%w: cannot read SKILL.md", ErrInvalidInput)
-			}
-			_ = rc.Close()
-			skillMarkdownContent = buf.String()
-		}
-	}
-	return skillMarkdownContent, fileCount, nil
-}
-
 func commonRootPrefix(files []*zip.File) string {
 	root := ""
 	for _, file := range files {
@@ -681,11 +916,8 @@ func commonRootPrefix(files []*zip.File) string {
 }
 
 func isIgnoredArchiveEntry(value string) bool {
-	normalized := normalizeFilePath(value)
-	if normalized == "" {
-		return true
-	}
-	parts := strings.Split(normalized, "/")
+	cleaned := path.Clean(strings.TrimSpace(strings.ReplaceAll(value, "\\", "/")))
+	parts := strings.Split(strings.Trim(cleaned, "/"), "/")
 	for _, part := range parts {
 		if part == "__MACOSX" || part == ".DS_Store" || strings.HasPrefix(part, "._") {
 			return true
@@ -697,10 +929,11 @@ func isIgnoredArchiveEntry(value string) bool {
 type skillMarkdownDoc struct {
 	FrontmatterName        string
 	FrontmatterDescription string
+	FrontmatterVersion     string
 	Body                   string
 }
 
-// parseSkillMarkdown 剥离 SKILL.md 顶部的 YAML frontmatter 并提取 name/description。
+// parseSkillMarkdown 剥离 SKILL.md 顶部的 YAML frontmatter 并提取 name/description/version。
 // frontmatter 解析失败时仍剥离该块,保证兜底启发式不会把 `---` 当正文。
 func parseSkillMarkdown(content string) skillMarkdownDoc {
 	doc := skillMarkdownDoc{Body: content}
@@ -717,10 +950,12 @@ func parseSkillMarkdown(content string) skillMarkdownDoc {
 		var meta struct {
 			Name        string `yaml:"name"`
 			Description string `yaml:"description"`
+			Version     string `yaml:"version"`
 		}
 		if err := yaml.Unmarshal([]byte(strings.Join(lines[1:i], "\n")), &meta); err == nil {
 			doc.FrontmatterName = strings.TrimSpace(meta.Name)
 			doc.FrontmatterDescription = strings.TrimSpace(meta.Description)
+			doc.FrontmatterVersion = strings.TrimSpace(meta.Version)
 		}
 		return doc
 	}
@@ -761,7 +996,18 @@ func normalizeFilePath(value string) string {
 	if clean == "." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
 		return ""
 	}
+	if isWindowsDrivePath(clean) {
+		return ""
+	}
 	return clean
+}
+
+func isWindowsDrivePath(value string) bool {
+	if len(value) >= 2 && value[1] == ':' {
+		c := value[0]
+		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+	}
+	return false
 }
 
 func normalizeStringList(values []string) []string {
@@ -828,6 +1074,18 @@ func slugify(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	value = slugPattern.ReplaceAllString(value, "-")
 	return strings.Trim(value, "-")
+}
+
+// deriveSkillSlug picks the durable identity. Display names (often Chinese)
+// must not participate: "ECC 编码规范" would otherwise collapse to "ecc".
+func deriveSkillSlug(explicit, markdownName, filename string) string {
+	if slug := slugify(explicit); slug != "" {
+		return slug
+	}
+	if slug := slugify(markdownName); slug != "" {
+		return slug
+	}
+	return slugify(strings.TrimSuffix(path.Base(filename), path.Ext(filename)))
 }
 
 func riskLevelOrDefault(value string) string {

@@ -16,6 +16,7 @@ use crate::controlplane::models::RuntimeCommand;
 
 const COMMAND_LOOP_MIN_DELAY: Duration = Duration::from_secs(2);
 const COMMAND_LOOP_MAX_DELAY: Duration = Duration::from_secs(60);
+const COMMAND_LOOP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const COMMAND_LOOP_REPLACED_MIN_DELAY: Duration = Duration::from_secs(30);
 const COMMAND_LOOP_REPLACED_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
 const COMMAND_LOOP_STABLE_AFTER: Duration = Duration::from_secs(3);
@@ -105,7 +106,9 @@ async fn run_command_loop_once(
         .headers_mut()
         .insert("Authorization", authorization.clone());
 
-    let (mut socket, _) = connect_async(request).await?;
+    let (mut socket, _) = tokio::time::timeout(COMMAND_LOOP_CONNECT_TIMEOUT, connect_async(request))
+        .await
+        .map_err(|_| anyhow::anyhow!("runtime websocket connect timed out"))??;
     // Handle each command on its own task so short-lived control-plane commands
     // (e.g. provider native config pull/push) are not blocked behind a long
     // start_session / workspace materialization that is still in handle_command.
@@ -401,6 +404,38 @@ mod tests {
         assert!(!agent_home_dir.join("state").exists());
         assert!(!agent_home_dir.join("sessions").exists());
         assert!(!agent_home_dir.join("runs").exists());
+    }
+
+    #[tokio::test]
+    async fn command_loop_connect_times_out_when_handshake_hangs() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let addr = listener.local_addr().expect("local addr");
+        let server = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.expect("accept");
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+
+        let config = RuntimeConfig::new("node-1").expect("config");
+        let executor = RuntimeCommandExecutor::new(config);
+        let authorization = HeaderValue::from_static("Bearer session-token");
+        let started = tokio::time::Instant::now();
+        let error = run_command_loop_once(
+            &executor,
+            &format!("ws://{addr}/api/v1/runtime/ws"),
+            &authorization,
+        )
+        .await
+        .expect_err("hanging handshake should time out");
+        assert!(
+            error.to_string().contains("timed out"),
+            "unexpected error: {error:#}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "connect timeout took too long: {:?}",
+            started.elapsed()
+        );
+        server.abort();
     }
 
     #[tokio::test]

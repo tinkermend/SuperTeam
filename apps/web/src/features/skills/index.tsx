@@ -10,6 +10,7 @@ import {
   ServerCog,
   ShieldCheck,
   Stethoscope,
+  RefreshCw,
   Trash2,
   UploadCloud,
   UserRoundCheck,
@@ -57,6 +58,7 @@ import { deleteSkill, listSkills, type Skill } from "@/lib/api/skills";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 import { SkillInstallDialog } from "./install-dialog";
+import { SkillReplaceDialog } from "./replace-dialog";
 import { skillSourceLabel } from "./skill-labels";
 import { missingObjectLabel } from "@/lib/status-labels";
 
@@ -119,6 +121,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const [installSkillId, setInstallSkillId] = useState<string>();
   const [detailOpen, setDetailOpen] = useState(false);
   const [deleteSkillId, setDeleteSkillId] = useState<string>();
+  const [replaceSkillId, setReplaceSkillId] = useState<string>();
   const [deleteError, setDeleteError] = useState<string>();
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
@@ -154,6 +157,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
   const selectedSkill = filteredRows.find((skill) => skill.id === selectedSkillId) ?? filteredRows[0];
   const installSkillTarget = skillRows.find((skill) => skill.id === installSkillId);
   const deleteSkillTarget = skillRows.find((skill) => skill.id === deleteSkillId);
+  const replaceSkillTarget = skillRows.find((skill) => skill.id === replaceSkillId);
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const activePage = Math.min(page, pageCount);
   const pagedRows = filteredRows.slice((activePage - 1) * pageSize, activePage * pageSize);
@@ -259,6 +263,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
                     setDeleteSkillId(id);
                   }}
                   onInstallSkill={setInstallSkillId}
+                  onReplaceSkill={setReplaceSkillId}
                   onOpenDetail={(id) => {
                     setSelectedSkillId(id);
                     setDetailOpen(true);
@@ -294,6 +299,7 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
           setDeleteError(undefined);
           setDeleteSkillId(id);
         }}
+        onReplaceSkill={setReplaceSkillId}
         onOpenChange={setDetailOpen}
         open={detailOpen && Boolean(selectedSkill)}
         skill={selectedSkill}
@@ -327,6 +333,17 @@ export function SkillsView({ apiBaseUrl, fetcher }: SkillsViewProps) {
             deleteMutation.mutate(deleteSkillTarget.id);
           }
         }}
+      />
+      <SkillReplaceDialog
+        apiBaseUrl={apiBaseUrl}
+        fetcher={fetcher}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReplaceSkillId(undefined);
+          }
+        }}
+        open={Boolean(replaceSkillTarget)}
+        skill={replaceSkillTarget}
       />
       <SkillInstallDialog
         apiBaseUrl={apiBaseUrl}
@@ -421,11 +438,13 @@ function SelectedSkillBindings({ skill }: { skill: Skill }) {
 /** 技能详情抽屉：点击「查看详情」从右侧滑出，展示完整信息，不跳转页面。 */
 function SkillDetailSheet({
   onDeleteSkill,
+  onReplaceSkill,
   onOpenChange,
   open,
   skill
 }: {
   onDeleteSkill: (id: string) => void;
+  onReplaceSkill: (id: string) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   skill?: Skill;
@@ -550,8 +569,18 @@ function SkillDetailSheet({
 
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-line p-4">
-          <p className="text-[12px] text-ink-3">删除会同时解除全部绑定并清除归档文件。</p>
-          <Button
+          <p className="text-[12px] text-ink-3">删除会解除全部绑定并清除当前归档文件；如果只是想换包，请用「更新」。</p>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => onReplaceSkill(skill.id)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw data-icon="inline-start" />
+              更新
+            </Button>
+            <Button
             aria-label={`删除技能 ${skill.name}`}
             onClick={() => onDeleteSkill(skill.id)}
             size="sm"
@@ -561,6 +590,7 @@ function SkillDetailSheet({
             <Trash2 data-icon="inline-start" />
             删除技能
           </Button>
+          </div>
         </div>
       </SheetContent>
     </Sheet>
@@ -712,6 +742,7 @@ function SkillMarketGrid({
   onDeleteSkill,
   onInstallSkill,
   onOpenDetail,
+  onReplaceSkill,
   onSelectSkill,
   rows,
   selectedSkillId,
@@ -721,6 +752,7 @@ function SkillMarketGrid({
   onDeleteSkill: (id: string) => void;
   onInstallSkill: (id: string) => void;
   onOpenDetail: (id: string) => void;
+  onReplaceSkill: (id: string) => void;
   onSelectSkill: (id: string) => void;
   rows: Skill[];
   selectedSkillId?: string;
@@ -796,6 +828,19 @@ function SkillMarketGrid({
             ]}
             actions={
               <div className="flex items-center gap-1">
+                <Button
+                  aria-label={`更新 ${skill.name}`}
+                  className="text-ink-3 hover:text-ink"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onReplaceSkill(skill.id);
+                  }}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <RefreshCw />
+                </Button>
                 <Button
                   aria-label={`删除 ${skill.name}`}
                   className="text-ink-3 hover:text-danger"

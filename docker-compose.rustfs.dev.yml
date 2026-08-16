@@ -5,6 +5,7 @@
 #
 # 启动：
 #   docker compose -f docker-compose.rustfs.dev.yml up -d
+#   ./scripts/ops/init-object-store.sh
 # 停止：
 #   docker compose -f docker-compose.rustfs.dev.yml down
 #

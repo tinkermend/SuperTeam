@@ -42,7 +42,6 @@ import (
 	"github.com/superteam/control-plane/internal/storage"
 	"github.com/superteam/control-plane/internal/storage/queries"
 	"github.com/superteam/control-plane/internal/systemconfig"
-	"github.com/superteam/control-plane/internal/task"
 	"github.com/superteam/control-plane/internal/tenant"
 	"github.com/superteam/control-plane/internal/workflow/projectcoordination"
 	temporalclient "go.temporal.io/sdk/client"
@@ -56,7 +55,6 @@ type lifecycleWorker interface {
 
 type Container struct {
 	Queries              *queries.Queries
-	TaskService          *task.Service
 	RuntimeService       *runtimepkg.Service
 	EmployeeService      *employee.Service
 	ProjectService       *project.Service
@@ -75,7 +73,6 @@ type Container struct {
 	AuthService          *auth.Service
 	Authorizer           authz.Authorizer
 	AuthzCenter          *authzcenter.Service
-	Poller               *runtimepkg.Poller
 	Retention            *retention.Service
 	InboxChangeNotifier  *inbox.ChangeNotifier
 	// FeishuOutboxNotifier wakes connector long-poll ListOutbox on pending inserts.
@@ -85,7 +82,6 @@ type Container struct {
 	// second worker on the same queue.
 	CoordinationWorker             lifecycleWorker
 	TemporalClientClose            func()
-	TaskHandler                    *handlers.TaskHandler
 	RuntimeHandler                 *handlers.RuntimeHandler
 	RuntimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
 	EmployeeHandler                *employee.HTTPHandler
@@ -478,12 +474,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	// 系统配置中心:先于各消费方构造,审计依赖在 auditService 就绪后回填。
 	systemConfigService := systemconfig.NewService(systemconfig.NewPgRepository(q))
 
-	taskRepository := task.NewPgRepository(q)
-	taskService, err := task.NewService(taskRepository)
-	if err != nil {
-		return nil, err
-	}
-
 	runtimeRepository := runtimepkg.NewPgRepository(q)
 	runtimeService, err := runtimepkg.NewService(runtimeRepository)
 	if err != nil {
@@ -497,7 +487,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 
 	employeeRepository := employee.NewPgRepository(q, stores.Postgres)
 	skillRepository := skill.NewPgRepository(stores.Postgres, q)
-	skillService := skill.NewService(skillRepository, stores.ObjectStore)
+	skillService := skill.NewService(skillRepository, skill.WrapS3ObjectStore(stores.ObjectStore))
 	skillService.SetSystemConfigReader(systemConfigService)
 	operationLogger := &oplog.PgLogger{Q: q}
 	skillService.SetOperationLogger(operationLogger)
@@ -799,6 +789,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	employeeService.SetCapabilityVocabularyValidator(scenarioTemplateService)
 	employeeService.SetRoleVocabularyValidator(roleVocabularyService)
 	employeeService.SetEmployeeRoleStore(employee.NewPgEmployeeRoleStore(q))
+	employeeService.SetUserDisplayLookup(employeeUserDisplayLookup{q: q})
 	employeeService.SetCastingImpactGateway(newEmployeeCastingImpactAdapter(projectService, q, stores.Postgres))
 	roleVocabularyService.SetCastingCascade(newRoleVocabCastingCascadeAdapter(projectService, q, stores.Postgres))
 	projectService.SetCastingInvalidationNotifier(newCastingInvalidationNotifier(inboxService))
@@ -831,10 +822,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		return systemConfigService.Duration(ctx, platform.DefaultTenantID, systemconfig.KeyAuthSessionTTLSeconds)
 	})
 	authzRepository := authz.NewPgRepository(q)
-	// runtime scope 活性窗口跟随可配心跳超时(authz 不 import systemconfig,闭包注入)。
-	authzRepository.SetHeartbeatTimeoutResolver(func(ctx context.Context, tenantID uuid.UUID) time.Duration {
-		return systemConfigService.Duration(ctx, tenantID, systemconfig.KeyRuntimeHeartbeatTimeoutSeconds)
-	})
 	authzRecorder := authz.NewOperationLogDecisionRecorder(q)
 	dbAuthorizer := authz.NewDBAuthorizer(authzRepository, authzRecorder)
 	var authorizer authz.Authorizer = dbAuthorizer
@@ -874,12 +861,10 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	authzCenterService := authzcenter.NewService(authzCenterRepository, authorizer)
 	authzCenterHandler := authzcenter.NewHandler(authzCenterService, authService)
 
-	poller := runtimepkg.NewPoller()
 	// 数据保留作业(P1-B):此前 append-only 表无任何清理通道。singleton 用会话级
 	// advisory lock 保证多副本下只有一个进程真的删,待 leader 选举落地后可替换。
 	retentionService := retention.NewService(q, systemConfigService, retention.NewPgSingleton(stores.Postgres))
-	taskHandler := handlers.NewTaskHandler(taskService)
-	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, taskService, poller, authorizer)
+	runtimeHandler := handlers.NewRuntimeHandler(runtimeService, authorizer)
 	// 通用 runtime 命令回执写回(runtimecommand 包)随 install_skills 命令一并
 	// 退役:会话命令回执由 runWritebackService 独家承接。
 	runtimeCommandWritebackHandler := handlers.NewRuntimeCommandWritebackHandler(runWritebackService)
@@ -971,7 +956,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	feishuAdminHandler.SetUserDisplayNamer(feishu.AuthUserDisplayNamer{Q: q})
 	feishuOAuthHandler := feishu.NewOAuthHTTPHandler(feishuService)
 	runtimeHandler.SetConnectionRegistry(runtimeCommands)
-	server := api.NewServerWithAuthzAndRuntimeSessionAuth(taskHandler, runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
+	server := api.NewServerWithAuthzAndRuntimeSessionAuth(runtimeHandler, authService, authService, runtimeService, authorizer, authzCenterHandler)
 	server.SetAllowedOrigins(cfg.ResolvedAllowedOrigins())
 	server.SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler)
 	server.SetTenantHandler(tenantHandler)
@@ -1009,7 +994,6 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 
 	return &Container{
 		Queries:                        q,
-		TaskService:                    taskService,
 		RuntimeService:                 runtimeService,
 		EmployeeService:                employeeService,
 		ProjectService:                 projectService,
@@ -1028,13 +1012,11 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		AuthService:                    authService,
 		Authorizer:                     authorizer,
 		AuthzCenter:                    authzCenterService,
-		Poller:                         poller,
 		Retention:                      retentionService,
 		InboxChangeNotifier:            inboxChangeNotifier,
 		FeishuOutboxNotifier:           feishuOutboxNotifier,
 		CoordinationWorker:             coordinationWorker,
 		TemporalClientClose:            temporalClientClose,
-		TaskHandler:                    taskHandler,
 		RuntimeHandler:                 runtimeHandler,
 		RuntimeCommandWritebackHandler: runtimeCommandWritebackHandler,
 		EmployeeHandler:                employeeHandler,
@@ -1129,19 +1111,6 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 		// 单跑保护,多副本下只有一个进程真的删。
 		go container.Retention.Start(ctx, retention.SweepInterval)
 	}
-	stopWatching := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			container.Poller.Close()
-		case <-stopWatching:
-		}
-	}()
-	defer func() {
-		close(stopWatching)
-		container.Poller.Close()
-	}()
-
 	return container.Server.ListenAndServe(ctx, addr)
 }
 
@@ -1257,6 +1226,25 @@ func (a roleHolderCounterAdapter) CountActiveHolders(ctx context.Context, tenant
 		return 0, err
 	}
 	return int(n), nil
+}
+
+type employeeUserDisplayLookup struct {
+	q *queries.Queries
+}
+
+func (a employeeUserDisplayLookup) DisplayNames(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	if a.q == nil || len(ids) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+	rows, err := a.q.ListUserDisplayNamesByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[uuid.UUID]string, len(rows))
+	for _, row := range rows {
+		out[row.ID] = row.DisplayName
+	}
+	return out, nil
 }
 
 // roleVocabularyListerAdapter exposes active role rows to project service

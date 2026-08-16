@@ -1,18 +1,34 @@
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { userEvent } from "vitest/browser";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ScenarioTemplatesPage } from "@/features/scenario-templates";
-import { ApiRequestError } from "@/lib/api/client";
+import { listRoleVocabulary } from "@/lib/api/casting";
 import {
-  createScenarioTemplate,
-  createScenarioTemplateVersion,
+  deleteScenarioTemplate,
   listScenarioTemplateVersions,
   listScenarioTemplates,
   patchScenarioTemplate,
   type ScenarioTemplate,
   type ScenarioTemplateVersion
 } from "@/lib/api/scenario-templates";
+
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>
+};
+});
+
+vi.mock("@/lib/api/casting", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/api/casting")>();
+  return {
+    ...original,
+    listRoleVocabulary: vi.fn()
+};
+});
 
 vi.mock("@/components/layout/main", () => ({
   Main: ({ children }: { children?: React.ReactNode }) => <main>{children}</main>
@@ -33,8 +49,7 @@ vi.mock("@/lib/api/scenario-templates", async (importOriginal) => {
     await importOriginal<typeof import("@/lib/api/scenario-templates")>();
   return {
     ...original,
-    createScenarioTemplate: vi.fn(),
-    createScenarioTemplateVersion: vi.fn(),
+    deleteScenarioTemplate: vi.fn(),
     listScenarioTemplateVersions: vi.fn(),
     listScenarioTemplates: vi.fn(),
     patchScenarioTemplate: vi.fn()
@@ -112,6 +127,29 @@ const versions: ScenarioTemplateVersion[] = [
 },
 ];
 
+const roleVocabulary = [
+  {
+    id: "role-developer",
+    tenant_id: "00000000-0000-0000-0000-000000000001",
+    role_key: "developer",
+    title: "开发",
+    description: "",
+    status: "active",
+    created_at: "2026-07-13T00:00:00Z",
+    updated_at: "2026-07-13T00:00:00Z"
+},
+  {
+    id: "role-reviewer",
+    tenant_id: "00000000-0000-0000-0000-000000000001",
+    role_key: "reviewer",
+    title: "审查",
+    description: "",
+    status: "active",
+    created_at: "2026-07-13T00:00:00Z",
+    updated_at: "2026-07-13T00:00:00Z"
+},
+];
+
 async function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
@@ -126,122 +164,22 @@ async function renderPage() {
 describe("ScenarioTemplatesPage", () => {
   it("renders the registry rows", async () => {
     vi.mocked(listScenarioTemplates).mockResolvedValue([softwareDelivery]);
+    vi.mocked(listRoleVocabulary).mockResolvedValue(roleVocabulary);
     const screen = await renderPage();
 
     await expect.element(screen.getByText("场景模板").first()).toBeVisible();
     await expect.element(screen.getByText("software_delivery")).toBeVisible();
     await expect.element(screen.getByText("软件开发")).toBeVisible();
     await expect.element(screen.getByText("2 步")).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: "编辑" })).toBeVisible();
   });
 
-  it("shows the empty state when the registry has no rows", async () => {
+  it("shows the empty state and create link when the registry has no rows", async () => {
     vi.mocked(listScenarioTemplates).mockResolvedValue([]);
     const screen = await renderPage();
 
     await expect.element(screen.getByText("还没有场景模板")).toBeVisible();
-  });
-
-  it("creates a new template through the create dialog", async () => {
-    vi.mocked(listScenarioTemplates).mockResolvedValue([]);
-    vi.mocked(createScenarioTemplate).mockResolvedValue({
-      ...softwareDelivery,
-      id: "new-template",
-      template_key: "ops_review"
-});
-
-    const user = userEvent.setup();
-    const screen = await renderPage();
-
-    await user.click(screen.getByRole("button", { name: "新建模板" }));
-
-    await expect
-      .element(screen.getByRole("dialog", { name: "新建场景模板" }))
-      .toBeVisible();
-
-    await user.fill(screen.getByLabelText(/^template_key/), "ops_review");
-    await user.fill(screen.getByLabelText(/^名称/), "运维评审");
-    await user.fill(screen.getByLabelText(/^描述/), "运维变更评审场景");
-    await user.click(screen.getByRole("button", { name: "创建" }));
-
-    await vi.waitFor(() => {
-      expect(createScenarioTemplate).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          template_key: "ops_review",
-          name: "运维评审",
-          description: "运维变更评审场景",
-          spec: expect.objectContaining({ spec_version: 2 })
-}),
-      );
-    });
-
-    await vi.waitFor(async () => {
-      await expect
-        .element(screen.getByRole("dialog", { name: "新建场景模板" }))
-        .not.toBeInTheDocument();
-    });
-  });
-
-  it("shows the server 400 detail text when create fails", async () => {
-    vi.mocked(listScenarioTemplates).mockResolvedValue([]);
-    vi.mocked(createScenarioTemplate).mockRejectedValue(
-      new ApiRequestError(
-        "create scenario template",
-        400,
-        "invalid input: unknown capability keys: bogus_capability",
-      ),
-    );
-
-    const user = userEvent.setup();
-    const screen = await renderPage();
-
-    await user.click(screen.getByRole("button", { name: "新建模板" }));
-    await user.fill(screen.getByLabelText(/^template_key/), "ops_review");
-    await user.fill(screen.getByLabelText(/^名称/), "运维评审");
-    await user.click(screen.getByRole("button", { name: "创建" }));
-
-    await expect
-      .element(screen.getByText(/unknown capability keys: bogus_capability/))
-      .toBeVisible();
-  });
-
-  it("prefills the version dialog with the current spec and submits a new version", async () => {
-    vi.mocked(listScenarioTemplates).mockResolvedValue([softwareDelivery]);
-    vi.mocked(listScenarioTemplateVersions).mockResolvedValue([]);
-    vi.mocked(createScenarioTemplateVersion).mockResolvedValue({
-      ...softwareDelivery,
-      active_version: 3
-});
-
-    const user = userEvent.setup();
-    const screen = await renderPage();
-
-    await user.click(screen.getByText("software_delivery"));
-    await user.click(screen.getByRole("button", { name: "升版" }));
-
-    const dialog = screen.getByRole("dialog", { name: "升版 software_delivery" });
-    await expect.element(dialog).toBeVisible();
-
-    const textarea = screen.getByLabelText(/spec/i);
-    await expect
-      .element(textarea)
-      .toHaveValue(JSON.stringify(softwareDelivery.spec, null, 2));
-
-    await user.click(screen.getByRole("button", { name: "提交新版本" }));
-
-    await vi.waitFor(() => {
-      expect(createScenarioTemplateVersion).toHaveBeenCalledWith(
-        expect.anything(),
-        "software_delivery",
-        expect.objectContaining({
-          spec: expect.objectContaining({
-            roles: expect.arrayContaining([
-              expect.objectContaining({ key: "developer" }),
-            ])
-})
-}),
-      );
-    });
+    await expect.element(screen.getByRole("link", { name: "新建模板" })).toBeVisible();
   });
 
   it("toggles status through a confirm dialog", async () => {
@@ -307,5 +245,25 @@ describe("ScenarioTemplatesPage", () => {
     await expect
       .element(screen.getByText(/通过独立审查（出口 ≥ 审查通过并合入）/))
       .toBeVisible();
+  });
+
+  it("deletes a template through a confirm dialog", async () => {
+    vi.mocked(listScenarioTemplates).mockResolvedValue([softwareDelivery]);
+    vi.mocked(listScenarioTemplateVersions).mockResolvedValue([]);
+    vi.mocked(deleteScenarioTemplate).mockResolvedValue(undefined);
+
+    const user = userEvent.setup();
+    const screen = await renderPage();
+
+    await user.click(screen.getByRole("button", { name: "删除" }));
+    await expect.element(screen.getByText(/删除后列表和任务发起不再出现/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await vi.waitFor(() => {
+      expect(deleteScenarioTemplate).toHaveBeenCalledWith(
+        expect.anything(),
+        "software_delivery",
+      );
+    });
   });
 });

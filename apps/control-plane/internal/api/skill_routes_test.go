@@ -32,8 +32,7 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 	service := &routeSkillService{}
 	authorizer := &routeAuthorizer{allowed: true}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -267,8 +266,7 @@ func TestSkillRoutesUseConsoleTenantAndMultipartUpload(t *testing.T) {
 	deniedService := &routeSkillService{}
 	deniedAuthorizer := &routeAuthorizer{allowed: true, denyActions: map[string]bool{authz.ActionSkillInstall: true}}
 	deniedServer := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		deniedAuthorizer,
@@ -313,8 +311,7 @@ func TestSkillBindRoutesPropagateMissingTargets(t *testing.T) {
 		employeeBindErr: skill.ErrNotFound,
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -473,6 +470,18 @@ func (s *routeSkillService) ListProjectSkillBindings(context.Context, skill.List
 }
 func (s *routeSkillService) PutProjectSkillBindings(context.Context, skill.PutProjectSkillBindingsRequest) ([]skill.ProjectSkillBinding, error) {
 	return nil, nil
+}
+
+func (s *routeSkillService) ReplaceSkillArchive(context.Context, skill.ReplaceSkillRequest) (*skill.Skill, error) {
+	return &skill.Skill{ID: uuid.New(), Slug: "replaced", Name: "replaced", Version: "v0.2.0"}, nil
+}
+
+func (s *routeSkillService) ListSkillArchiveEntries(context.Context, skill.GetSkillRequest) ([]skill.ArchiveEntry, error) {
+	return []skill.ArchiveEntry{{Path: "SKILL.md", Kind: "file", Previewable: true, ContentType: "text/markdown"}}, nil
+}
+
+func (s *routeSkillService) GetSkillArchiveContent(context.Context, skill.GetSkillRequest, string) (map[string]any, error) {
+	return map[string]any{"path": "SKILL.md", "content": "# skill\n", "truncated": false, "size_bytes": 8, "content_type": "text/markdown"}, nil
 }
 
 func (s *routeSkillService) InstallSkill(_ context.Context, req skill.InstallSkillRequest) (skill.InstallSkillResult, error) {

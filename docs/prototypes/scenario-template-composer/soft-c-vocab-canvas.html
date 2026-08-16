@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>新建场景模板 · 词表画布（Soft-Flat）</title>
+<style>
+  :root {
+    --bg:#f6f9ff; --card:#ffffff; --card-soft:#f4f7fc; --card-inner:#fafcff;
+    --ink:#0c1426; --ink-2:#5a6b85; --ink-3:#8b99b3;
+    --line:#e6ecf5; --line-2:#dce4ef; --line-strong:#cdd8e6;
+    --brand:#2f5fff; --brand-deep:#2348e0; --brand-soft:#e9efff;
+    --ok:#15a06b; --warn:#cf7a14; --warn-soft:#fdf0db; --danger:#d14647;
+    --r-card:22px; --r-inner:14px; --r-btn:12px; --r-pill:999px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.06);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",monospace;
+    --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    font-family:var(--sans); color:var(--ink); background:var(--bg);
+    min-height:100vh; font-size:13.5px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  body::before { content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(ellipse 70% 50% at 10% 0%, rgba(47,95,255,.08), transparent 55%),
+      radial-gradient(ellipse 60% 45% at 95% 8%, rgba(124,92,255,.06), transparent 55%); }
+  body::after { content:""; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.4;
+    background-image:linear-gradient(rgba(47,95,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(47,95,255,.04) 1px,transparent 1px);
+    background-size:56px 56px; }
+  .page { position:relative; z-index:1; max-width:1240px; margin:0 auto; padding:20px 24px 64px; }
+
+  .crumb { font-size:12.5px; color:var(--ink-3); margin-bottom:14px; }
+  .crumb a { color:var(--ink-2); text-decoration:none; }
+  .crumb a:hover { color:var(--brand-deep); }
+  .head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+  .head h1 { font-size:22px; font-weight:750; letter-spacing:-.01em; }
+  .head p { color:var(--ink-2); margin-top:4px; max-width:64ch; }
+  .btn {
+    font:inherit; cursor:pointer; border-radius:var(--r-btn); padding:9px 16px; font-weight:600;
+    border:1px solid var(--line-strong); background:var(--card); color:var(--ink-2); transition:.15s;
+  }
+  .btn:hover { color:var(--ink); border-color:var(--brand); }
+  .btn.primary { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 4px 14px rgba(47,95,255,.28); }
+  .btn.primary:hover { background:var(--brand-deep); }
+
+  .identity {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:16px 20px; margin-bottom:16px;
+    display:grid; grid-template-columns:1.1fr .6fr 1.5fr; gap:14px;
+  }
+  @media (max-width:900px){ .identity { grid-template-columns:1fr; } }
+  label.f span { display:block; font-size:12px; color:var(--ink-3); margin-bottom:5px; }
+  input, select {
+    font:inherit; color:var(--ink); width:100%;
+    background:var(--card-inner); border:1px solid var(--line-2); border-radius:10px; padding:8px 11px;
+  }
+  input:focus, select:focus { outline:2px solid var(--brand-soft); border-color:var(--brand); }
+  .key-input { font-family:var(--mono); font-size:12.5px; }
+
+  .cols { display:grid; grid-template-columns:230px 1fr 330px; gap:16px; align-items:start; }
+  @media (max-width:1020px){ .cols { grid-template-columns:1fr; } }
+
+  /* 左：角色词表 */
+  .vocab {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:14px; position:sticky; top:16px;
+  }
+  .vocab h2 { font-size:14px; font-weight:700; padding:2px 6px 4px; }
+  .vocab .sub { font-size:12px; color:var(--ink-3); padding:0 6px 10px; line-height:1.5; }
+  .role {
+    width:100%; text-align:left; font:inherit; cursor:pointer;
+    display:flex; align-items:center; gap:9px;
+    background:var(--card-soft); border:1px solid transparent; border-radius:10px;
+    padding:8px 11px; margin-bottom:5px; font-weight:550; transition:.15s;
+  }
+  .role:hover { border-color:var(--line-strong); }
+  .role.on { background:var(--brand-soft); border-color:var(--brand); color:var(--brand-deep); font-weight:650; }
+  .role .dot { width:8px; height:8px; border-radius:50%; background:var(--ink-3); flex-shrink:0; }
+  .role.on .dot { background:var(--brand); }
+  .role .n { margin-left:auto; font-size:11.5px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+
+  /* 中：节点画布 */
+  .canvas {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:18px 20px;
+  }
+  .canvas .cap { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px; }
+  .cap h2 { font-size:14px; font-weight:700; }
+  .cap span { font-size:12px; color:var(--ink-3); }
+  .lane { position:relative; padding-left:34px; }
+  .lane::before { content:""; position:absolute; left:13px; top:10px; bottom:10px; width:2px; background:var(--line-strong); }
+  .node {
+    position:relative; background:var(--card-soft); border:1px solid var(--line-2);
+    border-radius:var(--r-inner); padding:12px 14px; margin-bottom:12px;
+  }
+  .node::before {
+    content:""; position:absolute; left:-27px; top:18px; width:12px; height:12px; border-radius:50%;
+    background:var(--card); border:3px solid var(--line-strong);
+  }
+  .node.has-exit::before { border-color:var(--brand); background:var(--brand-soft); }
+  .node .top { display:flex; gap:10px; align-items:center; }
+  .node .idx { font-family:var(--mono); font-size:11.5px; color:var(--ink-3); flex-shrink:0; }
+  .node input.title { border:0; background:transparent; font-weight:650; font-size:14px; padding:2px 4px; }
+  .node input.title:focus { outline:none; border-bottom:1.5px solid var(--brand); }
+  .node .ops { margin-left:auto; display:flex; gap:4px; flex-shrink:0; }
+  .node .ops button {
+    font:inherit; cursor:pointer; border:1px solid var(--line-2); background:var(--card);
+    border-radius:8px; padding:3px 8px; font-size:11.5px; color:var(--ink-2);
+  }
+  .node .ops button:hover { border-color:var(--brand); color:var(--brand-deep); }
+  .assign {
+    display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px;
+  }
+  .slot {
+    font:inherit; cursor:pointer; border-radius:var(--r-pill); padding:5px 12px; font-weight:600; font-size:12.5px;
+    border:1.5px dashed var(--line-strong); background:transparent; color:var(--ink-3);
+  }
+  .slot.filled { border-style:solid; border-color:var(--brand); background:var(--brand-soft); color:var(--brand-deep); }
+  .slot:hover { border-color:var(--brand); }
+  .assign select { width:auto; font-size:12.5px; padding:5px 9px; }
+  .assign label.chk { display:flex; align-items:center; gap:6px; font-size:12.5px; cursor:pointer; color:var(--ink-2); }
+  .assign label.chk input { width:auto; accent-color:var(--brand); }
+  .add-node {
+    width:100%; font:inherit; cursor:pointer; padding:12px;
+    border:1.5px dashed var(--line-strong); border-radius:var(--r-inner); background:transparent;
+    color:var(--brand-deep); font-weight:650; margin-left:0;
+  }
+  .add-node:hover { border-color:var(--brand); background:var(--brand-soft); }
+
+  /* 右：玻璃摘要 */
+  .glass {
+    background:rgba(255,255,255,.62); backdrop-filter:blur(14px) saturate(1.2);
+    border:1px solid rgba(47,95,255,.18); border-radius:var(--r-card);
+    box-shadow:var(--shadow), inset 0 1px 0 rgba(255,255,255,.7);
+    padding:16px 18px; position:sticky; top:16px;
+  }
+  .glass h2 { font-size:14px; font-weight:700; margin-bottom:8px; }
+  .summary { background:var(--card-inner); border:1px solid var(--line-2); border-radius:var(--r-inner); padding:11px 13px; font-size:12.5px; line-height:1.7; }
+  .exits-cap { font-size:12px; color:var(--ink-3); margin:14px 0 8px; }
+  .exit-row {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    background:var(--card-inner); border:1px solid var(--line-2); border-radius:10px;
+    padding:7px 11px; margin-bottom:6px; font-size:12.5px; cursor:pointer;
+  }
+  .exit-row.live { border-color:var(--brand); background:var(--brand-soft); }
+  .exit-row .pill { font-size:11px; border-radius:var(--r-pill); padding:2px 8px; background:var(--brand-soft); color:var(--brand-deep); font-weight:600; }
+  .exit-row.live .pill { background:var(--brand); color:#fff; }
+  .depth-note { font-size:12px; color:var(--ink-2); margin-top:8px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="crumb"><a href="./index.html">场景模板</a> / 新建模板 · 方案三 词表画布</div>
+  <div class="head">
+    <div>
+      <h1>新建场景模板</h1>
+      <p>左边是角色词表（席位，不是人）。点一个角色，再点中间节点的「接收位」，就完成分派。节点数量不封顶。</p>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn" type="button">取消</button>
+      <button class="btn primary" type="button">保存为第 1 版</button>
+    </div>
+  </div>
+
+  <div class="identity">
+    <label class="f"><span>名称 *</span><input id="tname" value="生产故障处置" /></label>
+    <label class="f"><span>内部标识 *</span><input id="tkey" class="key-input" value="incident_response" /></label>
+    <label class="f"><span>描述</span><input id="tdesc" value="接报、定界、根因、止血、复盘；止血必须人类确认。" /></label>
+  </div>
+
+  <div class="cols">
+    <aside class="vocab">
+      <h2>角色词表</h2>
+      <p class="sub">当前选中的角色会被「接收位」拾取。数字来自各角色已在编的员工数。</p>
+      <div id="roles"></div>
+    </aside>
+    <section class="canvas">
+      <div class="cap"><h2>关卡画布</h2><span>圆点连成的竖线就是流程主轴 · 蓝圈 = 可作出口</span></div>
+      <div class="lane" id="lane"></div>
+      <button class="add-node" id="addNode" type="button">+ 加一站</button>
+    </section>
+    <aside class="glass">
+      <h2>约束摘要</h2>
+      <div class="summary" id="summary"></div>
+      <div class="exits-cap">发起时可选深度（点一行模拟）</div>
+      <div id="exits"></div>
+      <p class="depth-note" id="depthNote"></p>
+    </aside>
+  </div>
+</div>
+<script>
+  const ROLES = [
+    { name:"值班", count:2 }, { name:"诊断", count:3 }, { name:"操作", count:1 },
+    { name:"验证", count:2 }, { name:"采集", count:2 }, { name:"分析", count:4 },
+    { name:"开发", count:6 }, { name:"审查", count:3 }, { name:"测试", count:2 },
+    { name:"研究", count:1 }, { name:"撰稿", count:1 },
+  ];
+  const VERIFY = { none:"交出即可", independent:"另一角色独立验证", human:"必须人类确认" };
+  let selRole = "诊断";
+  let nodes = [
+    {title:"接报",role:"值班",verify:"none",exit:true},
+    {title:"定界",role:"诊断",verify:"none",exit:true},
+    {title:"根因",role:"诊断",verify:"independent",indep:"验证",exit:true},
+    {title:"止血",role:"操作",verify:"human",exit:true},
+    {title:"复盘验证",role:"验证",verify:"none",exit:true},
+  ];
+  let depthIdx = -1;
+
+  function exits() { return nodes.map((n,i)=>({n,i})).filter(x=>x.n.exit); }
+
+  function renderRoles() {
+    document.getElementById("roles").innerHTML = ROLES.map(r =>
+      `<button class="role ${r.name===selRole?"on":""}" data-r="${r.name}" type="button">
+        <span class="dot"></span>${r.name}<span class="n">${r.count}</span>
+      </button>`).join("");
+    document.querySelectorAll(".role").forEach(el => el.onclick = () => { selRole = el.dataset.r; renderRoles(); renderLane(); });
+  }
+
+  function renderLane() {
+    document.getElementById("lane").innerHTML = nodes.map((n,i)=>`
+      <div class="node ${n.exit?"has-exit":""}">
+        <div class="top">
+          <span class="idx">${String(i+1).padStart(2,"0")}</span>
+          <input class="title" value="${n.title}" placeholder="这一站叫什么" data-i="${i}" data-k="title" />
+          <span class="ops">
+            <button data-act="up" data-i="${i}" ${i===0?"disabled":""} type="button">↑</button>
+            <button data-act="down" data-i="${i}" ${i===nodes.length-1?"disabled":""} type="button">↓</button>
+            <button data-act="del" data-i="${i}" ${nodes.length<=1?"disabled":""} type="button">删</button>
+          </span>
+        </div>
+        <div class="assign">
+          <button class="slot ${n.role?"filled":""}" data-slot="${i}" type="button">
+            ${n.role ? "接收：" + n.role : "接收位 · 点我放入「" + selRole + "」"}
+          </button>
+          <select data-i="${i}" data-k="verify">
+            ${Object.entries(VERIFY).map(([k,v])=>`<option value="${k}" ${k===n.verify?"selected":""}>${v}</option>`).join("")}
+          </select>
+          ${n.verify==="independent" ? `<select data-i="${i}" data-k="indep">
+            ${ROLES.filter(r=>r.name!==n.role).map(r=>`<option ${r.name===n.indep?"selected":""}>${r.name}</option>`).join("")}
+          </select>` : ""}
+          <label class="chk"><input type="checkbox" data-i="${i}" data-k="exit" ${n.exit?"checked":""} /> 可作出口</label>
+        </div>
+      </div>`).join("");
+    document.querySelectorAll("[data-k]").forEach(el => {
+      el.oninput = el.onchange = () => {
+        const i = Number(el.dataset.i);
+        if (el.dataset.k==="exit") nodes[i].exit = el.checked;
+        else nodes[i][el.dataset.k] = el.value;
+        if (el.dataset.k==="verify") renderLane();
+        renderSide();
+        if (el.dataset.k==="exit") renderLane();
+      };
+    });
+    document.querySelectorAll("[data-slot]").forEach(el => {
+      el.onclick = () => { nodes[Number(el.dataset.slot)].role = selRole; renderLane(); renderSide(); };
+    });
+    document.querySelectorAll("[data-act]").forEach(el => {
+      el.onclick = () => {
+        const i = Number(el.dataset.i);
+        if (el.dataset.act==="del") nodes.splice(i,1);
+        if (el.dataset.act==="up") [nodes[i-1],nodes[i]]=[nodes[i],nodes[i-1]];
+        if (el.dataset.act==="down") [nodes[i+1],nodes[i]]=[nodes[i],nodes[i+1]];
+        renderLane(); renderSide();
+      };
+    });
+    document.getElementById("addNode").onclick = () => {
+      nodes.push({title:"新站",role:"",verify:"none",exit:true});
+      renderLane(); renderSide();
+    };
+  }
+
+  function renderSide() {
+    const named = nodes.filter(n=>n.role);
+    const parts = [];
+    if (named.length===0) parts.push("还没有分派角色。点左侧词表选角色，再点节点的接收位。");
+    else {
+      parts.push(`本场景要求：${named.map(n=>n.title||n.role).join(" → ")} 必须串上。`);
+      named.forEach(n => {
+        if (n.verify==="human") parts.push(`「${n.title||n.role}」必须人类确认。`);
+        if (n.verify==="independent" && n.indep) parts.push(`「${n.title||n.role}」须由「${n.indep}」独立验证。`);
+      });
+      parts.push("每步具体做法由执行模型决定，但不能跳过这些门。");
+    }
+    document.getElementById("summary").textContent = parts.join("");
+    const ex = exits();
+    if (depthIdx >= ex.length) depthIdx = -1;
+    const liveIdx = depthIdx === -1 ? ex.length-1 : depthIdx;
+    document.getElementById("exits").innerHTML = ex.length===0
+      ? `<p style="font-size:12px;color:var(--ink-3)">还没有站被标成出口。</p>`
+      : ex.map((x,k)=>`<div class="exit-row ${k===liveIdx?"live":""}" data-k="${k}">
+          <span>${x.n.title||"未命名站"} · ${x.n.role||"未分派"}</span><span class="pill">出口 ${k+1}</span>
+        </div>`).join("");
+    document.querySelectorAll(".exit-row").forEach(el => el.onclick = () => { depthIdx = Number(el.dataset.k); renderSide(); });
+    const cur = ex[liveIdx];
+    document.getElementById("depthNote").textContent = cur
+      ? `模拟发起：这次最深走到「${cur.n.title||"未命名站"}」，之后的站这单不跑。`
+      : "";
+  }
+
+  renderRoles(); renderLane(); renderSide();
+</script>
+</body>
+</html>

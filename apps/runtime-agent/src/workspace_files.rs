@@ -6,7 +6,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderHomeKind {
     ClaudeCode,
@@ -49,7 +48,6 @@ pub fn materialize_workspace(
         agent_home_dir: plan.agent_home_dir,
     })
 }
-
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
@@ -99,8 +97,6 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 
     write_result
 }
-
-
 
 fn ensure_real_workspace_root(agent_home_dir: &Path) -> Result<()> {
     match fs::symlink_metadata(agent_home_dir) {
@@ -159,7 +155,6 @@ fn ensure_workspace_directory_components(agent_home_dir: &Path, relative_dir: &P
     Ok(())
 }
 
-
 fn ensure_real_directory_component(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
@@ -197,8 +192,6 @@ fn ensure_real_directory_component(path: &Path) -> Result<()> {
         }),
     }
 }
-
-
 
 fn provider_private_dir(provider_home: ProviderHomeKind) -> &'static str {
     match provider_home {

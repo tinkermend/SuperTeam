@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/api/httpx"
 	"github.com/superteam/control-plane/internal/authz"
 	"github.com/superteam/control-plane/internal/employee"
 )
@@ -52,7 +52,7 @@ func (h *HTTPHandler) ListIntegrations(w http.ResponseWriter, r *http.Request) {
 	for _, integration := range integrations {
 		items = append(items, integrationResponseFrom(integration))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"integrations": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"integrations": items})
 }
 
 func (h *HTTPHandler) CreateIntegration(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +83,7 @@ func (h *HTTPHandler) CreateIntegration(w http.ResponseWriter, r *http.Request) 
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, integrationResponseFrom(integration))
+	httpx.WriteJSON(w, http.StatusCreated, integrationResponseFrom(integration))
 }
 
 func (h *HTTPHandler) UpdateIntegration(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +122,7 @@ func (h *HTTPHandler) UpdateIntegration(w http.ResponseWriter, r *http.Request) 
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, integrationResponseFrom(integration))
+	httpx.WriteJSON(w, http.StatusOK, integrationResponseFrom(integration))
 }
 
 func (h *HTTPHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +143,7 @@ func (h *HTTPHandler) ListTokens(w http.ResponseWriter, r *http.Request) {
 	for _, token := range tokens {
 		items = append(items, tokenResponseFrom(token))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tokens": items})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"tokens": items})
 }
 
 func (h *HTTPHandler) IssueToken(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +160,7 @@ func (h *HTTPHandler) IssueToken(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"id":             token.ID,
 		"integration_id": token.IntegrationID,
 		"token":          plaintext,
@@ -208,7 +208,7 @@ func (h *HTTPHandler) ExternalChatRun(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"run_id": result.RunID,
 		"status": result.Status,
 	})
@@ -233,7 +233,7 @@ func (h *HTTPHandler) ExternalSubmitDemand(w http.ResponseWriter, r *http.Reques
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"demand_id": result.DemandID,
 		"status":    result.Status,
 	})
@@ -255,21 +255,13 @@ func (h *HTTPHandler) authenticateIntegration(w http.ResponseWriter, r *http.Req
 }
 
 func (h *HTTPHandler) authorize(w http.ResponseWriter, r *http.Request, action string, auditReason string) (uuid.UUID, uuid.UUID, bool) {
-	return h.check(w, r, func(tenantID, userID uuid.UUID) authz.CheckRequest {
-		return authz.CheckRequest{
-			Actor:       authz.ActorRef{Type: authz.ActorUser, ID: userID.String()},
-			Action:      action,
-			Resource:    authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()},
-			TenantID:    tenantID,
-			AuditReason: auditReason,
-		}
-	})
+	return httpx.AuthorizeConsoleAction(w, r, h.authorizer, "external integration", action, auditReason)
 }
 
 // authorizeCredential mirrors serviceauth: credential.* actions are checked
 // against the credential(self) resource, not the tenant resource.
 func (h *HTTPHandler) authorizeCredential(w http.ResponseWriter, r *http.Request, action string) (uuid.UUID, uuid.UUID, bool) {
-	return h.check(w, r, func(tenantID, userID uuid.UUID) authz.CheckRequest {
+	return httpx.CheckConsole(w, r, h.authorizer, func(tenantID, userID uuid.UUID) authz.CheckRequest {
 		return authz.CheckRequest{
 			Actor:    authz.ActorRef{Type: authz.ActorUser, ID: userID.String()},
 			Action:   action,
@@ -279,36 +271,8 @@ func (h *HTTPHandler) authorizeCredential(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func (h *HTTPHandler) check(w http.ResponseWriter, r *http.Request, build func(tenantID, userID uuid.UUID) authz.CheckRequest) (uuid.UUID, uuid.UUID, bool) {
-	if h == nil || h.authorizer == nil {
-		http.Error(w, "external integration authorization is not configured", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-	if tenantID == uuid.Nil || userID == uuid.Nil {
-		http.Error(w, "console identity not found in context", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	decision, err := h.authorizer.Check(r.Context(), build(tenantID, userID))
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return uuid.Nil, uuid.Nil, false
-	}
-	if !decision.Allowed {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	return tenantID, userID, true
-}
-
 func integrationIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	id, err := uuid.Parse(chi.URLParam(r, "integrationId"))
-	if err != nil {
-		http.Error(w, "invalid integration id", http.StatusBadRequest)
-		return uuid.Nil, false
-	}
-	return id, true
+	return httpx.URLParamUUID(w, r, "integrationId", "integration id")
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {
@@ -334,12 +298,6 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 		// envelope re-check happens there (out-of-surface skill etc.).
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
 }
 
 // --- wire types ---------------------------------------------------------------

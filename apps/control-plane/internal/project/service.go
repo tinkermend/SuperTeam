@@ -5733,9 +5733,23 @@ func humanizeTechnicalFailureDetail(raw string) string {
 		return "任务结果报告失败"
 	case lower == "task result reported cancellation":
 		return "任务结果报告已取消"
+	case strings.Contains(lower, "skill_dependencies_not_satisfied"), strings.Contains(lower, "missing_tools"):
+		return "技能声明的命令行工具在 Runtime 上未探测到"
 	default:
 		return raw
 	}
+}
+
+func dispatchRecoveryCardSummary(failure ProjectEvent) string {
+	detail := strings.TrimSpace(stringPayload(failure.Payload, "error"))
+	if detail == "" {
+		return "项目任务分派失败，需要人工恢复决策"
+	}
+	humanized := humanizeTechnicalFailureDetail(detail)
+	if humanized == detail {
+		return "项目任务分派失败：" + detail
+	}
+	return "项目任务分派失败：" + humanized + "（" + detail + "）"
 }
 
 func (s *Service) WaitHumanProjectTaskAttempt(ctx context.Context, req WaitHumanProjectTaskAttemptRequest) (*ProjectTask, error) {
@@ -6194,6 +6208,7 @@ func (s *Service) RecoverProjectTaskDispatchFailure(ctx context.Context, req Rec
 		ProjectTaskID:  req.ProjectTaskID,
 		FailureEventID: event.ID,
 		Action:         action,
+		HumanSummary:   dispatchRecoveryCardSummary(event),
 	})
 	if err != nil {
 		return nil, err
@@ -6265,7 +6280,7 @@ func (s *Service) SweepExpiredRunningProjectTaskAttempts(ctx context.Context, re
 	if !ok {
 		return SweepProjectTaskAttemptRecoveryResult{}, ErrInvalidProject
 	}
-	attempts, err := repository.ListExpiredRunningProjectTaskAttempts(ctx, req.TenantID, now, limit)
+	attempts, err := repository.ListExpiredRunningProjectTaskAttempts(ctx, req.TenantID, now, sweepStaleBefore(now, req.StaleBefore), limit)
 	if err != nil {
 		return SweepProjectTaskAttemptRecoveryResult{}, err
 	}
@@ -6668,7 +6683,14 @@ func (s *Service) healWaitingHumanWithApprovedGateDecision(ctx context.Context, 
 // RecoverableProjectTaskAttemptTenantLister is the optional repository capability
 // the reconciler needs to drive the per-tenant attempt sweeps across all tenants.
 type RecoverableProjectTaskAttemptTenantLister interface {
-	ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+	ListTenantsWithRecoverableProjectTaskAttempts(ctx context.Context, now time.Time, staleBefore time.Time) ([]uuid.UUID, error)
+}
+
+func sweepStaleBefore(now, staleBefore time.Time) time.Time {
+	if staleBefore.IsZero() {
+		return now.Add(-15 * time.Minute)
+	}
+	return staleBefore
 }
 
 // SweepStuckProjectTaskAttemptsAllTenants drives the two existing per-tenant
@@ -6678,7 +6700,7 @@ type RecoverableProjectTaskAttemptTenantLister interface {
 // Each recovered attempt is failed-then-retried-or-parked by the existing
 // recovery machinery. Per-tenant errors are logged and skipped. Returns the total
 // number of attempts recovered.
-func (s *Service) SweepStuckProjectTaskAttemptsAllTenants(ctx context.Context, now time.Time) (int, error) {
+func (s *Service) SweepStuckProjectTaskAttemptsAllTenants(ctx context.Context, now time.Time, staleBefore time.Time) (int, error) {
 	lister, ok := s.repository.(RecoverableProjectTaskAttemptTenantLister)
 	if !ok {
 		return 0, nil
@@ -6686,7 +6708,8 @@ func (s *Service) SweepStuckProjectTaskAttemptsAllTenants(ctx context.Context, n
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	tenants, err := lister.ListTenantsWithRecoverableProjectTaskAttempts(ctx, now)
+	staleBefore = sweepStaleBefore(now, staleBefore)
+	tenants, err := lister.ListTenantsWithRecoverableProjectTaskAttempts(ctx, now, staleBefore)
 	if err != nil {
 		return 0, err
 	}
@@ -6698,7 +6721,7 @@ func (s *Service) SweepStuckProjectTaskAttemptsAllTenants(ctx context.Context, n
 		} else {
 			recovered += len(queued.RecoveredAttemptIDs)
 		}
-		running, err := s.SweepExpiredRunningProjectTaskAttempts(ctx, SweepProjectTaskAttemptRecoveryRequest{TenantID: tenantID, Now: now})
+		running, err := s.SweepExpiredRunningProjectTaskAttempts(ctx, SweepProjectTaskAttemptRecoveryRequest{TenantID: tenantID, Now: now, StaleBefore: staleBefore})
 		if err != nil {
 			slog.Default().Warn("stuck task reconciler: sweep expired running attempts failed", "tenant_id", tenantID, "error", err)
 		} else {
@@ -6767,8 +6790,8 @@ func (s *Service) recoverProjectTaskAttempt(ctx context.Context, req RecoverProj
 	// immediately re-queue against a Runtime that may still be down. Retries
 	// stay bounded independently: ScheduleProjectTaskRetry increments
 	// attempt_count, so projectTaskFailureAction escalates to waiting-human
-	// once max_attempts is reached. After one human recovery approval, do not
-	// mint another recovery card — fail the task (dedup / human redispatch budget).
+	// once max_attempts is reached. After the human recovery-approval budget is
+	// spent, do not mint another recovery card — fail the task.
 	retryAt := now.Add(defaultDispatchRecoveryBackoff)
 	retryable := true
 	action := projectTaskFailureAction(task, recoveryFailureFamilyForAction(req.FailureFamily), &retryable, s.platformDefaultMaxAttempts(ctx, req.TenantID))
@@ -6856,10 +6879,10 @@ func uuidValue(value *uuid.UUID) uuid.UUID {
 const MaxDispatchAutoRetries int64 = 0
 
 // MaxHumanRecoveryRedispatches is how many times a human may approve a task
-// recovery/wait card and send the task back to dispatch. After that budget is
-// used, further dispatch/attempt failures mark the task failed instead of minting
-// another recovery card (stops the self-sustaining recovery-card loop).
-const MaxHumanRecoveryRedispatches int64 = 1
+// recovery/wait card and send the task back to dispatch. Align with the
+// default attempt budget: one dispatch/tool miss plus a later lease-lost
+// must still be recoverable, or a real delivery run dies with no inbox card.
+const MaxHumanRecoveryRedispatches int64 = 3
 
 func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dispatchFailureCount, humanRecoveryApprovals int64, platformDefaultMaxAttempts int32) ProjectTaskRecoveryAction {
 	retryable := boolPayload(event.Payload, "retryable", true)
@@ -6876,7 +6899,7 @@ func projectTaskDispatchRecoveryAction(task ProjectTask, event ProjectEvent, dis
 			FailureFamily:  failureFamily,
 			Retryable:      retryable,
 			WaitingReason:  waitingReason,
-			TerminalReason: "人类恢复再派发预算已用尽（最多 1 次），任务标记失败",
+			TerminalReason: "人类恢复再派发预算已用尽（最多 3 次），任务标记失败",
 		}
 	}
 	// A-layer / pure dispatch: never auto-schedule. Open human recovery card.

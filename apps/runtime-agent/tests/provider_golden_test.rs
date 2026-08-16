@@ -25,8 +25,7 @@ struct GoldenCase {
 }
 
 fn golden_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../contracts/provider/golden")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/provider/golden")
 }
 
 fn load_cases(provider: &str) -> Vec<(PathBuf, GoldenCase)> {
@@ -40,18 +39,15 @@ fn load_cases(provider: &str) -> Vec<(PathBuf, GoldenCase)> {
             continue;
         }
         let raw = fs::read_to_string(&path).expect("read golden");
-        let case: GoldenCase = serde_json::from_str(&raw)
-            .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        let case: GoldenCase =
+            serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
         out.push((path, case));
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
 
-fn parse_line(
-    provider: &str,
-    line: &str,
-) -> Result<Vec<ProviderEvent>, anyhow::Error> {
+fn parse_line(provider: &str, line: &str) -> Result<Vec<ProviderEvent>, anyhow::Error> {
     match provider {
         "claude-code" => parse_claude_event(line),
         "opencode" => parse_opencode_event(line),
@@ -81,9 +77,7 @@ fn assert_event_matches(got: &ProviderEvent, expected: &Value, path: &str) {
                 continue;
             }
             if key == "error" {
-                let got_err = got_v
-                    .get("error")
-                    .expect("expected error object on event");
+                let got_err = got_v.get("error").expect("expected error object on event");
                 if let Some(err_obj) = exp_val.as_object() {
                     for (ek, ev) in err_obj {
                         assert_eq!(

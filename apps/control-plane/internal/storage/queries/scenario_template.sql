@@ -67,3 +67,12 @@ SELECT COALESCE(MAX(version), 0)::int AS max_version
 FROM scenario_template_versions
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid
   AND template_id = sqlc.arg('template_id')::uuid;
+
+-- name: SoftDeleteScenarioTemplate :one
+UPDATE scenario_templates
+SET deleted_at = NOW(),
+    status = 'disabled'
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND deleted_at IS NULL
+RETURNING *;

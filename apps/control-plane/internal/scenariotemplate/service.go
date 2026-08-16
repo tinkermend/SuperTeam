@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -22,6 +23,17 @@ type AuditRecorder interface {
 var knownScenarioTemplateStatuses = map[string]bool{
 	"active":   true,
 	"disabled": true,
+}
+
+// templateKeyPattern is the machine-key grammar: starts with a letter, then
+// letters/digits/underscores, 2–64 chars. Display names stay in Name.
+var templateKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{1,63}$`)
+
+func validateTemplateKey(key string) error {
+	if !templateKeyPattern.MatchString(key) {
+		return fmt.Errorf("%w: template key must be 2–64 characters of letters, digits, and underscores, starting with a letter", ErrInvalidInput)
+	}
+	return nil
 }
 
 // RoleVocabularyValidator returns role keys that are not registered/active
@@ -114,8 +126,8 @@ func (s *Service) Create(ctx context.Context, req CreateScenarioTemplateRequest)
 		return ScenarioTemplate{}, fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
 	}
 	key := strings.TrimSpace(req.Key)
-	if key == "" {
-		return ScenarioTemplate{}, fmt.Errorf("%w: template key is required", ErrInvalidInput)
+	if err := validateTemplateKey(key); err != nil {
+		return ScenarioTemplate{}, err
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -355,6 +367,37 @@ func (s *Service) Patch(ctx context.Context, req PatchScenarioTemplateRequest) (
 	s.recordAudit(ctx, req.TenantID, updated.Key, action, req.ActorUserID, details)
 
 	return updated, nil
+}
+
+type DeleteScenarioTemplateRequest struct {
+	TenantID    uuid.UUID
+	ActorUserID uuid.UUID
+	Key         string
+}
+
+// Delete soft-deletes a template (deleted_at set, status disabled). The key
+// can be reused later because uniqueness is partial on deleted_at IS NULL.
+// Historical demands keep the old key string.
+func (s *Service) Delete(ctx context.Context, req DeleteScenarioTemplateRequest) error {
+	if req.TenantID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id is required", ErrInvalidInput)
+	}
+	key := strings.TrimSpace(req.Key)
+	if key == "" {
+		return fmt.Errorf("%w: template key is required", ErrInvalidInput)
+	}
+	existing, err := s.repository.GetScenarioTemplateByKey(ctx, req.TenantID, key)
+	if err != nil {
+		return err
+	}
+	if _, err := s.repository.SoftDeleteScenarioTemplate(ctx, req.TenantID, existing.ID); err != nil {
+		return err
+	}
+	s.recordAudit(ctx, req.TenantID, existing.Key, "delete", req.ActorUserID, map[string]any{
+		"template_key": existing.Key,
+		"name":         existing.Name,
+	})
+	return nil
 }
 
 // rejectVersionlessV2Spec is the spec_version guardrail (spec

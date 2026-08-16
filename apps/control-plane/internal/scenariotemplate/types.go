@@ -97,5 +97,6 @@ type Repository interface {
 	GetScenarioTemplateMaxVersion(ctx context.Context, tenantID, templateID uuid.UUID) (int, error)
 	UpdateScenarioTemplateActiveSpec(ctx context.Context, params UpdateScenarioTemplateActiveSpecParams) (ScenarioTemplate, error)
 	UpdateScenarioTemplateStatus(ctx context.Context, params UpdateScenarioTemplateStatusParams) (ScenarioTemplate, error)
+	SoftDeleteScenarioTemplate(ctx context.Context, tenantID, templateID uuid.UUID) (ScenarioTemplate, error)
 	ListScenarioTemplateVersions(ctx context.Context, tenantID, templateID uuid.UUID) ([]ScenarioTemplateVersion, error)
 }

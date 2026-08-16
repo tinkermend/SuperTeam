@@ -568,6 +568,8 @@ type DigitalEmployeeTemplate struct {
 	CapabilityBindings []byte `json:"capability_bindings"`
 	// 模板预填的预算策略
 	BudgetPolicy []byte `json:"budget_policy"`
+	// 创建员工时默认绑定的 role_vocabulary.role_key 列表；空数组表示不预绑剧本角色
+	DefaultRoleKeys []byte `json:"default_role_keys"`
 }
 
 // 执行账本事件表，记录项目任务执行、Provider、工具、MCP、外部能力和证据链的统一审计索引。
@@ -1624,6 +1626,10 @@ type ProjectTask struct {
 	DismissedAt pgtype.Timestamptz `json:"dismissed_at"`
 	// 了结该任务的用户 ID
 	DismissedBy uuid.NullUUID `json:"dismissed_by"`
+	// 取消原因：system_stranded(看门狗滞留收敛,重试时可复活) / human_reject(人类驳回下游,终态不复活);NULL 表示未分型且不复活
+	CancelReason pgtype.Text `json:"cancel_reason"`
+	// 恢复替换任务ID;非空表示本任务已被取代,不再计入需求状态推导
+	SupersededByTaskID uuid.NullUUID `json:"superseded_by_task_id"`
 }
 
 // 项目任务执行尝试表，记录项目任务调度、租约、重试和终态回写。

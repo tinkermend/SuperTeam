@@ -16,6 +16,7 @@ type employeeTemplateResponse struct {
 	Label                    string         `json:"label"`
 	Description              string         `json:"description"`
 	DefaultRole              string         `json:"default_role"`
+	DefaultRoleKeys          []string       `json:"default_role_keys"`
 	RecommendedSkills        []string       `json:"recommended_skills"`
 	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
@@ -34,6 +35,7 @@ type createEmployeeTemplateRequest struct {
 	Label                    string         `json:"label"`
 	Description              string         `json:"description"`
 	DefaultRole              string         `json:"default_role"`
+	DefaultRoleKeys          []string       `json:"default_role_keys"`
 	RecommendedSkills        []string       `json:"recommended_skills"`
 	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
@@ -47,6 +49,7 @@ type updateEmployeeTemplateRequest struct {
 	Label                    string         `json:"label"`
 	Description              string         `json:"description"`
 	DefaultRole              string         `json:"default_role"`
+	DefaultRoleKeys          []string       `json:"default_role_keys"`
 	RecommendedSkills        []string       `json:"recommended_skills"`
 	RecommendedMCPServers    []string       `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes []string       `json:"recommended_provider_types"`
@@ -129,6 +132,7 @@ func (h *HTTPHandler) CreateEmployeeTemplate(w http.ResponseWriter, r *http.Requ
 		Label:                    req.Label,
 		Description:              req.Description,
 		DefaultRole:              req.DefaultRole,
+		DefaultRoleKeys:          req.DefaultRoleKeys,
 		RecommendedSkills:        req.RecommendedSkills,
 		RecommendedMCPServers:    req.RecommendedMCPServers,
 		RecommendedProviderTypes: req.RecommendedProviderTypes,
@@ -179,6 +183,7 @@ func (h *HTTPHandler) UpdateEmployeeTemplate(w http.ResponseWriter, r *http.Requ
 		Label:                    req.Label,
 		Description:              req.Description,
 		DefaultRole:              req.DefaultRole,
+		DefaultRoleKeys:          req.DefaultRoleKeys,
 		RecommendedSkills:        req.RecommendedSkills,
 		RecommendedMCPServers:    req.RecommendedMCPServers,
 		RecommendedProviderTypes: req.RecommendedProviderTypes,
@@ -258,6 +263,7 @@ func employeeTemplateResponseFromDomain(t EmployeeTemplateRecord) employeeTempla
 		Label:                    t.Label,
 		Description:              t.Description,
 		DefaultRole:              t.DefaultRole,
+		DefaultRoleKeys:          stringSliceForJSON(t.DefaultRoleKeys),
 		RecommendedSkills:        stringSliceForJSON(t.RecommendedSkills),
 		RecommendedMCPServers:    stringSliceForJSON(t.RecommendedMCPServers),
 		RecommendedProviderTypes: stringSliceForJSON(t.RecommendedProviderTypes),

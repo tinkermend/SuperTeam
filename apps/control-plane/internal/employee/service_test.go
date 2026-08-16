@@ -564,6 +564,7 @@ func TestServiceUpdateProfileTrimsAndClearsDescription(t *testing.T) {
 	require.NotNil(t, updated.Description)
 	require.Equal(t, "新的员工说明", *updated.Description)
 	require.Equal(t, "新的员工说明", *repo.employees[employeeID].Description)
+	require.Equal(t, "devops", repo.employees[employeeID].Role)
 
 	blank := "   "
 	cleared, err := svc.UpdateProfile(context.Background(), UpdateProfileRequest{
@@ -572,6 +573,46 @@ func TestServiceUpdateProfileTrimsAndClearsDescription(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, cleared.Description)
 	require.Nil(t, repo.employees[employeeID].Description)
+}
+
+func TestServiceUpdateProfileRoleEmptyDerivesFromRoleKeys(t *testing.T) {
+	repo := newMemoryRepository()
+	svc, err := NewService(repo)
+	require.NoError(t, err)
+	tenantID := uuid.New()
+	employeeID := uuid.New()
+	now := time.Now().UTC()
+	repo.employees[employeeID] = DigitalEmployeeRecord{
+		ID: employeeID, TenantID: tenantID, OwnerUserID: uuid.New(), EmployeeType: "devops_engineer",
+		ProviderType: "codex", Name: "说明员工", Role: "旧职责",
+		Status: DigitalEmployeeStatusReady, CreatedAt: now, UpdatedAt: now,
+	}
+	svc.SetEmployeeRoleStore(&capturingRoleStore{keys: map[uuid.UUID][]string{
+		employeeID: {"code_reviewer"},
+	}})
+	svc.SetRoleVocabularyValidator(titleVocab{titles: map[string]string{"code_reviewer": "代码审查"}})
+	empty := ""
+	updated, err := svc.UpdateProfile(context.Background(), UpdateProfileRequest{
+		TenantID: tenantID, DigitalEmployeeID: employeeID, Role: &empty,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "代码审查", updated.Role)
+	require.Equal(t, "代码审查", repo.employees[employeeID].Role)
+}
+
+type titleVocab struct {
+	titles map[string]string
+}
+
+func (t titleVocab) UnknownKeys(_ context.Context, _ uuid.UUID, _ []string) ([]string, error) {
+	return nil, nil
+}
+
+func (t titleVocab) TitleForKey(_ context.Context, _ uuid.UUID, roleKey string) (string, error) {
+	if t.titles == nil {
+		return "", nil
+	}
+	return t.titles[roleKey], nil
 }
 
 func TestServiceDeleteDigitalEmployeeValidatesRequiredIDs(t *testing.T) {
@@ -676,6 +717,147 @@ func TestCreateDigitalEmployeeDoesNotRequireRuntimeBinding(t *testing.T) {
 	}
 	if len(repo.commandReceipts) != 0 {
 		t.Fatalf("expected no runtime command receipts, got %#v", repo.commandReceipts)
+	}
+}
+
+func TestCreateDigitalEmployeeInheritsTemplateDefaultRoleKeys(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepository()
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	ownerUserID := uuid.New()
+	repo.teams[teamID] = tenantID
+	teamConfigID := uuid.New()
+	repo.teamConfigs[teamConfigID] = TeamConfigInput{
+		ID:       teamConfigID,
+		TenantID: tenantID,
+		TeamID:   teamID,
+		CapabilityPolicy: map[string]any{
+			"allowed_employee_types": []any{"backend_engineer"},
+			"allowed_provider_types": []any{"codex"},
+		},
+		RuntimeScopePolicy: map[string]any{
+			"provider_types": []any{"codex"},
+		},
+	}
+	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	if _, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:        tenantID,
+		Type:            "backend_engineer",
+		Label:           "后端开发",
+		DefaultRole:     "backend_engineer",
+		DefaultRoleKeys: []string{"developer"},
+	}); err != nil {
+		t.Fatalf("seed backend_engineer template: %v", err)
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	employee, err := service.CreateDigitalEmployee(ctx, CreateDigitalEmployeeRequest{
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		OwnerUserID:   ownerUserID,
+		EmployeeType:  "backend_engineer",
+		Name:          "需求分析员",
+		AvatarAssetID: "engineer-m-01",
+		ProviderType:  "codex",
+		Role:          "负责需求澄清",
+	})
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+	if len(employee.RoleKeys) != 1 || employee.RoleKeys[0] != "developer" {
+		t.Fatalf("expected inherited role_keys [developer], got %#v", employee.RoleKeys)
+	}
+}
+
+type capturingRoleStore struct {
+	replaced []uuid.UUID
+	keys     map[uuid.UUID][]string
+}
+
+func (s *capturingRoleStore) ListRoleKeys(_ context.Context, _, employeeID uuid.UUID) ([]string, error) {
+	return append([]string(nil), s.keys[employeeID]...), nil
+}
+
+func (s *capturingRoleStore) ReplaceRoleKeys(_ context.Context, _ uuid.UUID, employeeID uuid.UUID, roleKeys []string) error {
+	s.replaced = append(s.replaced, employeeID)
+	if s.keys == nil {
+		s.keys = map[uuid.UUID][]string{}
+	}
+	s.keys[employeeID] = append([]string(nil), roleKeys...)
+	return nil
+}
+
+func (s *capturingRoleStore) ListRoleKeysByEmployees(_ context.Context, _ uuid.UUID, employeeIDs []uuid.UUID) (map[uuid.UUID][]string, error) {
+	out := map[uuid.UUID][]string{}
+	for _, id := range employeeIDs {
+		out[id] = append([]string(nil), s.keys[id]...)
+	}
+	return out, nil
+}
+
+func TestCreateDigitalEmployeeWritesRoleKeysAfterEmployeeExists(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepository()
+	tenantID := uuid.New()
+	teamID := uuid.New()
+	ownerUserID := uuid.New()
+	repo.teams[teamID] = tenantID
+	teamConfigID := uuid.New()
+	repo.teamConfigs[teamConfigID] = TeamConfigInput{
+		ID:       teamConfigID,
+		TenantID: tenantID,
+		TeamID:   teamID,
+		CapabilityPolicy: map[string]any{
+			"allowed_employee_types": []any{"backend_engineer"},
+			"allowed_provider_types": []any{"codex"},
+		},
+		RuntimeScopePolicy: map[string]any{
+			"provider_types": []any{"codex"},
+		},
+	}
+	repo.currentTeamConfigByTeam[teamID] = teamConfigID
+	if _, err := repo.CreateEmployeeTemplate(ctx, CreateEmployeeTemplateParams{
+		TenantID:        tenantID,
+		Type:            "backend_engineer",
+		Label:           "后端开发",
+		DefaultRole:     "backend_engineer",
+		DefaultRoleKeys: []string{"developer"},
+	}); err != nil {
+		t.Fatalf("seed backend_engineer template: %v", err)
+	}
+	service, err := NewService(repo)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	store := &capturingRoleStore{}
+	service.SetEmployeeRoleStore(store)
+
+	employee, err := service.CreateDigitalEmployee(ctx, CreateDigitalEmployeeRequest{
+		TenantID:      tenantID,
+		TeamID:        &teamID,
+		OwnerUserID:   ownerUserID,
+		EmployeeType:  "backend_engineer",
+		Name:          "需求分析员",
+		AvatarAssetID: "engineer-m-01",
+		ProviderType:  "codex",
+		Role:          "负责需求澄清",
+		RoleKeys:      []string{"developer"},
+	})
+	if err != nil {
+		t.Fatalf("create digital employee: %v", err)
+	}
+	if len(store.replaced) != 1 || store.replaced[0] != employee.ID {
+		t.Fatalf("expected role keys written for created employee %s, got %#v", employee.ID, store.replaced)
+	}
+	if got := store.keys[employee.ID]; len(got) != 1 || got[0] != "developer" {
+		t.Fatalf("expected stored role_keys [developer], got %#v", got)
+	}
+	if _, err := repo.GetDigitalEmployee(ctx, tenantID, employee.ID); err != nil {
+		t.Fatalf("employee row should exist before/when role keys are written: %v", err)
 	}
 }
 
@@ -2260,6 +2442,7 @@ func (r *memoryRepository) CreateEmployeeTemplate(ctx context.Context, params Cr
 		Label:                    params.Label,
 		Description:              params.Description,
 		DefaultRole:              params.DefaultRole,
+		DefaultRoleKeys:          params.DefaultRoleKeys,
 		RecommendedSkills:        params.RecommendedSkills,
 		RecommendedMCPServers:    params.RecommendedMCPServers,
 		RecommendedProviderTypes: params.RecommendedProviderTypes,
@@ -2283,6 +2466,7 @@ func (r *memoryRepository) UpdateEmployeeTemplate(ctx context.Context, params Up
 			tmpl.Label = params.Label
 			tmpl.Description = params.Description
 			tmpl.DefaultRole = params.DefaultRole
+			tmpl.DefaultRoleKeys = params.DefaultRoleKeys
 			tmpl.RecommendedSkills = params.RecommendedSkills
 			tmpl.RecommendedMCPServers = params.RecommendedMCPServers
 			tmpl.RecommendedProviderTypes = params.RecommendedProviderTypes
@@ -2577,12 +2761,13 @@ func (r *memoryRepository) UpdateDigitalEmployeeStatus(_ context.Context, tenant
 	return record, nil
 }
 
-func (r *memoryRepository) UpdateDigitalEmployeeProfile(_ context.Context, tenantID, employeeID uuid.UUID, description *string) (DigitalEmployeeRecord, error) {
+func (r *memoryRepository) UpdateDigitalEmployeeProfile(_ context.Context, tenantID, employeeID uuid.UUID, description *string, role string) (DigitalEmployeeRecord, error) {
 	record, ok := r.employees[employeeID]
 	if !ok || record.TenantID != tenantID {
 		return DigitalEmployeeRecord{}, ErrNotFound
 	}
 	record.Description = cloneStringPtrForTest(description)
+	record.Role = role
 	record.UpdatedAt = time.Now().UTC()
 	r.employees[employeeID] = record
 	return record, nil

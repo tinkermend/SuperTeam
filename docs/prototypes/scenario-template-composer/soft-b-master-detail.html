@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>新建场景模板 · 主从编排台（Soft-Flat）</title>
+<style>
+  :root {
+    --bg:#f6f9ff; --card:#ffffff; --card-soft:#f4f7fc; --card-inner:#fafcff;
+    --ink:#0c1426; --ink-2:#5a6b85; --ink-3:#8b99b3;
+    --line:#e6ecf5; --line-2:#dce4ef; --line-strong:#cdd8e6;
+    --brand:#2f5fff; --brand-deep:#2348e0; --brand-soft:#e9efff;
+    --ok:#15a06b; --ok-soft:#e3f7ec; --warn:#cf7a14; --warn-soft:#fdf0db;
+    --danger:#d14647;
+    --r-card:22px; --r-inner:14px; --r-btn:12px; --r-pill:999px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 12px 30px rgba(16,24,40,.06);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",monospace;
+    --sans:"Inter",-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    font-family:var(--sans); color:var(--ink); background:var(--bg);
+    min-height:100vh; font-size:13.5px; line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  body::before { content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(ellipse 70% 50% at 12% 0%, rgba(47,95,255,.08), transparent 55%),
+      radial-gradient(ellipse 60% 45% at 92% 10%, rgba(124,92,255,.06), transparent 55%); }
+  .page { position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:20px 24px 64px; }
+
+  .crumb { font-size:12.5px; color:var(--ink-3); margin-bottom:14px; }
+  .crumb a { color:var(--ink-2); text-decoration:none; }
+  .crumb a:hover { color:var(--brand-deep); }
+
+  .head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+  .head h1 { font-size:22px; font-weight:750; letter-spacing:-.01em; }
+  .head p { color:var(--ink-2); margin-top:4px; }
+  .btn {
+    font:inherit; cursor:pointer; border-radius:var(--r-btn); padding:9px 16px; font-weight:600;
+    border:1px solid var(--line-strong); background:var(--card); color:var(--ink-2); transition:.15s;
+  }
+  .btn:hover { color:var(--ink); border-color:var(--brand); }
+  .btn.primary { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 4px 14px rgba(47,95,255,.28); }
+  .btn.primary:hover { background:var(--brand-deep); }
+
+  .identity {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:16px 20px; margin-bottom:16px;
+    display:grid; grid-template-columns:1.1fr .6fr 1.3fr auto; gap:14px; align-items:end;
+  }
+  @media (max-width:960px){ .identity { grid-template-columns:1fr 1fr; } }
+  label.f span { display:block; font-size:12px; color:var(--ink-3); margin-bottom:5px; }
+  input, select {
+    font:inherit; color:var(--ink); width:100%;
+    background:var(--card-inner); border:1px solid var(--line-2); border-radius:10px; padding:8px 11px;
+  }
+  input:focus, select:focus { outline:2px solid var(--brand-soft); border-color:var(--brand); }
+  .key-input { font-family:var(--mono); font-size:12.5px; }
+  .packs { display:flex; gap:6px; }
+  .pack {
+    font:inherit; cursor:pointer; border-radius:var(--r-pill); padding:7px 12px; font-weight:550; font-size:12.5px;
+    border:1px solid var(--line-strong); background:var(--card); color:var(--ink-2); white-space:nowrap;
+  }
+  .pack.on { background:var(--brand-soft); border-color:var(--brand); color:var(--brand-deep); font-weight:650; }
+
+  .cols { display:grid; grid-template-columns:400px 1fr; gap:16px; align-items:start; }
+  @media (max-width:960px){ .cols { grid-template-columns:1fr; } }
+
+  /* 左：节点队列 */
+  .queue {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:14px;
+  }
+  .queue .cap { display:flex; justify-content:space-between; align-items:baseline; padding:2px 6px 10px; }
+  .queue .cap h2 { font-size:14px; font-weight:700; }
+  .queue .cap span { font-size:12px; color:var(--ink-3); }
+  .qrow {
+    width:100%; text-align:left; font:inherit; cursor:pointer;
+    display:grid; grid-template-columns:30px 1fr auto; gap:10px; align-items:center;
+    background:var(--card-soft); border:1px solid transparent; border-left:3px solid transparent;
+    border-radius:var(--r-inner); padding:10px 12px; margin-bottom:6px; transition:.15s;
+  }
+  .qrow:hover { border-color:var(--line-strong); border-left-color:var(--line-strong); }
+  .qrow.on { background:var(--brand-soft); border-color:var(--brand); border-left:3px solid var(--brand); }
+  .qrow .idx { font-family:var(--mono); font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+  .qrow .name { font-weight:650; }
+  .qrow .who { font-size:12px; color:var(--ink-2); margin-top:1px; }
+  .badges { display:flex; gap:5px; }
+  .pill { font-size:11px; border-radius:var(--r-pill); padding:2px 8px; font-weight:600; white-space:nowrap; }
+  .pill.exit { background:var(--brand-soft); color:var(--brand-deep); }
+  .pill.gate { background:var(--warn-soft); color:var(--warn); }
+  .add-row {
+    width:100%; font:inherit; cursor:pointer; padding:11px;
+    border:1.5px dashed var(--line-strong); border-radius:var(--r-inner); background:transparent;
+    color:var(--brand-deep); font-weight:650; margin-top:4px;
+  }
+  .add-row:hover { border-color:var(--brand); background:var(--brand-soft); }
+
+  /* 右：详情 + 发起预览 */
+  .detail {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:18px 20px; margin-bottom:16px;
+  }
+  .detail h2 { font-size:14px; font-weight:700; margin-bottom:2px; }
+  .detail .sub { font-size:12px; color:var(--ink-3); margin-bottom:14px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:680px){ .grid2 { grid-template-columns:1fr; } }
+  .checks { display:flex; gap:18px; margin-top:14px; flex-wrap:wrap; }
+  .checks label { display:flex; align-items:center; gap:7px; font-size:13px; cursor:pointer; }
+  .checks input { width:auto; accent-color:var(--brand); }
+  .row-ops { display:flex; gap:8px; margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+  .row-ops .btn { padding:7px 12px; font-size:12.5px; }
+  .row-ops .danger { color:var(--danger); }
+
+  .preview {
+    background:var(--card); border:1px solid var(--line); border-radius:var(--r-card);
+    box-shadow:var(--shadow); padding:16px 20px 18px;
+  }
+  .preview h2 { font-size:14px; font-weight:700; }
+  .preview .sub { font-size:12px; color:var(--ink-3); margin:2px 0 12px; }
+  table { width:100%; border-collapse:collapse; background:var(--card); }
+  th {
+    text-align:left; font-size:11.5px; letter-spacing:.05em; color:var(--ink-3); font-weight:600;
+    padding:8px 10px; border-bottom:1px solid var(--line-strong);
+  }
+  td { padding:9px 10px; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  tr.depth-live td { background:var(--brand-soft); }
+  tr.pickable { cursor:pointer; }
+  td .mini { font-size:12px; color:var(--ink-2); }
+  .foot-note { font-size:12px; color:var(--ink-2); margin-top:10px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="crumb"><a href="./index.html">场景模板</a> / 新建模板 · 方案二 主从编排台</div>
+  <div class="head">
+    <div>
+      <h1>新建场景模板</h1>
+      <p>左边是站的队列，右边编辑选中站；下方即时预览发起任务时的深度选项。</p>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn" type="button">取消</button>
+      <button class="btn primary" type="button">保存为第 1 版</button>
+    </div>
+  </div>
+
+  <div class="identity">
+    <label class="f"><span>名称 *</span><input id="tname" value="生产故障处置" /></label>
+    <label class="f"><span>内部标识 *</span><input id="tkey" class="key-input" value="incident_response" /></label>
+    <label class="f"><span>描述</span><input id="tdesc" value="接报、定界、根因、止血、复盘；止血必须人类确认。" /></label>
+    <div class="packs" id="packs"></div>
+  </div>
+
+  <div class="cols">
+    <section class="queue">
+      <div class="cap"><h2>关卡队列</h2><span id="qcount"></span></div>
+      <div id="qlist"></div>
+      <button class="add-row" id="addSt" type="button">+ 添加一站</button>
+    </section>
+    <div>
+      <section class="detail" id="detail"></section>
+      <section class="preview">
+        <h2>发起预览 · 深度选项</h2>
+        <p class="sub">只有标了「可作出口」的站会出现在任务发起的深度下拉里；点一行模拟这次停在哪。</p>
+        <table>
+          <thead><tr><th style="width:56px">出口</th><th>停在哪一站</th><th>走到这里要经过</th><th style="width:110px">人类门</th></tr></thead>
+          <tbody id="ptable"></tbody>
+        </table>
+        <p class="foot-note" id="pnote"></p>
+      </section>
+    </div>
+  </div>
+</div>
+<script>
+  const ROLES = ["值班","诊断","操作","验证","采集","分析","开发","审查","测试","研究","撰稿"];
+  const VERIFY = { none:"交出即可", independent:"另一角色独立验证", human:"必须人类确认" };
+  const PACKS = {
+    blank:   { name:"空白", title:"未命名场景", key:"custom_scene", desc:"", nodes:[ {title:"",role:"",verify:"none",required:true,exit:true} ] },
+    incident:{ name:"故障处置", title:"生产故障处置", key:"incident_response", desc:"接报、定界、根因、止血、复盘；止血必须人类确认。",
+      nodes:[
+        {title:"接报",role:"值班",verify:"none",required:true,exit:true},
+        {title:"定界",role:"诊断",verify:"none",required:true,exit:true},
+        {title:"根因",role:"诊断",verify:"independent",indep:"验证",required:true,exit:true},
+        {title:"止血",role:"操作",verify:"human",required:true,exit:true},
+        {title:"复盘验证",role:"验证",verify:"none",required:false,exit:true},
+      ] },
+    ops:     { name:"运维分析", title:"容量与日志分析", key:"ops_analysis", desc:"采集只读数据，关联分析后给出结论。",
+      nodes:[
+        {title:"采集",role:"采集",verify:"none",required:true,exit:true},
+        {title:"关联",role:"分析",verify:"none",required:true,exit:false},
+        {title:"结论",role:"分析",verify:"human",required:true,exit:true},
+      ] },
+    sw:      { name:"软件交付", title:"软件交付", key:"software_delivery", desc:"开发交出、独立审查、测试后发布。",
+      nodes:[
+        {title:"开发",role:"开发",verify:"none",required:true,exit:true},
+        {title:"审查",role:"审查",verify:"independent",indep:"测试",required:true,exit:true},
+        {title:"测试",role:"测试",verify:"none",required:true,exit:true},
+        {title:"发布",role:"开发",verify:"human",required:true,exit:true},
+      ] },
+  };
+  let pack = "incident";
+  let nodes = PACKS.incident.nodes.map(n => ({...n}));
+  let sel = 0;
+  let depthIdx = -1;
+
+  function exits() { return nodes.map((n,i)=>({n,i})).filter(x=>x.n.exit); }
+
+  function renderPacks() {
+    document.getElementById("packs").innerHTML = Object.entries(PACKS).map(([id,p]) =>
+      `<button class="pack ${pack===id?"on":""}" data-id="${id}" type="button">${p.name}</button>`).join("");
+    document.querySelectorAll(".pack").forEach(b => b.onclick = () => {
+      pack = b.dataset.id;
+      const p = PACKS[pack];
+      nodes = p.nodes.map(n => ({...n}));
+      document.getElementById("tname").value = p.title;
+      document.getElementById("tkey").value = p.key;
+      document.getElementById("tdesc").value = p.desc;
+      sel = 0; depthIdx = -1;
+      render();
+    });
+  }
+
+  function renderQueue() {
+    document.getElementById("qcount").textContent = `${nodes.length} 站 · ${exits().length} 个出口`;
+    document.getElementById("qlist").innerHTML = nodes.map((n,i)=>`
+      <button class="qrow ${i===sel?"on":""}" data-i="${i}" type="button">
+        <span class="idx">${String(i+1).padStart(2,"0")}</span>
+        <span><span class="name">${n.title||"未命名站"}</span><br/><span class="who">${n.role||"未分派"} · ${VERIFY[n.verify]}</span></span>
+        <span class="badges">
+          ${n.exit?`<span class="pill exit">出口</span>`:""}
+          ${n.verify==="human"?`<span class="pill gate">人类门</span>`:""}
+        </span>
+      </button>`).join("");
+    document.querySelectorAll(".qrow").forEach(el => el.onclick = () => { sel = Number(el.dataset.i); render(); });
+    document.getElementById("addSt").onclick = () => {
+      nodes.push({title:"新站",role:"",verify:"none",required:true,exit:true});
+      sel = nodes.length-1; render();
+    };
+  }
+
+  function renderDetail() {
+    const n = nodes[sel];
+    const box = document.getElementById("detail");
+    box.innerHTML = `
+      <h2>第 ${sel+1} 站：${n.title||"未命名站"}</h2>
+      <p class="sub">改动即时同步到左侧队列与下方发起预览。</p>
+      <div class="grid2">
+        <label class="f"><span>这一站叫什么</span><input id="fTitle" value="${n.title}" placeholder="如 定界、采集、审查" /></label>
+        <label class="f"><span>谁来接收</span>
+          <select id="fRole"><option value="">选择角色…</option>${ROLES.map(r=>`<option ${r===n.role?"selected":""}>${r}</option>`).join("")}</select>
+        </label>
+        <label class="f"><span>怎么验证</span>
+          <select id="fVerify">${Object.entries(VERIFY).map(([k,v])=>`<option value="${k}" ${k===n.verify?"selected":""}>${v}</option>`).join("")}</select>
+        </label>
+        <label class="f" id="indepWrap" style="${n.verify==="independent"?"":"display:none"}"><span>独立验证角色</span>
+          <select id="fIndep">${ROLES.filter(r=>r!==n.role).map(r=>`<option ${r===n.indep?"selected":""}>${r}</option>`).join("")}</select>
+        </label>
+      </div>
+      <div class="checks">
+        <label><input type="checkbox" id="fReq" ${n.required?"checked":""} /> 必须经过（规划不能漏掉）</label>
+        <label><input type="checkbox" id="fExit" ${n.exit?"checked":""} /> 可作出口（发起时可停在这）</label>
+      </div>
+      <div class="row-ops">
+        <button class="btn" id="opUp" type="button" ${sel===0?"disabled":""}>↑ 上移</button>
+        <button class="btn" id="opDown" type="button" ${sel===nodes.length-1?"disabled":""}>↓ 下移</button>
+        <button class="btn danger" id="opDel" type="button" ${nodes.length<=1?"disabled":""}>删除这一站</button>
+      </div>`;
+    const sync = () => {
+      n.title = document.getElementById("fTitle").value;
+      n.role = document.getElementById("fRole").value;
+      n.verify = document.getElementById("fVerify").value;
+      n.required = document.getElementById("fReq").checked;
+      n.exit = document.getElementById("fExit").checked;
+      const iw = document.getElementById("indepWrap");
+      iw.style.display = n.verify==="independent" ? "" : "none";
+      if (n.verify==="independent") n.indep = document.getElementById("fIndep").value;
+      renderQueue(); renderPreview();
+    };
+    ["fTitle","fRole","fVerify","fReq","fExit","fIndep"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.oninput = el.onchange = sync;
+    });
+    document.getElementById("opUp").onclick = () => { [nodes[sel-1],nodes[sel]]=[nodes[sel],nodes[sel-1]]; sel--; render(); };
+    document.getElementById("opDown").onclick = () => { [nodes[sel+1],nodes[sel]]=[nodes[sel],nodes[sel+1]]; sel++; render(); };
+    document.getElementById("opDel").onclick = () => { nodes.splice(sel,1); sel = Math.max(0,sel-1); render(); };
+  }
+
+  function renderPreview() {
+    const ex = exits();
+    if (depthIdx >= ex.length) depthIdx = -1;
+    const liveIdx = depthIdx === -1 ? ex.length-1 : depthIdx;
+    document.getElementById("ptable").innerHTML = ex.length===0
+      ? `<tr><td colspan="4" style="color:var(--ink-3)">还没有站被标成出口。</td></tr>`
+      : ex.map((x,k)=>{
+          const passed = nodes.slice(0, x.i+1).filter(m=>m.required||m.exit);
+          const humanGates = nodes.slice(0, x.i+1).filter(m=>m.verify==="human").length;
+          return `<tr class="pickable ${k===liveIdx?"depth-live":""}" data-k="${k}">
+            <td>${k+1}</td>
+            <td><b>${x.n.title||"未命名站"}</b> <span class="mini">· ${x.n.role||"未分派"}</span></td>
+            <td class="mini">${passed.map(m=>m.title||m.role||"?").join(" → ")}</td>
+            <td>${humanGates>0?`${humanGates} 道`:"无"}</td>
+          </tr>`;
+        }).join("");
+    document.querySelectorAll("tr.pickable").forEach(el => el.onclick = () => { depthIdx = Number(el.dataset.k); renderPreview(); });
+    const cur = ex[liveIdx];
+    document.getElementById("pnote").textContent = cur
+      ? `模拟发起：这次最深走到「${cur.n.title||"未命名站"}」。后面的站仍在模板里，只是这单不跑。`
+      : "";
+  }
+
+  function render() { renderPacks(); renderQueue(); renderDetail(); renderPreview(); }
+  render();
+</script>
+</body>
+</html>

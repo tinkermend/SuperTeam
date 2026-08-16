@@ -289,6 +289,20 @@ func reviewedStepForIndependence(constraint scenariotemplate.SpecConstraint, ste
 	return scenariotemplate.SpecSkeletonStep{}, false
 }
 
+// skeletonHasDedicatedReviewStep reports whether the pruned skeleton already
+// contains a step whose role carries a review-class capability (code_review,
+// security_review, …). Those templates already scheduled 代码审查 / 安全审查;
+// injecting N LLM judges on develop duplicates that gate, spawns revision
+// loops, and is the bulk of extra planner/judge token burn.
+func skeletonHasDedicatedReviewStep(steps []scenariotemplate.SpecSkeletonStep, roleByKey map[string]scenariotemplate.SpecRole) bool {
+	for _, step := range steps {
+		if roleHasReviewCapability(roleByKey[step.Role]) {
+			return true
+		}
+	}
+	return false
+}
+
 // migrateReviewerRoleToAdversarial implements Part A of the adversarial-review
 // rollout: a template's independent-review declaration (a role_independence
 // constraint whose reviewer/reviewed relation is determinable from the skeleton
@@ -315,6 +329,13 @@ func migrateReviewerRoleToAdversarial(constraint scenariotemplate.SpecConstraint
 	if !ok {
 		// Reviewed step produces nothing in this plan: no task to hang the
 		// adversarial criterion on. Leave the original constraint behavior intact.
+		return false
+	}
+	if skeletonHasDedicatedReviewStep(steps, roleByKey) {
+		plan.ConstraintNotes = append(plan.ConstraintNotes, PlanConstraintNote{
+			Kind:    "review_steps_own_four_eyes",
+			Message: fmt.Sprintf("骨架已有独立审查步，四眼由审查任务与 role_independence 保证；不在 %s 上再注入 adversarial_review（避免与代码审查/安全审查叠床架屋、对抗修订循环和额外判官 token）", reviewedStep.Step),
+		})
 		return false
 	}
 	for _, existing := range plan.PlanAcceptanceCriteria {

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userEvent } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { StaffGapDialog, type StaffGapDialogProps } from "./staff-gap-dialog";
+import { StaffGapDialog, restaffRoleKeys, type StaffGapDialogProps } from "./staff-gap-dialog";
 import type { DigitalEmployee, DigitalEmployeeAvatarAsset } from "@/lib/api/employees";
 import type { EmployeeTemplate } from "@/lib/api/employee-templates";
 import type { ProjectDecisionRequest, ProjectMember } from "@/lib/api/projects";
@@ -37,12 +37,22 @@ vi.mock("@/lib/api/projects", async (importOriginal) => {
 };
 });
 
+vi.mock("@/lib/api/casting", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/casting")>();
+  return {
+    ...actual,
+    listProjectCastings: vi.fn(),
+    putProjectCastings: vi.fn()
+};
+});
+
 const { createDigitalEmployee, listDigitalEmployeeAvatarAssets } = await import(
   "@/lib/api/employees"
 );
 const { listEmployeeTemplates } = await import("@/lib/api/employee-templates");
 const { getProject, listProjectMembers, replaceProjectMembers, resolveProjectDecision } =
   await import("@/lib/api/projects");
+const { listProjectCastings, putProjectCastings } = await import("@/lib/api/casting");
 
 const codeReviewerTemplate: EmployeeTemplate = {
   capability_bindings: {
@@ -53,6 +63,7 @@ const codeReviewerTemplate: EmployeeTemplate = {
 },
   created_at: "2026-07-01T00:00:00Z",
   default_role: "代码审查",
+  default_role_keys: ["reviewer"],
   description: "独立评审代码变更",
   id: "template-code-reviewer",
   is_system: true,
@@ -74,6 +85,7 @@ const testerTemplate: EmployeeTemplate = {
     external_capabilities: ["test_execution"]
 },
   default_role: "测试",
+  default_role_keys: ["tester"],
   id: "template-tester",
   label: "标准测试员",
   type: "standard_tester"
@@ -101,6 +113,7 @@ const createdEmployee: DigitalEmployee = {
   provider_type: "claude-code",
   risk_level: "medium",
   role: "代码审查",
+  role_keys: ["reviewer"],
   status: "ready",
   tenant_id: "tenant-1"
 };
@@ -146,6 +159,7 @@ function renderDialog(props: Partial<StaffGapDialogProps> = {}) {
         onStaffed={vi.fn()}
         open
         projectId="project-1"
+        scenarioTemplateKey="software_delivery"
         {...props}
       />
     </QueryClientProvider>,
@@ -156,6 +170,8 @@ describe("StaffGapDialog", () => {
   beforeEach(() => {
     // 补员员工必须带团队归属（参与门禁）：默认项目已绑定团队。
     vi.mocked(getProject).mockResolvedValue({ id: "project-1", team_id: "team-1" } as never);
+    vi.mocked(listProjectCastings).mockResolvedValue([]);
+    vi.mocked(putProjectCastings).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -176,9 +192,10 @@ describe("StaffGapDialog", () => {
     await expect.element(screen.getByText("项目未绑定团队，无法补员：请先为项目绑定团队")).toBeVisible();
     expect(createDigitalEmployee).not.toHaveBeenCalled();
     expect(replaceProjectMembers).not.toHaveBeenCalled();
+    expect(putProjectCastings).not.toHaveBeenCalled();
   });
 
-  it("preselects the template matching gap.required_capabilities and submits create → members → resolve in order", async () => {
+  it("preselects the template matching gap roles and submits create → members → casting → resolve in order", async () => {
     vi.mocked(listEmployeeTemplates).mockResolvedValue([codeReviewerTemplate, testerTemplate]);
     vi.mocked(listDigitalEmployeeAvatarAssets).mockResolvedValue([avatarAsset]);
     vi.mocked(createDigitalEmployee).mockResolvedValue(createdEmployee);
@@ -206,6 +223,7 @@ describe("StaffGapDialog", () => {
         employee_type: "standard_code_reviewer",
         provider_type: "claude-code",
         role: "代码审查",
+        role_keys: ["reviewer"],
         team_id: "team-1"
 }),
     );
@@ -228,6 +246,19 @@ describe("StaffGapDialog", () => {
 }),
       ]),
     );
+    expect(putProjectCastings).toHaveBeenCalledWith(
+      { baseUrl: "http://control-plane.local" },
+      "project-1",
+      expect.objectContaining({
+        scenario_template_key: "software_delivery",
+        assignments: expect.arrayContaining([
+          expect.objectContaining({
+            digital_employee_id: "employee-new-1",
+            role_key: "reviewer"
+}),
+        ])
+}),
+    );
     expect(resolveProjectDecision).toHaveBeenCalledWith(
       { baseUrl: "http://control-plane.local" },
       "project-1",
@@ -235,14 +266,16 @@ describe("StaffGapDialog", () => {
       expect.objectContaining({ decision: "restaffed" }),
     );
 
-    // 依次调用：create → members read → members write → resolve
+    // 依次调用：create → members read → members write → casting → resolve
     const createOrder = vi.mocked(createDigitalEmployee).mock.invocationCallOrder[0]!;
     const membersReadOrder = vi.mocked(listProjectMembers).mock.invocationCallOrder[0]!;
     const membersWriteOrder = vi.mocked(replaceProjectMembers).mock.invocationCallOrder[0]!;
+    const castingOrder = vi.mocked(putProjectCastings).mock.invocationCallOrder[0]!;
     const resolveOrder = vi.mocked(resolveProjectDecision).mock.invocationCallOrder[0]!;
     expect(createOrder).toBeLessThan(membersReadOrder);
     expect(membersReadOrder).toBeLessThan(membersWriteOrder);
-    expect(membersWriteOrder).toBeLessThan(resolveOrder);
+    expect(membersWriteOrder).toBeLessThan(castingOrder);
+    expect(castingOrder).toBeLessThan(resolveOrder);
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(onStaffed).toHaveBeenCalled();
@@ -281,6 +314,7 @@ describe("StaffGapDialog", () => {
 
     expect(createDigitalEmployee).toHaveBeenCalledTimes(1);
     expect(replaceProjectMembers).toHaveBeenCalledTimes(2);
+    expect(putProjectCastings).toHaveBeenCalledTimes(1);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -317,8 +351,9 @@ describe("StaffGapDialog", () => {
     });
 
     expect(createDigitalEmployee).toHaveBeenCalledTimes(1);
-    // 重试读到员工已在列表 → 不再重复写成员。
+    // 重试读到员工已在列表 → 不再重复写成员；编制已在第一次写入。
     expect(replaceProjectMembers).toHaveBeenCalledTimes(1);
+    expect(putProjectCastings).toHaveBeenCalledTimes(1);
     expect(resolveProjectDecision).toHaveBeenCalledTimes(2);
   });
 
@@ -335,6 +370,27 @@ describe("StaffGapDialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(createDigitalEmployee).not.toHaveBeenCalled();
     expect(replaceProjectMembers).not.toHaveBeenCalled();
+    expect(putProjectCastings).not.toHaveBeenCalled();
     expect(resolveProjectDecision).not.toHaveBeenCalled();
+  });
+});
+
+describe("restaffRoleKeys", () => {
+  const gap = {
+    active_executor_count: 1,
+    constraint_kind: "role_independence",
+    options: ["restaff"],
+    required_capabilities: ["code_review"],
+    roles: ["reviewer", "developer"]
+};
+
+  it("binds the overlapping template default role rather than the first gap role", () => {
+    expect(restaffRoleKeys(codeReviewerTemplate, gap)).toEqual(["reviewer"]);
+  });
+
+  it("falls back to the first gap role when the template has no default_role_keys", () => {
+    expect(restaffRoleKeys({ ...codeReviewerTemplate, default_role_keys: [] }, gap)).toEqual([
+      "reviewer"
+    ]);
   });
 });

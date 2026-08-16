@@ -1,131 +1,116 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { Eye, Pencil, Save, Send, ShieldCheck, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useBlocker, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Main } from "@/components/layout/main";
+import { ShellPageHeader, ShellPageHeaderBack } from "@/components/layout/shell-page-header";
 import {
-  ShellPageHeader,
-  ShellPageHeaderBack
-} from "@/components/layout/shell-page-header";
-import { MarkdownProse, SoftCard, StatusPill , Button} from "@/components/superteam";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
-import {
-  createDigitalEmployeeConfigRevision,
-  getDigitalEmployee,
-  replaceDigitalEmployeeRoles,
-  submitEmployeePermissionChange,
-  updateDigitalEmployeeProfile,
-  type CapabilityBindings,
-  type CreateDigitalEmployeeConfigRevisionInput,
-  type DigitalEmployee,
-  type DigitalEmployeeRoleImpact,
-  type DigitalEmployeeRoleImpactCasting,
-  type SubmitPermissionChangeInput
-} from "@/lib/api/employees";
-import { listRoleVocabulary } from "@/lib/api/casting";
+  DetailSkeleton,
+  ErrorState,
+  SoftCard,
+  SoftTabs,
+  SoftTabsContent,
+  SoftTabsList,
+  SoftTabsTrigger,
+  StatusPill,
+} from "@/components/superteam";
+import { getDigitalEmployee, type DigitalEmployee } from "@/lib/api/employees";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { riskLevelLabel, statusLabel } from "@/lib/status-labels";
+import { EmployeeAvatar } from "./avatar";
+import { employeeAvatarAsset } from "./avatar-library";
+import { ConfigExecutionTab } from "./components/config-execution-tab";
+import { ConfigIdentityTab } from "./components/config-identity-tab";
+import { ConfigPermissionTab } from "./components/config-permission-tab";
 import { EmployeeCapabilitiesPanel } from "./components/employee-capabilities-panel";
+import { parseEmployeeConfigTab, type EmployeeConfigTab } from "./config-utils";
 import { providerDisplayName } from "./provider-label";
 
-export function EmployeeConfigPage({ employeeId }: { employeeId: string }) {
+export function EmployeeConfigPage({
+  employeeId,
+  tab,
+}: {
+  employeeId: string;
+  tab?: EmployeeConfigTab;
+}) {
   const apiBaseUrl = resolveControlPlaneUrl();
-  return <EmployeeConfigView apiBaseUrl={apiBaseUrl} employeeId={employeeId} />;
+  const navigate = useNavigate();
+  return (
+    <EmployeeConfigView
+      apiBaseUrl={apiBaseUrl}
+      employeeId={employeeId}
+      tab={parseEmployeeConfigTab(tab)}
+      onTabChange={(next) => {
+        void navigate({
+          to: "/employees/$employeeId/config",
+          params: { employeeId },
+          search: { tab: next },
+        });
+      }}
+    />
+  );
 }
 
 type EmployeeConfigViewProps = {
   apiBaseUrl: string;
   employeeId: string;
   fetcher?: typeof fetch;
+  tab?: EmployeeConfigTab;
+  onTabChange?: (tab: EmployeeConfigTab) => void;
 };
 
-// 提交时只覆盖 external_capabilities / environment_variable_refs 两个受管数组；
-// 其余未知键透传（向后兼容 [key: string]: unknown）。skills / mcp_servers 是已废弃的
-// 逻辑绑定键，服务端会拒绝非空回传，故一并从透传集中剥离，绝不重新发送。
-const RESERVED_CAPABILITY_KEYS = [
-  "external_capabilities",
-  "environment_variable_refs",
-  "skills",
-  "mcp_servers",
-];
-
-export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: EmployeeConfigViewProps) {
+export function EmployeeConfigView({
+  apiBaseUrl,
+  employeeId,
+  fetcher,
+  tab = "identity",
+  onTabChange,
+}: EmployeeConfigViewProps) {
   const apiOptions = { baseUrl: apiBaseUrl, fetcher };
-  const queryClient = useQueryClient();
-
-  // 层一 · 即时生效字段
-  const [personaMemoryMarkdown, setPersonaMemoryMarkdown] = useState("");
-  const [personaPreview, setPersonaPreview] = useState(false);
-  const [externalCapabilities, setExternalCapabilities] = useState<string[]>([]);
-  const [environmentVariableRefs, setEnvironmentVariableRefs] = useState<string[]>([]);
-  const [dailyTokenLimit, setDailyTokenLimit] = useState("");
-  const [otherCapabilityKeys, setOtherCapabilityKeys] = useState<Record<string, unknown>>({});
-
-  const [immediateDirty, setImmediateDirty] = useState(false);
-  const [budgetError, setBudgetError] = useState("");
-  const [hydratedEmployeeId, setHydratedEmployeeId] = useState("");
+  const [identityDirty, setIdentityDirty] = useState(false);
+  const [executionDirty, setExecutionDirty] = useState(false);
+  const [permissionDirty, setPermissionDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<EmployeeConfigTab | null>(null);
+  const dirty = identityDirty || executionDirty || permissionDirty;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
 
   const employee = useQuery({
     queryKey: ["digital-employee", employeeId],
-    queryFn: () => getDigitalEmployee(apiOptions, employeeId)
-});
+    queryFn: () => getDigitalEmployee(apiOptions, employeeId),
+  });
 
-  const createRevision = useMutation({
-    mutationFn: (input: CreateDigitalEmployeeConfigRevisionInput) =>
-      createDigitalEmployeeConfigRevision(apiOptions, employeeId, input),
-    onSuccess: () => {
-      setImmediateDirty(false);
-      setBudgetError("");
-      queryClient.invalidateQueries({ queryKey: ["digital-employee", employeeId] });
-    }
-});
+  const blocker = useBlocker({
+    shouldBlockFn: ({ current, next }) => {
+      if (!dirtyRef.current) return false;
+      const sameEmployee =
+        current.pathname === next.pathname &&
+        String((current.params as { employeeId?: string }).employeeId ?? "") ===
+          String((next.params as { employeeId?: string }).employeeId ?? "");
+      const currentTab = (current.search as { tab?: string }).tab;
+      const nextTab = (next.search as { tab?: string }).tab;
+      if (sameEmployee && currentTab !== nextTab) return false;
+      return true;
+    },
+    enableBeforeUnload: true,
+    withResolver: true,
+  });
 
   useEffect(() => {
-    if (!employee.data || hydratedEmployeeId === employee.data.id) return;
-    const bindings = employee.data.capability_bindings ?? {};
-    setPersonaMemoryMarkdown(employee.data.persona_memory_markdown ?? "");
-    setExternalCapabilities(stringArray(bindings.external_capabilities));
-    setEnvironmentVariableRefs(stringArray(bindings.environment_variable_refs));
-    setOtherCapabilityKeys(
-      Object.fromEntries(
-        Object.entries(bindings).filter(([key]) => !RESERVED_CAPABILITY_KEYS.includes(key)),
-      ),
-    );
-    setDailyTokenLimit(budgetPolicyValue(employee.data.budget_policy ?? {}));
-    setImmediateDirty(false);
-    setBudgetError("");
-    setHydratedEmployeeId(employee.data.id);
-  }, [employee.data, hydratedEmployeeId]);
+    if (blocker.status !== "blocked") return;
+  }, [blocker.status]);
 
-  const markImmediateDirty = () => setImmediateDirty(true);
-
-  const handleImmediateSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    setBudgetError("");
-
-    const budgetPolicy = budgetPolicyFromDailyTokenLimit(dailyTokenLimit);
-    if (!budgetPolicy) {
-      setBudgetError("每日 Token 预算上限必须是正整数");
-      return;
-    }
-
-    const capabilityBindings: CapabilityBindings = {
-      ...otherCapabilityKeys,
-      external_capabilities: externalCapabilities,
-      environment_variable_refs: environmentVariableRefs
-};
-
-    const input: CreateDigitalEmployeeConfigRevisionInput = {
-      persona_memory_markdown: personaMemoryMarkdown.trim(),
-      capability_bindings: capabilityBindings,
-      budget_policy: budgetPolicy
-};
-    createRevision.mutate(input);
-  };
+  const requestTabChange = useCallback(
+    (next: EmployeeConfigTab) => {
+      if (next === tab) return;
+      if (dirtyRef.current) {
+        setPendingTab(next);
+        return;
+      }
+      onTabChange?.(next);
+    },
+    [onTabChange, tab],
+  );
 
   return (
     <>
@@ -138,697 +123,129 @@ export function EmployeeConfigView({ apiBaseUrl, employeeId, fetcher }: Employee
           />
         }
         title={employee.data?.name ?? "数字员工配置"}
-        subtitle="即时生效配置与权限审批配置分层管理"
+        subtitle="按生效方式分组：即时保存、行内即写、配置版本、权限审批"
       />
       <Main width="contained" className="space-y-4">
-        {employee.isLoading ? <p className="text-sm text-ink-2">加载中</p> : null}
-        {employee.isError ? <p className="text-sm text-destructive">加载失败</p> : null}
+        {employee.isLoading && !employee.data ? <DetailSkeleton /> : null}
+        {employee.isError ? (
+          <ErrorState title="加载失败" description="无法加载数字员工配置" onRetry={() => void employee.refetch()} />
+        ) : null}
 
         {employee.data ? (
           <>
             <LocatorHeader employee={employee.data} />
-
-            <EmployeeDescriptionEditor apiOptions={apiOptions} employee={employee.data} />
-
-            <section className="space-y-3">
-              <TierHeading
-                title="即时生效配置"
-                hint="保存后即时生效，无需审批"
-              />
-
-              <form className="space-y-4" noValidate onSubmit={handleImmediateSubmit}>
-                <SoftCard className="space-y-3 p-5">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-ink">人格记忆.md</div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setPersonaPreview((value) => !value)}
-                    >
-                      {personaPreview ? <Pencil /> : <Eye />}
-                      {personaPreview ? "编辑" : "预览"}
-                    </Button>
-                  </div>
-                  {personaPreview ? (
-                    personaMemoryMarkdown.trim() ? (
-                      <MarkdownProse className="rounded-[14px] border border-line bg-card-soft p-3">
-                        {personaMemoryMarkdown}
-                      </MarkdownProse>
-                    ) : (
-                      <p className="rounded-[14px] border border-line bg-card-soft p-3 text-sm text-ink-3">
-                        未设置
-                      </p>
-                    )
-                  ) : (
-                    <Textarea
-                      id="persona-memory-markdown"
-                      aria-label="人格记忆.md"
-                      value={personaMemoryMarkdown}
-                      onChange={(event) => {
-                        setPersonaMemoryMarkdown(event.target.value);
-                        markImmediateDirty();
-                      }}
-                      rows={10}
-                      className="font-mono text-xs"
-                    />
-                  )}
-                  <p className="text-xs text-ink-3">
-                    人格记忆随任务注入；项目宪法由所属项目在执行时注入，不属于数字员工配置。
-                  </p>
-                </SoftCard>
-
-                <SoftCard className="space-y-4 p-5">
-                  <div className="text-sm font-semibold text-ink">能力绑定</div>
-                  <ChipsEditor
-                    label="外部能力（external_capabilities）"
-                    placeholder="输入能力标识后回车添加"
-                    values={externalCapabilities}
-                    onChange={(next) => {
-                      setExternalCapabilities(next);
-                      markImmediateDirty();
-                    }}
-                  />
-                  <ChipsEditor
-                    label="环境变量引用（environment_variable_refs）"
-                    placeholder="输入环境变量名后回车添加"
-                    values={environmentVariableRefs}
-                    onChange={(next) => {
-                      setEnvironmentVariableRefs(next);
-                      markImmediateDirty();
-                    }}
-                  />
-                  <p className="text-xs text-ink-3">
-                    技能与 MCP 是逻辑绑定，请在下方「技能 / MCP / 环境变量」区管理。
-                  </p>
-                </SoftCard>
-
-                <SoftCard className="space-y-2 p-5">
-                  <div className="text-sm font-semibold text-ink">预算策略</div>
-                  <Label htmlFor="config-daily-token-limit" className="text-xs text-ink-3">
-                    每日 Token 预算上限
-                  </Label>
-                  <Input
-                    id="config-daily-token-limit"
-                    inputMode="numeric"
-                    min={1}
-                    onChange={(event) => {
-                      setDailyTokenLimit(event.target.value);
-                      markImmediateDirty();
-                      setBudgetError("");
-                    }}
-                    placeholder="不填写表示无预算上限"
-                    type="number"
-                    aria-invalid={Boolean(budgetError)}
-                    value={dailyTokenLimit}
-                  />
-                  {budgetError ? <p className="text-sm text-destructive">{budgetError}</p> : null}
-                </SoftCard>
-
-                <div className="flex items-center gap-3">
-                  <Button type="submit" disabled={!immediateDirty || createRevision.isPending}>
-                    <Save />
-                    保存即时配置
-                  </Button>
-                  {createRevision.isSuccess ? (
-                    <p className="text-sm text-green-600">已保存并生效</p>
-                  ) : null}
-                  {createRevision.isError ? (
-                    <p className="text-sm text-destructive">保存失败</p>
-                  ) : null}
-                </div>
-                <p className="text-xs text-ink-3">
-                  人格记忆 / 能力 / 预算保存后即时生效为新配置版本，无需审批；角色 / 权限变更走下方「权限审批配置」。
-                </p>
-              </form>
-            </section>
-
-            <section className="space-y-3">
-              <TierHeading title="技能 / MCP / 环境变量" hint="即时生效，无需审批" />
-              <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
-            </section>
-
-            <PlaybookRolesSection apiOptions={apiOptions} employee={employee.data} />
-
-            <PermissionTierSection apiOptions={apiOptions} employee={employee.data} />
+            <SoftTabs className="gap-4" value={tab} onValueChange={(value) => requestTabChange(value as EmployeeConfigTab)}>
+              <SoftTabsList
+                className="h-auto w-full max-w-full flex-wrap justify-start gap-0 rounded-none border-b border-line bg-transparent p-0 shadow-none"
+                data-slot="page-tab-list"
+              >
+                <ConfigTab value="identity">身份</ConfigTab>
+                <ConfigTab value="capabilities">能力</ConfigTab>
+                <ConfigTab value="execution">执行配置</ConfigTab>
+                <ConfigTab value="permission">权限</ConfigTab>
+              </SoftTabsList>
+              <SoftTabsContent forceMount hidden={tab !== "identity"} value="identity">
+                <ConfigIdentityTab
+                  apiOptions={apiOptions}
+                  employee={employee.data}
+                  onDirtyChange={setIdentityDirty}
+                />
+              </SoftTabsContent>
+              <SoftTabsContent forceMount hidden={tab !== "capabilities"} value="capabilities">
+                <EmployeeCapabilitiesPanel apiOptions={apiOptions} employeeId={employeeId} />
+              </SoftTabsContent>
+              <SoftTabsContent forceMount hidden={tab !== "execution"} value="execution">
+                <ConfigExecutionTab
+                  apiOptions={apiOptions}
+                  employee={employee.data}
+                  onDirtyChange={setExecutionDirty}
+                />
+              </SoftTabsContent>
+              <SoftTabsContent forceMount hidden={tab !== "permission"} value="permission">
+                <ConfigPermissionTab
+                  apiOptions={apiOptions}
+                  employee={employee.data}
+                  onDirtyChange={setPermissionDirty}
+                />
+              </SoftTabsContent>
+            </SoftTabs>
           </>
         ) : null}
       </Main>
+      <ConfirmDialog
+        open={pendingTab !== null || blocker.status === "blocked"}
+        onOpenChange={(open) => {
+          if (open) return;
+          setPendingTab(null);
+          if (blocker.status === "blocked") blocker.reset?.();
+        }}
+        title="放弃未保存的更改？"
+        desc="当前 Tab 有未保存内容，离开后这些修改会丢失。"
+        confirmText="离开"
+        destructive
+        handleConfirm={() => {
+          if (pendingTab) {
+            const next = pendingTab;
+            setPendingTab(null);
+            onTabChange?.(next);
+            return;
+          }
+          if (blocker.status === "blocked") blocker.proceed?.();
+        }}
+      />
     </>
+  );
+}
+
+function ConfigTab({ children, value }: { children: string; value: EmployeeConfigTab }) {
+  return (
+    <SoftTabsTrigger
+      className="-mb-px h-auto rounded-none border-b-2 border-transparent px-3 py-2.5 text-[13px] font-semibold text-ink-2 shadow-none hover:bg-transparent hover:text-ink data-[state=active]:border-brand data-[state=active]:bg-transparent data-[state=active]:text-brand-deep data-[state=active]:shadow-none"
+      data-slot="page-tab"
+      value={value}
+    >
+      {children}
+    </SoftTabsTrigger>
   );
 }
 
 function LocatorHeader({ employee }: { employee: DigitalEmployee }) {
   const effectiveStatus = employee.metadata?.effective_config_status;
+  const configLabel = employee.metadata?.effective_config_label;
   return (
-    <SoftCard className="space-y-3 p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-base font-semibold text-ink">{employee.name}</span>
-        <span className="font-mono text-xs text-ink-3">{employee.id}</span>
-        <StatusPill tone={statusTone(employee.status)}>{statusLabel(employee.status)}</StatusPill>
-      </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <LocatorItem label="Provider（不可改）" value={providerDisplayName(employee.provider_type)} />
-        <LocatorItem label="显示标签" value={employee.role || "未设置"} />
-        <LocatorItem label="风险等级" value={riskLevelLabel(employee.risk_level)} />
-        <LocatorItem label="所属团队" value={employee.team_id ? "已分配" : "未分配"} />
-      </div>
-      {effectiveStatus ? (
-        <p className="text-xs text-ink-3">
-          当前生效配置：{employee.metadata?.effective_config_label ?? "—"}（{statusLabel(effectiveStatus)}）
-        </p>
-      ) : null}
-    </SoftCard>
-  );
-}
-
-function EmployeeDescriptionEditor({
-  apiOptions,
-  employee
-}: {
-  apiOptions: ApiClientOptions;
-  employee: DigitalEmployee;
-}) {
-  const queryClient = useQueryClient();
-  const [description, setDescription] = useState(employee.description ?? "");
-  const [dirty, setDirty] = useState(false);
-  const [hydratedId, setHydratedId] = useState("");
-
-  useEffect(() => {
-    if (hydratedId === employee.id) return;
-    setDescription(employee.description ?? "");
-    setDirty(false);
-    setHydratedId(employee.id);
-  }, [employee.description, employee.id, hydratedId]);
-
-  const saveProfile = useMutation({
-    mutationFn: () =>
-      updateDigitalEmployeeProfile(apiOptions, employee.id, {
-        description: description.trim()
-}),
-    onSuccess: (updated) => {
-      setDescription(updated.description ?? "");
-      setDirty(false);
-      queryClient.setQueryData(["digital-employee", employee.id], updated);
-      queryClient.invalidateQueries({ queryKey: ["digital-employees"] });
-      queryClient.invalidateQueries({ queryKey: ["digital-employee-overview"] });
-    }
-});
-
-  return (
-    <section className="space-y-3">
-      <TierHeading title="身份资料" hint="保存后即时生效，无需审批" />
-      <SoftCard className="space-y-3 p-5">
-        <div className="space-y-2">
-          <Label htmlFor="employee-profile-description" className="text-sm font-semibold text-ink">
-            员工说明
-          </Label>
-          <Textarea
-            id="employee-profile-description"
-            aria-label="员工说明"
-            placeholder="简述这位数字员工负责什么、边界与协作方式，便于列表扫读识别。"
-            rows={3}
-            value={description}
-            onChange={(event) => {
-              setDescription(event.target.value);
-              setDirty(true);
-            }}
-          />
-          <p className="text-xs text-ink-3">可选。会出现在数字员工卡片上，超出两行以省略号截断。</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            disabled={!dirty || saveProfile.isPending}
-            onClick={() => saveProfile.mutate()}
-          >
-            <Save />
-            保存员工说明
-          </Button>
-          {saveProfile.isSuccess && !dirty ? (
-            <p className="text-sm text-green-600">已保存</p>
+    <SoftCard className="overflow-hidden p-0">
+      <div className="flex items-start gap-3.5 px-5 py-4">
+        <EmployeeAvatar asset={employeeAvatarAsset(employee)} name={employee.name} size="lg" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className="truncate text-[17px] font-extrabold tracking-tight text-ink">{employee.name}</h2>
+            {effectiveStatus ? (
+              <StatusPill tone="info">{statusLabel(String(effectiveStatus))}</StatusPill>
+            ) : null}
+          </div>
+          <p className="mt-1 line-clamp-2 text-[13px] leading-5 text-ink-2">
+            {employee.description?.trim() || "尚未填写员工说明"}
+          </p>
+          {configLabel ? (
+            <p className="mt-1 text-[12px] text-ink-3">当前生效配置 {configLabel}</p>
           ) : null}
-          {saveProfile.isError ? <p className="text-sm text-destructive">保存失败</p> : null}
         </div>
-      </SoftCard>
-    </section>
+      </div>
+      <div className="grid grid-cols-2 divide-x divide-y divide-line border-t border-line bg-card-soft sm:grid-cols-4 sm:divide-y-0">
+        <LocatorItem label="Provider（不可改）" value={providerDisplayName(employee.provider_type)} />
+        <LocatorItem label="职责描述" value={employee.role || "未设置"} />
+        <LocatorItem label="风险等级" value={riskLevelLabel(employee.risk_level)} />
+        <LocatorItem label="所属团队" value={employee.team_name?.trim() || "无团队归属"} />
+      </div>
+    </SoftCard>
   );
 }
 
 function LocatorItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0">
-      <p className="text-[11px] text-ink-3">{label}</p>
-      <p className="truncate text-sm font-medium text-ink">{value}</p>
+    <div className="min-w-0 px-4 py-3">
+      <p className="text-[11px] leading-4 text-ink-3">{label}</p>
+      <p className="mt-1 truncate text-[13px] font-semibold tracking-tight text-ink">{value}</p>
     </div>
   );
-}
-
-function TierHeading({ title, hint }: { title: string; hint: string }) {
-  return (
-    <div className="flex flex-wrap items-baseline gap-2">
-      <h2 className="text-sm font-semibold text-ink">{title}</h2>
-      <span className="text-xs text-ink-3">{hint}</span>
-    </div>
-  );
-}
-
-function PlaybookRolesSection({
-  apiOptions,
-  employee
-}: {
-  apiOptions: ApiClientOptions;
-  employee: DigitalEmployee;
-}) {
-  const queryClient = useQueryClient();
-  const currentKeys = employee.role_keys ?? [];
-  const [selected, setSelected] = useState<string[]>(currentKeys);
-  const [dirty, setDirty] = useState(false);
-  const [hydratedEmployeeId, setHydratedEmployeeId] = useState(employee.id);
-  const [pendingImpact, setPendingImpact] = useState<DigitalEmployeeRoleImpact | null>(null);
-
-  useEffect(() => {
-    if (hydratedEmployeeId === employee.id && dirty) return;
-    setSelected(employee.role_keys ?? []);
-    setDirty(false);
-    setHydratedEmployeeId(employee.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employee.id, employee.role_keys]);
-
-  const vocabulary = useQuery({
-    queryKey: ["role-vocabulary"],
-    queryFn: () => listRoleVocabulary(apiOptions),
-  });
-
-  const activeRoles = (vocabulary.data ?? []).filter((entry) => entry.status === "active");
-  // Keep currently selected disabled roles visible so the user can uncheck them.
-  const selectedDisabled = (vocabulary.data ?? []).filter(
-    (entry) => entry.status !== "active" && selected.includes(entry.role_key),
-  );
-  const options = [...activeRoles, ...selectedDisabled];
-
-  const externalCaps = stringArray(employee.capability_bindings?.external_capabilities);
-
-  const saveRoles = useMutation({
-    mutationFn: ({ confirmImpact }: { confirmImpact: boolean }) =>
-      replaceDigitalEmployeeRoles(apiOptions, employee.id, selected, confirmImpact),
-    onSuccess: (result) => {
-      setSelected(result.role_keys ?? []);
-      setDirty(false);
-      setPendingImpact(null);
-      queryClient.invalidateQueries({ queryKey: ["digital-employee", employee.id] });
-      queryClient.invalidateQueries({ queryKey: ["digital-employees"] });
-    },
-    onError: (error) => {
-      if (!(error instanceof ApiRequestError) || error.status !== 400) return;
-      const payload = error.payload as
-        | {
-            code?: string;
-            affected_castings?: DigitalEmployeeRoleImpactCasting[];
-            affected_count?: number;
-          }
-        | undefined;
-      if (payload?.code !== "casting_impact_requires_confirm") return;
-      setPendingImpact({
-        affected_castings: payload.affected_castings ?? [],
-        affected_count: payload.affected_count ?? payload.affected_castings?.length ?? 0,
-      });
-    },
-  });
-
-  const impactDesc = useMemo(() => {
-    if (!pendingImpact) return "";
-    const lines = pendingImpact.affected_castings.map(
-      (row) => `· ${row.project_name} / ${row.template_name} · 角色 ${row.role_key}`,
-    );
-    return [
-      `移除角色将解除以下 ${pendingImpact.affected_count} 条编制，并通知项目负责人：`,
-      ...lines,
-    ].join("\n");
-  }, [pendingImpact]);
-
-  const toggle = (roleKey: string) => {
-    setSelected((prev) =>
-      prev.includes(roleKey) ? prev.filter((k) => k !== roleKey) : [...prev, roleKey],
-    );
-    setDirty(true);
-  };
-
-  return (
-    <section className="space-y-3">
-      <TierHeading
-        title="剧本角色"
-        hint="编制单位；勿与下方权限层混淆"
-      />
-      <SoftCard className="space-y-4 p-5">
-        <p className="text-xs text-ink-3">
-          一人可兼多角色。保存后即时生效，决定该员工在项目编制 / 扩编候选中出现在哪些角色下。
-        </p>
-        {vocabulary.isPending ? (
-          <p className="text-sm text-ink-2">加载角色词表…</p>
-        ) : vocabulary.isError ? (
-          <p className="text-sm text-destructive">无法加载角色词表</p>
-        ) : options.length === 0 ? (
-          <p className="text-sm text-ink-2">
-            暂无启用中的角色。请先在{" "}
-            <Link className="underline" to="/role-vocabulary">
-              角色词表
-            </Link>{" "}
-            注册。
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {options.map((entry) => {
-              const checked = selected.includes(entry.role_key);
-              return (
-                <label
-                  key={entry.role_key}
-                  className={`inline-flex cursor-pointer items-center gap-2 rounded-inner border px-3 py-2 text-sm ${
-                    checked
-                      ? "border-brand/40 bg-brand/5 text-ink"
-                      : "border-line bg-card text-ink-2"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="size-3.5 accent-brand"
-                    checked={checked}
-                    onChange={() => toggle(entry.role_key)}
-                  />
-                  <span className="font-medium">{entry.title}</span>
-                  <span className="font-mono text-xs text-ink-3">{entry.role_key}</span>
-                  {entry.status !== "active" ? (
-                    <span className="text-xs text-danger">已停用</span>
-                  ) : null}
-                </label>
-              );
-            })}
-          </div>
-        )}
-        <div className="rounded-[14px] border border-line bg-card-soft p-3">
-          <p className="text-xs font-semibold text-ink-2">已声明能力（参考）</p>
-          {externalCaps.length ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {externalCaps.map((cap) => (
-                <span
-                  key={cap}
-                  className="rounded-inner border border-line bg-card px-2 py-0.5 font-mono text-xs text-ink-2"
-                >
-                  {cap}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-1 text-xs text-ink-3">未声明 external_capabilities</p>
-          )}
-          <p className="mt-2 text-xs text-ink-3">
-            角色是编制单位，能力是佐证；绑角色时请对照上方能力是否匹配。
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            disabled={!dirty || saveRoles.isPending}
-            onClick={() => saveRoles.mutate({ confirmImpact: false })}
-          >
-            <Save />
-            保存剧本角色
-          </Button>
-          {saveRoles.isSuccess && !dirty ? (
-            <p className="text-sm text-green-600">已保存</p>
-          ) : null}
-          {saveRoles.isError && !pendingImpact ? (
-            <p className="text-sm text-destructive">
-              {saveRoles.error instanceof Error
-                ? saveRoles.error.message
-                : "保存失败"}
-            </p>
-          ) : null}
-        </div>
-      </SoftCard>
-      <ConfirmDialog
-        open={pendingImpact !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingImpact(null);
-        }}
-        title="确认解除受影响编制"
-        desc={impactDesc}
-        confirmText="确认并保存"
-        destructive
-        isLoading={saveRoles.isPending}
-        handleConfirm={() => saveRoles.mutate({ confirmImpact: true })}
-      />
-    </section>
-  );
-}
-
-function PermissionTierSection({
-  apiOptions,
-  employee
-}: {
-  apiOptions: ApiClientOptions;
-  employee: DigitalEmployee;
-}) {
-  const queryClient = useQueryClient();
-  const permissionPolicy = employee.permission_policy ?? {};
-  const currentGrants = stringArray(permissionPolicy.grants);
-  const currentAllowedActions = stringArray(
-    (permissionPolicy as Record<string, unknown>).allowed_actions,
-  );
-
-  const [role, setRole] = useState(employee.role ?? "");
-  const [grants, setGrants] = useState<string[]>(currentGrants);
-  const [allowedActions, setAllowedActions] = useState<string[]>(currentAllowedActions);
-  const [dirty, setDirty] = useState(false);
-  const [hydratedEmployeeId, setHydratedEmployeeId] = useState(employee.id);
-
-  // 员工切换/服务端数据刷新后重水合(与即时层同思路,但避免覆盖在编辑内容)。
-  useEffect(() => {
-    if (hydratedEmployeeId === employee.id && dirty) return;
-    setRole(employee.role ?? "");
-    setGrants(stringArray((employee.permission_policy ?? {}).grants));
-    setAllowedActions(
-      stringArray(((employee.permission_policy ?? {}) as Record<string, unknown>).allowed_actions),
-    );
-    setDirty(false);
-    setHydratedEmployeeId(employee.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employee.id, employee.role, employee.permission_policy]);
-
-  const submitChange = useMutation({
-    mutationFn: (input: SubmitPermissionChangeInput) =>
-      submitEmployeePermissionChange(apiOptions, employee.id, input),
-    onSuccess: () => {
-      setDirty(false);
-      queryClient.invalidateQueries({ queryKey: ["digital-employee", employee.id] });
-    }
-});
-
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const input: SubmitPermissionChangeInput = {};
-    if (role.trim() && role.trim() !== employee.role) {
-      input.role = role.trim();
-    }
-    const policyChanged =
-      !sameStringArray(grants, currentGrants) ||
-      !sameStringArray(allowedActions, currentAllowedActions);
-    if (policyChanged) {
-      input.permission_policy = {
-        ...permissionPolicy,
-        grants,
-        allowed_actions: allowedActions
-};
-    }
-    if (!input.role && !input.permission_policy) return;
-    submitChange.mutate(input);
-  };
-
-  return (
-    <section className="space-y-3">
-      <TierHeading title="权限审批配置" hint="变更需权限中心审批，批准后生效" />
-      <form onSubmit={handleSubmit}>
-        <SoftCard className="space-y-4 p-5">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-ink-2" />
-            <span className="text-sm font-semibold text-ink">角色与权限</span>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="permission-role" className="text-xs text-ink-3">
-              显示标签 · 当前：{employee.role || "未设置"}
-            </Label>
-            <Input
-              id="permission-role"
-              value={role}
-              onChange={(event) => {
-                setRole(event.target.value);
-                setDirty(true);
-              }}
-            />
-            <p className="text-xs text-ink-3">
-              仅用于列表展示，不参与剧本匹配与编制。剧本角色请在上方「剧本角色」分区编辑。
-            </p>
-          </div>
-          <ChipsEditor
-            label="资源授权（grants）· scope:resource 形式"
-            placeholder="例如 database.read:dev_db，回车添加"
-            values={grants}
-            onChange={(next) => {
-              setGrants(next);
-              setDirty(true);
-            }}
-          />
-          <ChipsEditor
-            label="动作白名单（allowed_actions）· 员工可执行动作上限，留空不收敛"
-            placeholder="例如 code.write，回车添加"
-            values={allowedActions}
-            onChange={(next) => {
-              setAllowedActions(next);
-              setDirty(true);
-            }}
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={!dirty || submitChange.isPending}>
-              <Send />
-              提交权限变更
-            </Button>
-            {submitChange.isSuccess ? (
-              <p className="text-sm text-green-600">
-                已提交，待权限中心审批。
-                <Link className="ml-1 underline" to="/permissions">
-                  去权限中心
-                </Link>
-              </p>
-            ) : null}
-            {submitChange.isError ? (
-              <p className="text-sm text-destructive">
-                {submitPermissionErrorMessage(submitChange.error)}
-              </p>
-            ) : null}
-          </div>
-          <p className="text-xs text-ink-3">
-            提交后生成权限审批请求，由团队审批人在权限中心批准后写回生效；员工有进行中工作时会被拒绝提交。
-          </p>
-        </SoftCard>
-      </form>
-    </section>
-  );
-}
-
-function sameStringArray(a: string[], b: string[]) {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
-}
-
-function submitPermissionErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : "";
-  if (message.includes("active work")) {
-    return "员工当前有进行中的工作，请等待完成后再提交权限变更。";
-  }
-  if (message.includes("not configured")) {
-    return "权限审批链路未配置，请联系管理员。";
-  }
-  if (message.includes("team")) {
-    return "员工需先归属团队才能提交权限变更。";
-  }
-  return "提交失败，请稍后重试。";
-}
-
-function ChipsEditor({
-  label,
-  placeholder,
-  values,
-  onChange
-}: {
-  label: string;
-  placeholder: string;
-  values: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const [draft, setDraft] = useState("");
-
-  const commit = () => {
-    const trimmed = draft.trim();
-    if (!trimmed || values.includes(trimmed)) {
-      setDraft("");
-      return;
-    }
-    onChange([...values, trimmed]);
-    setDraft("");
-  };
-
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs text-ink-3">{label}</Label>
-      {values.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {values.map((value) => (
-            <span
-              key={value}
-              className="inline-flex items-center gap-1 rounded-inner border border-line bg-card px-2 py-1 text-xs text-ink"
-            >
-              <span className="font-mono">{value}</span>
-              <button
-                type="button"
-                aria-label={`移除 ${value}`}
-                className="text-ink-3 hover:text-danger"
-                onClick={() => onChange(values.filter((item) => item !== value))}
-              >
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
-      <Input
-        value={draft}
-        placeholder={placeholder}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            commit();
-          }
-        }}
-        onBlur={commit}
-      />
-    </div>
-  );
-}
-
-function stringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string");
-}
-
-function statusTone(status: DigitalEmployee["status"]) {
-  if (status === "ready" || status === "active") return "ok" as const;
-  if (status === "error") return "danger" as const;
-  if (status === "disabled") return "mute" as const;
-  return "info" as const;
-}
-
-function budgetPolicyValue(value: Record<string, unknown>) {
-  const rawValue = value.daily_token_limit;
-  if (typeof rawValue === "number" && Number.isInteger(rawValue) && rawValue > 0) {
-    return String(rawValue);
-  }
-  if (typeof rawValue === "string") {
-    const trimmed = rawValue.trim();
-    if (trimmed) {
-      return trimmed;
-    }
-  }
-  return "";
-}
-
-function budgetPolicyFromDailyTokenLimit(dailyTokenLimit: string) {
-  const trimmed = dailyTokenLimit.trim();
-  if (!trimmed) return {};
-
-  const parsed = Number(trimmed);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return undefined;
-  }
-
-  return { daily_token_limit: parsed };
 }

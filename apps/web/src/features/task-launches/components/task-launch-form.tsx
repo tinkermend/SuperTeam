@@ -415,26 +415,34 @@ export function TaskLaunchForm({
               className="hub-tpl-grid"
               role="radiogroup"
             >
-              {templateOptions.map((template) => {
-                const selected = template.template_key === scenarioTemplateKey;
-                return (
-                  <button
-                    aria-checked={selected}
-                    aria-label={template.name}
-                    className="hub-tpl"
-                    data-active={selected || undefined}
-                    key={template.template_key}
-                    onClick={() => setScenarioTemplateKey(template.template_key)}
-                    role="radio"
-                    type="button"
-                  >
-                    <span className="hub-tpl-name">{template.name}</span>
-                    {template.description?.trim() ? (
-                      <span className="hub-tpl-desc">{template.description}</span>
-                    ) : null}
-                  </button>
-                );
-              })}
+              {templatesQuery.isPending ? (
+                <p className="tl-proj-none-text">加载场景模板…</p>
+              ) : templatesQuery.isError ? (
+                <p className="tl-proj-none-text">场景模板加载失败</p>
+              ) : templateOptions.length === 0 ? (
+                <p className="tl-proj-none-text">暂无可用场景模板</p>
+              ) : (
+                templateOptions.map((template) => {
+                  const selected = template.template_key === scenarioTemplateKey;
+                  return (
+                    <button
+                      aria-checked={selected}
+                      aria-label={template.name}
+                      className="hub-tpl"
+                      data-active={selected || undefined}
+                      key={template.template_key}
+                      onClick={() => setScenarioTemplateKey(template.template_key)}
+                      role="radio"
+                      type="button"
+                    >
+                      <span className="hub-tpl-name">{template.name}</span>
+                      {template.description?.trim() ? (
+                        <span className="hub-tpl-desc">{template.description}</span>
+                      ) : null}
+                    </button>
+                  );
+                })
+              )}
             </div>
             {selectedTemplate ? (
               <div className="hub-cast" data-testid="task-hub-cast">

@@ -217,7 +217,11 @@ mod tests {
         let line = r#"{"type":"step_finish","timestamp":1784276621631,"sessionID":"ses_1","part":{"id":"prt_3","reason":"stop","type":"step-finish","tokens":{"total":10848,"input":10717,"output":3,"reasoning":0,"cache":{"write":0,"read":128}},"cost":0.015}}"#;
         let events = parse_opencode_event(line).unwrap();
         match &events[..] {
-            [ProviderEvent::TurnCompleted { usage: Some(usage), .. }] => {
+            [
+                ProviderEvent::TurnCompleted {
+                    usage: Some(usage), ..
+                },
+            ] => {
                 assert_eq!(usage.total_tokens, 10848);
                 assert_eq!(usage.input_tokens, Some(10717));
                 assert_eq!(usage.output_tokens, Some(3));

@@ -139,8 +139,7 @@ func TestProjectRoutesUseConsoleAuthAndProjectService(t *testing.T) {
 	}
 	service := &routeProjectService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -597,8 +596,7 @@ func TestProjectTaskLivenessRouteUsesConsoleAuth(t *testing.T) {
 		}},
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -648,8 +646,7 @@ func TestProjectTaskDispatchGateRouteUsesConsoleAuth(t *testing.T) {
 		}},
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -698,8 +695,7 @@ func TestProjectExecutionTraceRouteUsesConsoleAuth(t *testing.T) {
 	attemptID := uuid.New()
 	service := &routeProjectService{projectID: projectID}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -735,8 +731,7 @@ func TestProjectExecutionTraceRouteRejectsMalformedUUIDFilters(t *testing.T) {
 	projectID := uuid.New()
 	service := &routeProjectService{projectID: projectID}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -766,8 +761,7 @@ func TestProjectDemandLaunchDetailRouteUsesDemandID(t *testing.T) {
 	}
 	service := &routeProjectService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -799,8 +793,7 @@ func TestAuditEventsRouteUsesConsoleTenantAndProjectResource(t *testing.T) {
 	}
 	service := &routeAuditService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -842,8 +835,7 @@ func TestAuditEventsRouteRejectsInvalidResourceFilters(t *testing.T) {
 	}
 	service := &routeAuditService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -882,8 +874,7 @@ func TestRuntimeProjectTaskWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 	}
 	service := &routeProjectService{}
 	server := NewServerWithAuthzAndRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		nil,
 		nil,
 		runtimeAuth,
@@ -931,8 +922,7 @@ func TestRuntimeRoutesProjectTaskAttemptResultUseRuntimeSessionAuth(t *testing.T
 	}
 	service := &routeProjectService{}
 	server := NewServerWithAuthzAndRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		nil,
 		nil,
 		runtimeAuth,
@@ -988,8 +978,7 @@ func TestRuntimeRoutesProjectTaskAttestationUsesRuntimeSessionAuth(t *testing.T)
 	}
 	service := &routeProjectService{}
 	server := NewServerWithAuthzAndRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		nil,
 		nil,
 		runtimeAuth,
@@ -1042,8 +1031,7 @@ func TestRuntimeRoutesProjectTaskBudgetHeartbeatUsesRuntimeSessionAuth(t *testin
 	}
 	service := &routeProjectService{budgetHeartbeatResult: &project.ProjectTaskAttemptBudgetHeartbeatResult{Tripped: true, TripReason: "wall_clock_exceeded"}}
 	server := NewServerWithAuthzAndRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		nil,
 		nil,
 		runtimeAuth,
@@ -1097,8 +1085,7 @@ func TestProjectWorkflowSignalRetryRouteUsesConsoleAuth(t *testing.T) {
 	service := &routeProjectService{projectID: uuid.New()}
 	expectedTenantID := platform.DefaultTenantID
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1130,8 +1117,7 @@ func TestProjectRoutesRejectBadRequestsAndConflicts(t *testing.T) {
 	}
 	service := &routeProjectService{projectID: uuid.New(), archiveErr: project.ErrProjectArchived}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1176,8 +1162,7 @@ func TestDeleteProjectRouteReturnsNoContent(t *testing.T) {
 	}
 	service := &routeProjectService{projectID: uuid.New()}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1220,8 +1205,7 @@ func TestDeleteProjectRouteReturnsBlockers(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1265,8 +1249,7 @@ func TestDeleteProjectRouteReturnsTerminateFailure(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1322,8 +1305,7 @@ func TestGetProjectDeletePreviewRouteReturnsPreview(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1366,8 +1348,7 @@ func TestGetProjectIncludesAllowedDeleteAction(t *testing.T) {
 	}
 	service := &routeProjectService{projectID: uuid.New()}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},

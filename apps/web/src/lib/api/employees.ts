@@ -1,5 +1,5 @@
 import type { ApiClientOptions } from "./client";
-import { deleteJson, getJson, patchJson, postJson, putJson } from "./client";
+import { buildApiUrl, deleteJson, getJson, parseJson, patchJson, postJson, putJson } from "./client";
 
 export type DigitalEmployeeStatus =
   | "draft"
@@ -89,6 +89,7 @@ export type DigitalEmployeeTypeOption = {
   label: string;
   description: string;
   default_role: string;
+  default_role_keys?: string[];
   recommended_skills?: string[];
   recommended_mcp_servers?: string[];
   recommended_provider_types?: string[];
@@ -580,6 +581,7 @@ export type CreateDigitalEmployeeInput = {
   name: string;
   avatar_asset_id: string;
   role?: string;
+  role_keys?: string[];
   description?: string;
   permission_policy?: Record<string, unknown>;
   risk_level?: string;
@@ -858,11 +860,12 @@ export function reassignDigitalEmployeeTeam(
 }
 
 export type UpdateDigitalEmployeeProfileInput = {
-  /** 员工说明；空字符串清空。 */
-  description: string;
+  /** 员工说明与职责描述均为可选，至少一个。空说明清空；空职责描述由服务端按剧本角色派生。 */
+  description?: string;
+  role?: string;
 };
 
-/** 更新数字员工身份资料（当前仅员工说明），即时生效，不进入 config-revision。 */
+/** 更新数字员工身份资料（说明 / 职责描述），即时生效，不进入 config-revision。 */
 export function updateDigitalEmployeeProfile(
   options: ApiClientOptions,
   employeeId: string,
@@ -925,8 +928,6 @@ export function createDigitalEmployeeConfigRevision(
 }
 
 export type SubmitPermissionChangeInput = {
-  /** 不改 role 时省略。 */
-  role?: string;
   /** 不改 permission_policy 时省略;形状 {grants?: string[], allowed_actions?: string[]}。 */
   permission_policy?: Record<string, unknown>;
 };
@@ -939,7 +940,7 @@ export type SubmitPermissionChangeResponse = {
   target_user_id: string;
 };
 
-/** 提交 role/permission_policy 治理变更 → 产生权限中心审批请求,批准后写回员工行。 */
+/** 提交 permission_policy 治理变更 → 产生权限中心审批请求,批准后写回员工行。 */
 export function submitEmployeePermissionChange(
   options: ApiClientOptions,
   employeeId: string,
@@ -952,6 +953,39 @@ export function submitEmployeePermissionChange(
     input,
     "submit employee permission change",
   );
+}
+
+export type EmployeePermissionChange = {
+  request_id: string;
+  status: string;
+  risk_level?: string;
+  created_at: string;
+  requester_name: string;
+  approver_name: string;
+  current_permission_policy: Record<string, unknown>;
+  target_permission_policy: Record<string, unknown>;
+  current_role?: string;
+  target_role?: string;
+};
+
+export async function getEmployeePermissionChange(
+  options: ApiClientOptions,
+  employeeId: string,
+): Promise<EmployeePermissionChange | null> {
+  const encodedEmployeeId = encodePathSegment(employeeId);
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(
+    buildApiUrl(options.baseUrl, `/api/v1/digital-employees/${encodedEmployeeId}/permission-change`),
+    {
+      credentials: "include",
+      headers: { accept: "application/json" },
+      method: "GET",
+    },
+  );
+  if (response.status === 204) {
+    return null;
+  }
+  return parseJson<EmployeePermissionChange>(response, "employee permission change");
 }
 
 export type DigitalEmployeeRoleImpactCasting = {

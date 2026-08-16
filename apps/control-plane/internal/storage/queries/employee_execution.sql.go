@@ -3292,22 +3292,29 @@ func (q *Queries) SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Co
 const UpdateDigitalEmployeeProfile = `-- name: UpdateDigitalEmployeeProfile :one
 UPDATE digital_employees
 SET description = NULLIF(BTRIM($1::text), ''),
+    role = $2::varchar,
     updated_at = NOW()
-WHERE id = $2::uuid
-  AND tenant_id = $3::uuid
+WHERE id = $3::uuid
+  AND tenant_id = $4::uuid
   AND deleted_at IS NULL
 RETURNING id, tenant_id, team_id, name, role, description, status, permission_policy, risk_level, metadata, disabled_at, archived_at, deleted_at, created_at, updated_at, owner_user_id, employee_type, provider_type
 `
 
 type UpdateDigitalEmployeeProfileParams struct {
 	Description string    `json:"description"`
+	Role        string    `json:"role"`
 	ID          uuid.UUID `json:"id"`
 	TenantID    uuid.UUID `json:"tenant_id"`
 }
 
-// 身份资料写路径：当前仅员工说明（description）；空串落 NULL，与创建 trimOptionalString 口径一致。
+// 身份资料写路径：description 空串落 NULL；role 由服务端解析（空串已派生，不得写入空串）。
 func (q *Queries) UpdateDigitalEmployeeProfile(ctx context.Context, arg UpdateDigitalEmployeeProfileParams) (DigitalEmployee, error) {
-	row := q.db.QueryRow(ctx, UpdateDigitalEmployeeProfile, arg.Description, arg.ID, arg.TenantID)
+	row := q.db.QueryRow(ctx, UpdateDigitalEmployeeProfile,
+		arg.Description,
+		arg.Role,
+		arg.ID,
+		arg.TenantID,
+	)
 	var i DigitalEmployee
 	err := row.Scan(
 		&i.ID,

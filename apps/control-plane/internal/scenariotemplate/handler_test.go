@@ -55,6 +55,16 @@ func (s *stubService) Patch(_ context.Context, req PatchScenarioTemplateRequest)
 	return ScenarioTemplate{}, ErrScenarioTemplateNotFound
 }
 
+func (s *stubService) Delete(_ context.Context, req DeleteScenarioTemplateRequest) error {
+	for i, template := range s.templates {
+		if template.Key == req.Key {
+			s.templates = append(s.templates[:i], s.templates[i+1:]...)
+			return nil
+		}
+	}
+	return ErrScenarioTemplateNotFound
+}
+
 func (s *stubService) RoleView(_ context.Context, _ uuid.UUID, key string) (RoleView, error) {
 	for _, template := range s.templates {
 		if template.Key == key {
@@ -233,5 +243,41 @@ func TestCreateScenarioTemplateSuccess(t *testing.T) {
 	}
 	if out["template_key"] != "ops_review" {
 		t.Fatalf("unexpected body: %#v", out)
+	}
+}
+
+func TestDeleteScenarioTemplateForbiddenWithoutManageAuthz(t *testing.T) {
+	handler := NewHandler(&stubService{templates: []ScenarioTemplate{{Key: "ops_review"}}})
+	authorizer := &stubAuthorizer{allowed: false}
+	handler.SetAuthorizer(authorizer)
+
+	req := identityRequest(httptest.NewRequest(http.MethodDelete, "/api/v1/scenario-templates/ops_review", nil), uuid.New(), uuid.New())
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("templateKey", "ops_review")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+	resp := httptest.NewRecorder()
+	handler.DeleteScenarioTemplate(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(authorizer.checks) != 1 || authorizer.checks[0].Action != authz.ActionScenarioTemplateManage {
+		t.Fatalf("unexpected authz checks: %#v", authorizer.checks)
+	}
+}
+
+func TestDeleteScenarioTemplateSuccess(t *testing.T) {
+	handler := NewHandler(&stubService{templates: []ScenarioTemplate{{Key: "ops_review", Name: "运维评审"}}})
+	handler.SetAuthorizer(&stubAuthorizer{allowed: true})
+
+	req := identityRequest(httptest.NewRequest(http.MethodDelete, "/api/v1/scenario-templates/ops_review", nil), uuid.New(), uuid.New())
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("templateKey", "ops_review")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+	resp := httptest.NewRecorder()
+	handler.DeleteScenarioTemplate(resp, req)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", resp.Code, resp.Body.String())
 	}
 }

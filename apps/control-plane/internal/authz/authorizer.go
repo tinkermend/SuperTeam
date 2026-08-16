@@ -66,12 +66,6 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 			break
 		}
 		decision, err = a.checkTeamAccess(ctx, req)
-	case ActionTaskClaim:
-		if !validResource(req.Resource, ResourceTask) {
-			decision = deny(ReasonInvalidResource)
-			break
-		}
-		decision, err = a.checkRuntimeTaskClaim(ctx, req)
 	case ActionRuntimeScopeManage:
 		if !resourceMatchesUUID(req.Resource, ResourceTenant, req.TenantID) {
 			decision = deny(ReasonInvalidResource)
@@ -164,7 +158,8 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		}
 		decision, err = a.checkTenantAdminAccess(ctx, req)
 	case ActionSkillDelete,
-		ActionSkillInstall:
+		ActionSkillInstall,
+		ActionSkillArchiveReplace:
 		if !validUUIDResource(req.Resource, ResourceSkill) {
 			decision = deny(ReasonInvalidResource)
 			break
@@ -213,10 +208,6 @@ func (a *DBAuthorizer) Check(ctx context.Context, req CheckRequest) (Decision, e
 		}
 		if isAuditAction(req.Action) {
 			decision, err = a.checkAuditAccess(ctx, req)
-			break
-		}
-		if isTaskAction(req.Action) {
-			decision, err = a.checkTaskAccess(ctx, req)
 			break
 		}
 		return Decision{Allowed: false, Reason: ReasonUnsupportedAction, RequiresAudit: true}, ErrUnsupportedAction
@@ -467,37 +458,6 @@ func (a *DBAuthorizer) checkTeamManagementAction(ctx context.Context, req CheckR
 	return deny(ReasonNoMembership), nil
 }
 
-func (a *DBAuthorizer) checkRuntimeTaskClaim(ctx context.Context, req CheckRequest) (Decision, error) {
-	if req.Actor.Type != ActorRuntimeNode || req.Actor.ID == "" {
-		return deny(ReasonInvalidActor), nil
-	}
-	taskID, err := uuid.Parse(req.Resource.ID)
-	if err != nil {
-		return deny(ReasonInvalidResource), nil
-	}
-	covered, err := a.repository.RuntimeNodeCoversTaskScope(ctx, RuntimeScopeParams{
-		TenantID: req.TenantID,
-		TeamID:   req.TeamID,
-		TaskID:   taskID,
-		NodeID:   req.Actor.ID,
-	})
-	if err != nil {
-		return Decision{}, err
-	}
-	if !covered {
-		return deny(ReasonRuntimeScopeMissing), nil
-	}
-	return Decision{
-		Allowed:     true,
-		Reason:      ReasonAllowed,
-		MatchedRule: "runtime.scope",
-		Snapshot: map[string]any{
-			"engine": "db",
-			"action": req.Action,
-		},
-	}, nil
-}
-
 func isProjectAction(action string) bool {
 	switch action {
 	case ActionProjectCreate, ActionProjectRead, ActionProjectUpdate, ActionProjectArchive, ActionProjectDelete,
@@ -517,15 +477,6 @@ func isProjectAction(action string) bool {
 
 func isAuditAction(action string) bool {
 	return action == ActionAuditRead
-}
-
-func isTaskAction(action string) bool {
-	switch action {
-	case ActionTaskRead, ActionTaskCreate, ActionTaskUpdate, ActionTaskCancel:
-		return true
-	default:
-		return false
-	}
 }
 
 func (a *DBAuthorizer) checkProjectAccess(ctx context.Context, req CheckRequest) (Decision, error) {
@@ -619,28 +570,6 @@ func (a *DBAuthorizer) checkAuditAccess(ctx context.Context, req CheckRequest) (
 		if slices.Contains(facts.HumanOwnerUserIDs, principalID) || facts.IsMember {
 			return allow("audit.project_member", RoleMember), nil
 		}
-	}
-	return deny(ReasonNoMembership), nil
-}
-
-func (a *DBAuthorizer) checkTaskAccess(ctx context.Context, req CheckRequest) (Decision, error) {
-	principalID, ok := parseUUIDActor(req.Actor, ActorUser)
-	if !ok {
-		return deny(ReasonInvalidActor), nil
-	}
-	membership, err := a.repository.GetActiveTenantMembership(ctx, TenantMembershipParams{
-		TenantID:      req.TenantID,
-		PrincipalType: ActorUser,
-		PrincipalID:   principalID,
-	})
-	if err != nil {
-		if errors.Is(err, ErrNoMembership) {
-			return deny(ReasonNoMembership), nil
-		}
-		return Decision{}, err
-	}
-	if roleAllowsTenantAccess(membership.Role) {
-		return allow("tenant."+membership.Role, membership.Role), nil
 	}
 	return deny(ReasonNoMembership), nil
 }

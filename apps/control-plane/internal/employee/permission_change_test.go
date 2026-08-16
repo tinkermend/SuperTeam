@@ -17,12 +17,11 @@ func TestSubmitPermissionChangeRequiresApprovalDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
-	role := "backend_engineer"
 	_, err = svc.SubmitPermissionChange(context.Background(), SubmitPermissionChangeRequest{
 		TenantID:          uuid.New(),
 		DigitalEmployeeID: uuid.New(),
 		RequesterUserID:   uuid.New(),
-		Role:              &role,
+		PermissionPolicy:  map[string]any{"grants": []any{"database.read:dev_db"}},
 	})
 	if !errors.Is(err, ErrPermissionApprovalNotConfigured) {
 		t.Fatalf("expected ErrPermissionApprovalNotConfigured, got %v", err)

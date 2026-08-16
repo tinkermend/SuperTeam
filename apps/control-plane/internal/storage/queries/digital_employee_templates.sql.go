@@ -13,14 +13,14 @@ import (
 
 const CreateEmployeeTemplate = `-- name: CreateEmployeeTemplate :one
 INSERT INTO digital_employee_templates (
-  tenant_id, type, label, description, default_role,
+  tenant_id, type, label, description, default_role, default_role_keys,
   recommended_skills, recommended_mcp_servers, recommended_provider_types,
   persona_memory_markdown, capability_bindings, budget_policy,
   metadata, status, is_system
 ) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'active', false
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'active', false
 )
-RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy
+RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy, default_role_keys
 `
 
 type CreateEmployeeTemplateParams struct {
@@ -29,6 +29,7 @@ type CreateEmployeeTemplateParams struct {
 	Label                    string    `json:"label"`
 	Description              string    `json:"description"`
 	DefaultRole              string    `json:"default_role"`
+	DefaultRoleKeys          []byte    `json:"default_role_keys"`
 	RecommendedSkills        []byte    `json:"recommended_skills"`
 	RecommendedMcpServers    []byte    `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes []byte    `json:"recommended_provider_types"`
@@ -45,6 +46,7 @@ func (q *Queries) CreateEmployeeTemplate(ctx context.Context, arg CreateEmployee
 		arg.Label,
 		arg.Description,
 		arg.DefaultRole,
+		arg.DefaultRoleKeys,
 		arg.RecommendedSkills,
 		arg.RecommendedMcpServers,
 		arg.RecommendedProviderTypes,
@@ -73,12 +75,13 @@ func (q *Queries) CreateEmployeeTemplate(ctx context.Context, arg CreateEmployee
 		&i.PersonaMemoryMarkdown,
 		&i.CapabilityBindings,
 		&i.BudgetPolicy,
+		&i.DefaultRoleKeys,
 	)
 	return i, err
 }
 
 const GetEmployeeTemplateByID = `-- name: GetEmployeeTemplateByID :one
-SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy FROM digital_employee_templates
+SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy, default_role_keys FROM digital_employee_templates
 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
 `
 
@@ -109,12 +112,13 @@ func (q *Queries) GetEmployeeTemplateByID(ctx context.Context, arg GetEmployeeTe
 		&i.PersonaMemoryMarkdown,
 		&i.CapabilityBindings,
 		&i.BudgetPolicy,
+		&i.DefaultRoleKeys,
 	)
 	return i, err
 }
 
 const GetEmployeeTemplateByType = `-- name: GetEmployeeTemplateByType :one
-SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy FROM digital_employee_templates
+SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy, default_role_keys FROM digital_employee_templates
 WHERE tenant_id = $1 AND type = $2 AND deleted_at IS NULL
 `
 
@@ -145,6 +149,7 @@ func (q *Queries) GetEmployeeTemplateByType(ctx context.Context, arg GetEmployee
 		&i.PersonaMemoryMarkdown,
 		&i.CapabilityBindings,
 		&i.BudgetPolicy,
+		&i.DefaultRoleKeys,
 	)
 	return i, err
 }
@@ -181,7 +186,7 @@ func (q *Queries) ListEmployeeTemplateLabels(ctx context.Context, tenantID uuid.
 
 const ListEmployeeTemplates = `-- name: ListEmployeeTemplates :many
 
-SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy FROM digital_employee_templates
+SELECT id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy, default_role_keys FROM digital_employee_templates
 WHERE tenant_id = $1 AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
@@ -215,6 +220,7 @@ func (q *Queries) ListEmployeeTemplates(ctx context.Context, tenantID uuid.UUID)
 			&i.PersonaMemoryMarkdown,
 			&i.CapabilityBindings,
 			&i.BudgetPolicy,
+			&i.DefaultRoleKeys,
 		); err != nil {
 			return nil, err
 		}
@@ -231,7 +237,7 @@ UPDATE digital_employee_templates SET
   status = $3,
   updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy
+RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy, default_role_keys
 `
 
 type SetEmployeeTemplateStatusParams struct {
@@ -262,6 +268,7 @@ func (q *Queries) SetEmployeeTemplateStatus(ctx context.Context, arg SetEmployee
 		&i.PersonaMemoryMarkdown,
 		&i.CapabilityBindings,
 		&i.BudgetPolicy,
+		&i.DefaultRoleKeys,
 	)
 	return i, err
 }
@@ -291,16 +298,17 @@ UPDATE digital_employee_templates SET
   label = $3,
   description = $4,
   default_role = $5,
-  recommended_skills = $6,
-  recommended_mcp_servers = $7,
-  recommended_provider_types = $8,
-  persona_memory_markdown = $9,
-  capability_bindings = $10,
-  budget_policy = $11,
-  metadata = $12,
+  default_role_keys = $6,
+  recommended_skills = $7,
+  recommended_mcp_servers = $8,
+  recommended_provider_types = $9,
+  persona_memory_markdown = $10,
+  capability_bindings = $11,
+  budget_policy = $12,
+  metadata = $13,
   updated_at = now()
 WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
-RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy
+RETURNING id, tenant_id, type, label, description, default_role, recommended_skills, recommended_mcp_servers, recommended_provider_types, metadata, status, is_system, deleted_at, created_at, updated_at, persona_memory_markdown, capability_bindings, budget_policy, default_role_keys
 `
 
 type UpdateEmployeeTemplateParams struct {
@@ -309,6 +317,7 @@ type UpdateEmployeeTemplateParams struct {
 	Label                    string    `json:"label"`
 	Description              string    `json:"description"`
 	DefaultRole              string    `json:"default_role"`
+	DefaultRoleKeys          []byte    `json:"default_role_keys"`
 	RecommendedSkills        []byte    `json:"recommended_skills"`
 	RecommendedMcpServers    []byte    `json:"recommended_mcp_servers"`
 	RecommendedProviderTypes []byte    `json:"recommended_provider_types"`
@@ -325,6 +334,7 @@ func (q *Queries) UpdateEmployeeTemplate(ctx context.Context, arg UpdateEmployee
 		arg.Label,
 		arg.Description,
 		arg.DefaultRole,
+		arg.DefaultRoleKeys,
 		arg.RecommendedSkills,
 		arg.RecommendedMcpServers,
 		arg.RecommendedProviderTypes,
@@ -353,6 +363,7 @@ func (q *Queries) UpdateEmployeeTemplate(ctx context.Context, arg UpdateEmployee
 		&i.PersonaMemoryMarkdown,
 		&i.CapabilityBindings,
 		&i.BudgetPolicy,
+		&i.DefaultRoleKeys,
 	)
 	return i, err
 }

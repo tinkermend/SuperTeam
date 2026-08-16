@@ -1,6 +1,6 @@
 import { type DragEvent as ReactDragEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, Link } from "@tanstack/react-router";
 import {
   BadgeCheck,
   FileArchive,
@@ -31,8 +31,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiRequestError } from "@/lib/api/client";
 import { uploadSkill, type Skill } from "@/lib/api/skills";
+import { skillArchiveErrorMessage, skillSlugConflict } from "./archive-errors";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +75,8 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
   const apiOptions = useMemo<ApiOpts>(() => ({ baseUrl: apiBaseUrl, fetcher }), [apiBaseUrl, fetcher]);
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
   const [description, setDescription] = useState("");
   const [riskLevel, setRiskLevel] = useState("medium");
   const [tags, setTags] = useState("");
@@ -100,6 +102,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
         description,
         file,
         name,
+        slug,
         risk_level: riskLevel,
         runtime_dependencies: {
           env: runtimeEnvItems,
@@ -128,7 +131,12 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
             file={file}
             metadataReady={Boolean(name.trim())}
             packageDisplayName={packageDisplayName}
-            onFileChange={setFile}
+            onFileChange={(next) => {
+              setFile(next);
+              if (!slugTouched) {
+                setSlug(suggestSlugFromFilename(next?.name ?? ""));
+              }
+            }}
           />
 
           <MasterDetailLayout
@@ -161,6 +169,23 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                         {name.length}/64
                       </span>
                     </div>
+                  </FormRow>
+
+                  <FormRow
+                    help="绑定与派发用的身份。默认取 zip 文件名；也可填 SKILL.md 的 name。不要用中文展示名。"
+                    htmlFor="skill-upload-slug"
+                    label="技能标识"
+                  >
+                    <Input
+                      className="h-10 font-mono text-sm"
+                      id="skill-upload-slug"
+                      onChange={(event) => {
+                        setSlugTouched(true);
+                        setSlug(event.target.value);
+                      }}
+                      placeholder="例如：coding-standards"
+                      value={slug}
+                    />
                   </FormRow>
 
                   <FormRow
@@ -275,6 +300,7 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     <SummaryRow icon={<FileArchive />} label="归档包" value={file ? `${file.name}（${formatBytes(file.size)}）` : "未选择"} />
                     <SummaryRow icon={<PackageCheck />} label="技能包描述名称" value={packageDisplayName || "待生成"} />
                     <SummaryRow icon={<BadgeCheck />} label="技能中文名称" value={name.trim() || "待填写"} />
+                    <SummaryRow icon={<BadgeCheck />} label="技能标识" value={slug.trim() || packageDisplayName || "待生成"} />
                     <SummaryRow icon={<ShieldCheck />} label="风险等级" value={riskLabel(riskLevel)} valueTone={riskTone(riskLevel)} />
                     <SummaryRow icon={<Tag />} label="标签" value={tagItems.length ? tagItems.join(", ") : "未设置"} />
                     <SummaryRow icon={<Terminal />} label="依赖声明" value={`${dependencyCount} 项`} valueTone="info" />
@@ -294,7 +320,22 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
                     <Callout
                       tone="danger"
                       title="上传失败"
-                      description={skillUploadErrorMessage(upload.error)}
+                      description={
+                        skillSlugConflict(upload.error) ? (
+                          <span>
+                            {skillArchiveErrorMessage(upload.error)}{" "}
+                            <Link
+                              className="font-semibold underline"
+                              to="/skills/$skillId"
+                              params={{ skillId: skillSlugConflict(upload.error)!.skill_id }}
+                            >
+                              打开已有技能并更新
+                            </Link>
+                          </span>
+                        ) : (
+                          skillArchiveErrorMessage(upload.error)
+                        )
+                      }
                     />
                   ) : null}
                   <div className="flex flex-col gap-2.5 border-t pt-4">
@@ -323,17 +364,6 @@ export function SkillUploadView({ apiBaseUrl, fetcher, onUploaded }: SkillUpload
       </Main>
     </>
   );
-}
-
-function skillUploadErrorMessage(error: Error): string {
-  if (
-    error instanceof ApiRequestError
-    && error.status === 400
-    && error.detail?.includes("zip archive must include SKILL.md")
-  ) {
-    return "上传失败：技能压缩包必须包含 SKILL.md 文件";
-  }
-  return error.message;
 }
 
 function PackageStatusBand({
@@ -726,6 +756,14 @@ function SummarySubRow({ label, value }: { label: string; value: string }) {
 
 function packageNameFromFile(file: File | null) {
   return file?.name.replace(/\.zip$/i, "") ?? "";
+}
+
+function suggestSlugFromFilename(filename: string) {
+  return filename
+    .replace(/\.zip$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function formatBytes(bytes: number) {

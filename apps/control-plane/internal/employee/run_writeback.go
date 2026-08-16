@@ -106,6 +106,11 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 			return fmt.Errorf("%w: run is terminal", ErrConflict)
 		}
 	}
+	// Runtime 事件即「已确认启动」。项目任务路径不会把 run 推到 running，
+	// 事件/心跳也不 bump updated_at，预确认看门狗会把仍在跑的 5 分钟会话收掉。
+	if err := s.confirmRunStarted(ctx, identity.TenantID, run); err != nil {
+		return err
+	}
 
 	commandIDRef := commandID
 	insertedTaskEvent, err := s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
@@ -146,6 +151,30 @@ func (s *DigitalEmployeeRunWritebackService) RecordEvent(ctx context.Context, id
 	})
 	if insertedTaskEvent {
 		s.recordRuntimeCommandEventBestEffort(ctx, runtimeCommandEventRecordRequest(run, commandID, "command_event", "info", "Runtime 命令事件", runtimeCommandProviderEventPayload(eventType, event, providerSessionExternalID)))
+	}
+	return nil
+}
+
+// confirmRunStarted 把 queued/dispatching 的 run 推到 running。Runtime 一旦
+// 回事件，预确认看门狗就不得再按「从未回执」收割。cancelling/terminal 不动。
+func (s *DigitalEmployeeRunWritebackService) confirmRunStarted(ctx context.Context, tenantID uuid.UUID, run *DigitalEmployeeRun) error {
+	if run == nil {
+		return nil
+	}
+	if run.Status != DigitalEmployeeRunStatusQueued && run.Status != DigitalEmployeeRunStatusDispatching {
+		return nil
+	}
+	updated, err := s.repository.UpdateRunStatus(ctx, UpdateRunStatusRequest{
+		TenantID: tenantID,
+		RunID:    run.ID,
+		Status:   DigitalEmployeeRunStatusRunning,
+	})
+	if err != nil {
+		return fmt.Errorf("confirm run started: %w", err)
+	}
+	if updated != nil {
+		run.Status = updated.Status
+		run.UpdatedAt = updated.UpdatedAt
 	}
 	return nil
 }

@@ -41,8 +41,7 @@ func TestDigitalEmployeeRoutesUseConsoleTenant(t *testing.T) {
 	}
 	service := &routeEmployeeService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -398,7 +397,7 @@ func TestCreateDigitalEmployeeRouteAcceptsProviderWithoutRuntime(t *testing.T) {
 	}
 	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
 	service := &routeEmployeeService{}
-	server := NewServerWithAuthz(nil, nil, authService, nil, &routeAuthorizer{allowed: true})
+	server := NewServerWithAuthz(nil, authService, nil, &routeAuthorizer{allowed: true})
 	server.SetEmployeeHandler(employee.NewHandler(service))
 	teamID := uuid.New()
 	body := `{
@@ -437,7 +436,7 @@ func TestCreateDigitalEmployeeRouteRejectsLegacyFields(t *testing.T) {
 	}
 	user := routeConsoleUser(t, authService, platform.DefaultTenantID)
 	service := &routeEmployeeService{}
-	server := NewServerWithAuthz(nil, nil, authService, nil, &routeAuthorizer{allowed: true})
+	server := NewServerWithAuthz(nil, authService, nil, &routeAuthorizer{allowed: true})
 	server.SetEmployeeHandler(employee.NewHandler(service))
 
 	body := `{
@@ -475,7 +474,7 @@ func TestEmployeeRoutesDigitalEmployeeOverviewUsesConsoleTenantAndFilters(t *tes
 	user := routeConsoleUser(t, authService, tenantID)
 	authorizer := newRecordingAuthorizer()
 	service := &routeEmployeeService{}
-	server := NewServerWithAuthz(nil, nil, authService, nil, authorizer)
+	server := NewServerWithAuthz(nil, authService, nil, authorizer)
 	server.SetEmployeeHandler(employee.NewHandler(service))
 
 	teamID := uuid.New()
@@ -703,8 +702,7 @@ func TestDigitalEmployeeCreateOptionsUnrestrictedListsAreArrays(t *testing.T) {
 		},
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -895,8 +893,7 @@ func newEmployeeRouteTestServer(t *testing.T, authorizer *routeAuthorizer, confi
 		fn(service)
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -909,8 +906,7 @@ func newEmployeeRouteTestServer(t *testing.T, authorizer *routeAuthorizer, confi
 func TestDigitalEmployeeRoutesRequireConsoleAuth(t *testing.T) {
 	service := &routeEmployeeService{}
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 	)
 	server.SetEmployeeHandler(employee.NewHandler(service))
 
@@ -936,8 +932,7 @@ func TestDigitalEmployeeSchedulingReadinessRouteRejectsNilServiceResponse(t *tes
 	}
 	service := &routeEmployeeService{returnNilSchedulingReadiness: true}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -969,8 +964,7 @@ func TestEmployeeListAcceptsTeamFilter(t *testing.T) {
 	}
 	service := &routeEmployeeService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1005,8 +999,7 @@ func TestDigitalEmployeeRunRoutesCreateAndStop(t *testing.T) {
 	runService := &routeEmployeeRunService{}
 	authorizer := &routeAuthorizer{allowed: true}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -1288,8 +1281,7 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 	service := &routeEmployeeService{}
 	authorizer := &routeAuthorizer{allowed: false}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		authorizer,
@@ -1315,6 +1307,7 @@ func TestEmployeeRoutesUseAuthzActions(t *testing.T) {
 		{name: "delete", method: http.MethodDelete, path: "/api/v1/digital-employees/" + employeeID, action: authz.ActionEmployeeDelete, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "status", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/status", body: `{"status":"active"}`, action: authz.ActionEmployeeStatusUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "profile", method: http.MethodPut, path: "/api/v1/digital-employees/" + employeeID + "/profile", body: `{"description":"负责需求拆解"}`, action: authz.ActionEmployeeProfileUpdate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
+		{name: "permission change", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/permission-change", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "create config revision", method: http.MethodPost, path: "/api/v1/digital-employees/" + employeeID + "/config-revisions", body: `{"role_profile":{"title":"analyst"}}`, action: authz.ActionEmployeeConfigCreate, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 		{name: "get scheduling readiness", method: http.MethodGet, path: "/api/v1/digital-employees/" + employeeID + "/scheduling-readiness", action: authz.ActionEmployeeRead, resourceType: authz.ResourceEmployee, resourceID: employeeID},
 	}
@@ -1422,6 +1415,50 @@ func TestUpdateDigitalEmployeeProfileRouteRejectsMissingDescription(t *testing.T
 	}
 }
 
+func TestGetDigitalEmployeePermissionChangeRouteReturns204WhenEmpty(t *testing.T) {
+	server, service, cookie := newEmployeeRouteTestServer(t, &routeAuthorizer{allowed: true})
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/permission-change", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", resp.Code, resp.Body.String())
+	}
+	if !service.getPendingPermissionChangeCalled {
+		t.Fatal("expected GetPendingPermissionChange to be called")
+	}
+}
+
+func TestGetDigitalEmployeePermissionChangeRouteReturnsPending(t *testing.T) {
+	server, service, cookie := newEmployeeRouteTestServer(t, &routeAuthorizer{allowed: true})
+	service.pendingPermissionChange = &employee.PendingPermissionChange{
+		RequestID:               uuid.MustParse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+		Status:                  "pending",
+		RiskLevel:               "high",
+		CreatedAt:               time.Date(2026, 8, 14, 8, 0, 0, 0, time.UTC),
+		RequesterName:           "张三",
+		ApproverName:            "李四",
+		CurrentPermissionPolicy: map[string]any{"grants": []any{"a"}},
+		TargetPermissionPolicy:  map[string]any{"grants": []any{"a", "b"}},
+	}
+	employeeID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/digital-employees/"+employeeID.String()+"/permission-change", nil)
+	req.AddCookie(cookie)
+	resp := httptest.NewRecorder()
+	server.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["requester_name"] != "张三" || body["approver_name"] != "李四" {
+		t.Fatalf("expected names, got %#v", body)
+	}
+}
+
 func TestDeleteDigitalEmployeeRouteReturnsBlockers(t *testing.T) {
 	blockerID := uuid.New()
 	projectID := uuid.New()
@@ -1498,8 +1535,7 @@ func TestDigitalEmployeeRouteRejectsUnconfiguredService(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1527,8 +1563,7 @@ func TestDigitalEmployeeRouteSanitizesInternalServiceError(t *testing.T) {
 	}
 	service := &routeEmployeeService{listErr: errors.New("sensitive database password leaked")}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1559,8 +1594,7 @@ func TestDigitalEmployeeRouteSanitizesAuthorizationBackendError(t *testing.T) {
 	}
 	service := &routeEmployeeService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true, err: errors.New("sensitive policy backend failure")},
@@ -1594,8 +1628,7 @@ func TestDigitalEmployeeEnvironmentVariableRoutes(t *testing.T) {
 	}
 	service := &routeEmployeeService{}
 	server := NewServerWithAuthz(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 		authService,
 		nil,
 		&routeAuthorizer{allowed: true},
@@ -1669,6 +1702,8 @@ type routeEmployeeService struct {
 	getCalled                        bool
 	updateCalled                     bool
 	updateProfileCalled              bool
+	getPendingPermissionChangeCalled bool
+	pendingPermissionChange          *employee.PendingPermissionChange
 	configRevisionReq                employee.CreateDigitalEmployeeConfigRevisionRequest
 	configCalled                     bool
 	getSchedulingReadinessCalled     bool
@@ -1920,6 +1955,11 @@ func (s *routeEmployeeService) UpdateProfile(ctx context.Context, req employee.U
 
 func (s *routeEmployeeService) SubmitPermissionChange(ctx context.Context, req employee.SubmitPermissionChangeRequest) (*approval.ApprovalRequest, error) {
 	return nil, employee.ErrPermissionApprovalNotConfigured
+}
+
+func (s *routeEmployeeService) GetPendingPermissionChange(ctx context.Context, tenantID, employeeID uuid.UUID) (*employee.PendingPermissionChange, error) {
+	s.getPendingPermissionChangeCalled = true
+	return s.pendingPermissionChange, nil
 }
 
 func (s *routeEmployeeService) CreateConfigRevision(ctx context.Context, req employee.CreateDigitalEmployeeConfigRevisionRequest) (*employee.DigitalEmployeeConfigRevision, error) {

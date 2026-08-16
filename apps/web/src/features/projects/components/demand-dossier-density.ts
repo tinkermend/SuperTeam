@@ -32,7 +32,7 @@ export function isDossierDensity(value: unknown): value is DossierDensity {
 }
 
 export function readStoredDossierDensity(
-  storage: Storage | undefined,
+  storage: Pick<Storage, "getItem" | "setItem"> | undefined,
 ): DossierDensity | undefined {
   if (!storage) return undefined;
   try {
@@ -45,7 +45,7 @@ export function readStoredDossierDensity(
 }
 
 export function writeStoredDossierDensity(
-  storage: Storage | undefined,
+  storage: Pick<Storage, "getItem" | "setItem"> | undefined,
   density: DossierDensity,
 ): void {
   if (!storage) return;

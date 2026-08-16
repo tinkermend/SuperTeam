@@ -28,6 +28,10 @@ import {
 } from "@/lib/api/employees";
 import { listEmployeeTemplates, type EmployeeTemplate } from "@/lib/api/employee-templates";
 import {
+  listProjectCastings,
+  putProjectCastings,
+} from "@/lib/api/casting";
+import {
   getProject,
   listProjectMembers,
   replaceProjectMembers,
@@ -47,13 +51,11 @@ export type StaffGapDialogProps = {
   onStaffed?: () => void;
   open: boolean;
   projectId: string;
+  scenarioTemplateKey?: string;
 };
 
 /**
- * 一键补员对话框：从系统内置数字员工模板选一个、命名、确认 provider，创建后追加进
- * 项目成员，并把 planning_gap 决策 resolve 为 restaffed（触发需求重开+重规划）。
- * 提交链严格依次调用 createDigitalEmployee → replaceProjectMembers（读改写现有成员
- * 列表）→ resolveProjectDecision，任一步失败都不进入下一步。
+ * 一键补员：按系统模板创建员工（写入缺口角色）→ 入项目成员 → 写入编制 → resolve restaffed。
  */
 export function StaffGapDialog({
   apiOptions,
@@ -62,47 +64,50 @@ export function StaffGapDialog({
   onOpenChange,
   onStaffed,
   open,
-  projectId
+  projectId,
+  scenarioTemplateKey
 }: StaffGapDialogProps) {
   const queryClient = useQueryClient();
   const [templateType, setTemplateType] = useState("");
   const [name, setName] = useState("");
   const [providerType, setProviderType] = useState(DEFAULT_PROVIDER_TYPE);
   const [error, setError] = useState("");
-  // 重试幂等锚点：createDigitalEmployee 成功后立即记录已创建员工，链条中段
-  // （成员 PUT / resolve）失败后用户重试时跳过创建、从成员步续跑，避免重复建员。
-  // 对话框关闭或整链成功后清空。用 ref 而非 state：mutationFn 内同步写入即生效，
-  // 不依赖 React 渲染周期。
   const createdEmployeeRef = useRef<DigitalEmployee | null>(null);
+  const membersDoneRef = useRef(false);
+  const castingDoneRef = useRef(false);
 
   const templatesQuery = useQuery({
     enabled: open,
     queryFn: () => listEmployeeTemplates(apiOptions),
     queryKey: ["employee-templates", apiOptions.baseUrl]
-});
-  // 补员员工必须带团队归属（参与门禁）：新员工默认归入项目自身团队。
+  });
   const projectQuery = useQuery({
     enabled: open,
     queryFn: () => getProject(apiOptions, projectId),
     queryKey: ["staff-gap-project", apiOptions.baseUrl, projectId]
-});
+  });
   const avatarAssetsQuery = useQuery({
     enabled: open,
     queryFn: () => listDigitalEmployeeAvatarAssets(apiOptions),
     queryKey: ["digital-employee-avatar-assets", apiOptions.baseUrl]
-});
+  });
 
   const systemTemplates = useMemo(
     () => (templatesQuery.data ?? []).filter((template) => template.is_system),
     [templatesQuery.data],
   );
   const selectedTemplate = systemTemplates.find((template) => template.type === templateType);
+  const restaffKeys = selectedTemplate
+    ? restaffRoleKeys(selectedTemplate, gap)
+    : [];
 
   useEffect(() => {
     if (!open) {
       setError("");
       setTemplateType("");
       createdEmployeeRef.current = null;
+      membersDoneRef.current = false;
+      castingDoneRef.current = false;
       return;
     }
     setName(`审查员-${randomSuffix()}`);
@@ -110,8 +115,8 @@ export function StaffGapDialog({
 
   useEffect(() => {
     if (!open || templateType || systemTemplates.length === 0) return;
-    setTemplateType(preselectTemplateType(systemTemplates, gap.required_capabilities));
-  }, [gap.required_capabilities, open, systemTemplates, templateType]);
+    setTemplateType(preselectTemplateType(systemTemplates, gap));
+  }, [gap, open, systemTemplates, templateType]);
 
   useEffect(() => {
     if (!selectedTemplate) return;
@@ -123,7 +128,6 @@ export function StaffGapDialog({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      // Step 1: 创建员工——重试时若上次已创建成功则复用，绝不重复创建。
       let employee = createdEmployeeRef.current;
       if (!employee) {
         if (!selectedTemplate) {
@@ -137,11 +141,11 @@ export function StaffGapDialog({
         if (!avatarAssetId) {
           throw new Error("暂无可用头像资源，无法创建数字员工");
         }
-        // 无团队员工会被成员写入门禁 400 拒掉，在创建前显式失败而不是链条中段报错。
         const projectTeamId = projectQuery.data?.team_id;
         if (!projectTeamId) {
           throw new Error("项目未绑定团队，无法补员：请先为项目绑定团队");
         }
+        const roleKeys = restaffRoleKeys(selectedTemplate, gap);
         employee = await createDigitalEmployee(apiOptions, {
           avatar_asset_id: avatarAssetId,
           capability_bindings: selectedTemplate.capability_bindings,
@@ -150,32 +154,63 @@ export function StaffGapDialog({
           persona_memory_markdown: selectedTemplate.persona_memory_markdown,
           provider_type: providerType,
           role: selectedTemplate.default_role,
+          role_keys: roleKeys,
           team_id: projectTeamId
-});
+        });
         createdEmployeeRef.current = employee;
       }
-      // Step 2: 追加进项目成员（读改写）——若上次重试已写入成功则跳过，追加本身幂等。
-      const existingMembers = await listProjectMembers(apiOptions, projectId);
-      const alreadyMember = existingMembers.some(
-        (member) => member.principal_id === employee.id,
-      );
-      if (!alreadyMember) {
-        const nextMembers: ProjectMemberInput[] = [
-          ...existingMembers.map(toMemberInput),
-          {
-            display_name_snapshot: employee.name,
-            principal_id: employee.id,
-            principal_type: "digital_employee",
-            project_role: "executor",
-            settings: {}
-},
-        ];
-        await replaceProjectMembers(apiOptions, projectId, nextMembers);
+
+      if (!membersDoneRef.current) {
+        const existingMembers = await listProjectMembers(apiOptions, projectId);
+        const alreadyMember = existingMembers.some(
+          (member) => member.principal_id === employee.id,
+        );
+        if (!alreadyMember) {
+          const nextMembers: ProjectMemberInput[] = [
+            ...existingMembers.map(toMemberInput),
+            {
+              display_name_snapshot: employee.name,
+              principal_id: employee.id,
+              principal_type: "digital_employee",
+              project_role: "executor",
+              settings: {}
+            },
+          ];
+          await replaceProjectMembers(apiOptions, projectId, nextMembers);
+        }
+        membersDoneRef.current = true;
       }
-      // Step 3: resolve planning_gap 决策为 restaffed，触发需求重开+重规划。
+
+      const templateKey = scenarioTemplateKey?.trim();
+      const roleKeys = employee.role_keys?.length
+        ? employee.role_keys
+        : selectedTemplate
+          ? restaffRoleKeys(selectedTemplate, gap)
+          : [];
+      if (!castingDoneRef.current && templateKey && roleKeys.length > 0) {
+        const existing = await listProjectCastings(apiOptions, projectId, templateKey);
+        const kept = existing
+          .filter((row) => !roleKeys.includes(row.role_key))
+          .map((row) => ({
+            role_key: row.role_key,
+            digital_employee_id: row.digital_employee_id,
+          }));
+        await putProjectCastings(apiOptions, projectId, {
+          scenario_template_key: templateKey,
+          assignments: [
+            ...kept,
+            ...roleKeys.map((role_key) => ({
+              role_key,
+              digital_employee_id: employee.id,
+            })),
+          ],
+        });
+        castingDoneRef.current = true;
+      }
+
       await resolveProjectDecision(apiOptions, projectId, decisionRequestId, {
         decision: "restaffed"
-});
+      });
       return employee;
     },
     onError: (mutationError: unknown) => {
@@ -185,15 +220,18 @@ export function StaffGapDialog({
       notifySuccess(`已创建数字员工「${employee.name}」，重新规划已触发`);
       setError("");
       createdEmployeeRef.current = null;
+      membersDoneRef.current = false;
+      castingDoneRef.current = false;
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["workflow-task-graph"] }),
         queryClient.invalidateQueries({ queryKey: ["workflow-detail"] }),
         queryClient.invalidateQueries({ queryKey: ["digital-employees"] }),
+        queryClient.invalidateQueries({ queryKey: ["project-castings"] }),
       ]);
       onOpenChange(false);
       onStaffed?.();
     }
-});
+  });
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -201,7 +239,7 @@ export function StaffGapDialog({
         <DialogHeader>
           <DialogTitle>从标准模板补员</DialogTitle>
           <DialogDescription>
-            按系统内置模板一键创建数字员工并加入项目成员，成功后自动重新规划该需求。
+            按系统模板创建数字员工、绑定缺口角色并写入编制，成功后自动重新规划。
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -220,6 +258,12 @@ export function StaffGapDialog({
               </SelectContent>
             </Select>
           </div>
+          {restaffKeys.length > 0 ? (
+            <p className="text-xs text-ink-3">
+              将绑定剧本角色 {restaffKeys.join("、")}
+              {scenarioTemplateKey ? `，并写入场景「${scenarioTemplateKey}」编制` : ""}。
+            </p>
+          ) : null}
           <div className="grid gap-2">
             <Label htmlFor="staff-gap-employee-name">员工名称</Label>
             <Input
@@ -271,16 +315,33 @@ function toMemberInput(member: ProjectMember): ProjectMemberInput {
     principal_type: member.principal_type,
     project_role: member.project_role,
     settings: member.settings
-};
+  };
 }
 
-/** 按 gap.required_capabilities 命中系统模板的 external_capabilities，命中第一个就选它
- * （如 code_review → standard_code_reviewer）；都不命中则退回第一个系统模板。 */
+export function restaffRoleKeys(
+  template: EmployeeTemplate,
+  gap: ProjectTaskGraphBlockingFactGap,
+): string[] {
+  const defaults = template.default_role_keys ?? [];
+  const gapRoles = gap.roles ?? [];
+  const overlap = defaults.filter((key) => gapRoles.includes(key));
+  if (overlap.length > 0) return overlap;
+  if (defaults.length > 0) return defaults;
+  if (gapRoles.length > 0) return [gapRoles[0]!];
+  return [];
+}
+
 function preselectTemplateType(
   templates: EmployeeTemplate[],
-  requiredCapabilities: string[],
+  gap: ProjectTaskGraphBlockingFactGap,
 ): string {
-  for (const capability of requiredCapabilities) {
+  for (const role of gap.roles ?? []) {
+    const byRole = templates.find((template) =>
+      (template.default_role_keys ?? []).includes(role),
+    );
+    if (byRole) return byRole.type;
+  }
+  for (const capability of gap.required_capabilities) {
     const match = templates.find((template) =>
       (template.capability_bindings?.external_capabilities ?? []).includes(capability),
     );

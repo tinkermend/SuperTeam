@@ -1304,7 +1304,7 @@ func TestOpenAICompatibleRoutePlannerTimesOutRequestBeforeActivityDeadline(t *te
 func TestPlannerContextErrorClassifiesHTTPTimeoutAsPlannerTimeout(t *testing.T) {
 	err, terminal := plannerContextError(context.Background(), context.Background(), timeoutTestError{})
 
-	require.False(t, terminal)
+	require.True(t, terminal)
 	require.ErrorIs(t, err, ErrPlannerRequestTimeout)
 }
 

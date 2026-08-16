@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/api/httpx"
 	"github.com/superteam/control-plane/internal/authz"
 )
 
@@ -20,6 +20,7 @@ type HandlerService interface {
 	CreateVersion(ctx context.Context, req CreateScenarioTemplateVersionRequest) (ScenarioTemplate, error)
 	ListVersions(ctx context.Context, tenantID uuid.UUID, key string) ([]ScenarioTemplateVersion, error)
 	Patch(ctx context.Context, req PatchScenarioTemplateRequest) (ScenarioTemplate, error)
+	Delete(ctx context.Context, req DeleteScenarioTemplateRequest) error
 	RoleView(ctx context.Context, tenantID uuid.UUID, templateKey string) (RoleView, error)
 }
 
@@ -224,33 +225,25 @@ func (h *HTTPHandler) PatchScenarioTemplate(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, scenarioTemplateResponseFrom(template))
 }
 
-func (h *HTTPHandler) authorize(w http.ResponseWriter, r *http.Request, action string, auditReason string) (uuid.UUID, uuid.UUID, bool) {
-	if h == nil || h.authorizer == nil {
-		http.Error(w, "scenario template authorization is not configured", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
+func (h *HTTPHandler) DeleteScenarioTemplate(w http.ResponseWriter, r *http.Request) {
+	tenantID, userID, ok := h.authorize(w, r, authz.ActionScenarioTemplateManage, "scenario template delete")
+	if !ok {
+		return
 	}
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-	if tenantID == uuid.Nil || userID == uuid.Nil {
-		http.Error(w, "console identity not found in context", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
-		Actor:       authz.ActorRef{Type: authz.ActorUser, ID: userID.String()},
-		Action:      action,
-		Resource:    authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()},
+	key := chi.URLParam(r, "templateKey")
+	if err := h.service.Delete(r.Context(), DeleteScenarioTemplateRequest{
 		TenantID:    tenantID,
-		AuditReason: auditReason,
-	})
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return uuid.Nil, uuid.Nil, false
+		ActorUserID: userID,
+		Key:         key,
+	}); err != nil {
+		writeHandlerError(w, err)
+		return
 	}
-	if !decision.Allowed {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	return tenantID, userID, true
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *HTTPHandler) authorize(w http.ResponseWriter, r *http.Request, action string, auditReason string) (uuid.UUID, uuid.UUID, bool) {
+	return httpx.AuthorizeConsoleAction(w, r, h.authorizer, "scenario template", action, auditReason)
 }
 
 func writeHandlerError(w http.ResponseWriter, err error) {

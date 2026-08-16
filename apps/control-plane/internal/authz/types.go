@@ -22,14 +22,12 @@ const (
 	ResourceEmployee   = "employee"
 	ResourceSkill      = "skill"
 	ResourceCredential = "credential"
-	ResourceTask       = "task"
 )
 
 const (
 	ActionConsoleAccess      = "console.access"
 	ActionTenantAccess       = "tenant.access"
 	ActionTeamAccess         = "team.access"
-	ActionTaskClaim          = "task.claim"
 	ActionRuntimeScopeManage = "runtime_scope.manage"
 	ActionAuthzCenterRead    = "authz_center.read"
 
@@ -64,10 +62,11 @@ const (
 	ActionSystemConfigRead   = "system_config.read"
 	ActionSystemConfigManage = "system_config.manage"
 
-	ActionSkillRead    = "skill.read"
-	ActionSkillUpload  = "skill.upload"
-	ActionSkillDelete  = "skill.delete"
-	ActionSkillInstall = "skill.install"
+	ActionSkillRead           = "skill.read"
+	ActionSkillUpload         = "skill.upload"
+	ActionSkillDelete         = "skill.delete"
+	ActionSkillInstall        = "skill.install"
+	ActionSkillArchiveReplace = "skill.archive.replace"
 
 	ActionManageSystemTemplates = "system.templates.manage"
 
@@ -114,10 +113,6 @@ const (
 
 	ActionAuditRead = "audit.read"
 
-	ActionTaskRead   = "task.read"
-	ActionTaskCreate = "task.create"
-	ActionTaskUpdate = "task.update"
-	ActionTaskCancel = "task.cancel"
 )
 
 const (
@@ -134,7 +129,6 @@ const (
 	ReasonInvalidActor                   = "invalid actor"
 	ReasonInvalidResource                = "invalid resource"
 	ReasonUnsupportedAction              = "unsupported action"
-	ReasonRuntimeScopeMissing            = "runtime scope does not cover task"
 	ReasonPrivilegedRoleRequiresApproval = "privileged role requires approval"
 	ReasonLastTeamOwner                  = "cannot remove last team owner"
 )

@@ -263,7 +263,10 @@ impl RuntimeConfig {
             apply_string(&mut self.workspace.cleanup_policy, workspace.cleanup_policy);
             apply_copy(&mut self.workspace.max_retained, workspace.max_retained);
             apply_copy(&mut self.workspace.chat_ttl_days, workspace.chat_ttl_days);
-            apply_copy(&mut self.workspace.chat_max_retained, workspace.chat_max_retained);
+            apply_copy(
+                &mut self.workspace.chat_max_retained,
+                workspace.chat_max_retained,
+            );
         }
 
         if let Some(providers) = file.providers {

@@ -156,9 +156,8 @@ pub fn rollback_session_mcp_config(agent_home_dir: &Path) -> Result<()> {
                 atomic_write(&entry.path, content.as_bytes())?;
             }
         } else if entry.path.exists() {
-            fs::remove_file(&entry.path).with_context(|| {
-                format!("remove injected mcp config {}", entry.path.display())
-            })?;
+            fs::remove_file(&entry.path)
+                .with_context(|| format!("remove injected mcp config {}", entry.path.display()))?;
         }
     }
     fs::remove_file(&mpath)
@@ -175,7 +174,11 @@ pub fn materialize_task_mcp_config(
     provider_type: &str,
     servers: &[RuntimeMCPServerPayload],
 ) -> Result<Option<PathBuf>> {
-    materialize_mcp_projection(workspace_path, &task_mcp_config_path(workspace_path, provider_type)?, servers)
+    materialize_mcp_projection(
+        workspace_path,
+        &task_mcp_config_path(workspace_path, provider_type)?,
+        servers,
+    )
 }
 
 /// Session-scoped MCP projection under
@@ -210,9 +213,8 @@ fn materialize_mcp_projection(
     }
 
     if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("failed to create mcp config dir {}", parent.display())
-        })?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create mcp config dir {}", parent.display()))?;
     }
 
     let provider_type = mcp_file_provider_type(target)?;
@@ -725,11 +727,15 @@ mod tests {
         // 第一次注入后不回滚，模拟异常退出残留
         inject_session_mcp_config(dir.path(), "claude-code", &[github_server()]).unwrap();
         // 第二次注入应先回滚残留（.mcp.json 删除）再重新注入
-        let written = inject_session_mcp_config(dir.path(), "claude-code", &[github_server()]).unwrap();
+        let written =
+            inject_session_mcp_config(dir.path(), "claude-code", &[github_server()]).unwrap();
         assert_eq!(written.len(), 1);
         let manifest_raw = std::fs::read_to_string(manifest_path(dir.path())).unwrap();
         // 残留回滚后重拍快照：本次快照必须记录"文件不存在"，而不是把上次注入内容当原值
-        assert!(manifest_raw.contains("\"existed\": false") || manifest_raw.contains("\"existed\":false"));
+        assert!(
+            manifest_raw.contains("\"existed\": false")
+                || manifest_raw.contains("\"existed\":false")
+        );
     }
 
     #[test]

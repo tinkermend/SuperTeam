@@ -64,3 +64,35 @@ exit 7
     assert!(message.contains("auth token missing"));
     assert!(stream.next().await.is_none());
 }
+
+/// Parent exits 0 while a grandchild keeps stdout open. The stream must finish
+/// via try_wait instead of hanging on next_line EOF.
+#[tokio::test]
+async fn claude_provider_finishes_when_parent_exits_with_open_stdout() {
+    let temp = TempDir::new().expect("tempdir");
+    let script = make_script(
+        temp.path(),
+        "fake-claude-zombie-stdout",
+        r#"#!/usr/bin/env python3
+import os, sys, time
+# Grandchild keeps the stdout write-end open after this PID exits.
+if os.fork() == 0:
+    time.sleep(30)
+    os._exit(0)
+os._exit(0)
+"#,
+    );
+    let provider = ClaudeProvider::new(script);
+
+    let mut stream = provider
+        .run(request(temp.path()), Arc::new(NoopRawSink))
+        .await
+        .expect("spawn fake claude");
+    let finished = tokio::time::timeout(std::time::Duration::from_secs(6), stream.next())
+        .await
+        .expect("stream must not hang after parent exit");
+    assert!(
+        finished.is_none(),
+        "successful parent exit with leftover stdout should complete the stream"
+    );
+}

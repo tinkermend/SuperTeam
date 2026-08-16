@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/superteam/control-plane/internal/oplog"
@@ -88,6 +89,106 @@ WHERE s.tenant_id = $1 AND s.id = $2 AND s.deleted_at IS NULL`, req.TenantID, re
 	return item, nil
 }
 
+func (r *PgRepository) FindSkillBySlug(ctx context.Context, req FindSkillBySlugRequest) (*Skill, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	row := r.db.QueryRow(ctx, `
+SELECT `+skillSelectColumns+`
+FROM skills s `+skillJoinClause+`
+WHERE s.tenant_id = $1 AND s.slug = $2 AND s.deleted_at IS NULL`, req.TenantID, req.Slug)
+	item, err := scanSkill(row)
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	return item, nil
+}
+
+func (r *PgRepository) ReplaceSkillArchive(ctx context.Context, req ReplaceSkillArchiveRequest) (*ReplaceSkillArchiveResult, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
+	}
+	var err error
+	var metadata []byte
+	if req.RuntimeDependencies != nil {
+		metadata, err = marshalSkillMetadata(nil, *req.RuntimeDependencies)
+		if err != nil {
+			return nil, err
+		}
+	}
+	riskLevel := ""
+	if req.RiskLevel != nil {
+		riskLevel = *req.RiskLevel
+	}
+	var tags any
+	if req.Tags != nil {
+		tags = *req.Tags
+	}
+	var oldVersion, oldChecksum, newVersion, newChecksum string
+	err = r.db.QueryRow(ctx, `
+UPDATE skills AS s
+SET archive_object_ref = $3,
+    archive_filename = $4,
+    archive_size_bytes = $5,
+    archive_checksum_sha256 = $6,
+    archive_file_count = $7,
+    version = $8,
+    name = $9,
+    description = $10,
+    risk_level = CASE WHEN $11 <> '' THEN $11 ELSE s.risk_level END,
+    tags = CASE WHEN $12::text[] IS NOT NULL THEN $12 ELSE s.tags END,
+    metadata = CASE WHEN $13::jsonb IS NOT NULL AND $13::jsonb <> '{}'::jsonb THEN COALESCE(s.metadata, '{}'::jsonb) || $13::jsonb ELSE s.metadata END,
+    updated_at = NOW()
+FROM (
+    SELECT id, version, archive_checksum_sha256
+    FROM skills
+    WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL
+    FOR UPDATE
+) AS prev
+WHERE s.id = prev.id
+RETURNING prev.version, prev.archive_checksum_sha256, s.version, s.archive_checksum_sha256`,
+		req.TenantID, req.SkillID, req.ArchiveObjectRef, req.ArchiveFilename, req.ArchiveSizeBytes,
+		req.ArchiveChecksum, req.ArchiveFileCount, req.Version, req.Name, req.Description,
+		riskLevel, tags, metadata,
+	).Scan(&oldVersion, &oldChecksum, &newVersion, &newChecksum)
+	if err != nil {
+		return nil, mapNoRows(err)
+	}
+	item, err := r.GetSkill(ctx, GetSkillRequest{TenantID: req.TenantID, SkillID: req.SkillID})
+	if err != nil {
+		return nil, err
+	}
+	if r.q != nil {
+		details := map[string]any{
+			"slug":                   item.Slug,
+			"name":                   item.Name,
+			"old_version":            oldVersion,
+			"new_version":            newVersion,
+			"old_checksum":           oldChecksum,
+			"new_checksum":           newChecksum,
+			"archive_filename":       item.ArchiveFilename,
+			"archive_size_bytes":     item.ArchiveSizeBytes,
+			"binding_team_count":     len(item.TeamBindings),
+			"binding_employee_count": len(item.AgentBindings),
+			"binding_project_count":  len(item.ProjectBindings),
+		}
+		payload, marshalErr := json.Marshal(details)
+		if marshalErr == nil {
+			_, _ = oplog.InsertAudit(ctx, r.q, queries.CreateAuditEventParams{
+				TenantID:     uuid.NullUUID{UUID: req.TenantID, Valid: req.TenantID != uuid.Nil},
+				EventType:    "skill_management",
+				ActorType:    "user",
+				ActorID:      req.ActorUserID.String(),
+				ResourceType: pgtype.Text{String: "skill", Valid: true},
+				ResourceID:   pgtype.Text{String: req.SkillID.String(), Valid: true},
+				Action:       "skill.archive.replace",
+				Details:      payload,
+			})
+		}
+	}
+	return &ReplaceSkillArchiveResult{Skill: item, OldVersion: oldVersion, OldChecksum: oldChecksum}, nil
+}
+
 func (r *PgRepository) UpsertSkillPackage(ctx context.Context, req UpsertSkillPackageRequest) (*Skill, error) {
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("%w: postgres is not configured", ErrInvalidInput)
@@ -113,29 +214,16 @@ INSERT INTO skills (
     archive_object_ref, archive_filename, archive_size_bytes, archive_checksum_sha256, archive_file_count
 )
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),$13,$14,$15,$16,$17)
-ON CONFLICT (tenant_id, slug) WHERE deleted_at IS NULL
-DO UPDATE SET
-    name = EXCLUDED.name,
-    description = EXCLUDED.description,
-    version = EXCLUDED.version,
-    source = EXCLUDED.source,
-    risk_level = EXCLUDED.risk_level,
-    icon_key = EXCLUDED.icon_key,
-    color_token = EXCLUDED.color_token,
-    tags = EXCLUDED.tags,
-    metadata = COALESCE(skills.metadata, '{}'::jsonb) || EXCLUDED.metadata,
-    archive_object_ref = EXCLUDED.archive_object_ref,
-    archive_filename = EXCLUDED.archive_filename,
-    archive_size_bytes = EXCLUDED.archive_size_bytes,
-    archive_checksum_sha256 = EXCLUDED.archive_checksum_sha256,
-    archive_file_count = EXCLUDED.archive_file_count,
-    updated_at = NOW()
 RETURNING id`,
 		req.TenantID, req.Slug, req.Name, req.Description, req.Version, req.Source, req.RiskLevel,
 		req.IconKey, req.ColorToken, req.Tags, metadata, nullUUID(req.ActorUserID),
 		req.ArchiveObjectRef, req.ArchiveFilename, req.ArchiveSizeBytes, req.ArchiveChecksum, req.ArchiveFileCount,
 	).Scan(&skillID)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, &SlugConflictError{Slug: req.Slug, Name: req.Name}
+		}
 		return nil, err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM team_skill_bindings WHERE tenant_id = $1 AND skill_id = $2`, req.TenantID, skillID); err != nil {
@@ -1087,7 +1175,6 @@ ORDER BY COALESCE(m.server_key, d.mcp_server_id::text) ASC`, tenantID, skillID)
 	}
 	return out, rows.Err()
 }
-
 
 func (r *PgRepository) listTeamBindings(ctx context.Context, tenantID, skillID uuid.UUID) ([]*SkillTeamBinding, error) {
 	rows, err := r.db.Query(ctx, `

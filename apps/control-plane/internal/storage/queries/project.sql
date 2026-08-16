@@ -526,12 +526,30 @@ RETURNING *;
 -- name: CountProjectDemandsByTerminality :one
 -- Aggregates a project's demands into total / non-terminal counts so the coordinator
 -- can decide whether the whole project is ready for human acceptance.
+--
+-- 恢复路径未关闭的 failed 需求算「非终态」（复跑 3 现场）：开发步一失败，
+-- deriveDemandStatusFromTaskCounts 立刻把需求推成 failed，旧口径据此判定全项目
+-- 终态并开结项卡——而那一刻失败恢复卡还挂着，人类点重试后图还能往下走。
+-- 系统层面还有待办的需求不得计入项目收敛。
 SELECT
     COUNT(*)::integer AS total_count,
-    COUNT(*) FILTER (WHERE status NOT IN ('completed', 'failed', 'cancelled'))::integer AS non_terminal_count
-FROM project_demands
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND project_id = sqlc.arg('project_id')::uuid;
+    COUNT(*) FILTER (
+        WHERE d.status NOT IN ('completed', 'failed', 'cancelled')
+           OR EXISTS (
+                SELECT 1
+                FROM project_decision_requests dr
+                JOIN project_tasks t
+                  ON t.tenant_id = dr.tenant_id
+                 AND t.id = dr.project_task_id
+                WHERE dr.tenant_id = d.tenant_id
+                  AND dr.project_id = d.project_id
+                  AND t.demand_id = d.id
+                  AND lower(btrim(dr.status_snapshot)) IN ('pending', 'requested')
+           )
+    )::integer AS non_terminal_count
+FROM project_demands d
+WHERE d.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND d.project_id = sqlc.arg('project_id')::uuid;
 
 -- name: ReplaceProjectMembersDelete :exec
 DELETE FROM project_members
@@ -1042,6 +1060,12 @@ RETURNING *;
 -- name: CountProjectTaskStatusesByDemand :one
 -- runnable = 真正还能推进的状态；blocked 是等上游，不能单独把需求钉在「执行中」。
 -- 上游已 failed/cancelled 时下游常滞留 blocked，旧口径把 blocked 算 active，需求就永不失败。
+--
+-- 已被恢复替换任务取代的行（superseded_by_task_id 非空）不计入：否则重试成功后
+-- 旧的 failed 行仍然把需求钉在 failed（复跑 3 现场：develop#2 completed 而需求 failed）。
+-- 替换任务自身照常计入，所以「替换也失败」仍然推导为 failed。
+-- 取代关系只在替换任务还活着（或已完成）时生效：替换任务若被取消，原失败行重新计入，
+-- 避免「源失败被隐藏 + 全链取消」被推导成干净完成。
 SELECT
     COUNT(*)::bigint AS total,
     COUNT(*) FILTER (WHERE lower(btrim(status)) IN ('completed', 'done', 'success'))::bigint AS completed,
@@ -1055,9 +1079,19 @@ SELECT
     COUNT(*) FILTER (
         WHERE lower(btrim(status)) NOT IN ('completed', 'done', 'success', 'failed', 'error', 'cancelled')
     )::bigint AS active
-FROM project_tasks
-WHERE tenant_id = sqlc.arg('tenant_id')::uuid
-  AND demand_id = sqlc.arg('demand_id')::uuid;
+FROM project_tasks t
+WHERE t.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND t.demand_id = sqlc.arg('demand_id')::uuid
+  AND (
+    t.superseded_by_task_id IS NULL
+    OR EXISTS (
+      SELECT 1
+      FROM project_tasks r
+      WHERE r.tenant_id = t.tenant_id
+        AND r.id = t.superseded_by_task_id
+        AND lower(btrim(r.status)) = 'cancelled'
+    )
+  );
 
 -- name: GetProjectTask :one
 SELECT * FROM project_tasks
@@ -1816,15 +1850,25 @@ ORDER BY pta.created_at ASC
 LIMIT sqlc.arg('limit')::integer;
 
 -- name: ListExpiredRunningProjectTaskAttempts :many
+-- Recover when the lease is past due, or when Runtime never wrote
+-- lease_expires_at (started/budget heartbeat only) and the attempt has
+-- gone silent past stale_before. NULL leases used to be invisible to the
+-- watchdog, so a dead Provider left the task running forever.
 SELECT pta.*
 FROM project_task_attempts pta
 JOIN project_tasks pt ON pt.tenant_id = pta.tenant_id AND pt.id = pta.project_task_id
 WHERE pta.tenant_id = sqlc.arg('tenant_id')::uuid
   AND pta.status = 'running'
   AND pt.status = 'running'
-  AND pta.lease_expires_at IS NOT NULL
-  AND pta.lease_expires_at < sqlc.arg('now')::timestamptz
-ORDER BY pta.lease_expires_at ASC
+  AND (
+        (pta.lease_expires_at IS NOT NULL AND pta.lease_expires_at < sqlc.arg('now')::timestamptz)
+     OR (
+            pta.lease_expires_at IS NULL
+        AND COALESCE(pta.budget_last_heartbeat_at, pta.renewed_at, pta.started_at, pta.created_at)
+            < sqlc.arg('stale_before')::timestamptz
+        )
+  )
+ORDER BY COALESCE(pta.lease_expires_at, pta.renewed_at, pta.started_at) ASC
 LIMIT sqlc.arg('limit')::integer;
 
 -- name: ListStuckOrphanProjectTasks :many
@@ -1933,6 +1977,14 @@ LIMIT 1;
 -- name: ListStrandedBlockedProjectTasks :many
 -- 上游已全部终态失败/取消，下游仍 blocked：失败恢复若没走「驳回」就不会 cancelFailureDownstream，
 -- 需求会一直 executing。看门狗按与 cancelFailureDownstream 相同口径取消这些下游。
+--
+-- 恢复路径未关闭时不取消（复跑 3 现场）：上游任务上还挂着 pending 人类决策
+-- （失败恢复卡等）时，人类随时能点重试，此刻取消下游会让重试接不回图。只有恢复
+-- 路径已关闭（人类驳回、预算耗尽、卡已收敛）才轮到看门狗收口。
+--
+-- 另加失败宽限（A 期真链现场）：任务 21:10:06 失败、看门狗 21:10:08 就收口、
+-- 恢复卡 21:10:09 才建好——只看「卡是否 pending」挡不住这 3 秒竞态。blocker 刚进
+-- 终态时先不收口，把开卡窗口留给协调线程。看门狗是兜底而非秒级回收器。
 SELECT t.*
 FROM project_tasks t
 WHERE t.status = 'blocked'
@@ -1955,8 +2007,89 @@ WHERE t.status = 'blocked'
       AND d.dependent_task_id = t.id
       AND lower(btrim(b.status)) NOT IN ('failed', 'cancelled', 'error')
   )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM project_task_dependencies d
+    JOIN project_decision_requests dr
+      ON dr.tenant_id = d.tenant_id
+     AND dr.project_id = d.project_id
+     AND dr.project_task_id = d.blocker_task_id
+    WHERE d.tenant_id = t.tenant_id
+      AND d.project_id = t.project_id
+      AND d.dependent_task_id = t.id
+      AND lower(btrim(dr.status_snapshot)) IN ('pending', 'requested')
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM project_task_dependencies d
+    JOIN project_tasks b
+      ON b.tenant_id = d.tenant_id
+     AND b.id = d.blocker_task_id
+    LEFT JOIN project_events e
+      ON e.tenant_id = b.tenant_id
+     AND e.id = b.terminal_event_id
+    WHERE d.tenant_id = t.tenant_id
+      AND d.project_id = t.project_id
+      AND d.dependent_task_id = t.id
+      AND COALESCE(e.created_at, b.updated_at)
+          > NOW() - make_interval(secs => sqlc.arg('failure_grace_seconds')::integer)
+  )
 ORDER BY t.updated_at ASC, t.id ASC
 LIMIT sqlc.arg('batch_limit')::integer;
+
+-- name: CancelProjectTaskWithReason :one
+-- 与 UpdateProjectTaskStatus 的终态语义一致（清等待指针、写 terminal_event_id），
+-- 额外落 cancel_reason 用于区分系统滞留收敛与人类驳回：只有 system_stranded
+-- 允许在人类点重试时被复活重挂边（ReviveStrandedCancelledProjectTasks）。
+UPDATE project_tasks
+SET status = 'cancelled',
+    cancel_reason = sqlc.arg('cancel_reason')::varchar,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    terminal_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, terminal_event_id),
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = ANY(sqlc.arg('current_statuses')::varchar[])
+RETURNING *;
+
+-- name: ReviveStrandedCancelledProjectTasks :many
+-- 人类点重试时把「系统滞留收敛」取消的下游拉回 blocked，随后由
+-- RewireProjectTaskDependencies 重新挂到替换任务上。human_reject 与未分型
+-- （cancel_reason IS NULL）一律不动，避免复活人类已经判死的分支。
+UPDATE project_tasks
+SET status = 'blocked',
+    cancel_reason = NULL,
+    terminal_event_id = NULL,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = ANY(sqlc.arg('task_ids')::uuid[])
+  AND status = 'cancelled'
+  AND cancel_reason = 'system_stranded'
+RETURNING *;
+
+-- name: MarkProjectTaskSuperseded :one
+-- 源任务被恢复替换任务取代：不再计入需求状态推导（CountProjectTaskStatusesByDemand）。
+-- 行本身保留在图上，时间线与卷宗仍能看到这次失败。
+UPDATE project_tasks
+SET superseded_by_task_id = sqlc.arg('superseded_by_task_id')::uuid,
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+RETURNING *;
+
+-- name: ReviveProjectDemandForRecovery :one
+-- 恢复替换任务已建：把需求从 failed 拉回 executing。绕过 ProjectDemandStatusCanAdvance
+-- 的单向 rank（failed=5 > executing=3，正常重算永远推不回来），因此收窄为只认 failed。
+UPDATE project_demands
+SET status = 'executing',
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status = 'failed'
+RETURNING *;
 
 -- name: ListPendingDecisionsMissingOpenInbox :many
 -- Pending decision SoT rows with no open inbox projection. Create/upsert is not
@@ -2000,7 +2133,11 @@ JOIN project_tasks pt ON pt.tenant_id = pta.tenant_id AND pt.id = pta.project_ta
 WHERE (pta.status = 'queued' AND pt.status = 'queued' AND pta.started_at IS NULL)
    OR (pta.status = 'running' AND pt.status = 'running'
        AND pta.lease_expires_at IS NOT NULL
-       AND pta.lease_expires_at < sqlc.arg('now')::timestamptz);
+       AND pta.lease_expires_at < sqlc.arg('now')::timestamptz)
+   OR (pta.status = 'running' AND pt.status = 'running'
+       AND pta.lease_expires_at IS NULL
+       AND COALESCE(pta.budget_last_heartbeat_at, pta.renewed_at, pta.started_at, pta.created_at)
+           < sqlc.arg('stale_before')::timestamptz);
 
 -- name: StartProjectTaskAttempt :one
 -- digital_employee_run_id 回填:dispatch 冲突路径可能留下 NULL 的 run 关联

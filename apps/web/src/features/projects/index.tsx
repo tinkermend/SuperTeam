@@ -1432,18 +1432,7 @@ export function ProjectsView({
 })
                     }
                     focusDecisionId={search.focus}
-                    demandView={search.view === "graph" ? "graph" : "timeline"}
                     initialDemandId={search.demand}
-                    onDemandViewChange={(view) => {
-                      void navigate({
-                        params: { projectId: effectiveProjectId as string },
-                        search: (prev: Record<string, unknown>) => ({
-                          ...prev,
-                          view: view === "graph" ? "graph" : undefined
-                        }),
-                        to: "/projects/$projectId"
-                      });
-                    }}
                     initialTab={isProjectOperationalTab(search.tab) ? search.tab : undefined}
                     // tab=trace：执行轨迹过滤；默认/tasks：开弹层。
                     traceTaskId={search.tab === "trace" ? search.task : undefined}

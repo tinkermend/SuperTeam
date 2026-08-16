@@ -10,19 +10,8 @@ const CONTROL_PLANE_GENERATED_GO = "apps/control-plane/internal/api/gen/control_
 
 const requiredOpenApiOperations = new Set([
   "GET /health",
-  "GET /api/v1/tasks",
-  "POST /api/v1/tasks",
-  "GET /api/v1/tasks/{taskId}",
-  "PUT /api/v1/tasks/{taskId}/status",
-  "POST /api/v1/tasks/{taskId}/cancel",
   "POST /api/v1/runtime/register",
   "POST /api/v1/runtime/heartbeat",
-  "POST /api/v1/runtime/tasks/claim",
-  "POST /api/v1/runtime/tasks/{taskId}/events",
-  "PUT /api/v1/runtime/tasks/{taskId}/status",
-  "POST /api/v1/runtime/tasks/{taskId}/complete",
-  "POST /api/v1/runtime/tasks/{taskId}/fail",
-  "POST /api/v1/runtime/tasks/{taskId}/lease",
   "POST /api/v1/runtime/commands/{commandId}/events",
   "POST /api/v1/runtime/commands/{commandId}/complete",
   "POST /api/v1/runtime/commands/{commandId}/fail",
@@ -105,10 +94,6 @@ const requiredRustClientPaths = new Set([
 
 const requiredTypeScriptClientPaths = new Set([
   "/health",
-  "/api/v1/tasks",
-  "/api/v1/tasks/{taskId}",
-  "/api/v1/tasks/{taskId}/status",
-  "/api/v1/tasks/{taskId}/cancel",
   "/api/v1/runtime/nodes",
   "/api/v1/runtime/nodes/{nodeId}",
   "/api/v1/runtime/enrollments",
@@ -147,10 +132,6 @@ function normalizePath(path) {
     .replace(/\/api\/v1\/runtime\/project-task-attempts\/\{taskId\}/g, "/api/v1/runtime/project-task-attempts/{attemptId}")
     .replace(/\/api\/v1\/runtime\/project-task-attempts\/\{id\}/g, "/api/v1/runtime/project-task-attempts/{attemptId}")
     .replace(/\/api\/v1\/runtime\/project-task-attempts\/\{attempt_id\}/g, "/api/v1/runtime/project-task-attempts/{attemptId}")
-    .replace(/\/api\/v1\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/tasks/{taskId}")
-    .replace(/\/api\/v1\/runtime\/tasks\/[0-9]+(?=\/|$)/g, "/api/v1/runtime/tasks/{taskId}")
-    .replace(/\/api\/v1\/tasks\/\{id\}/g, "/api/v1/tasks/{taskId}")
-    .replace(/\/api\/v1\/runtime\/tasks\/\{id\}/g, "/api/v1/runtime/tasks/{taskId}")
     .replace(/\/api\/v1\/runtime\/sessions\/\{taskId\}/g, "/api/v1/runtime/sessions/{sessionId}")
     .replace(/\/api\/v1\/runtime\/nodes\/\{taskId\}/g, "/api/v1/runtime/nodes/{nodeId}")
     .replace(/\/api\/v1\/runtime\/sessions\/\{id\}/g, "/api/v1/runtime/sessions/{sessionId}")
@@ -259,7 +240,6 @@ function readRustClientPaths() {
 function readTypeScriptClientPaths() {
   const files = [
     "apps/web/src/lib/api/health.ts",
-    "apps/web/src/lib/api/tasks.ts",
     "apps/web/src/lib/api/runtime.ts",
     "apps/web/src/lib/api/teams.ts",
     "apps/web/src/lib/api/employees.ts",

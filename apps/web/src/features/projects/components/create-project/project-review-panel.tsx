@@ -6,6 +6,7 @@ import { StatusPill, WorkSurface } from "@/components/superteam";
 import {
   directoryNameHintFromGitURL,
   projectCreateValidation,
+  sourceKindReviewLabel,
   type ProjectCreateDraft
 } from "./create-project-draft";
 
@@ -56,12 +57,7 @@ export function ProjectReviewPanel({
     {
       group: "项目事实",
       label: "源码来源",
-      value:
-        draft.sourceKind === "git"
-          ? draft.repoUrl.trim()
-            ? `${draft.repoUrl.trim()} @ ${draft.repoDefaultBranch.trim() || "main"}`
-            : "Git（未填 URL）"
-          : "非 Git（空目录）"
+      value: sourceKindReviewLabel(draft)
 },
     {
       group: "项目事实",

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>B · 战情板</title>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --wall: #1a1214;
+      --safe: #e23d28;
+      --card: #f3f1ea;
+      --ink: #1b1412;
+      --cyan: #3ec5ff;
+      --stamp: #1d3557;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        repeating-linear-gradient(90deg, rgba(255,255,255,.015) 0 1px, transparent 1px 80px),
+        var(--wall);
+      color: #f6efe8;
+      font-family: "IBM Plex Sans", "PingFang SC", sans-serif;
+    }
+    header { display:flex; justify-content:space-between; padding:18px 24px; align-items:center; }
+    a { color:#c9b8b4; text-decoration:none; font-size:13px; }
+    .mast {
+      padding: 0 28px 12px;
+    }
+    h1 { font-family: Anton, sans-serif; font-size: 56px; letter-spacing: .02em; margin: 0; line-height: .9; }
+    .mast p { max-width: 50ch; color: #c9b8b4; }
+    .stamps {
+      display: flex; gap: 8px; flex-wrap: wrap; padding: 0 28px 16px;
+    }
+    .stamp {
+      border: 2px dashed var(--cyan); color: var(--cyan); background: transparent;
+      padding: 6px 12px; font-weight: 700; letter-spacing: .08em; cursor: grab;
+      font-size: 12px;
+    }
+    .board {
+      margin: 8px 20px 40px;
+      min-height: 62vh;
+      background: #24181a;
+      border: 12px solid #2c1e21;
+      padding: 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      align-content: flex-start;
+    }
+    .card {
+      width: 210px;
+      min-height: 230px;
+      background: var(--card);
+      color: var(--ink);
+      padding: 14px 14px 40px;
+      box-shadow: 8px 10px 0 rgba(0,0,0,.35);
+      transform: rotate(var(--rot, -1.5deg));
+      position: relative;
+    }
+    .card:nth-child(even) { --rot: 1.8deg; }
+    .pin {
+      position: absolute; top: -8px; left: 50%; width: 16px; height: 16px;
+      background: var(--safe); border-radius: 50%; transform: translateX(-50%);
+    }
+    .card input, .card select, .card textarea {
+      width: 100%; border: 0; background: transparent; font: inherit; color: inherit;
+    }
+    .card input.title { font-family: Anton, sans-serif; font-size: 28px; letter-spacing: .02em; }
+    .role-mark {
+      margin-top: 10px; display: inline-block; border: 2px solid var(--stamp);
+      color: var(--stamp); padding: 4px 8px; font-size: 12px; font-weight: 800;
+      transform: rotate(-6deg);
+    }
+    .string {
+      position: absolute; left: -14px; right: -14px; bottom: 14px; height: 2px;
+      background: var(--cyan); opacity: .7;
+    }
+    .clip {
+      position: absolute; bottom: 6px; right: 10px; font-size: 11px; color: var(--safe); font-weight: 700;
+    }
+    .add {
+      width: 210px; min-height: 230px; border: 2px dashed #6a5356; color: #c9b8b4;
+      background: transparent; font-family: Anton, sans-serif; font-size: 28px; cursor: pointer;
+    }
+    .tray {
+      position: sticky; bottom: 0; display:flex; justify-content:space-between; gap:12px;
+      padding: 12px 24px; background: #120c0e; border-top: 1px solid #3a282b;
+    }
+    .tray b { font-family: Anton, sans-serif; font-size: 22px; color: var(--cyan); }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="./index.html">← 方案总览</a>
+    <span style="letter-spacing:.18em;font-size:11px;color:#c9b8b4">WAR ROOM · UNBOUNDED CARDS</span>
+  </header>
+  <div class="mast">
+    <h1>今晚这单<br/>要经过谁</h1>
+    <p>卡片张数不封顶。把角色图章盖上去就是分派。夹子标的是「可以在这里收工」——对应任务发起时的深度，不是写死五步。</p>
+    <p contenteditable="true" style="font-size:22px;margin:8px 0 0">场景：生产故障处置</p>
+  </div>
+  <div class="stamps" id="stamps"></div>
+  <div class="board" id="board"></div>
+  <div class="tray">
+    <div>已钉 <span id="count">0</span> 站 · 可作出口 <span id="ex">0</span> 个</div>
+    <b id="line">—</b>
+  </div>
+  <script>
+    const ROLES = ["值班","诊断","操作","验证","采集","分析","开发","审查","测试","研究","撰稿"];
+    let nodes = [
+      { title: "接报", role: "值班", exit: true },
+      { title: "定界", role: "诊断", exit: true },
+      { title: "根因", role: "诊断", exit: false },
+      { title: "止血", role: "操作", exit: true },
+      { title: "复盘", role: "验证", exit: true },
+    ];
+    let stamp = "诊断";
+    function render() {
+      document.getElementById("stamps").innerHTML = ROLES.map((r) =>
+        `<button class="stamp" style="${r===stamp?"background:"+stampColor(r)+";color:#fff;border-style:solid":""}" data-r="${r}">${r}</button>`
+      ).join("");
+      document.querySelectorAll(".stamp").forEach((b) => b.onclick = () => { stamp = b.dataset.r; render(); });
+      document.getElementById("board").innerHTML = nodes.map((n, i) => `
+        <article class="card">
+          <div class="pin"></div>
+          <div style="font-size:11px;color:#7a6a64">#${i+1}</div>
+          <input class="title" value="${n.title}" data-i="${i}" data-k="title" />
+          <button class="role-mark" data-stamp="${i}">${n.role || "盖章分派"}</button>
+          <label style="display:block;margin-top:16px;font-size:12px">
+            <input type="checkbox" data-i="${i}" data-k="exit" ${n.exit?"checked":""} /> 可在此收工
+          </label>
+          <button style="position:absolute;top:8px;right:8px;border:0;background:none;cursor:pointer" data-del="${i}">✕</button>
+          <div class="string"></div>
+          ${n.exit ? `<div class="clip">EXIT</div>` : ""}
+        </article>
+      `).join("") + `<button class="add" id="add">+ 再钉一张</button>`;
+      document.querySelectorAll("[data-k]").forEach((el) => {
+        el.oninput = el.onchange = () => {
+          const i = Number(el.dataset.i);
+          if (el.dataset.k === "exit") nodes[i].exit = el.checked;
+          else nodes[i][el.dataset.k] = el.value;
+          renderTray();
+        };
+      });
+      document.querySelectorAll("[data-stamp]").forEach((el) => {
+        el.onclick = () => { nodes[Number(el.dataset.stamp)].role = stamp; render(); };
+      });
+      document.querySelectorAll("[data-del]").forEach((el) => {
+        el.onclick = () => { if (nodes.length>1) { nodes.splice(Number(el.dataset.del),1); render(); } };
+      });
+      document.getElementById("add").onclick = () => { nodes.push({ title: "新站", role: stamp, exit: true }); render(); };
+      renderTray();
+    }
+    function stampColor() { return "#1d3557"; }
+    function renderTray() {
+      document.getElementById("count").textContent = nodes.length;
+      document.getElementById("ex").textContent = nodes.filter((n) => n.exit).length;
+      document.getElementById("line").textContent = nodes.map((n) => `${n.role||"?"}·${n.title}`).join(" → ") || "还没钉卡";
+    }
+    render();
+  </script>
+</body>
+</html>

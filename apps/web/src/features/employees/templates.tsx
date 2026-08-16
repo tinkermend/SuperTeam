@@ -48,6 +48,7 @@ import {
   type EmployeeTemplate
 } from "@/lib/api/employee-templates";
 import { listSkills } from "@/lib/api/skills";
+import { listRoleVocabulary } from "@/lib/api/casting";
 import { resolveControlPlaneUrl } from "@/lib/config/control-plane-url";
 import {
   templateCapabilityPreview,
@@ -59,6 +60,7 @@ import {
   templateStatusTone,
   templateUnlistedRecommendations
 } from "./template-utils";
+import { firstRoleTitle, RoleKeysPicker } from "./role-keys-picker";
 
 type TemplateViewProps = {
   apiBaseUrl: string;
@@ -378,7 +380,7 @@ function TemplateTableRow({
       </Td>
       <Td>
         <code className="rounded-md bg-card-soft px-2 py-1 font-mono text-[12px] text-ink">
-          {template.default_role}
+          {(template.default_role_keys ?? []).join("、") || template.default_role}
         </code>
       </Td>
       <Td>
@@ -459,7 +461,12 @@ function TemplateDetailContent({
             </div>
             <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <DetailFact label="模板标识" value={template.type} monospace />
-              <DetailFact label="默认角色" value={template.default_role} monospace />
+              <DetailFact
+                label="默认剧本角色"
+                value={(template.default_role_keys ?? []).join("、") || "未绑定"}
+                monospace
+              />
+              <DetailFact label="默认职责描述" value={template.default_role} monospace />
               <DetailFact label="风险等级" value={templateRisk(template)} />
               <DetailFact label="状态" value={templateStatusLabel(template)} />
             </dl>
@@ -665,6 +672,7 @@ type TemplateFormDraft = {
   label: string;
   description: string;
   defaultRole: string;
+  defaultRoleKeys: string[];
   recommendedSkills: string;
   recommendedMcpServers: string;
   recommendedProviderTypes: string;
@@ -679,6 +687,7 @@ function draftFromTemplate(template?: EmployeeTemplate): TemplateFormDraft {
     label: template?.label ?? "",
     description: template?.description ?? "",
     defaultRole: template?.default_role ?? "",
+    defaultRoleKeys: template?.default_role_keys ?? [],
     recommendedSkills: (template?.recommended_skills ?? []).join(", "),
     recommendedMcpServers: (template?.recommended_mcp_servers ?? []).join(", "),
     recommendedProviderTypes: (template?.recommended_provider_types ?? []).join(", "),
@@ -702,6 +711,11 @@ function TemplateFormDialog({
 }: TemplateFormDialogProps) {
   const [draft, setDraft] = useState<TemplateFormDraft>(() => draftFromTemplate(template));
   const [error, setError] = useState("");
+  const vocabulary = useQuery({
+    enabled: open,
+    queryKey: ["role-vocabulary"],
+    queryFn: () => listRoleVocabulary(apiOptions),
+  });
 
   useEffect(() => {
     if (open) {
@@ -723,7 +737,10 @@ function TemplateFormDialog({
       const payload = {
         label: draft.label.trim(),
         description: draft.description.trim(),
-        default_role: draft.defaultRole.trim(),
+        default_role:
+          draft.defaultRole.trim() ||
+          firstRoleTitle(draft.defaultRoleKeys, vocabulary.data ?? []),
+        default_role_keys: draft.defaultRoleKeys,
         recommended_skills: parseCommaList(draft.recommendedSkills),
         recommended_mcp_servers: parseCommaList(draft.recommendedMcpServers),
         recommended_provider_types: parseCommaList(draft.recommendedProviderTypes),
@@ -780,7 +797,18 @@ function TemplateFormDialog({
             />
           </div>
           <div className="grid gap-2">
-            <Label>默认角色</Label>
+            <Label>默认剧本角色</Label>
+            <RoleKeysPicker
+              options={vocabulary.data ?? []}
+              selected={draft.defaultRoleKeys}
+              loading={vocabulary.isPending}
+              error={vocabulary.isError}
+              onChange={(defaultRoleKeys) => setDraft((prev) => ({ ...prev, defaultRoleKeys }))}
+            />
+            <p className="text-xs text-ink-3">创建该模板的员工时会写入这些席位，从而出现在对应编制候选中。</p>
+          </div>
+          <div className="grid gap-2">
+            <Label>展示用角色名</Label>
             <Input
               value={draft.defaultRole}
               onChange={(e) => setDraft((prev) => ({ ...prev, defaultRole: e.target.value }))}

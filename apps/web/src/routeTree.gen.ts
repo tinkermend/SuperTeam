@@ -49,6 +49,7 @@ import { Route as AuthenticatedTaskLaunchesDemandIdRouteImport } from './routes/
 import { Route as AuthenticatedSkillsUploadRouteImport } from './routes/_authenticated/skills/upload'
 import { Route as AuthenticatedSkillsSkillIdRouteImport } from './routes/_authenticated/skills/$skillId'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
+import { Route as AuthenticatedScenarioTemplatesNewRouteImport } from './routes/_authenticated/scenario-templates/new'
 import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects/new'
 import { Route as AuthenticatedProjectsProjectIdRouteImport } from './routes/_authenticated/projects/$projectId'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
@@ -60,6 +61,7 @@ import { Route as AuthenticatedLogsLoginIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedLogsDeliveryIndexRouteImport } from './routes/_authenticated/logs/delivery/index'
 import { Route as AuthenticatedEmployeesTemplatesIndexRouteImport } from './routes/_authenticated/employees/templates/index'
 import { Route as AuthenticatedTeamsTeamIdConfigRouteImport } from './routes/_authenticated/teams/$teamId/config'
+import { Route as AuthenticatedScenarioTemplatesTemplateKeyEditRouteImport } from './routes/_authenticated/scenario-templates/$templateKey/edit'
 import { Route as AuthenticatedProjectsProjectIdConfigRouteImport } from './routes/_authenticated/projects/$projectId/config'
 import { Route as AuthenticatedEmployeesTemplatesTemplateTypeRouteImport } from './routes/_authenticated/employees/templates/$templateType'
 import { Route as AuthenticatedEmployeesEmployeeIdConfigRouteImport } from './routes/_authenticated/employees/$employeeId/config'
@@ -284,6 +286,12 @@ const AuthenticatedSettingsAccountRoute =
     path: '/settings/account',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedScenarioTemplatesNewRoute =
+  AuthenticatedScenarioTemplatesNewRouteImport.update({
+    id: '/scenario-templates/new',
+    path: '/scenario-templates/new',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProjectsNewRoute =
   AuthenticatedProjectsNewRouteImport.update({
     id: '/projects/new',
@@ -350,6 +358,12 @@ const AuthenticatedTeamsTeamIdConfigRoute =
     path: '/config',
     getParentRoute: () => AuthenticatedTeamsTeamIdRoute,
   } as any)
+const AuthenticatedScenarioTemplatesTemplateKeyEditRoute =
+  AuthenticatedScenarioTemplatesTemplateKeyEditRouteImport.update({
+    id: '/scenario-templates/$templateKey/edit',
+    path: '/scenario-templates/$templateKey/edit',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedProjectsProjectIdConfigRoute =
   AuthenticatedProjectsProjectIdConfigRouteImport.update({
     id: '/config',
@@ -384,6 +398,7 @@ export interface FileRoutesByFullPath {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
   '/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/scenario-templates/new': typeof AuthenticatedScenarioTemplatesNewRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/skills/upload': typeof AuthenticatedSkillsUploadRoute
@@ -417,6 +432,7 @@ export interface FileRoutesByFullPath {
   '/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
   '/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/scenario-templates/$templateKey/edit': typeof AuthenticatedScenarioTemplatesTemplateKeyEditRoute
   '/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
   '/logs/delivery/': typeof AuthenticatedLogsDeliveryIndexRoute
@@ -438,6 +454,7 @@ export interface FileRoutesByTo {
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
   '/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/scenario-templates/new': typeof AuthenticatedScenarioTemplatesNewRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/skills/upload': typeof AuthenticatedSkillsUploadRoute
@@ -471,6 +488,7 @@ export interface FileRoutesByTo {
   '/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
   '/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/scenario-templates/$templateKey/edit': typeof AuthenticatedScenarioTemplatesTemplateKeyEditRoute
   '/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/employees/templates': typeof AuthenticatedEmployeesTemplatesIndexRoute
   '/logs/delivery': typeof AuthenticatedLogsDeliveryIndexRoute
@@ -495,6 +513,7 @@ export interface FileRoutesById {
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/projects/$projectId': typeof AuthenticatedProjectsProjectIdRouteWithChildren
   '/_authenticated/projects/new': typeof AuthenticatedProjectsNewRoute
+  '/_authenticated/scenario-templates/new': typeof AuthenticatedScenarioTemplatesNewRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/skills/$skillId': typeof AuthenticatedSkillsSkillIdRoute
   '/_authenticated/skills/upload': typeof AuthenticatedSkillsUploadRoute
@@ -528,6 +547,7 @@ export interface FileRoutesById {
   '/_authenticated/employees/$employeeId/config': typeof AuthenticatedEmployeesEmployeeIdConfigRoute
   '/_authenticated/employees/templates/$templateType': typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
   '/_authenticated/projects/$projectId/config': typeof AuthenticatedProjectsProjectIdConfigRoute
+  '/_authenticated/scenario-templates/$templateKey/edit': typeof AuthenticatedScenarioTemplatesTemplateKeyEditRoute
   '/_authenticated/teams/$teamId/config': typeof AuthenticatedTeamsTeamIdConfigRoute
   '/_authenticated/employees/templates/': typeof AuthenticatedEmployeesTemplatesIndexRoute
   '/_authenticated/logs/delivery/': typeof AuthenticatedLogsDeliveryIndexRoute
@@ -552,6 +572,7 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/projects/$projectId'
     | '/projects/new'
+    | '/scenario-templates/new'
     | '/settings/account'
     | '/skills/$skillId'
     | '/skills/upload'
@@ -585,6 +606,7 @@ export interface FileRouteTypes {
     | '/employees/$employeeId/config'
     | '/employees/templates/$templateType'
     | '/projects/$projectId/config'
+    | '/scenario-templates/$templateKey/edit'
     | '/teams/$teamId/config'
     | '/employees/templates/'
     | '/logs/delivery/'
@@ -606,6 +628,7 @@ export interface FileRouteTypes {
     | '/errors/$error'
     | '/projects/$projectId'
     | '/projects/new'
+    | '/scenario-templates/new'
     | '/settings/account'
     | '/skills/$skillId'
     | '/skills/upload'
@@ -639,6 +662,7 @@ export interface FileRouteTypes {
     | '/employees/$employeeId/config'
     | '/employees/templates/$templateType'
     | '/projects/$projectId/config'
+    | '/scenario-templates/$templateKey/edit'
     | '/teams/$teamId/config'
     | '/employees/templates'
     | '/logs/delivery'
@@ -662,6 +686,7 @@ export interface FileRouteTypes {
     | '/_authenticated/errors/$error'
     | '/_authenticated/projects/$projectId'
     | '/_authenticated/projects/new'
+    | '/_authenticated/scenario-templates/new'
     | '/_authenticated/settings/account'
     | '/_authenticated/skills/$skillId'
     | '/_authenticated/skills/upload'
@@ -695,6 +720,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employees/$employeeId/config'
     | '/_authenticated/employees/templates/$templateType'
     | '/_authenticated/projects/$projectId/config'
+    | '/_authenticated/scenario-templates/$templateKey/edit'
     | '/_authenticated/teams/$teamId/config'
     | '/_authenticated/employees/templates/'
     | '/_authenticated/logs/delivery/'
@@ -996,6 +1022,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/scenario-templates/new': {
+      id: '/_authenticated/scenario-templates/new'
+      path: '/scenario-templates/new'
+      fullPath: '/scenario-templates/new'
+      preLoaderRoute: typeof AuthenticatedScenarioTemplatesNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/projects/new': {
       id: '/_authenticated/projects/new'
       path: '/projects/new'
@@ -1072,6 +1105,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/teams/$teamId/config'
       preLoaderRoute: typeof AuthenticatedTeamsTeamIdConfigRouteImport
       parentRoute: typeof AuthenticatedTeamsTeamIdRoute
+    }
+    '/_authenticated/scenario-templates/$templateKey/edit': {
+      id: '/_authenticated/scenario-templates/$templateKey/edit'
+      path: '/scenario-templates/$templateKey/edit'
+      fullPath: '/scenario-templates/$templateKey/edit'
+      preLoaderRoute: typeof AuthenticatedScenarioTemplatesTemplateKeyEditRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/projects/$projectId/config': {
       id: '/_authenticated/projects/$projectId/config'
@@ -1171,6 +1211,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedProjectsProjectIdRoute: typeof AuthenticatedProjectsProjectIdRouteWithChildren
   AuthenticatedProjectsNewRoute: typeof AuthenticatedProjectsNewRoute
+  AuthenticatedScenarioTemplatesNewRoute: typeof AuthenticatedScenarioTemplatesNewRoute
   AuthenticatedSettingsAccountRoute: typeof AuthenticatedSettingsAccountRoute
   AuthenticatedSkillsSkillIdRoute: typeof AuthenticatedSkillsSkillIdRoute
   AuthenticatedSkillsUploadRoute: typeof AuthenticatedSkillsUploadRoute
@@ -1201,6 +1242,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedUsersIndexRoute: typeof AuthenticatedUsersIndexRoute
   AuthenticatedWorkflowsIndexRoute: typeof AuthenticatedWorkflowsIndexRoute
   AuthenticatedEmployeesTemplatesTemplateTypeRoute: typeof AuthenticatedEmployeesTemplatesTemplateTypeRoute
+  AuthenticatedScenarioTemplatesTemplateKeyEditRoute: typeof AuthenticatedScenarioTemplatesTemplateKeyEditRoute
   AuthenticatedEmployeesTemplatesIndexRoute: typeof AuthenticatedEmployeesTemplatesIndexRoute
 }
 
@@ -1214,6 +1256,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedProjectsProjectIdRoute:
     AuthenticatedProjectsProjectIdRouteWithChildren,
   AuthenticatedProjectsNewRoute: AuthenticatedProjectsNewRoute,
+  AuthenticatedScenarioTemplatesNewRoute:
+    AuthenticatedScenarioTemplatesNewRoute,
   AuthenticatedSettingsAccountRoute: AuthenticatedSettingsAccountRoute,
   AuthenticatedSkillsSkillIdRoute: AuthenticatedSkillsSkillIdRoute,
   AuthenticatedSkillsUploadRoute: AuthenticatedSkillsUploadRoute,
@@ -1247,6 +1291,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedWorkflowsIndexRoute: AuthenticatedWorkflowsIndexRoute,
   AuthenticatedEmployeesTemplatesTemplateTypeRoute:
     AuthenticatedEmployeesTemplatesTemplateTypeRoute,
+  AuthenticatedScenarioTemplatesTemplateKeyEditRoute:
+    AuthenticatedScenarioTemplatesTemplateKeyEditRoute,
   AuthenticatedEmployeesTemplatesIndexRoute:
     AuthenticatedEmployeesTemplatesIndexRoute,
 }

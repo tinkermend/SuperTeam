@@ -127,12 +127,12 @@ export function RunDetailDrawer({
         side="right"
       >
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
+          <SheetTitle className="flex min-w-0 items-start gap-2 text-wrap break-words">
             {displayedRun.task_title}
             <RunStatusPill status={displayedRun.status} />
           </SheetTitle>
         </SheetHeader>
-        <div className="flex flex-col gap-4 px-4 pb-6">
+        <div className="flex min-w-0 flex-col gap-4 px-4 pb-6">
           <div className="grid gap-2 text-sm md:grid-cols-2">
             <SummaryItem label="命令" mono value={displayedRun.command_id} />
             <SummaryItem label="Provider" value={providerDisplayName(displayedRun.provider_type)} />
@@ -274,10 +274,10 @@ function ResultBlock({ run }: { run: DigitalEmployeeRunListItem }) {
   const conclusion = extractResultText(run.result);
   const rawJson = compactJson(run.result);
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-sm font-medium">结果</p>
       {conclusion ? (
-        <MarkdownProse className="mt-2 break-words rounded-md border border-line bg-card-soft p-3">
+        <MarkdownProse className="mt-2 min-w-0 break-words rounded-md border border-line bg-card-soft p-3">
           {conclusion}
         </MarkdownProse>
       ) : null}
@@ -285,14 +285,14 @@ function ResultBlock({ run }: { run: DigitalEmployeeRunListItem }) {
         <details className="mt-2" onToggle={(event) => setRawOpen(event.currentTarget.open)}>
           <summary className="cursor-pointer text-xs text-ink-3">原始结果 JSON</summary>
           {rawOpen ? (
-            <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-line bg-card-soft p-3 text-xs">
+            <pre className="mt-2 max-h-72 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-md border border-line bg-card-soft p-3 text-xs">
               {rawJson}
             </pre>
           ) : null}
         </details>
       ) : null}
       {rawJson && !conclusion ? (
-        <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-line bg-card-soft p-3 text-xs">
+        <pre className="mt-2 max-h-72 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-md border border-line bg-card-soft p-3 text-xs">
           {rawJson}
         </pre>
       ) : null}

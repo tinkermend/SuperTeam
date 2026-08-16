@@ -10,6 +10,41 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestWritebackEventPromotesDispatchingRunToRunning(t *testing.T) {
+	repo := newFakeRunWritebackRepository()
+	run := validWritebackRun(DigitalEmployeeRunStatusDispatching, "cmd-confirm")
+	repo.putRun(run)
+	repo.putReceipt(validWritebackReceipt(run))
+	service := mustNewRunWritebackService(t, repo, &fakeWritebackAuditLogger{})
+	event := RuntimeCommandEventWriteback{
+		EventType:      "text_delta",
+		SequenceNumber: 1,
+		Payload:        map[string]any{"text": "hello"},
+	}
+
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-confirm", event); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+	if len(repo.runUpdates) != 1 || repo.runUpdates[0].Status != DigitalEmployeeRunStatusRunning {
+		t.Fatalf("expected dispatching run promoted to running, got %#v", repo.runUpdates)
+	}
+	stored := repo.runsByID[run.ID]
+	if stored == nil || stored.Status != DigitalEmployeeRunStatusRunning {
+		t.Fatalf("expected persisted run running, got %#v", stored)
+	}
+
+	if err := service.RecordEvent(context.Background(), validWritebackIdentity(run), "cmd-confirm", RuntimeCommandEventWriteback{
+		EventType:      "text_delta",
+		SequenceNumber: 2,
+		Payload:        map[string]any{"text": "again"},
+	}); err != nil {
+		t.Fatalf("record second event: %v", err)
+	}
+	if len(repo.runUpdates) != 1 {
+		t.Fatalf("expected already-running run not promoted again, got %#v", repo.runUpdates)
+	}
+}
+
 func TestWritebackEventCreatesTaskAndProviderSessionEventsIdempotently(t *testing.T) {
 	repo := newFakeRunWritebackRepository()
 	run := validWritebackRun(DigitalEmployeeRunStatusRunning, "cmd-1")

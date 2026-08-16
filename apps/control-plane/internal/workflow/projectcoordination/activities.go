@@ -21,6 +21,10 @@ var ErrJudgeClientRequired = errors.New("project coordination adversarial judge 
 // Type to route the demand to its rejection/diagnosis surface instead of retrying.
 const errTypeNoSuitableEmployee = "NoSuitableEmployee"
 
+// errTypePlannerRequestTimeout is stamped on a single planner HTTP/activity
+// timeout so Temporal does not stack MaximumAttempts more 120s LLM calls.
+const errTypePlannerRequestTimeout = "PlannerRequestTimeout"
+
 type Activities struct {
 	store       ActivityStore
 	planner     RoutePlanner
@@ -133,21 +137,32 @@ func (a *Activities) CreateCoordinationJob(ctx context.Context, input CreateCoor
 }
 
 func (a *Activities) PlanDemandRoute(ctx context.Context, snapshot CoordinationSnapshot) (RouteDecisionPlan, error) {
+	plan, err := InstantiatePlanFromTemplate(snapshot)
+	if err == nil {
+		plan, err = finalizeInstantiatedPlan(snapshot, plan)
+		return plan, wrapPlanningActivityError(err)
+	}
+	if !errors.Is(err, errNoTemplateSkeleton) {
+		return RouteDecisionPlan{}, wrapPlanningActivityError(err)
+	}
 	if a.planner == nil {
 		return RouteDecisionPlan{}, ErrRoutePlannerRequired
 	}
 	decision, err := a.planner.Plan(ctx, snapshot)
-	if err != nil && errors.Is(err, ErrNoSuitableEmployee) {
-		// A no-suitable-employee failure is structural: the executor pool cannot
-		// satisfy the plan and re-planning would reselect the same pool forever.
-		// Every retry is a fresh, real reasoning-model call that cannot change the
-		// outcome, so mark it non-retryable — Temporal escalates immediately
-		// instead of burning MaximumAttempts planner calls. err.Error() carries the
-		// human-readable diagnosis (with fix 3's structural ways-out hints) for the
-		// workflow to surface on the demand.
-		return RouteDecisionPlan{}, wrapNoSuitableEmployeeError(err)
+	return decision, wrapPlanningActivityError(err)
+}
+
+func wrapPlanningActivityError(err error) error {
+	if err == nil {
+		return nil
 	}
-	return decision, err
+	if errors.Is(err, ErrNoSuitableEmployee) {
+		return wrapNoSuitableEmployeeError(err)
+	}
+	if errors.Is(err, ErrPlannerRequestTimeout) {
+		return temporal.NewNonRetryableApplicationError(err.Error(), errTypePlannerRequestTimeout, err)
+	}
+	return err
 }
 
 // wrapNoSuitableEmployeeError stamps the terminal, non-retryable ApplicationError

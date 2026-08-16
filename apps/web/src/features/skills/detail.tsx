@@ -45,6 +45,8 @@ import {
 import { listMcpServerDefinitions } from "@/lib/api/capabilities";
 import { missingObjectLabel } from "@/lib/status-labels";
 import { skillSourceLabel } from "./skill-labels";
+import { SkillReplaceDialog } from "./replace-dialog";
+import { SkillArchiveBrowser } from "./archive-browser";
 import {
   getSkill,
   listSkillMcpDependencies,
@@ -73,6 +75,7 @@ const riskLabel: Record<string, string> = {
 };
 
 export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailViewProps) {
+  const [replaceOpen, setReplaceOpen] = useState(false);
   const skill = useQuery({
     queryKey: ["skill", skillId],
     queryFn: () => getSkill({ baseUrl: apiBaseUrl, fetcher }, skillId)
@@ -99,6 +102,9 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
       <Main width="wide" className="min-w-0 overflow-x-hidden">
         {skill.data ? (
           <div className="mb-4 flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+            <Button onClick={() => setReplaceOpen(true)} className="h-10 px-4" type="button">
+              更新技能包
+            </Button>
             <Button disabled className="h-10 px-4" type="button">
               安装到...
             </Button>
@@ -120,6 +126,13 @@ export function SkillDetailView({ apiBaseUrl, fetcher, skillId }: SkillDetailVie
           <SkillArchiveDetail apiBaseUrl={apiBaseUrl} fetcher={fetcher} skill={skill.data} skillId={skillId} />
         )}
       </Main>
+      <SkillReplaceDialog
+        apiBaseUrl={apiBaseUrl}
+        fetcher={fetcher}
+        onOpenChange={setReplaceOpen}
+        open={replaceOpen && Boolean(skill.data)}
+        skill={skill.data}
+      />
     </>
   );
 }
@@ -274,6 +287,10 @@ function SkillArchiveDetail({
             </DetailSection>
 
             <SkillMcpDependenciesSection apiBaseUrl={apiBaseUrl} fetcher={fetcher} skillId={skillId} />
+
+            <DetailSection icon={<FileArchive />} title="包内容">
+              <SkillArchiveBrowser apiBaseUrl={apiBaseUrl} fetcher={fetcher} skillId={skillId} />
+            </DetailSection>
 
             <DetailSection icon={<ServerCog />} title="运行要求">
               <div className="mb-4 rounded-inner bg-card-inner p-3 text-sm text-ink-2">

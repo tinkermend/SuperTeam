@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -20,31 +19,14 @@ type QueryStore interface {
 	GetProjectAuthzFacts(ctx context.Context, params queries.GetProjectAuthzFactsParams) (queries.GetProjectAuthzFactsRow, error)
 	ListOpenFGAMembers(ctx context.Context) ([]queries.ListOpenFGAMembersRow, error)
 	ListOpenFGAProjectTeamScopes(ctx context.Context) ([]queries.ListOpenFGAProjectTeamScopesRow, error)
-	RuntimeNodeCoversTaskScope(ctx context.Context, params queries.RuntimeNodeCoversTaskScopeParams) (bool, error)
 }
 
 type PgRepository struct {
 	q QueryStore
-	// heartbeatTimeout 解析 runtime scope 活性窗口的心跳超时。
-	// authz 不 import systemconfig(会成环),由 app 装配层注入;
-	// 未注入回退 runtimepkg.HeartbeatTimeout 常量。
-	heartbeatTimeout func(ctx context.Context, tenantID uuid.UUID) time.Duration
 }
 
 func NewPgRepository(q QueryStore) *PgRepository {
 	return &PgRepository{q: q}
-}
-
-// SetHeartbeatTimeoutResolver 注入心跳超时解析闭包(app 装配层接线)。
-func (r *PgRepository) SetHeartbeatTimeoutResolver(resolver func(ctx context.Context, tenantID uuid.UUID) time.Duration) {
-	r.heartbeatTimeout = resolver
-}
-
-func (r *PgRepository) heartbeatTimeoutFor(ctx context.Context, tenantID uuid.UUID) time.Duration {
-	if r.heartbeatTimeout == nil {
-		return runtimepkg.HeartbeatTimeout
-	}
-	return r.heartbeatTimeout(ctx, tenantID)
 }
 
 func (r *PgRepository) GetActiveTenantMembership(ctx context.Context, params TenantMembershipParams) (Membership, error) {
@@ -111,20 +93,6 @@ func (r *PgRepository) GetProjectAuthzFacts(ctx context.Context, params ProjectA
 		IsMember:          row.IsMember,
 		TeamID:            teamID,
 	}, nil
-}
-
-func (r *PgRepository) RuntimeNodeCoversTaskScope(ctx context.Context, params RuntimeScopeParams) (bool, error) {
-	teamID := uuid.NullUUID{}
-	if params.TeamID != nil {
-		teamID = uuid.NullUUID{UUID: *params.TeamID, Valid: true}
-	}
-	return r.q.RuntimeNodeCoversTaskScope(ctx, queries.RuntimeNodeCoversTaskScopeParams{
-		TenantID:           params.TenantID,
-		TeamID:             teamID,
-		TaskID:             params.TaskID,
-		NodeID:             params.NodeID,
-		LastHeartbeatAfter: timestamptz(time.Now().Add(-r.heartbeatTimeoutFor(ctx, params.TenantID))),
-	})
 }
 
 func (r *PgRepository) ListOpenFGATuples(ctx context.Context) ([]OpenFGATuple, error) {

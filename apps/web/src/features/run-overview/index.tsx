@@ -5,6 +5,7 @@ import { Activity, Pause, Play, RefreshCw } from "lucide-react";
 import { Main } from "@/components/layout/main";
 import { ShellPageHeader } from "@/components/layout/shell-page-header";
 import { MasterDetailLayout, Button, DetailSkeleton, ErrorState } from "@/components/superteam";
+import { useControlPlaneEventStream } from "@/hooks/use-control-plane-event-stream";
 import { humanWaitLabel } from "@/lib/status-labels";
 import { getDigitalEmployeeActivity, getDigitalEmployeeOverview } from "@/lib/api/employees";
 import { getInboxBadge } from "@/lib/api/inbox";
@@ -126,18 +127,13 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
   // 状态变化经既有轮询 diff 通道触发轮播插队；流断开由 EventSource 自动重连，10s 轮询兜底。
   const queryClient = useQueryClient();
   const lastStreamInvalidateRef = useRef(0);
-  useEffect(() => {
+  useControlPlaneEventStream({
     // 组件测试注入 fetcher 时默认不开真实流，避免连不上的重连噪音；显式给 factory 则照常开。
-    if (fetcher && !eventSourceFactory) return;
-    const factory =
-      eventSourceFactory ?? ((url: string) => new EventSource(url, { withCredentials: true }));
-    let source: EventSource | undefined;
-    try {
-      source = factory(`${apiBaseUrl}/api/v1/digital-employees/activity/stream`);
-    } catch {
-      return;
-    }
-    const onActivity = () => {
+    enabled: !fetcher || eventSourceFactory !== undefined,
+    apiBaseUrl,
+    eventSourceFactory,
+    path: "/api/v1/digital-employees/activity/stream",
+    onEvent: () => {
       const now = Date.now();
       if (now - lastStreamInvalidateRef.current < 2_000) return;
       lastStreamInvalidateRef.current = now;
@@ -146,13 +142,8 @@ export function RunOverviewView({ apiBaseUrl, fetcher, eventSourceFactory }: Run
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "project-run-summary"] });
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "project-demands"] });
       void queryClient.invalidateQueries({ queryKey: ["run-overview", "task-graph"] });
-    };
-    source.addEventListener("activity", onActivity);
-    return () => {
-      source?.removeEventListener("activity", onActivity);
-      source?.close();
-    };
-  }, [apiBaseUrl, eventSourceFactory, fetcher, queryClient]);
+    },
+  });
 
   const recentActivity = useMemo(
     () =>

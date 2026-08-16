@@ -106,6 +106,7 @@ var projectEventNarratives = map[ProjectEventType]ProjectEventNarrative{
 	ProjectEventTaskContractMissing:   {Kind: TimelineKindOther, Title: "结果契约缺失", Severity: NarrativeSeverityWarn},
 	ProjectEventTaskWaitingHuman:      {Kind: TimelineKindTaskWaitingHuman, Title: "等待人工处理", Severity: NarrativeSeverityWarn},
 	ProjectEventTaskCancelled:         {Kind: TimelineKindTaskCancelled, Title: "任务取消", Severity: NarrativeSeverityMute},
+	ProjectEventTaskRevived:           {Kind: TimelineKindOther, Title: "取消已撤销", Severity: NarrativeSeverityInfo},
 	ProjectEventTaskDismissed:         {Kind: TimelineKindTaskCancelled, Title: "任务已撤除", Severity: NarrativeSeverityMute},
 	ProjectEventTaskCompleted:         {Kind: TimelineKindTaskCompleted, Title: "任务完成", Severity: NarrativeSeveritySuccess},
 	ProjectEventTaskFailed:            {Kind: TimelineKindTaskFailed, Title: "任务失败", Severity: NarrativeSeverityDanger},

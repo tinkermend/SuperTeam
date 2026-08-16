@@ -115,7 +115,11 @@ pub fn refine_exit_code(message: &str) -> &'static str {
     {
         return code::RATE_LIMIT;
     }
-    if lower.contains("auth") && (lower.contains("fail") || lower.contains("unauthor") || lower.contains("401") || lower.contains("403"))
+    if lower.contains("auth")
+        && (lower.contains("fail")
+            || lower.contains("unauthor")
+            || lower.contains("401")
+            || lower.contains("403"))
         || lower.contains("invalid api key")
         || lower.contains("authentication")
     {
@@ -266,8 +270,8 @@ mod tests {
     fn load_failure_family_known_values() -> HashSet<String> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../contracts/provider/schemas/failure-family.json");
-        let raw = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let raw =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let doc: serde_json::Value =
             serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse failure-family.json: {e}"));
         let values = doc
@@ -294,10 +298,7 @@ mod tests {
 
     #[test]
     fn map_code_table_covers_v1_codes() {
-        assert_eq!(
-            map_code(code::BUDGET_FUSE),
-            (family::BUDGET_FUSE, false)
-        );
+        assert_eq!(map_code(code::BUDGET_FUSE), (family::BUDGET_FUSE, false));
         assert_eq!(
             map_code(code::PROVIDER_NO_TERMINAL_EVENT),
             (family::TRANSIENT_PROVIDER, true)
@@ -306,7 +307,10 @@ mod tests {
             map_code(code::PROVIDER_SPAWN_FAILED),
             (family::PROVIDER_CONFIGURATION, false)
         );
-        assert_eq!(map_code(code::RATE_LIMIT), (family::TRANSIENT_PROVIDER, true));
+        assert_eq!(
+            map_code(code::RATE_LIMIT),
+            (family::TRANSIENT_PROVIDER, true)
+        );
         assert_eq!(
             map_code(code::AUTH_FAILED),
             (family::PROVIDER_CONFIGURATION, false)
@@ -374,11 +378,7 @@ mod tests {
     #[test]
     fn classify_provider_error_prefers_envelope() {
         let existing = envelope_for_code(code::TIMEOUT, "timed out", "opencode");
-        let got = classify_provider_error(
-            Some(&existing),
-            "wall_clock_exceeded",
-            "opencode",
-        );
+        let got = classify_provider_error(Some(&existing), "wall_clock_exceeded", "opencode");
         assert_eq!(got.code, code::TIMEOUT);
         assert_eq!(got.family, family::TIMEOUT);
     }

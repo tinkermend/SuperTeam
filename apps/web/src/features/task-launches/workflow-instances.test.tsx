@@ -321,6 +321,18 @@ describe("TaskLaunchPage tabs", () => {
     );
   });
 
+  it("opens the task face for project submit-demand deep links with mode=plan", async () => {
+    mocks.search = { mode: "plan", project: "project-1" };
+    const fetcher = createInstancesFetcher();
+    await renderWithQueryClient(
+      <TaskLaunchPage fetcher={fetcher as typeof fetch} title="任务中枢" />,
+    );
+
+    expect(getButton("任务").getAttribute("aria-selected")).toBe("true");
+    expect(getButton("对话").getAttribute("aria-selected")).toBe("false");
+    expect(queryByText("发起任务")).toBeTruthy();
+  });
+
   it("renders the instance rail with legacy ?view=instances, requests scope=active and hides the river KPI deck", async () => {
     mocks.search = { view: "instances" };
     const fetcher = createInstancesFetcher();

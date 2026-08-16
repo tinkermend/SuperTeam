@@ -28,8 +28,7 @@ func (a routeServiceAuth) ValidateServiceToken(_ context.Context, serviceName, t
 func newConnectorTestServer(t *testing.T, tenantID uuid.UUID) *Server {
 	t.Helper()
 	server := NewServer(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(&routeRuntimeService{}, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(&routeRuntimeService{}),
 	)
 	feishuService := feishu.NewService(newConnectorRouteRepo(tenantID), staticSealer{})
 	server.SetFeishuHandlers(feishu.NewConnectorHTTPHandler(feishuService), feishu.NewAdminHTTPHandler(feishuService))

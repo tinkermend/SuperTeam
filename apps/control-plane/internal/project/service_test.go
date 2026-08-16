@@ -3980,7 +3980,7 @@ func TestProjectTaskDispatchRecoveryActionFailsAfterHumanRedispatchBudget(t *tes
 			"error":     "runtime node is not connected",
 		},
 	}
-	action := projectTaskDispatchRecoveryAction(task, event, 2, 1, 0)
+	action := projectTaskDispatchRecoveryAction(task, event, 2, MaxHumanRecoveryRedispatches, 0)
 	require.Equal(t, ProjectTaskRecoveryActionFailed, action.Action)
 	require.Contains(t, action.TerminalReason, "人类恢复")
 }
@@ -4039,6 +4039,16 @@ func newDispatchRecoveryFixture(repo *memoryRepository, taskStatus string, attem
 	return dispatchRecoveryFixture{tenantID: tenantID, projectID: projectID, taskID: taskID, failureEventID: eventID}
 }
 
+func TestDispatchRecoveryCardSummaryIncludesSkillToolError(t *testing.T) {
+	summary := dispatchRecoveryCardSummary(ProjectEvent{
+		Payload: map[string]any{
+			"error": "invalid employee input: skill_dependencies_not_satisfied: skill ecc-git missing_tools missing_tools=git",
+		},
+	})
+	require.Contains(t, summary, "未探测到")
+	require.Contains(t, summary, "git")
+}
+
 func TestRecoverProjectTaskDispatchFailureOpensHumanCardWithoutAutoRetry(t *testing.T) {
 	// A-layer dispatch failure: never auto-retry; open recovery card for human click.
 	repo := newMemoryRepository()
@@ -4086,6 +4096,8 @@ func TestRecoverProjectTaskDispatchFailureCreatesWaitingHumanDecision(t *testing
 	require.NotNil(t, task.WaitingRequestID)
 	require.Len(t, inbox.upserts, 1)
 	require.Equal(t, "project_task_recovery", inbox.upserts[0].DecisionType)
+	require.NotNil(t, inbox.upserts[0].SummarySnapshot)
+	require.Contains(t, *inbox.upserts[0].SummarySnapshot, "invalid run input")
 }
 
 func TestRecoverProjectTaskDispatchFailureNoopsWhenDecisionPending(t *testing.T) {
@@ -4149,25 +4161,26 @@ func TestRecoverProjectTaskDispatchFailureExhaustsRetriesByFailureCount(t *testi
 	require.Equal(t, ProjectTaskStatusWaitingHuman, task.Status)
 }
 
-// Second dispatch failure after one human recovery approval must fail the task
-// instead of minting another recovery card (human redispatch budget = 1).
+// Third dispatch failure after three human recovery approvals must fail the task
+// instead of minting another recovery card (human redispatch budget = 3).
 func TestRecoverProjectTaskDispatchFailureFailsAfterHumanRedispatchBudget(t *testing.T) {
 	repo := newMemoryRepository()
 	inbox := &fakeDecisionInboxProjector{}
 	service, err := NewServiceWithCoordinatorApprovalsInboxAndArchiveArtifactLocker(repo, NoopCoordinatorSignalClient{}, nil, inbox, nil)
 	require.NoError(t, err)
 	fixture := newDispatchRecoveryFixture(repo, ProjectTaskStatusPlanned, 0, 3, true)
-	// Prior human recovery already approved once for this task.
 	taskID := fixture.taskID
-	repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
-		ID:             uuid.New(),
-		TenantID:       fixture.tenantID,
-		ProjectID:      fixture.projectID,
-		ProjectTaskID:  &taskID,
-		DecisionType:   "project_task_recovery",
-		TitleSnapshot:  "prior recovery",
-		StatusSnapshot: "approved",
-	})
+	for i := 0; i < int(MaxHumanRecoveryRedispatches); i++ {
+		repo.decisionRequests = append(repo.decisionRequests, DecisionRequest{
+			ID:             uuid.New(),
+			TenantID:       fixture.tenantID,
+			ProjectID:      fixture.projectID,
+			ProjectTaskID:  &taskID,
+			DecisionType:   "project_task_recovery",
+			TitleSnapshot:  "prior recovery",
+			StatusSnapshot: "approved",
+		})
+	}
 	// Exhaust auto-retry: second dispatch failure.
 	repo.events = append(repo.events, ProjectEvent{
 		ID:        uuid.New(),
@@ -4294,6 +4307,51 @@ func TestSweepExpiredRunningProjectTaskAttemptsRecoversCandidates(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, []uuid.UUID{fixture.attemptID}, result.RecoveredAttemptIDs)
 	require.Equal(t, []uuid.UUID{fixture.taskID}, result.RecoveredTaskIDs)
+}
+
+func TestSweepExpiredRunningProjectTaskAttemptsRecoversNullLeaseWhenSilent(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.tasks[0].MaxAttempts = serviceTestInt32Ptr(3)
+	repo.projectTaskAttempts[0].LeaseExpiresAt = nil
+	silentAt := now.Add(-20 * time.Minute)
+	repo.projectTaskAttempts[0].RenewedAt = &silentAt
+	repo.projectTaskAttempts[0].StartedAt = &silentAt
+
+	result, err := service.SweepExpiredRunningProjectTaskAttempts(context.Background(), SweepProjectTaskAttemptRecoveryRequest{
+		TenantID:    fixture.tenantID,
+		Now:         now,
+		StaleBefore: now.Add(-15 * time.Minute),
+		Limit:       10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{fixture.attemptID}, result.RecoveredAttemptIDs)
+}
+
+func TestSweepExpiredRunningProjectTaskAttemptsKeepsFreshNullLease(t *testing.T) {
+	repo := newMemoryRepository()
+	service, err := NewService(repo)
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	fixture := newProjectTaskAttemptServiceFixture(repo, ProjectTaskStatusRunning, ProjectTaskAttemptStatusRunning)
+	repo.projectTaskAttempts[0].LeaseExpiresAt = nil
+	fresh := now.Add(-time.Minute)
+	repo.projectTaskAttempts[0].RenewedAt = &fresh
+	repo.projectTaskAttempts[0].StartedAt = &fresh
+
+	result, err := service.SweepExpiredRunningProjectTaskAttempts(context.Background(), SweepProjectTaskAttemptRecoveryRequest{
+		TenantID:    fixture.tenantID,
+		Now:         now,
+		StaleBefore: now.Add(-15 * time.Minute),
+		Limit:       10,
+	})
+
+	require.NoError(t, err)
+	require.Empty(t, result.RecoveredAttemptIDs)
 }
 
 func TestWaitHumanProjectTaskAttemptMovesTaskAndCreatesDecisionRequest(t *testing.T) {
@@ -14784,6 +14842,87 @@ func (r *memoryRepository) UpdateProjectTaskStatus(ctx context.Context, tenantID
 	return ProjectTask{}, ErrProjectNotFound
 }
 
+// 与真实 CancelProjectTaskWithReason 同口径：取消并落原因分型（只有 system_stranded
+// 允许后续被重试复活）。
+func (r *memoryRepository) CancelProjectTaskWithReason(ctx context.Context, tenantID, projectTaskID uuid.UUID, cancelReason string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.ID != projectTaskID || task.TenantID != tenantID {
+			continue
+		}
+		if !containsString(currentStatuses, task.Status) {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		task.Status = ProjectTaskStatusCancelled
+		reason := cancelReason
+		task.CancelReason = &reason
+		task.WaitingReason = nil
+		task.WaitingRequestID = nil
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[index] = task
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+// 与真实 ReviveStrandedCancelledProjectTasks 同口径：只复活 system_stranded 的取消。
+func (r *memoryRepository) ReviveStrandedCancelledProjectTasks(ctx context.Context, tenantID, projectID uuid.UUID, taskIDs []uuid.UUID) ([]ProjectTask, error) {
+	wanted := map[uuid.UUID]struct{}{}
+	for _, id := range taskIDs {
+		wanted[id] = struct{}{}
+	}
+	revived := make([]ProjectTask, 0, len(taskIDs))
+	for index, task := range r.tasks {
+		if task.TenantID != tenantID || task.ProjectID != projectID {
+			continue
+		}
+		if _, ok := wanted[task.ID]; !ok {
+			continue
+		}
+		if task.Status != ProjectTaskStatusCancelled || task.CancelReason == nil ||
+			*task.CancelReason != ProjectTaskCancelReasonSystemStranded {
+			continue
+		}
+		task.Status = ProjectTaskStatusBlocked
+		task.CancelReason = nil
+		task.TerminalEventID = nil
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[index] = task
+		revived = append(revived, task)
+	}
+	return revived, nil
+}
+
+func (r *memoryRepository) MarkProjectTaskSuperseded(ctx context.Context, tenantID, projectTaskID, supersededByTaskID uuid.UUID) (ProjectTask, error) {
+	for index, task := range r.tasks {
+		if task.ID != projectTaskID || task.TenantID != tenantID {
+			continue
+		}
+		replacement := supersededByTaskID
+		task.SupersededByTaskID = &replacement
+		task.UpdatedAt = time.Now().UTC()
+		r.tasks[index] = task
+		return task, nil
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
+// 与真实 ReviveProjectDemandForRecovery 同口径：只认 failed，非 failed 报冲突。
+func (r *memoryRepository) ReviveProjectDemandForRecovery(ctx context.Context, tenantID, demandID uuid.UUID) (ProjectDemand, error) {
+	for index, demand := range r.demands {
+		if demand.ID != demandID || demand.TenantID != tenantID {
+			continue
+		}
+		if demand.Status != ProjectDemandStatusFailed {
+			return ProjectDemand{}, ErrProjectConflict
+		}
+		demand.Status = ProjectDemandStatusExecuting
+		demand.UpdatedAt = time.Now().UTC()
+		r.demands[index] = demand
+		return demand, nil
+	}
+	return ProjectDemand{}, ErrProjectNotFound
+}
+
 // 与真实 RestoreProjectTaskHumanWait 同口径：退回 waiting_human 并还原等待指针。
 func (r *memoryRepository) RestoreProjectTaskHumanWait(ctx context.Context, tenantID, projectTaskID uuid.UUID, waitingReason *string, waitingRequestID *uuid.UUID) (ProjectTask, error) {
 	for index, task := range r.tasks {
@@ -15866,12 +16005,17 @@ func (r *memoryRepository) RecoverProjectTaskDispatchFailure(ctx context.Context
 			}
 		}
 	case ProjectTaskRecoveryActionWaitingHuman:
+		summary := strings.TrimSpace(req.HumanSummary)
+		if summary == "" {
+			summary = "项目任务分派失败，需要人工恢复决策"
+		}
 		event, err := r.AppendProjectEvent(ctx, AppendProjectEventRequest{
 			TenantID:  req.TenantID,
 			ProjectID: req.ProjectID,
 			EventType: ProjectEventTaskRecoveryRequested,
 			ActorType: "project_coordinator",
 			ActorID:   req.ProjectTaskID.String(),
+			Summary:   summary,
 			Payload: map[string]any{
 				"project_task_id":          req.ProjectTaskID.String(),
 				"dispatch_failed_event_id": req.FailureEventID.String(),
@@ -15889,7 +16033,7 @@ func (r *memoryRepository) RecoverProjectTaskDispatchFailure(ctx context.Context
 			TargetUserID:      r.projects[req.ProjectID].HumanOwnerUserID,
 			DecisionType:      "project_task_recovery",
 			TitleSnapshot:     task.Title,
-			SummarySnapshot:   "项目任务分派失败，需要人工恢复决策",
+			SummarySnapshot:   summary,
 			RiskLevelSnapshot: stringValue(task.RiskLevel),
 			StatusSnapshot:    "pending",
 			CreatedEventID:    &event.ID,
@@ -15932,10 +16076,18 @@ func (r *memoryRepository) ListStaleQueuedProjectTaskAttempts(ctx context.Contex
 	return result, nil
 }
 
-func (r *memoryRepository) ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, limit int32) ([]ProjectTaskAttempt, error) {
+func (r *memoryRepository) ListExpiredRunningProjectTaskAttempts(ctx context.Context, tenantID uuid.UUID, now time.Time, staleBefore time.Time, limit int32) ([]ProjectTaskAttempt, error) {
 	result := []ProjectTaskAttempt{}
+	if staleBefore.IsZero() {
+		staleBefore = now.Add(-15 * time.Minute)
+	}
 	for _, attempt := range r.projectTaskAttempts {
-		if attempt.TenantID != tenantID || attempt.Status != ProjectTaskAttemptStatusRunning || attempt.LeaseExpiresAt == nil || !attempt.LeaseExpiresAt.Before(now) {
+		if attempt.TenantID != tenantID || attempt.Status != ProjectTaskAttemptStatusRunning {
+			continue
+		}
+		expired := attempt.LeaseExpiresAt != nil && attempt.LeaseExpiresAt.Before(now)
+		silent := attempt.LeaseExpiresAt == nil && attemptLastActivity(attempt).Before(staleBefore)
+		if !expired && !silent {
 			continue
 		}
 		task, err := r.GetProjectTask(ctx, tenantID, attempt.ProjectTaskID)
@@ -15948,6 +16100,19 @@ func (r *memoryRepository) ListExpiredRunningProjectTaskAttempts(ctx context.Con
 		}
 	}
 	return result, nil
+}
+
+func attemptLastActivity(attempt ProjectTaskAttempt) time.Time {
+	if attempt.BudgetLastHeartbeatAt != nil {
+		return *attempt.BudgetLastHeartbeatAt
+	}
+	if attempt.RenewedAt != nil {
+		return *attempt.RenewedAt
+	}
+	if attempt.StartedAt != nil {
+		return *attempt.StartedAt
+	}
+	return attempt.CreatedAt
 }
 
 func (r *memoryRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Context, req RecoverProjectTaskAttemptFailureWritebackRequest) (ProjectTaskWritebackResult, error) {
@@ -16386,7 +16551,7 @@ func (r *memoryRepository) ListPendingDecisionsMissingOpenInbox(ctx context.Cont
 	return out, nil
 }
 
-func (r *memoryRepository) ListStrandedBlockedProjectTasks(ctx context.Context, limit int32) ([]ProjectTask, error) {
+func (r *memoryRepository) ListStrandedBlockedProjectTasks(ctx context.Context, limit int32, failureGrace time.Duration) ([]ProjectTask, error) {
 	blockerOf := map[uuid.UUID][]uuid.UUID{}
 	for blockerID, dependents := range r.taskDependents {
 		for _, dependentID := range dependents {
@@ -16396,6 +16561,22 @@ func (r *memoryRepository) ListStrandedBlockedProjectTasks(ctx context.Context, 
 	statusByID := map[uuid.UUID]string{}
 	for _, task := range r.tasks {
 		statusByID[task.ID] = task.Status
+	}
+	// 与真实 SQL 同口径：上游刚进终态时留出开卡窗口（failureGrace），并且上游还挂着
+	// pending 人类决策时不收口（人类随时能点重试）。
+	terminalAt := map[uuid.UUID]time.Time{}
+	for _, task := range r.tasks {
+		terminalAt[task.ID] = task.UpdatedAt
+	}
+	hasOpenDecision := map[uuid.UUID]bool{}
+	for _, decision := range r.decisionRequests {
+		if decision.ProjectTaskID == nil {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(decision.StatusSnapshot)) {
+		case "pending", "requested":
+			hasOpenDecision[*decision.ProjectTaskID] = true
+		}
 	}
 	out := make([]ProjectTask, 0)
 	for _, task := range r.tasks {
@@ -16411,6 +16592,13 @@ func (r *memoryRepository) ListStrandedBlockedProjectTasks(ctx context.Context, 
 			switch strings.ToLower(strings.TrimSpace(statusByID[blockerID])) {
 			case "failed", "cancelled", "error":
 			default:
+				stranded = false
+			}
+			if hasOpenDecision[blockerID] {
+				stranded = false
+			}
+			if failureGrace > 0 && !terminalAt[blockerID].IsZero() &&
+				time.Since(terminalAt[blockerID]) < failureGrace {
 				stranded = false
 			}
 			if !stranded {

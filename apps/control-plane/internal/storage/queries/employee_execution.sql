@@ -223,9 +223,10 @@ WHERE id = sqlc.arg('id')::uuid
 RETURNING *;
 
 -- name: UpdateDigitalEmployeeProfile :one
--- 身份资料写路径：当前仅员工说明（description）；空串落 NULL，与创建 trimOptionalString 口径一致。
+-- 身份资料写路径：description 空串落 NULL；role 由服务端解析（空串已派生，不得写入空串）。
 UPDATE digital_employees
 SET description = NULLIF(BTRIM(sqlc.arg('description')::text), ''),
+    role = sqlc.arg('role')::varchar,
     updated_at = NOW()
 WHERE id = sqlc.arg('id')::uuid
   AND tenant_id = sqlc.arg('tenant_id')::uuid

@@ -17,8 +17,7 @@ func TestRuntimeCommandWritebackRoutesUseRuntimeSessionAuth(t *testing.T) {
 	runtimeService := &routeRuntimeService{}
 	writebackService := &routeRuntimeCommandWritebackService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(runtimeService, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(runtimeService),
 		&routeRuntimeAuthService{},
 		runtimeService,
 	)
@@ -47,8 +46,7 @@ func TestRuntimeCommandWritebackRoutesRejectMissingRuntimeSessionAuth(t *testing
 	runtimeService := &routeRuntimeService{}
 	writebackService := &routeRuntimeCommandWritebackService{}
 	server := NewServerWithRuntimeSessionAuth(
-		handlers.NewTaskHandler(&routeTaskService{}),
-		handlers.NewRuntimeHandler(runtimeService, &routeTaskService{}, &routePoller{}),
+		handlers.NewRuntimeHandler(runtimeService),
 		&routeRuntimeAuthService{},
 		runtimeService,
 	)

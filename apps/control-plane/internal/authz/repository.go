@@ -10,7 +10,6 @@ type Repository interface {
 	GetActiveTenantMembership(ctx context.Context, params TenantMembershipParams) (Membership, error)
 	GetActiveTeamMembership(ctx context.Context, params TeamMembershipParams) (Membership, error)
 	GetDigitalEmployeeAuthzScope(ctx context.Context, params DigitalEmployeeAuthzScopeParams) (DigitalEmployeeAuthzScope, error)
-	RuntimeNodeCoversTaskScope(ctx context.Context, params RuntimeScopeParams) (bool, error)
 	GetProjectAuthzFacts(ctx context.Context, params ProjectAuthzParams) (ProjectAuthzFacts, error)
 }
 
@@ -25,13 +24,6 @@ type TeamMembershipParams struct {
 	TeamID        uuid.UUID
 	PrincipalType string
 	PrincipalID   uuid.UUID
-}
-
-type RuntimeScopeParams struct {
-	TenantID uuid.UUID
-	TeamID   *uuid.UUID
-	TaskID   uuid.UUID
-	NodeID   string
 }
 
 type DigitalEmployeeAuthzScopeParams struct {

@@ -453,7 +453,11 @@ mod tests {
         }
     }
 
-    fn sink(uploader: Arc<RecordingUploader>, dir: &Path, segment_bytes: usize) -> SegmentedRawLogSink {
+    fn sink(
+        uploader: Arc<RecordingUploader>,
+        dir: &Path,
+        segment_bytes: usize,
+    ) -> SegmentedRawLogSink {
         SegmentedRawLogSink::with_segment_bytes(
             uploader,
             dir.to_path_buf(),

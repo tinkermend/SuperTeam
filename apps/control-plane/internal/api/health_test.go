@@ -17,7 +17,7 @@ func TestHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
 }
 
 func TestProductServerHealthEndpointReturnsControlPlaneStatus(t *testing.T) {
-	server := NewServer(nil, nil)
+	server := NewServer(nil)
 	assertHealthResponse(t, server)
 }
 
@@ -58,7 +58,7 @@ func assertHealthResponse(t *testing.T, handler http.Handler) {
 }
 
 func TestProductServerHealthProbeFailureReturns503(t *testing.T) {
-	server := NewServer(nil, nil)
+	server := NewServer(nil)
 	server.SetObjectStoreHealthProbe(func(context.Context) error {
 		return errors.New("head bucket missing")
 	}, "missing-bucket")

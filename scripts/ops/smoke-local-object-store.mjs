@@ -6,7 +6,8 @@
  * 3) 校验 archive_object_ref 非空
  * 4) 删除刚上传的 skill（清理）
  *
- * 前置：rustfs 在 9000、CP 指向本地 objectStore、桶已建。
+ * 前置：rustfs 在 9000、CP 指向本地 objectStore、桶已建
+ * （新环境：./scripts/ops/init-object-store.sh）。
  */
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

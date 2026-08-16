@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/superteam/control-plane/internal/api/middleware"
+	"github.com/superteam/control-plane/internal/api/httpx"
 	"github.com/superteam/control-plane/internal/authz"
 )
 
@@ -73,7 +72,7 @@ func (h *HTTPHandler) ListRules(w http.ResponseWriter, r *http.Request) {
 	for _, rule := range rules {
 		responses = append(responses, ruleResponseFrom(rule))
 	}
-	writeJSON(w, http.StatusOK, listRulesResponse{Items: responses})
+	httpx.WriteJSON(w, http.StatusOK, listRulesResponse{Items: responses})
 }
 
 func (h *HTTPHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +107,7 @@ func (h *HTTPHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, ruleResponseFrom(rule))
+	httpx.WriteJSON(w, http.StatusCreated, ruleResponseFrom(rule))
 }
 
 func (h *HTTPHandler) GetRule(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +124,7 @@ func (h *HTTPHandler) GetRule(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ruleResponseFrom(rule))
+	httpx.WriteJSON(w, http.StatusOK, ruleResponseFrom(rule))
 }
 
 func (h *HTTPHandler) PatchRule(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +161,7 @@ func (h *HTTPHandler) PatchRule(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ruleResponseFrom(rule))
+	httpx.WriteJSON(w, http.StatusOK, ruleResponseFrom(rule))
 }
 
 func (h *HTTPHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +194,7 @@ func (h *HTTPHandler) EnableRule(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ruleResponseFrom(rule))
+	httpx.WriteJSON(w, http.StatusOK, ruleResponseFrom(rule))
 }
 
 func (h *HTTPHandler) DisableRule(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +211,7 @@ func (h *HTTPHandler) DisableRule(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ruleResponseFrom(rule))
+	httpx.WriteJSON(w, http.StatusOK, ruleResponseFrom(rule))
 }
 
 func (h *HTTPHandler) TriggerRule(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +232,7 @@ func (h *HTTPHandler) TriggerRule(w http.ResponseWriter, r *http.Request) {
 		writeHandlerError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, fireResponseFrom(fire))
+	httpx.WriteJSON(w, http.StatusOK, fireResponseFrom(fire))
 }
 
 func (h *HTTPHandler) ListFires(w http.ResponseWriter, r *http.Request) {
@@ -259,46 +258,15 @@ func (h *HTTPHandler) ListFires(w http.ResponseWriter, r *http.Request) {
 	for _, fire := range fires {
 		responses = append(responses, fireResponseFrom(fire))
 	}
-	writeJSON(w, http.StatusOK, listFiresResponse{Items: responses})
+	httpx.WriteJSON(w, http.StatusOK, listFiresResponse{Items: responses})
 }
 
 func (h *HTTPHandler) authorize(w http.ResponseWriter, r *http.Request, action string, auditReason string) (uuid.UUID, uuid.UUID, bool) {
-	if h == nil || h.authorizer == nil {
-		http.Error(w, "automation authorization is not configured", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	tenantID := middleware.GetTenantID(r.Context())
-	userID := middleware.GetUserID(r.Context())
-	if tenantID == uuid.Nil || userID == uuid.Nil {
-		http.Error(w, "console identity not found in context", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	decision, err := h.authorizer.Check(r.Context(), authz.CheckRequest{
-		Actor:       authz.ActorRef{Type: authz.ActorUser, ID: userID.String()},
-		Action:      action,
-		Resource:    authz.ResourceRef{Type: authz.ResourceTenant, ID: tenantID.String()},
-		TenantID:    tenantID,
-		AuditReason: auditReason,
-	})
-	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return uuid.Nil, uuid.Nil, false
-	}
-	if !decision.Allowed {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return uuid.Nil, uuid.Nil, false
-	}
-	return tenantID, userID, true
+	return httpx.AuthorizeConsoleAction(w, r, h.authorizer, "automation", action, auditReason)
 }
 
 func ruleIDFromRequest(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
-	raw := chi.URLParam(r, "ruleId")
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		http.Error(w, "invalid ruleId", http.StatusBadRequest)
-		return uuid.Nil, false
-	}
-	return id, true
+	return httpx.URLParamUUID(w, r, "ruleId", "ruleId")
 }
 
 func queryInt32(r *http.Request, key string, fallback int32) int32 {
@@ -326,12 +294,6 @@ func writeHandlerError(w http.ResponseWriter, err error) {
 	default:
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
 }
 
 type createRuleBody struct {

@@ -13,14 +13,14 @@ func TestDecisionFromOperationLogExtractsNestedDecisionDetails(t *testing.T) {
 		ID:       uuid.MustParse("00000000-0000-0000-0000-000000000101"),
 		TenantID: uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 		Module:   OperationModuleAuthz,
-		Action:   authz.ActionTaskClaim,
+		Action:   authz.ActionConsoleAccess,
 		Result:   OperationResultFailed,
 		Details: []byte(`{
 			"actor": {"type": "runtime_node", "id": "node-1"},
 			"decision": {
 				"engine": "db",
-				"reason": "runtime scope does not cover task",
-				"matched_rule": "runtime.scope"
+				"reason": "no active membership",
+				"matched_rule": "tenant.owner"
 			}
 		}`),
 	})
@@ -28,8 +28,8 @@ func TestDecisionFromOperationLogExtractsNestedDecisionDetails(t *testing.T) {
 	assertStringPtr(t, record.ActorType, authz.ActorRuntimeNode)
 	assertStringPtr(t, record.ActorID, "node-1")
 	assertStringPtr(t, record.Engine, "db")
-	assertStringPtr(t, record.Reason, authz.ReasonRuntimeScopeMissing)
-	assertStringPtr(t, record.MatchedRule, "runtime.scope")
+	assertStringPtr(t, record.Reason, authz.ReasonNoMembership)
+	assertStringPtr(t, record.MatchedRule, "tenant.owner")
 }
 
 func TestDecisionFromOperationLogPrefersFlatDecisionDetails(t *testing.T) {

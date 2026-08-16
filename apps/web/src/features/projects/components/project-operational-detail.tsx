@@ -152,8 +152,6 @@ type ProjectOperationalDetailProps = {
   /** ?demand= 深链：需求流程区选中的需求 id；缺省默认最新需求。 */
   initialDemandId?: string;
   /** 一单卷宗中栏视图（?view=）与切换回调；由页面写回 URL。 */
-  demandView?: "timeline" | "graph";
-  onDemandViewChange?: (view: "timeline" | "graph") => void;
   initialTab?: ProjectDetailSection | string;
   /**
    * `?tab=tasks&task=<id>` 播种：URL 有 task 时打开弹层；关闭弹层时由
@@ -235,8 +233,6 @@ export function ProjectOperationalDetail({
   focusEvidenceId,
   governanceInitialTab,
   initialDemandId,
-  demandView,
-  onDemandViewChange,
   initialTab = "tasks",
   detailTaskIdFromUrl,
   onClearDetailTaskUrl,
@@ -571,7 +567,7 @@ export function ProjectOperationalDetail({
             ) : (
               <Button asChild>
                 <Link
-                  search={{ mode: "plan", project: project.id }}
+                  search={{ face: "task", mode: "plan", project: project.id }}
                   to="/task-launches"
                 >
                   <FileText data-icon="inline-start" />
@@ -757,7 +753,6 @@ export function ProjectOperationalDetail({
                   listTab={activeSection}
                   onClearTask={() => setDetailTaskId(undefined)}
                   onOpenTask={setDetailTaskId}
-                  onViewChange={onDemandViewChange}
                   pane="graph"
                   projectId={project.id}
                   selectedDemandId={selectedDemand?.id}
@@ -790,7 +785,6 @@ export function ProjectOperationalDetail({
                   listTab={activeSection}
                   onClearTask={() => setDetailTaskId(undefined)}
                   onOpenTask={setDetailTaskId}
-                  onViewChange={onDemandViewChange}
                   pane="timeline"
                   projectId={project.id}
                   selectedDemandId={selectedDemand?.id}

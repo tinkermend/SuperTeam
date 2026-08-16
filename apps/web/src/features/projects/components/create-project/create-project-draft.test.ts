@@ -5,6 +5,7 @@ import {
   directoryNameHintFromGitURL,
   emptyProjectCreateDraft,
   projectCreateValidation,
+  sourceKindReviewLabel,
   validateDisplayProjectName,
   validateProjectDirectoryName,
 } from "./create-project-draft";
@@ -140,5 +141,31 @@ describe("attach source requires a confirmed directory probe", () => {
   it("leaves non-attach sources ungated", () => {
     const nonGit = { ...attachDraft, sourceKind: "directory" as const };
     expect(projectCreateValidation(nonGit, currentUser.id, teams).attachProbe).toBe(true);
+  });
+});
+
+describe("sourceKindReviewLabel", () => {
+  it("labels git, empty directory, and attach distinctly", () => {
+    expect(
+      sourceKindReviewLabel({
+        ...emptyProjectCreateDraft,
+        sourceKind: "git",
+        repoUrl: "https://github.com/acme/repo.git",
+        repoDefaultBranch: "develop",
+      }),
+    ).toBe("https://github.com/acme/repo.git @ develop");
+    expect(
+      sourceKindReviewLabel({
+        ...emptyProjectCreateDraft,
+        sourceKind: "directory",
+      }),
+    ).toBe("非 Git（空目录）");
+    expect(
+      sourceKindReviewLabel({
+        ...emptyProjectCreateDraft,
+        sourceKind: "attach",
+        directoryName: "PulseAI",
+      }),
+    ).toBe("认领已有目录（PulseAI）");
   });
 });

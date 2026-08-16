@@ -1,4 +1,4 @@
-import { Boxes, KeyRound, Network, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { Boxes, KeyRound, Network, Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/select";
 import {
   Button,
-  Chip,
   DataTable,
   IconTile,
   SoftCard,
@@ -246,98 +245,91 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
   };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <SoftCard className="min-w-0">
-        <div className="gap-3 pb-3">
+    <div className="space-y-4">
+      <p className="text-[13px] text-ink-3">技能、MCP 与环境变量在此行内即写，无需页面保存。</p>
+      <div className="grid gap-4 @3xl/content:grid-cols-2 @3xl/content:items-start">
+      <SoftCard className="min-w-0 overflow-hidden p-0">
+        <div className="border-b border-line px-5 py-3.5">
           <PanelTitle
             icon={<Boxes />}
             meta={`${employeeSkills.data?.length ?? 0} 个生效`}
-            title="个人技能"
+            title="技能"
             tone="artifact"
           />
         </div>
-        <div className="flex flex-col gap-4">
-          <section className="flex flex-col gap-2">
+        <div className="flex flex-col gap-6 px-5 py-4">
+          <section className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium">已生效技能</h3>
+              <h3 className="text-[12px] font-semibold tracking-wide text-ink-3">已装</h3>
               {employeeSkills.isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
             </div>
-            <div className="flex flex-col gap-2">
-              {employeeSkills.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
-              {employeeSkills.isError ? <p className="text-sm text-destructive">技能加载失败</p> : null}
-              {unbindSkillMutation.isError ? <p className="text-sm text-destructive">技能移除失败</p> : null}
-              {!employeeSkills.isLoading && !employeeSkills.isError && (employeeSkills.data?.length ?? 0) === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无生效技能</p>
-              ) : null}
-              {(employeeSkills.data ?? []).map((entry) => (
-                <EmployeeSkillRow
-                  entry={entry}
-                  key={`${entry.source_scope}-${entry.skill.id}`}
-                  onRemove={() => unbindSkillMutation.mutate(entry.skill.id)}
-                  pending={unbindSkillMutation.isPending}
-                  unsatisfiedMcpDeps={unsatisfiedMcpDepsBySkillId.get(entry.skill.id) ?? []}
-                />
-              ))}
-            </div>
+            {employeeSkills.isLoading ? <p className="text-sm text-ink-3">加载中</p> : null}
+            {employeeSkills.isError ? <p className="text-sm text-destructive">技能加载失败</p> : null}
+            {unbindSkillMutation.isError ? <p className="text-sm text-destructive">技能移除失败</p> : null}
+            {!employeeSkills.isLoading && !employeeSkills.isError && (employeeSkills.data?.length ?? 0) === 0 ? (
+              <QuietEmpty>还没有个人技能，从下方市场安装。</QuietEmpty>
+            ) : null}
+            {(employeeSkills.data?.length ?? 0) > 0 ? (
+              <ScrollList>
+                <div className="divide-y divide-line">
+                {(employeeSkills.data ?? []).map((entry) => (
+                  <EmployeeSkillRow
+                    entry={entry}
+                    key={`${entry.source_scope}-${entry.skill.id}`}
+                    onRemove={() => unbindSkillMutation.mutate(entry.skill.id)}
+                    pending={unbindSkillMutation.isPending}
+                    unsatisfiedMcpDeps={unsatisfiedMcpDepsBySkillId.get(entry.skill.id) ?? []}
+                  />
+                ))}
+                </div>
+              </ScrollList>
+            ) : null}
           </section>
 
-          <EmployeeEnvironmentPanel
-            envVars={envVars.data ?? []}
-            isError={envVars.isError}
-            isFetching={envVars.isFetching}
-            isLoading={envVars.isLoading}
-            onDelete={(name) => deleteEnvMutation.mutate(name)}
-            onReplace={(name, sensitive) => {
-              const value = replacementValues[name] ?? "";
-              if (value) {
-                upsertEnvMutation.mutate({ name, value, sensitive });
-              }
-            }}
-            onReplacementValueChange={(name, value) =>
-              setReplacementValues((current) => ({ ...current, [name]: value }))
-            }
-            pendingDelete={deleteEnvMutation.isPending}
-            pendingReplace={upsertEnvMutation.isPending}
-            replacementValues={replacementValues}
-          />
-
-          <section className="flex flex-col gap-2">
+          <section className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium">技能市场</h3>
+              <h3 className="text-[12px] font-semibold tracking-wide text-ink-3">市场</h3>
               {marketplace.isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
             </div>
-            <div className="flex flex-col gap-2">
-              {marketplace.isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
-              {marketplace.isError ? <p className="text-sm text-destructive">技能市场加载失败</p> : null}
-              {bindSkillMutation.isError ? <p className="text-sm text-destructive">技能安装失败</p> : null}
-              {!marketplace.isLoading && !marketplace.isError && availableSkills.length === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无可安装技能</p>
-              ) : null}
-              {availableSkills.map((skill) => (
-                <SkillInstallRow
-                  key={skill.id}
-                  onInstall={() => bindSkillMutation.mutate(skill.id)}
-                  pending={bindSkillMutation.isPending}
-                  skill={skill}
-                />
-              ))}
-            </div>
+            {marketplace.isLoading ? <p className="text-sm text-ink-3">加载中</p> : null}
+            {marketplace.isError ? <p className="text-sm text-destructive">技能市场加载失败</p> : null}
+            {bindSkillMutation.isError ? <p className="text-sm text-destructive">技能安装失败</p> : null}
+            {!marketplace.isLoading && !marketplace.isError && availableSkills.length === 0 ? (
+              <QuietEmpty>没有可安装的技能。</QuietEmpty>
+            ) : null}
+            {availableSkills.length > 0 ? (
+              <ScrollList>
+                <div className="divide-y divide-line">
+                {availableSkills.map((skill) => (
+                  <SkillInstallRow
+                    key={skill.id}
+                    onInstall={() => bindSkillMutation.mutate(skill.id)}
+                    pending={bindSkillMutation.isPending}
+                    skill={skill}
+                  />
+                ))}
+                </div>
+              </ScrollList>
+            ) : null}
           </section>
         </div>
       </SoftCard>
 
-      <SoftCard className="min-w-0">
-        <div className="gap-3 pb-3">
+      <div className="flex min-w-0 flex-col gap-4">
+      <SoftCard className="min-w-0 overflow-hidden p-0">
+        <div className="border-b border-line px-5 py-3.5">
           <PanelTitle
             icon={<Network />}
             meta={`${employeeMcpBindings.data?.length ?? 0} 个绑定`}
-            title="个人 MCP"
+            title="MCP"
             tone="info"
           />
         </div>
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="min-w-0 space-y-2">
+        <div className="flex flex-col gap-6 px-5 py-4">
+          <div className="flex max-w-xl flex-col gap-3">
+            <h3 className="text-[12px] font-semibold tracking-wide text-ink-3">绑定</h3>
+            <div className="grid gap-3 @min-[22rem]:grid-cols-2">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="employee-mcp-server">注册表 MCP</Label>
               <Select
                 disabled={createMcpMutation.isPending}
@@ -351,14 +343,14 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
                   <SelectGroup>
                     {(mcpDefinitions.data ?? []).map((definition: McpServerDefinition) => (
                       <SelectItem key={definition.id} value={definition.id}>
-                        {definition.name}（{definition.server_key}）
+                        {definition.name}
                       </SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
-            <div className="min-w-0 space-y-2">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="employee-mcp-credential-env">凭据环境变量（可选）</Label>
               <Input
                 disabled={createMcpMutation.isPending}
@@ -368,8 +360,9 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
                 value={credentialEnvVar}
               />
             </div>
-            <div className="flex min-w-0 items-end">
-              <Button className="w-full" disabled={!canCreateMcp} onClick={handleCreateMcp} type="button">
+            </div>
+            <div>
+              <Button disabled={!canCreateMcp} onClick={handleCreateMcp} type="button">
                 <Plus data-icon="inline-start" />
                 绑定个人 MCP
               </Button>
@@ -377,7 +370,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
           </div>
           {selectedDefinition && selectedDefinition.required_env_vars.length > 0 ? (
             <div className="flex flex-wrap items-center gap-1 text-xs">
-              <span className="text-muted-foreground">必需环境变量：</span>
+              <span className="text-ink-3">必需环境变量：</span>
               {selectedDefinition.required_env_vars.map((name) => {
                 const missing = missingEnvVars.includes(name);
                 return (
@@ -397,7 +390,7 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
           ) : null}
           {missingEnvVars.length > 0 ? (
             <p className="text-xs text-destructive">
-              缺少环境变量 {missingEnvVars.join("、")}，请先在下方环境变量区域配置后再绑定。
+              缺少环境变量 {missingEnvVars.join("、")}，请先在本栏环境变量中配置后再绑定。
             </p>
           ) : null}
           {createMcpMutation.isError ? <p className="text-sm text-destructive">个人 MCP 绑定失败</p> : null}
@@ -421,6 +414,47 @@ export function EmployeeCapabilitiesPanel({ apiOptions, employeeId }: EmployeeCa
           />
         </div>
       </SoftCard>
+
+      <SoftCard className="min-w-0 overflow-hidden p-0">
+        <div className="border-b border-line px-5 py-3.5">
+          <PanelTitle icon={<KeyRound />} meta={`${envVars.data?.length ?? 0} 个`} title="环境变量" tone="info" />
+        </div>
+        <div className="px-5 py-4">
+          <EmployeeEnvironmentPanel
+            envVars={envVars.data ?? []}
+            isError={envVars.isError}
+            isFetching={envVars.isFetching}
+            isLoading={envVars.isLoading}
+            onDelete={(name) => deleteEnvMutation.mutate(name)}
+            onReplace={(name, sensitive) => {
+              const value = replacementValues[name] ?? "";
+              if (value) {
+                upsertEnvMutation.mutate({ name, value, sensitive });
+              }
+            }}
+            onReplacementValueChange={(name, value) =>
+              setReplacementValues((current) => ({ ...current, [name]: value }))
+            }
+            pendingDelete={deleteEnvMutation.isPending}
+            pendingReplace={upsertEnvMutation.isPending}
+            replacementValues={replacementValues}
+          />
+        </div>
+      </SoftCard>
+      </div>
+      </div>
+    </div>
+  );
+}
+
+function QuietEmpty({ children }: { children: ReactNode }) {
+  return <p className="py-1 text-[13px] leading-5 text-ink-3">{children}</p>;
+}
+
+function ScrollList({ children }: { children: ReactNode }) {
+  return (
+    <div className="max-h-64 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
+      {children}
     </div>
   );
 }
@@ -487,55 +521,50 @@ function EmployeeSkillRow({
 }) {
   const isReadOnly = entry.read_only || entry.inherited || entry.source_scope !== "employee";
   return (
-    <div className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <IconTile tone={entry.inherited ? "mute" : "ok"} size="sm">
-          <ShieldCheck />
-        </IconTile>
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-medium">{entry.skill.name}</p>
-            {entry.inherited ? <StatusPill tone="mute">团队继承</StatusPill> : null}
-            <Chip  className="shrink-0">
-              {entry.skill.version}
-            </Chip>
-            <StatusPill tone={skillRiskTone(entry.skill.risk_level)}>
-              {skillRiskLabel(entry.skill.risk_level)}
+    <div className="flex min-w-0 items-start gap-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <p className="truncate text-[13px] font-semibold text-ink">{entry.skill.name}</p>
+          <span className="text-[11px] text-ink-3">{entry.skill.version}</span>
+          {entry.inherited ? <StatusPill tone="mute">团队继承</StatusPill> : null}
+          <StatusPill tone={skillRiskTone(entry.skill.risk_level)}>
+            {skillRiskLabel(entry.skill.risk_level)}
+          </StatusPill>
+          {projectVenuePill(entry.skill.project_bindings)}
+          {skillLoadStatePills(entry).map((status) => (
+            <StatusPill key={status.label} tone={status.tone}>{status.label}</StatusPill>
+          ))}
+          {unsatisfiedMcpDeps.map((dep) => (
+            <StatusPill key={dep.mcp_server_id} tone="warn">
+              {`缺 MCP ${dep.server_key}`}
             </StatusPill>
-            {projectVenuePill(entry.skill.project_bindings)}
-            {skillLoadStatePills(entry).map((status) => (
-              <StatusPill key={status.label} tone={status.tone}>{status.label}</StatusPill>
-            ))}
-            {unsatisfiedMcpDeps.map((dep) => (
-              <StatusPill key={dep.mcp_server_id} tone="warn">
-                {`缺 MCP ${dep.server_key}`}
-              </StatusPill>
-            ))}
-          </div>
-          <p className="truncate text-xs text-muted-foreground">{entry.skill.description}</p>
-          {unsatisfiedMcpDeps.length > 0 ? (
-            <p className="text-xs text-destructive">
-              {unsatisfiedMcpDeps
-                .map((dep) =>
-                  dep.status === "missing_binding"
-                    ? `依赖 MCP ${dep.server_key} 未绑定`
-                    : `依赖 MCP ${dep.server_key} 缺环境变量 ${dep.missing_env_vars.join(", ")}`,
-                )
-                .join("；")}
-              ，任务派发将被阻断。请在右侧"个人 MCP"绑定或补齐环境变量。
-            </p>
-          ) : null}
+          ))}
         </div>
+        {entry.skill.description ? (
+          <p className="mt-0.5 line-clamp-1 text-[12px] text-ink-3">{entry.skill.description}</p>
+        ) : null}
+        {unsatisfiedMcpDeps.length > 0 ? (
+          <p className="mt-1 text-xs text-destructive">
+            {unsatisfiedMcpDeps
+              .map((dep) =>
+                dep.status === "missing_binding"
+                  ? `依赖 MCP ${dep.server_key} 未绑定`
+                  : `依赖 MCP ${dep.server_key} 缺环境变量 ${dep.missing_env_vars.join(", ")}`,
+              )
+              .join("；")}
+            ，任务派发将被阻断。请到 MCP 区绑定或补齐环境变量。
+          </p>
+        ) : null}
       </div>
       <Button
+        aria-label={`移除 ${entry.skill.name}`}
         disabled={isReadOnly || pending}
         onClick={isReadOnly ? undefined : onRemove}
         size="sm"
         type="button"
         variant="ghost"
       >
-        <Trash2 data-icon="inline-start" />
-        {`移除 ${entry.skill.name}`}
+        移除
       </Button>
     </div>
   );
@@ -566,19 +595,18 @@ function EmployeeEnvironmentPanel({
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-2 text-sm font-medium">
-          <KeyRound className="size-4 text-ok" />
-          环境变量
-        </h3>
-        {isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
-      </div>
-      {isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
+      {isFetching ? (
+        <div className="flex justify-end">
+          <StatusPill tone="info">刷新中</StatusPill>
+        </div>
+      ) : null}
+      {isLoading ? <p className="text-sm text-ink-3">加载中</p> : null}
       {isError ? <p className="text-sm text-destructive">环境变量加载失败</p> : null}
       {!isLoading && !isError && envVars.length === 0 ? (
-        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无员工环境变量</p>
+        <p className="text-[13px] text-ink-3">还没有员工环境变量。MCP 缺凭据时在这里补。</p>
       ) : null}
       {envVars.length > 0 ? (
+        <ScrollList>
         <WorkSurface>
           <DataTable>
             <thead>
@@ -636,6 +664,7 @@ function EmployeeEnvironmentPanel({
             </tbody>
           </DataTable>
         </WorkSurface>
+        </ScrollList>
       ) : null}
     </section>
   );
@@ -651,24 +680,25 @@ function SkillInstallRow({
   skill: Skill;
 }) {
   return (
-    <div className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <IconTile tone="artifact" size="sm">
-          <Boxes />
-        </IconTile>
-        <div className="min-w-0">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-medium">{skill.name}</p>
-            <Chip  className="shrink-0">
-              {skill.version}
-            </Chip>
-          </div>
-          <p className="truncate text-xs text-muted-foreground">{skill.description}</p>
+    <div className="flex min-w-0 items-start gap-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <p className="truncate text-[13px] font-semibold text-ink">{skill.name}</p>
+          <span className="text-[11px] text-ink-3">{skill.version}</span>
         </div>
+        {skill.description ? (
+          <p className="mt-0.5 line-clamp-1 text-[12px] text-ink-3">{skill.description}</p>
+        ) : null}
       </div>
-      <Button disabled={pending} onClick={onInstall} size="sm" type="button" variant="outline">
-        <Plus data-icon="inline-start" />
-        {`安装 ${skill.name}`}
+      <Button
+        aria-label={`安装 ${skill.name}`}
+        disabled={pending}
+        onClick={onInstall}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        安装
       </Button>
     </div>
   );
@@ -689,29 +719,27 @@ function EffectiveMcpRegistrySection({
   isLoading: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-t pt-3">
+    <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">生效 MCP 配置（注册表）</h3>
+        <h3 className="text-[12px] font-semibold tracking-wide text-ink-3">生效配置</h3>
         {isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
       </div>
-      {isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
+      {isLoading ? <p className="text-sm text-ink-3">加载中</p> : null}
       {isError ? <p className="text-sm text-destructive">MCP 配置加载失败</p> : null}
       {!isLoading && !isError && config.length === 0 ? (
-        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-          暂无注册表 MCP 绑定
-        </p>
+        <QuietEmpty>还没有生效的 MCP。</QuietEmpty>
       ) : null}
+      {config.length > 0 ? (
+        <ScrollList>
+        <div className="divide-y divide-line">
       {config.map((server) => {
         const blocked = server.missing_env_vars && server.missing_env_vars.length > 0;
         const tone = blocked ? "warn" : "ok";
         return (
-          <div key={server.server_id} className="flex flex-col gap-1 rounded-md border p-3">
+          <div key={server.server_id} className="flex flex-col gap-1 py-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="font-medium">{server.name}</span>
-                <span className="font-mono text-xs text-muted-foreground">{server.server_key}</span>
-              </div>
-              <div className="flex items-center gap-2">
+              <p className="truncate text-[13px] font-semibold text-ink">{server.name}</p>
+              <div className="flex items-center gap-1.5">
                 <StatusPill tone="mute">
                   {server.source_scope === "team" ? "团队继承" : "个人"}
                 </StatusPill>
@@ -720,12 +748,14 @@ function EffectiveMcpRegistrySection({
                 </StatusPill>
               </div>
             </div>
-            <p className="truncate font-mono text-xs text-muted-foreground" title={server.url}>
-              {server.url}
-            </p>
+            {server.url ? (
+              <p className="truncate text-[12px] text-ink-3" title={server.url}>
+                {server.url}
+              </p>
+            ) : null}
             {server.required_env_vars && server.required_env_vars.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1">
-                <span className="text-xs text-muted-foreground">必需环境变量：</span>
+                <span className="text-xs text-ink-3">必需环境变量：</span>
                 {server.required_env_vars.map((name) => {
                   const missing = server.missing_env_vars?.includes(name);
                   return (
@@ -745,12 +775,15 @@ function EffectiveMcpRegistrySection({
             ) : null}
             {blocked ? (
               <p className="text-xs text-destructive">
-                缺少环境变量 {server.missing_env_vars?.join(", ")}，请在下方环境变量区域配置后再启动。
+                缺少环境变量 {server.missing_env_vars?.join(", ")}，请在本栏环境变量中配置后再启动。
               </p>
             ) : null}
           </div>
         );
       })}
+        </div>
+        </ScrollList>
+      ) : null}
     </div>
   );
 }
@@ -785,44 +818,46 @@ function EmployeeMcpBindingsSection({
     return map;
   }, [definitions]);
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">个人 MCP 绑定</h3>
+        <h3 className="text-[12px] font-semibold tracking-wide text-ink-3">个人绑定</h3>
         {isFetching ? <StatusPill tone="info">刷新中</StatusPill> : null}
       </div>
-      {isLoading ? <p className="text-sm text-muted-foreground">加载中</p> : null}
+      {isLoading ? <p className="text-sm text-ink-3">加载中</p> : null}
       {isError ? <p className="text-sm text-destructive">MCP 绑定加载失败</p> : null}
       {removeError ? <p className="text-sm text-destructive">个人 MCP 移除失败</p> : null}
       {!isLoading && !isError && bindings.length === 0 ? (
-        <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">暂无个人 MCP 绑定</p>
+        <QuietEmpty>还没有个人 MCP 绑定。</QuietEmpty>
       ) : null}
+      {bindings.length > 0 ? (
+        <ScrollList>
+        <div className="divide-y divide-line">
       {bindings.map((binding) => {
         const blocked = (binding.missing_env_vars ?? []).length > 0;
         return (
-          <div key={binding.id} className="grid min-w-0 gap-3 rounded-md border bg-background/70 p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-            <div className="flex min-w-0 items-start gap-3">
-              <IconTile tone="info" size="sm">
-                <Network />
-              </IconTile>
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium">{binding.server_name ?? binding.server_key}</p>
-                  <StatusPill tone={blocked ? "warn" : "ok"}>{statusLabel(binding.status)}</StatusPill>
-                  {projectVenuePill(definitionsById.get(binding.mcp_server_id)?.project_bindings)}
-                </div>
-                <p className="truncate font-mono text-xs text-muted-foreground">{binding.url ?? binding.server_key}</p>
-                {binding.credential_env_var ? (
-                  <p className="mt-1 flex min-w-0 items-center gap-1 font-mono text-xs text-muted-foreground">
-                    <KeyRound className="size-3 shrink-0" />
-                    <span className="truncate">{binding.credential_env_var}</span>
-                  </p>
-                ) : null}
-                {blocked ? (
-                  <p className="mt-1 text-xs text-destructive">
-                    缺少环境变量 {(binding.missing_env_vars ?? []).join("、")}
-                  </p>
-                ) : null}
+          <div key={binding.id} className="flex min-w-0 items-start gap-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <p className="truncate text-[13px] font-semibold text-ink">
+                  {binding.server_name ?? binding.server_key}
+                </p>
+                <StatusPill tone={blocked ? "warn" : "ok"}>{statusLabel(binding.status)}</StatusPill>
+                {projectVenuePill(definitionsById.get(binding.mcp_server_id)?.project_bindings)}
               </div>
+              {binding.url ? (
+                <p className="mt-0.5 truncate text-[12px] text-ink-3">{binding.url}</p>
+              ) : null}
+              {binding.credential_env_var ? (
+                <p className="mt-1 flex min-w-0 items-center gap-1 text-[12px] text-ink-3">
+                  <KeyRound className="size-3 shrink-0" />
+                  <span className="truncate font-mono">{binding.credential_env_var}</span>
+                </p>
+              ) : null}
+              {blocked ? (
+                <p className="mt-1 text-xs text-destructive">
+                  缺少环境变量 {(binding.missing_env_vars ?? []).join("、")}
+                </p>
+              ) : null}
             </div>
             <Button
               aria-label={`移除 MCP ${binding.server_name ?? binding.server_key}`}
@@ -837,6 +872,9 @@ function EmployeeMcpBindingsSection({
           </div>
         );
       })}
+        </div>
+        </ScrollList>
+      ) : null}
     </div>
   );
 }

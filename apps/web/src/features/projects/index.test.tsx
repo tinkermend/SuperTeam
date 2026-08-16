@@ -2710,7 +2710,7 @@ describe("ProjectsView", () => {
     // 提交需求已改为深链任务中枢，不再打开页内对话框。
     await expect
       .element(screen.getByRole("link", { name: "提交需求" }))
-      .toHaveAttribute("href", "/task-launches?mode=plan&project=project-1");
+      .toHaveAttribute("href", "/task-launches?face=task&mode=plan&project=project-1");
   });
 
   it("keeps previous list content visible while a filter request is refreshing", async () => {

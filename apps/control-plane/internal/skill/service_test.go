@@ -4,7 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -21,6 +24,7 @@ type mockObjectStore struct {
 	putKey    string
 	putBody   []byte
 	deleteKey string
+	getCalls  int
 	ref       storage.ObjectRef
 }
 
@@ -38,6 +42,14 @@ func (m *mockObjectStore) DeleteObject(_ context.Context, key string) error {
 
 func (m *mockObjectStore) PresignGet(_ context.Context, key string, _ time.Duration) (string, error) {
 	return "https://mock-object-store.local/" + key + "?signed=1", nil
+}
+
+func (m *mockObjectStore) GetObject(_ context.Context, key string) (io.ReadCloser, error) {
+	m.getCalls++
+	if len(m.putBody) == 0 {
+		return nil, errors.New("object not found")
+	}
+	return io.NopCloser(bytes.NewReader(m.putBody)), nil
 }
 
 func newTestService(repo *serviceTestRepository) *Service {
@@ -230,6 +242,50 @@ func TestServiceUploadSkillUsesArchiveFilenameSlugWhenDisplayNameIsChinese(t *te
 	}
 	if repo.upsertReq.Slug != "example-browser-upload-skill" {
 		t.Fatalf("expected slug from archive filename, got %q", repo.upsertReq.Slug)
+	}
+}
+
+func TestServiceUploadSkillDoesNotSlugifyASCIIPrefixOfChineseDisplayName(t *testing.T) {
+	repo := &serviceTestRepository{}
+	service := newTestService(repo)
+	archive := buildSkillZip(t, map[string]string{
+		"SKILL.md": "---\nname: coding-standards\n---\n\n# Coding Standards\n\n规范。\n",
+	})
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Name:     "ECC 编码规范",
+		Archive:  archive,
+		Filename: "coding-standards.zip",
+	})
+	if err != nil {
+		t.Fatalf("upload skill: %v", err)
+	}
+	if repo.upsertReq.Name != "ECC 编码规范" {
+		t.Fatalf("expected display name preserved, got %q", repo.upsertReq.Name)
+	}
+	if repo.upsertReq.Slug != "coding-standards" {
+		t.Fatalf("expected slug from SKILL.md name, got %q", repo.upsertReq.Slug)
+	}
+}
+
+func TestServiceUploadSkillHonorsExplicitSlug(t *testing.T) {
+	repo := &serviceTestRepository{}
+	service := newTestService(repo)
+	archive := buildSkillZip(t, map[string]string{
+		"SKILL.md": "# coding-standards\n",
+	})
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Name:     "ECC 编码规范",
+		Slug:     "ecc-coding-standards",
+		Archive:  archive,
+		Filename: "coding-standards.zip",
+	})
+	if err != nil {
+		t.Fatalf("upload skill: %v", err)
+	}
+	if repo.upsertReq.Slug != "ecc-coding-standards" {
+		t.Fatalf("expected explicit slug, got %q", repo.upsertReq.Slug)
 	}
 }
 
@@ -590,6 +646,7 @@ type serviceTestRepository struct {
 
 	getSkillResult *Skill
 	getSkillErr    error
+	existingBySlug *Skill
 	deleteSkillErr error
 
 	deleteDependenciesErr      error
@@ -604,6 +661,41 @@ func (r *serviceTestRepository) ListSkills(context.Context, ListSkillsRequest) (
 
 func (r *serviceTestRepository) GetSkill(context.Context, GetSkillRequest) (*Skill, error) {
 	return r.getSkillResult, r.getSkillErr
+}
+
+func (r *serviceTestRepository) FindSkillBySlug(context.Context, FindSkillBySlugRequest) (*Skill, error) {
+	if r.existingBySlug != nil {
+		return r.existingBySlug, nil
+	}
+	return nil, ErrNotFound
+}
+
+func (r *serviceTestRepository) ReplaceSkillArchive(_ context.Context, req ReplaceSkillArchiveRequest) (*ReplaceSkillArchiveResult, error) {
+	if r.getSkillErr != nil {
+		return nil, r.getSkillErr
+	}
+	skill := r.getSkillResult
+	if skill == nil {
+		skill = &Skill{ID: req.SkillID, TenantID: req.TenantID}
+	}
+	oldVersion := skill.Version
+	oldChecksum := skill.ArchiveChecksum
+	skill.Name = req.Name
+	skill.Description = req.Description
+	skill.Version = req.Version
+	skill.ArchiveObjectRef = req.ArchiveObjectRef
+	skill.ArchiveFilename = req.ArchiveFilename
+	skill.ArchiveSizeBytes = req.ArchiveSizeBytes
+	skill.ArchiveChecksum = req.ArchiveChecksum
+	skill.ArchiveFileCount = req.ArchiveFileCount
+	if req.RiskLevel != nil {
+		skill.RiskLevel = *req.RiskLevel
+	}
+	if req.Tags != nil {
+		skill.Tags = *req.Tags
+	}
+	r.getSkillResult = skill
+	return &ReplaceSkillArchiveResult{Skill: skill, OldVersion: oldVersion, OldChecksum: oldChecksum}, nil
 }
 
 func (r *serviceTestRepository) UpsertSkillPackage(_ context.Context, req UpsertSkillPackageRequest) (*Skill, error) {
@@ -695,6 +787,186 @@ func buildSkillZip(t *testing.T, files map[string]string) []byte {
 		t.Fatalf("close zip: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func TestServiceUploadSkillRejectsExistingSlugBeforePutObject(t *testing.T) {
+	repo := &serviceTestRepository{existingBySlug: &Skill{ID: uuid.New(), Slug: "diagnose", Name: "diagnose"}}
+	store := &mockObjectStore{ref: storage.ObjectRef{URI: "s3://bucket/x"}}
+	service := NewService(repo, store)
+	archive := buildSkillZip(t, map[string]string{"diagnose/SKILL.md": "# diagnose\n"})
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Archive:  archive,
+		Filename: "diagnose.zip",
+	})
+	var conflict *SlugConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("expected slug conflict, got %v", err)
+	}
+	if store.putKey != "" {
+		t.Fatalf("expected no object store write, put %q", store.putKey)
+	}
+}
+
+func TestServiceUploadSkillRejectsWindowsDrivePath(t *testing.T) {
+	repo := &serviceTestRepository{}
+	service := newTestService(repo)
+	archive := buildSkillZip(t, map[string]string{
+		"diagnose/SKILL.md":  "# diagnose\n",
+		"C:/Windows/evil.sh": "echo pwn\n",
+	})
+	_, err := service.UploadSkill(context.Background(), UploadSkillRequest{
+		TenantID: uuid.New(),
+		Archive:  archive,
+		Filename: "bad.zip",
+	})
+	if err == nil {
+		t.Fatal("expected windows drive path to fail")
+	}
+}
+
+func TestServiceReplaceSkillArchiveSameChecksumSucceeds(t *testing.T) {
+	skillID := uuid.New()
+	tenantID := uuid.New()
+	archive := buildSkillZip(t, map[string]string{
+		"diagnose/SKILL.md": "---\nname: diagnose\nversion: v0.1.0\n---\n# diagnose\n",
+	})
+	sum := sha256.Sum256(archive)
+	checksum := hex.EncodeToString(sum[:])
+	repo := &serviceTestRepository{getSkillResult: &Skill{
+		ID:              skillID,
+		TenantID:        tenantID,
+		Slug:            "diagnose",
+		Name:            "diagnose",
+		Version:         "v0.1.0",
+		ArchiveChecksum: checksum,
+		TeamBindings:    []*SkillTeamBinding{{TeamID: uuid.New(), TeamName: "平台"}},
+		AgentBindings:   []*SkillAgentBinding{{AgentID: uuid.New(), AgentName: "员工"}},
+		ProjectBindings: []*SkillProjectBinding{{ProjectID: uuid.New(), ProjectName: "项目"}},
+	}}
+	service := newTestService(repo)
+	updated, err := service.ReplaceSkillArchive(context.Background(), ReplaceSkillRequest{
+		TenantID: tenantID,
+		SkillID:  skillID,
+		Archive:  archive,
+		Filename: "diagnose.zip",
+	})
+	if err != nil {
+		t.Fatalf("same-checksum replace: %v", err)
+	}
+	if updated.ArchiveChecksum != checksum {
+		t.Fatalf("checksum changed to %s", updated.ArchiveChecksum)
+	}
+	if len(updated.TeamBindings) != 1 || len(updated.AgentBindings) != 1 || len(updated.ProjectBindings) != 1 {
+		t.Fatalf("bindings changed on same-checksum replace")
+	}
+}
+
+func TestServiceReplaceSkillArchiveKeepsBindingsAndSlug(t *testing.T) {
+	skillID := uuid.New()
+	tenantID := uuid.New()
+	repo := &serviceTestRepository{getSkillResult: &Skill{
+		ID:              skillID,
+		TenantID:        tenantID,
+		Slug:            "diagnose",
+		Name:            "diagnose",
+		Version:         "v0.1.0",
+		ArchiveChecksum: "old",
+		TeamBindings:    []*SkillTeamBinding{{TeamID: uuid.New(), TeamName: "平台"}},
+		AgentBindings:   []*SkillAgentBinding{{AgentID: uuid.New(), AgentName: "员工"}},
+		ProjectBindings: []*SkillProjectBinding{{ProjectID: uuid.New(), ProjectName: "项目"}},
+	}}
+	service := newTestService(repo)
+	archive := buildSkillZip(t, map[string]string{
+		"diagnose/SKILL.md": "---\nname: diagnose\nversion: v0.2.0\n---\n# diagnose\n",
+	})
+	updated, err := service.ReplaceSkillArchive(context.Background(), ReplaceSkillRequest{
+		TenantID: tenantID,
+		SkillID:  skillID,
+		Archive:  archive,
+		Filename: "diagnose.zip",
+	})
+	if err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if updated.Version != "v0.2.0" {
+		t.Fatalf("expected version from frontmatter, got %q", updated.Version)
+	}
+	if len(updated.TeamBindings) != 1 || len(updated.AgentBindings) != 1 || len(updated.ProjectBindings) != 1 {
+		t.Fatalf("bindings changed: teams=%d agents=%d projects=%d", len(updated.TeamBindings), len(updated.AgentBindings), len(updated.ProjectBindings))
+	}
+}
+
+func TestServiceReplaceSkillArchiveRejectsSlugChange(t *testing.T) {
+	skillID := uuid.New()
+	tenantID := uuid.New()
+	repo := &serviceTestRepository{getSkillResult: &Skill{
+		ID: skillID, TenantID: tenantID, Slug: "diagnose", Name: "diagnose", Version: "v0.1.0",
+	}}
+	store := &mockObjectStore{ref: storage.ObjectRef{URI: "s3://bucket/x"}}
+	service := NewService(repo, store)
+	archive := buildSkillZip(t, map[string]string{"other/SKILL.md": "# other-skill\n"})
+	_, err := service.ReplaceSkillArchive(context.Background(), ReplaceSkillRequest{
+		TenantID: tenantID,
+		SkillID:  skillID,
+		Name:     "other-skill",
+		Archive:  archive,
+		Filename: "other.zip",
+	})
+	if err == nil {
+		t.Fatal("expected slug change to fail")
+	}
+	if store.putKey != "" {
+		t.Fatalf("expected no object write, put %q", store.putKey)
+	}
+}
+
+func TestResolveSkillVersionRejectsTooLong(t *testing.T) {
+	_, err := resolveSkillVersion(strings.Repeat("v", 81), "", "v0.1.0")
+	if err == nil {
+		t.Fatal("expected too-long version to fail")
+	}
+}
+
+func TestServiceArchivePreviewRejectsUnknownPathAndSkipsGetWhenTooLarge(t *testing.T) {
+	tenantID := uuid.New()
+	skillID := uuid.New()
+	archive := buildSkillZip(t, map[string]string{
+		"preview/SKILL.md": "# preview\n",
+		"preview/icon.png": "\x89PNG\r\n",
+	})
+	store := &mockObjectStore{
+		putBody: archive,
+		ref:     storage.ObjectRef{URI: fmt.Sprintf("s3://test-bucket/skills/%s/preview/abc.zip", tenantID)},
+	}
+	repo := &serviceTestRepository{getSkillResult: &Skill{
+		ID:               skillID,
+		TenantID:         tenantID,
+		Slug:             "preview",
+		ArchiveObjectRef: fmt.Sprintf("s3://test-bucket/skills/%s/preview/abc.zip", tenantID),
+		ArchiveSizeBytes: int64(len(archive)),
+	}}
+	service := NewService(repo, store)
+
+	_, err := service.GetSkillArchiveContent(context.Background(), GetSkillRequest{TenantID: tenantID, SkillID: skillID}, "../secret")
+	if err == nil {
+		t.Fatal("expected unknown path to fail")
+	}
+
+	_, err = service.GetSkillArchiveContent(context.Background(), GetSkillRequest{TenantID: tenantID, SkillID: skillID}, "icon.png")
+	if err == nil {
+		t.Fatal("expected binary preview to fail")
+	}
+
+	repo.getSkillResult.ArchiveSizeBytes = 9 * 1024 * 1024
+	store.getCalls = 0
+	_, err = service.ListSkillArchiveEntries(context.Background(), GetSkillRequest{TenantID: tenantID, SkillID: skillID})
+	if err == nil {
+		t.Fatal("expected oversized archive preview to fail")
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("expected preview size gate to skip GetObject, got %d calls", store.getCalls)
+	}
 }
 
 func stringSlicesEqual(a, b []string) bool {

@@ -1,8 +1,100 @@
 # Changelog
 
+- 2026-08-16 22:50 在途批收尾后清理 typecheck 长尾(11 文件清零,web typecheck 恢复绿):tsconfig.app lib 升 ES2022(`.at()` ×3);删 demands 视图死链(index→operational-detail→demands-section 的 `demandView`/`onDemandViewChange`/`onViewChange` 只传不用,pane 切换已取代;顺带删未用 `sectionQueryClient`);portfolio 卡的 `workspace_git` badge 读的是后端投影不存在的幽灵字段,删除;`demand-dossier-density` storage 参数放宽为 `Pick<Storage,…>`(内存/抛错 fake 结构兼容);CopyChip children 放宽 ReactNode;replace-dialog 测试 fixture 补 `created_by_name`;logs operation 测试 `vi.mocked(fetcher)`;删 composer 测试未用 import 与 instance-rail 未用导入。验证:typecheck exit 0;涉改套件 333 绿 + web 全量 156 文件 1270 绿。**服务已重编重启**:CP pid=79212(迁移最新、health ok、object_store ok)、runtime-agent pid=79369(session 建立且命令通道正常回执);冒烟:legacy `/api/v1/runtime/tasks/*` 与 `/api/v1/tasks` 均 404、heartbeat 路由仍在(401 鉴权拦截)、web :3100 200。
+
+- 2026-08-16 22:45 体检后续·重复代码收敛:①web 新增 `src/hooks/use-control-plane-event-stream.ts` 的同骨架 SSE 长连接 hook(`useControlPlaneEventStream`,回调走 latest-ref 不重建连接),改造 3 处同端点(`/digital-employees/activity/stream`)消费点——chat 活动流、项目流程图 invalidate、run-overview 大屏内联版(后两处原为逐字复制);inbox 流生命周期语义特殊(connecting/断流快轮询)保持独立实现。②CP 新增 `internal/api/httpx`(`AuthorizeConsoleAction`/`CheckConsole`/`URLParamUUID`/`WriteJSON`),externalintegration/automation/scenariotemplate 三 handler 的 authorize 样板、ID 解析与 writeJSON 逐字复制收敛。③员工配置三 Tab(身份/执行/权限)的 hydrate/dirty effect 三重复制抽为 `useTabRehydrate`/`useDirtyReport`(`features/employees/components/use-config-tab-state.ts`)。验证:web 全量 156 文件 1269 用例绿、涉改套件 228 绿;`go test ./internal/externalintegration ./internal/automation ./internal/scenariotemplate` 绿;web typecheck 本次改动文件零错(剩余错误均在途会话文件)。
+
 - 2026-08-16 22:35 对象存储 B 期：HeadObject 403 在桶可达时当缺对象并继续签发 PUT，真无权限带 `failure_family=object_store_access`；stat 其它失败不再把 presign 打成 500。attestation 同键冲突改为更新终态。启动日志打印桶配置来源（不打密钥）；`/health` HeadBucket 失败返回 503。Runtime 起服去掉继承的 `S3_*`。验证：`go test ./internal/storage ./internal/project ./internal/config ./internal/api ./internal/app`。
 
+- 2026-08-16 22:30 项目体检清理三件:①**下线 legacy 任务生命周期通道**(runtime-agent 从未调用;项目任务走 project-task-attempts 写回)——console `/api/v1/tasks` CRUD 与 runtime `/api/v1/runtime/tasks/*` 六端点出契约(claim 端点本就是 204 stub)、删 `internal/task` 包/`handlers/task.go`/零调用 `runtime.Poller`/12 条死 sqlc 查询/authz task 族 5 个 action 与 `ResourceTask`(OpenFGA 台账 D1/D2 数字同步为 25/76)、web 死客户端 `lib/api/tasks.ts`;顺带删 gitignored 旧生成目录 `apps/control-plane/gen/` 与根 `generate.go`,`generate:control-plane` 只跑 `./internal/api`;`tasks` 表保留(数字员工 run/会话线程仍存储于它)。②TODO.md 廉洁性:删已完成桶 CORS 行、删已由编排台落地的「剧本表单化编辑」行、补 OpenFGA 债务台账指针(台账文档随本批入库)。③`adversarial_trigger.go` 审查子串判据标注寿命(结构性判据为准,在途需求消化完即删);casting e2e 脚本移除 legacy 完成端点 fallback。验证:`go test ./...` 40 包绿、feishu-connector 绿、`verify:contracts` 绿、authz 覆盖护栏 25/76 绿。
+
+- 2026-08-16 21:55 场景模板失败路径 A 期：滞留看门狗给失败上游 5 分钟宽限，取消写 `system_stranded`；人类重试先复活下游再重挂边，完成任务按替换任务+修订根双锚点放行；被取代源行不计入需求状态。假桶让 PulseAI 需求 `f055f210` 开发失败后下游仍 blocked，批重试后五步 completed、需求 `acceptance_pending`。验证：`go test ./internal/project ./internal/workflow/projectcoordination`；真库 `ListStrandedBlocked`；CP pid=34880 cwd 本 checkout。
+
+- 2026-08-16 19:41 场景模板闭环健壮性优化方案 `docs/superpowers/specs/2026-08-16-scenario-template-closed-loop-hardening.md`：固化「流程结构以场景模板为唯一权威」（需求正文不得增删步骤，冲突显式标记而非由 Provider 裁决），并按 P0 失败路径（滞留取消与重试竞态、需求状态重算、结项闸门）、P1 对象存储与写回（Head 403 当缺对象、attestation 冲突、配置来源可见、health 探桶）、P2 执行语义（步骤预算只观测、成功待确认与失败重跑分离、并发冲突不判死、自动化判据不接受执行者自评）分期。人类拍板：超预算只告警不打断；`system_stranded` 下游重试时自动全部复活；push 无 origin 仍以 `completed` + `push_receipt` 收口。纯文档。
+
+- 2026-08-16 18:11 新环境对象存储初始化：`./scripts/ops/init-object-store.sh` 读 Control Plane 同一份 `objectStore`（yaml + `S3_*` 覆盖），幂等建桶并写控制台 CORS；控制面启动仍不自动 CreateBucket。验证：`go test ./internal/storage -run TestEnsureBucket`；对本地 RustFS `http://127.0.0.1:9000` 桶 `superteam-artifacts` 跑 init 与 `--check`，CORS GET/HEAD 覆盖 `3100` origins。
+
+- 2026-08-16 14:37 Provider 已经成功、命令也 `complete` 之后，工件/raw-log 上传失败会让 drain 再去 `fail`；命令 409，attempt 终态被跳过，任务停在 running。现先采集上传再 complete 命令；命令 fail 遇 409 仍继续 fail attempt。验证：`cargo test --test runtime_command_executor_test --test writeback_queue_test`。
+
+- 2026-08-16 14:06 项目任务派发后 `task_runs` 一直停在 `dispatching`：Runtime 事件/心跳不 bump 该行，5 分钟预确认看门狗把仍在跑的会话收成 `dispatch_stale`，命令 409、attempt 假活。现收到 Runtime 事件即把 run 标 `running`；清扫前重读，避免用过期快照误杀。验证：`go test ./internal/employee -run 'TestWritebackEventPromotes|TestSweepStalePreConfirmation'`。
+
+- 2026-08-16 13:43 任务中枢对话只展示工具与回答：进行中按「执行 / 调用某工具 / 写出回答」切换状态，不再写「思考中」；进行中的工具行默认展开摘录，完成后收成「工具 · N」。文档改为产品选择不映射思考块，而不是「过程没有思考链」。验证：web 定向 chat-panel。
+
+
+- 2026-08-16 12:09 修订重试被派成 `resume_session` 续上已死/限额打满的 Claude 会话：父进程立刻变僵尸，事件流卡住，预算心跳仍在刷，任务假跑几十分钟。心跳侧发现 Provider PID 已退出就停心跳并失败写回，避免再靠僵尸续命。
+
+- 2026-08-16 12:06 任务中枢对话：SSE 连通时停掉 run/事件 10s 轮询、会话列表改为 30s；贴底改为观察线程容器而非每轮子节点，离开底部显示「回到底部/有新消息」；完成态无工具缓存不再刷「过程」；工具行展示输入/输出摘录；代码围栏带复制。验证：web 定向 chat-panel + markdown-prose。
+
+
+- 2026-08-16 11:35 对话气泡不再用嵌套百分比 max-width（人类侧实际只剩十来个字宽）。提问/回答改为占满会话列减去头像，短句仍 fit-content。验证：对照用户截图的换行 CSS。
+
+- 2026-08-16 11:33 真链复现：新提问被 `mergeChatThread` 插到历史最顶，窗口钉在底部所以看不见；刷新后服务端顺序才对。现改为历史在前、发送中轮次接在末尾，并去掉把内容顶出视口的弹性空白。验证：浏览器对 PulseAI 发布工程师发送后提问曾出现在线程顶部；定向 chat-panel 31 绿。
+
+
+- 2026-08-16 11:18 场景模板骨架已有审查步时不再往开发步注入 3 判官 `adversarial_review`（四眼交给代码审查/安全审查）；在途需求若图上已有审查任务，完成开发也不再跑判官。验证：`go test ./internal/workflow/projectcoordination -run 'GovernanceDoesNotInject|PrepareAdversarialReviewSkipped|ExitEvidenceWithDedicated'`。
+
+- 2026-08-16 11:11 任务中枢对话面批次三：Enter 发送（Shift+Enter 换行，IME 组合期不误发）、输入框按内容增高；完成态 footer 复制 + 时间/耗时；失败卡走 `failure_family` 中文词表；完成后工具行收成「已处理 · 工具 N 次」。验证：web 定向 chat-panel。
+
+- 2026-08-16 10:50 Provider 父进程已退出但孙进程仍占 stdout 时，Runtime 会一直 `next_line` 并继续预算心跳，控制平面把 attempt 当成活的。现对 `try_wait` 轮询父 PID，stderr 也限时回收，避免僵尸拖死任务。验证：`cargo test --test provider_exit_test`。
+
+- 2026-08-16 10:54 对话面对齐 desktop-cc-gui 最小集：表现层最近 30 轮 + 顶部「显示之前的 N 条」chip（点选展开并按高度差还原 scrollTop）；进行中走活动 SSE 刷新 run/事件、10s 轮询兜底；工具独立折叠行接到当前回合；运行中可切会话并提供停止。Markdown 继续 `react-markdown`，补 GFM/breaks 与未闭合 fence 尾块切分。验证：web 定向 chat-panel + markdown-prose。
+
+- 2026-08-16 10:36 任务中枢对话面 P0：会话区去掉 `justify-content:flex-end` 恢复可滚动并贴底跟随；按 `runId` 合并恢复缓存，切员工再切回不再只剩第一轮；完成态回答走 `MarkdownProse`，JSON 兜底仍用 `<pre>`。验证：web 定向 chat-panel 22 绿。
+
+- 2026-08-16 10:05 真链开发步卡死：Runtime 从不写 `lease_expires_at`，看门狗只扫租约过期，attempt 带 `current_attempt_id` 又不是孤儿，任务永久 `running`。现把「无租约且超过静默阈值」也纳入恢复。人类恢复再派发预算从 1 提到 3，避免第一次缺 git 用尽额度后租约丢失直接把需求打失败且无收件箱。验证：`go test ./internal/project -run 'SweepExpiredRunning|HumanRedispatchBudget'`。
+
+- 2026-08-16 02:41 真链派发暴露两处：心跳 `required_tools` 在 DEI 退役后恒空，Runtime 不探测技能声明的 `git`，开发步被 `skill_dependencies_not_satisfied` 拦住；恢复卡只写「分派失败」看不到原因。现按节点上的员工技能并集下发探测列表，恢复卡带上具体错误。模板实例化忽略步骤 `title`、又把 `feature_development` 默认能力并进编制角色，任务卡重名且假报能力缺口。现保留步骤标题，模板骨架不再套任务类型默认能力。控制平面重启后 Runtime 命令 WebSocket 握手可能挂死，Provider 已退出却变成僵尸、结果写不回。现为握手加 10s 超时以便重连。验证：`go test ./internal/skill ./internal/project ./internal/runtime ./internal/scenariotemplate ./internal/workflow/projectcoordination`；`cargo test --lib command_loop_connect_times_out`。
+
+- 2026-08-16 01:29 规划不再默认打 DeepSeek：绑定场景模板时按骨架+编制确定性拆任务；规划 HTTP 超时标 Temporal 非重试，避免连打三次。技能身份改从 SKILL.md/`slug`/zip 文件名取，中文展示名不再挤成 `ecc`。验证：`go test ./internal/skill ./internal/workflow/projectcoordination`；web 定向 upload + skills api；**真链** CP pid=37126 / web pid=37581（cwd 本 checkout）：`ECC 编码规范` 上传得 slug `ecc-coding-std-1786815226`；PulseAI 需求 `1aa344db-…` 在 2s 内 `PlanDemandRoute`→计划确认，修订 5 步（开发/审查/安全/发布×2）、出口 `push_receipt`，`planner_provider` 空。
+
+- 2026-08-15 22:12 任务中枢小修：项目「提交需求」深链带 `face=task`（`mode=plan` 无 face 也落到任务面）；对话面加载中不再误报「没有可用项目」；创建向导认领目录不再标成「非 Git（空目录）」。验证：web 定向 task-launches / chat-panel / create-project-draft / projects 提交需求深链。
+
+- 2026-08-15 00:39 技能包替换补齐方案剩余缺口：成功 toast（版本变则「已更新到 {version}」，否则 checksum 短码）、盘符路径整包 400、同 checksum 替换仍成功且绑定不变、预览 413 用「技能包过大」中文降级而非英文失败句。验证：`go test ./internal/skill`；web 定向 replace-dialog + detail。未再跑 Runtime 派发。
+
+- 2026-08-14 18:06 技能包替换补上绑定分表与 Runtime 收敛真链：`team_skill_bindings`/`skill_agent_bindings`/`project_skill_bindings` 替换前后各 1 行不变；开发-A 两次 chat 派发 checksum 从 `ac48…` 换到 `0b88…`，家目录 `.skill-checksum` 与 `SKILL.md` 跟着变，第二次仍 `materialized=1 stamp_hit=false`。验证：`node scripts/ops/smoke-skill-replace-bindings-runtime.mjs`（CP pid=5313 / runtime-agent pid=44627 / rustfs :9000，cwd 本 checkout）。同团队员工绑 API 409，agent 行用 SQL 插入以覆盖「替换误删员工绑定」。
+
+- 2026-08-14 18:01 能力 Tab：左技能、右 MCP+环境变量；清单超高在卡内滚动，避免条目变多把页脚顶飞。验证：web 定向 capabilities panel。
+
+- 2026-08-14 17:55 能力 Tab：技能/MCP 宽容器双栏清单，空态改短句、安装/移除不再重复名称，环境变量独立成卡；MCP 选择器只显示中文名。验证：web 定向 capabilities panel。
+
+- 2026-08-14 17:42 配置页切 Tab 误报未保存：dirty 改为对照当前值与服务器快照，执行配置初始状态不再空值；`useBlocker` 不拦截仅 `?tab=` 切换。验证：web 定向 config。
+
+- 2026-08-14 17:45 技能包替换真链补上本地 RustFS（`superteam-rustfs-dev` :9000）：上传→只读预览 `SKILL.md`→按 id 替换 checksum 变且三类绑定数组长度不变→旧 checksum 对象仍在桶里（删技能后只清当前指针）→同 slug 409、穿越 zip 400。替换成功改为关对话框。验证：`go test ./internal/skill`；`node scripts/ops/smoke-skill-archive-replace.mjs`（CP pid=5313 / web pid=6153，cwd 本 checkout）。Runtime 下次派发收敛未跑。
+
+- 2026-08-14 17:35 数字员工配置页 Tab 改为整列底边轨（标签靠左、激活下划线），不再用贴内容或拉满的白胶囊条。验证：web 定向 config。
+
+- 2026-08-14 17:31 剧本角色选择器只展示词表中文名，不再并排 `role_key`。标识仍作提交值。验证：web 定向 config。
+
+- 2026-08-14 17:13 技能管理补上按 `skillId` 替换 zip（绑定保留、slug 禁止变、新建撞 slug 409）与详情只读摊开包内容；路径穿越改为整包 400。不做控制台编辑 SKILL.md。验证：`go test ./internal/skill ./internal/api`、web 定向 42 绿、`verify:contracts`；**真实 API**（CP pid=47192 / web pid=48271，cwd 本 checkout）：上传/替换带 `../` 条目 400；同 slug 再传 409 且带已有 `skill_id`。对象存储 :9000 未起，替换写桶与预览 GetObject 未跑通。
+
+- 2026-08-14 16:55 数字员工配置页：身份/执行/权限主 CTA 右对齐；顶部定位卡改为头像+对象头+底部分割事实条；能力 Tab 分区头、安装/绑定嵌套区与 MCP 表单一行排布。验证：web 定向 config + capabilities panel。
+
+- 2026-08-14 16:44 数字员工配置页改为 4 Tab（身份 / 能力 / 执行配置 / 权限）；`employee.role` 降级为「职责描述」走 `PUT /profile` 即时保存，权限审批不再接受 role（BREAKING：`SubmitDigitalEmployeePermissionChangeRequest` 去掉 `role`）。删除封闭英文枚举 `supportedDigitalEmployeeRoles`。新增 `GET .../permission-change`（无待批 204）。`ActivateConfigRevision` 仍读取存量 `target_role` 以兼容在途审批。员工模板 `default_role` 文案对齐为「默认职责描述」。验证：`go test ./internal/employee ./internal/api`、web 定向 88 绿、`verify:contracts`。
+
+- 2026-08-14 16:00 场景模板内部标识强制 `^[A-Za-z][A-Za-z0-9_]{1,63}$`（中文/连字符 400）；新增软删除 `DELETE /api/v1/scenario-templates/{key}`，列表和编辑页有删除确认。验证：`go test ./internal/scenariotemplate ./internal/api`、web 定向 21 绿、`verify:contracts`；**真实链路**（CP pid=45747）：`中文标识`/`bad-key` 400，删 `browser_composer_live` 204 后再 GET 404；浏览器列表「删除」弹出确认（未删种子模板）。
+
+- 2026-08-14 15:50 技能管理方案：卡片「更新 zip」按 `skillId` 替换归档（绑定保留、slug 禁止变），详情只读摊开包内容；不做控制台编辑 `SKILL.md`。新建上传撞 slug 改为 409。见 `docs/superpowers/specs/2026-08-14-skill-package-replace-and-preview-design.md`。纯文档。
+
+- 2026-08-14 15:42 场景模板编排台收敛为一张工作台：身份玻璃卡（起步芯片+操作贴右上）、关卡轨收进队列顶、左窄队列右检修+收口档位；未命名站不再露出 `step_n`。验证：定向 19 绿；**真实浏览器**（web pid=15838 / CP pid=40674）1440 无横溢、900 队列与检修台上下堆叠。
+
+- 2026-08-14 15:28 场景模板创建/编辑改为全页编排台（`/scenario-templates/new`、`/$key/edit`），去掉升版弹窗；一期串行骨架可点选席位与收口，并行种子只改名称描述。验证：web 定向 19 绿；**真实浏览器**（web pid=15838 / CP pid=40674，cwd 本 checkout）：列表「新建模板」站内跳转；新建页身份区+关卡链+队列/检修台+收口表无横向溢出；编辑 `software_delivery` 出并行锁定横幅且保存骨架禁用；实存 `browser_composer_live`（席位 collector、出口「采集」）。
+
+- 2026-08-14 15:06 场景模板重构方案收口：一期只做串行（并行种子禁止被编辑页改写）；收口文案默认站名、可选自定义 label。见 `redesign-spec.md`。纯文档。
+
+- 2026-08-14 14:52 场景模板重构方案补上与角色词表、任务发起的真实咬合：出口=规划确认卡收口而非发起时选深度；产品面去掉「升版」、存储仍钉版本。见 `redesign-spec.md`。纯文档。
+
+- 2026-08-14 14:39 场景模板创建/升版页重构设计稿 `docs/prototypes/scenario-template-composer/redesign-spec.md`：主从编排台为骨架 + 关卡链只读概览条，全页路由取代弹窗；含 `spec-composer.ts` 出口可选化映射规则（when 就近出口、死站拦截）与 P0–P2 分阶段计划。纯文档，未改产品代码。
+
+- 2026-08-14 11:34 场景模板创建原型 v3（Soft-Flat 对齐版）：按 `DESIGN.md` 基线新做三页——关卡链+检修台 / 主从编排台 / 词表画布，逻辑沿用 v2（任意步数、角色分派、出口即深度），`soft-*.html` + 截图预览，v2 概念稿留档。未改产品路由。
+
+- 2026-08-14 11:20 场景模板创建原型 v2：任意领域/任意步数/深度尺，替换上一版写死软件交付三步的稿。入口仍 `docs/prototypes/scenario-template-composer/`。未改产品路由。
+
 - 2026-08-14 11:06 同一主机同一 `node_id` 只允许一个 runtime-agent：启动时对 `$HOME/.superteam/runtime-agent/locks/<node_id>.lock` 做非阻塞 flock，第二个进程立即退出（错误含占用 pid）。`--once` 不占锁。验证：`cargo test --test instance_lock_test` + daemon_test 绿；**真实链路**（runtime-agent 脚本 pid=44627 / 进程 pid=44647）第二次 `cargo run --config apps/runtime-agent/config.yaml` 立刻 exit 1：`already running for node local-dev-node (pid 44647)`。
+
+- 2026-08-14 11:06 新增场景模板创建的三套全页 UI 原型（关卡轨 / 对戏表 / 问答生长），入口 `docs/prototypes/scenario-template-composer/`。未改产品路由。
+
+- 2026-08-14 10:56 场景模板改为**关键节点编制台**（谁接、谁验、不可跳过），JSON 仅作高级对照；员工模板带 `default_role_keys`，创建向导必选剧本角色并写入 `role_keys`；规划缺口补员同时绑角色并写编制。迁移 `20260814022322`。顺手修创建员工时 `digital_employee_roles` 撞未提交 FK 的 500。验证：`go test ./internal/employee`、web 定向 84 绿、`verify:contracts`、atlas.sum；**真实链路**（CP pid=38741 / web pid=37545，cwd 本 checkout，Current=`20260814022322`）：编制台 UI 建 `browser_composer_ui`（开发席位）；API 建员 `role_keys=["developer"]`、模板审查员继承 `["reviewer"]`；项目编制 PUT 两席位写回。`migrate-validate` 本机 :55432 未起，仅做 `atlas migrate validate` 哈希校验。
+
 
 - 2026-08-14 10:59 Runtime 命令 WebSocket：同 `node_id` 新连接踢旧连接时关闭码改为 policy-violation + `replaced by new connection`；agent 识别后 30s～5min 退避（普通断线 2s～60s 指数+抖动），Close 帧不再当协议错误空转，重复日志 30s 合并。验证：`go test ./internal/runtime ./internal/api`、`cargo test --lib controlplane::ws` 绿；**真实链路**（CP pid=40674 / runtime-agent pid=41250，cwd 本 checkout）重启后会话建立，30s 内无 `websocket read failed` 刷屏。
 

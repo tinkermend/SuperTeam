@@ -244,6 +244,7 @@ const (
 	ProjectEventTaskContractMissing        ProjectEventType = "project_task.contract_missing"
 	ProjectEventTaskWaitingHuman           ProjectEventType = "project_task.waiting_human"
 	ProjectEventTaskCancelled              ProjectEventType = "project_task.cancelled"
+	ProjectEventTaskRevived                ProjectEventType = "project_task.revived"
 	ProjectEventTaskDismissed              ProjectEventType = "project_task.dismissed"
 	ProjectEventTaskCompleted              ProjectEventType = "project_task.completed"
 	ProjectEventTaskFailed                 ProjectEventType = "project_task.failed"
@@ -778,8 +779,13 @@ type ProjectTask struct {
 	StatusChangedAt            time.Time
 	DismissedAt                *time.Time
 	DismissedBy                *uuid.UUID
-	CreatedAt                  time.Time
-	UpdatedAt                  time.Time
+	// CancelReason 见 ProjectTaskCancelReason* 常量；只有 system_stranded 允许在人类
+	// 点重试时被复活。SupersededByTaskID 非空表示本任务已被恢复替换任务取代，不再
+	// 计入需求状态推导。
+	CancelReason       *string
+	SupersededByTaskID *uuid.UUID
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 type ProjectTaskResult struct {
@@ -885,6 +891,13 @@ const (
 	ProjectTaskRecoveryActionFailed         = "failed"
 )
 
+// 取消原因分型（迁移 20260816205000）。只有系统滞留收敛的取消可以在人类点重试时
+// 被复活重挂边；人类驳回下游与未分型（空串）一律保持终态，避免复活人已判死的分支。
+const (
+	ProjectTaskCancelReasonSystemStranded = "system_stranded"
+	ProjectTaskCancelReasonHumanReject    = "human_reject"
+)
+
 type ProjectTaskRecoveryAction struct {
 	Action         string
 	FailureFamily  string
@@ -919,9 +932,10 @@ type RecoverProjectTaskAttemptRequest struct {
 }
 
 type SweepProjectTaskAttemptRecoveryRequest struct {
-	TenantID uuid.UUID
-	Now      time.Time
-	Limit    int32
+	TenantID    uuid.UUID
+	Now         time.Time
+	StaleBefore time.Time
+	Limit       int32
 }
 
 type SweepProjectTaskAttemptRecoveryResult struct {

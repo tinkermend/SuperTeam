@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	runtimepkg "github.com/superteam/control-plane/internal/runtime"
 	"github.com/superteam/control-plane/internal/storage/queries"
 )
 
@@ -24,9 +21,6 @@ type fakeAuthzQueryStore struct {
 	employeeScopeParams  queries.GetDigitalEmployeeAuthzScopeParams
 	employeeScope        queries.GetDigitalEmployeeAuthzScopeRow
 	employeeScopeErr     error
-	runtimeParams        queries.RuntimeNodeCoversTaskScopeParams
-	runtimeOK            bool
-	runtimeErr           error
 	openFGAMembers       []queries.ListOpenFGAMembersRow
 	openFGAMembersErr    error
 	openFGAScopes        []queries.ListOpenFGAProjectTeamScopesRow
@@ -48,11 +42,6 @@ func (s *fakeAuthzQueryStore) GetActiveTeamMembership(ctx context.Context, param
 func (s *fakeAuthzQueryStore) GetDigitalEmployeeAuthzScope(ctx context.Context, params queries.GetDigitalEmployeeAuthzScopeParams) (queries.GetDigitalEmployeeAuthzScopeRow, error) {
 	s.employeeScopeParams = params
 	return s.employeeScope, s.employeeScopeErr
-}
-
-func (s *fakeAuthzQueryStore) RuntimeNodeCoversTaskScope(ctx context.Context, params queries.RuntimeNodeCoversTaskScopeParams) (bool, error) {
-	s.runtimeParams = params
-	return s.runtimeOK, s.runtimeErr
 }
 
 func (s *fakeAuthzQueryStore) ListOpenFGAMembers(ctx context.Context) ([]queries.ListOpenFGAMembersRow, error) {
@@ -205,31 +194,6 @@ func TestPgRepositoryMapsNoRowsToNoMembership(t *testing.T) {
 		PrincipalID:   uuid.New(),
 	})
 	require.ErrorIs(t, err, ErrNoMembership)
-}
-
-func TestPgRepositoryPassesRuntimeTaskScopeParams(t *testing.T) {
-	tenantID := uuid.New()
-	teamID := uuid.New()
-	taskID := uuid.New()
-	store := &fakeAuthzQueryStore{runtimeOK: true}
-	repo := NewPgRepository(store)
-
-	covered, err := repo.RuntimeNodeCoversTaskScope(context.Background(), RuntimeScopeParams{
-		TenantID: tenantID,
-		TeamID:   &teamID,
-		TaskID:   taskID,
-		NodeID:   "node-1",
-	})
-	require.NoError(t, err)
-
-	require.True(t, covered)
-	require.Equal(t, tenantID, store.runtimeParams.TenantID)
-	require.Equal(t, uuid.NullUUID{UUID: teamID, Valid: true}, store.runtimeParams.TeamID)
-	require.Equal(t, taskID, store.runtimeParams.TaskID)
-	require.Equal(t, "node-1", store.runtimeParams.NodeID)
-	require.True(t, store.runtimeParams.LastHeartbeatAfter.Valid)
-	expectedThreshold := time.Now().Add(-runtimepkg.HeartbeatTimeout)
-	require.WithinDuration(t, expectedThreshold, store.runtimeParams.LastHeartbeatAfter.Time, 2*time.Second)
 }
 
 func TestPgRepositoryPreservesUnexpectedErrors(t *testing.T) {

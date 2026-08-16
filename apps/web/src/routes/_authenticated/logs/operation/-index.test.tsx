@@ -96,7 +96,7 @@ describe("OperationLogsRoute", () => {
     expect(document.body.querySelector('[data-slot="work-surface"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="data-table"]')).not.toBeNull();
     expect(document.body.querySelector('[data-slot="list-toolbar"]')).not.toBeNull();
-    const requestUrl = String(fetcher.mock.calls[0]?.[0]);
+    const requestUrl = String(vi.mocked(fetcher).mock.calls[0]?.[0]);
     expect(requestUrl).toContain("exclude_module=authz");
     expect(requestUrl).toContain("since=");
   });

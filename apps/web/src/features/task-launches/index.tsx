@@ -59,6 +59,10 @@ function resolveFace(search: TaskLaunchSearch): HubFace {
   if (search.view === "instances") {
     return "task";
   }
+  // 项目「提交需求」带 mode=plan|loop 且不带 face，落到任务面。
+  if (search.mode === "plan" || search.mode === "loop") {
+    return "task";
+  }
   // 旧 mode=chat 深链落到对话面。
   if (search.mode === "chat") {
     return "chat";
@@ -383,6 +387,8 @@ export function TaskLaunchView({
             onProjectChange={handleProjectChange}
             projectId={selectedProjectId}
             projects={activeProjects}
+            projectsError={projectsQuery.isError}
+            projectsLoading={projectsQuery.isLoading}
             resolvedProject={resolvedProject}
           />
         </div>

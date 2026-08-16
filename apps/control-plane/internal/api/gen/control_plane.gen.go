@@ -2862,6 +2862,24 @@ func (e SignDemandCriterionVerdictRequestVerdict) Valid() bool {
 	}
 }
 
+// Defines values for SkillArchiveEntryKind.
+const (
+	Directory SkillArchiveEntryKind = "directory"
+	File      SkillArchiveEntryKind = "file"
+)
+
+// Valid indicates whether the value is a known member of the SkillArchiveEntryKind enum.
+func (e SkillArchiveEntryKind) Valid() bool {
+	switch e {
+	case Directory:
+		return true
+	case File:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubmitProjectDemandRequestCoordinationMode.
 const (
 	SubmitProjectDemandRequestCoordinationModeLoop SubmitProjectDemandRequestCoordinationMode = "loop"
@@ -3248,16 +3266,16 @@ func (e ListDigitalEmployeesParamsAssignment) Valid() bool {
 
 // Defines values for ListDigitalEmployeeRunsParamsRunKind.
 const (
-	ListDigitalEmployeeRunsParamsRunKindChat ListDigitalEmployeeRunsParamsRunKind = "chat"
-	ListDigitalEmployeeRunsParamsRunKindTask ListDigitalEmployeeRunsParamsRunKind = "task"
+	Chat ListDigitalEmployeeRunsParamsRunKind = "chat"
+	Task ListDigitalEmployeeRunsParamsRunKind = "task"
 )
 
 // Valid indicates whether the value is a known member of the ListDigitalEmployeeRunsParamsRunKind enum.
 func (e ListDigitalEmployeeRunsParamsRunKind) Valid() bool {
 	switch e {
-	case ListDigitalEmployeeRunsParamsRunKindChat:
+	case Chat:
 		return true
-	case ListDigitalEmployeeRunsParamsRunKindTask:
+	case Task:
 		return true
 	default:
 		return false
@@ -3748,11 +3766,6 @@ type CompleteProjectTaskRequest struct {
 	Uncertainty           *string                 `json:"uncertainty,omitempty"`
 }
 
-// CompleteTaskRequest defines model for CompleteTaskRequest.
-type CompleteTaskRequest struct {
-	Result *map[string]interface{} `json:"result,omitempty"`
-}
-
 // ConnectorBootstrapResponse defines model for ConnectorBootstrapResponse.
 type ConnectorBootstrapResponse struct {
 	Configs []struct {
@@ -3882,6 +3895,9 @@ type CreateDigitalEmployeeRequest struct {
 	RiskLevel             *string                 `json:"risk_level,omitempty"`
 	Role                  *string                 `json:"role,omitempty"`
 
+	// RoleKeys 租户角色词表绑定（多值）。创建时写入 digital_employee_roles， 决定该员工出现在哪些剧本编制候选中。省略时若员工模板声明了 default_role_keys 则采用模板默认值。
+	RoleKeys *[]string `json:"role_keys,omitempty"`
+
 	// Skills Skill slugs from the tenant skill registry to logically bind to the employee at creation. Unknown slugs are rejected with 400.
 	Skills *[]string `json:"skills,omitempty"`
 
@@ -3926,9 +3942,12 @@ type CreateDigitalEmployeeRunRequestRunKind string
 
 // CreateEmployeeTemplateRequest defines model for CreateEmployeeTemplateRequest.
 type CreateEmployeeTemplateRequest struct {
-	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
-	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
-	DefaultRole              *string                 `json:"default_role,omitempty"`
+	BudgetPolicy       *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings *map[string]interface{} `json:"capability_bindings,omitempty"`
+	DefaultRole        *string                 `json:"default_role,omitempty"`
+
+	// DefaultRoleKeys 创建员工时默认绑定的剧本角色键（role_vocabulary.role_key）。
+	DefaultRoleKeys          *[]string               `json:"default_role_keys,omitempty"`
 	Description              *string                 `json:"description,omitempty"`
 	Label                    string                  `json:"label"`
 	Metadata                 *map[string]interface{} `json:"metadata,omitempty"`
@@ -4103,23 +4122,14 @@ type CreateScenarioTemplateRequest struct {
 	Description *string                `json:"description,omitempty"`
 	Name        string                 `json:"name"`
 	Spec        map[string]interface{} `json:"spec"`
-	TemplateKey string                 `json:"template_key"`
+
+	// TemplateKey Tenant-unique machine key. Letters, digits, and underscores only; must start with a letter. Immutable after create.
+	TemplateKey string `json:"template_key"`
 }
 
 // CreateScenarioTemplateVersionRequest defines model for CreateScenarioTemplateVersionRequest.
 type CreateScenarioTemplateVersionRequest struct {
 	Spec map[string]interface{} `json:"spec"`
-}
-
-// CreateTaskRequest defines model for CreateTaskRequest.
-type CreateTaskRequest struct {
-	Description   *string                 `json:"description,omitempty"`
-	Params        *map[string]interface{} `json:"params,omitempty"`
-	Priority      *int32                  `json:"priority,omitempty"`
-	ProviderType  string                  `json:"provider_type"`
-	TargetNodeId  *string                 `json:"target_node_id,omitempty"`
-	Title         string                  `json:"title"`
-	WorkspacePath *string                 `json:"workspace_path,omitempty"`
 }
 
 // CreateTeamRequest defines model for CreateTeamRequest.
@@ -4587,6 +4597,24 @@ type DigitalEmployeeOverviewSummary struct {
 	WaitingRuntimeCount int32 `json:"waiting_runtime_count"`
 }
 
+// DigitalEmployeePermissionChange defines model for DigitalEmployeePermissionChange.
+type DigitalEmployeePermissionChange struct {
+	ApproverName            string                 `json:"approver_name"`
+	CreatedAt               time.Time              `json:"created_at"`
+	CurrentPermissionPolicy map[string]interface{} `json:"current_permission_policy"`
+
+	// CurrentRole 存量在途审批可能携带；新请求不再写入
+	CurrentRole            *string                `json:"current_role,omitempty"`
+	RequestId              openapi_types.UUID     `json:"request_id"`
+	RequesterName          string                 `json:"requester_name"`
+	RiskLevel              *string                `json:"risk_level,omitempty"`
+	Status                 string                 `json:"status"`
+	TargetPermissionPolicy map[string]interface{} `json:"target_permission_policy"`
+
+	// TargetRole 存量在途审批可能携带；新请求不再写入
+	TargetRole *string `json:"target_role,omitempty"`
+}
+
 // DigitalEmployeePolicyDefaults defines model for DigitalEmployeePolicyDefaults.
 type DigitalEmployeePolicyDefaults struct {
 	ApprovalPolicy   map[string]interface{} `json:"approval_policy"`
@@ -4868,9 +4896,12 @@ type DigitalEmployeeStatus string
 
 // DigitalEmployeeTypeOption defines model for DigitalEmployeeTypeOption.
 type DigitalEmployeeTypeOption struct {
-	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
-	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
-	DefaultRole              string                  `json:"default_role"`
+	BudgetPolicy       *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings *map[string]interface{} `json:"capability_bindings,omitempty"`
+	DefaultRole        string                  `json:"default_role"`
+
+	// DefaultRoleKeys 创建员工时默认绑定的剧本角色键（role_vocabulary.role_key）。
+	DefaultRoleKeys          *[]string               `json:"default_role_keys,omitempty"`
 	Description              string                  `json:"description"`
 	Label                    string                  `json:"label"`
 	Metadata                 *map[string]interface{} `json:"metadata,omitempty"`
@@ -4983,10 +5014,13 @@ type EmployeeSkillMCPDependencyStatus struct {
 
 // EmployeeTemplate defines model for EmployeeTemplate.
 type EmployeeTemplate struct {
-	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
-	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
-	CreatedAt                time.Time               `json:"created_at"`
-	DefaultRole              *string                 `json:"default_role,omitempty"`
+	BudgetPolicy       *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings *map[string]interface{} `json:"capability_bindings,omitempty"`
+	CreatedAt          time.Time               `json:"created_at"`
+	DefaultRole        *string                 `json:"default_role,omitempty"`
+
+	// DefaultRoleKeys 创建员工时默认绑定的剧本角色键（role_vocabulary.role_key）。
+	DefaultRoleKeys          *[]string               `json:"default_role_keys,omitempty"`
 	Description              *string                 `json:"description,omitempty"`
 	Id                       openapi_types.UUID      `json:"id"`
 	IsSystem                 bool                    `json:"is_system"`
@@ -5150,11 +5184,6 @@ type FailProjectTaskAttemptRequest struct {
 type FailProjectTaskRequest struct {
 	DigitalEmployeeId openapi_types.UUID `json:"digital_employee_id"`
 	FailureSummary    string             `json:"failure_summary"`
-}
-
-// FailTaskRequest defines model for FailTaskRequest.
-type FailTaskRequest struct {
-	Error string `json:"error"`
 }
 
 // FeishuAppConfig defines model for FeishuAppConfig.
@@ -7354,11 +7383,6 @@ type PullProviderNativeConfigRequest struct {
 	ProviderType string `json:"provider_type"`
 }
 
-// PushTaskEventsRequest defines model for PushTaskEventsRequest.
-type PushTaskEventsRequest struct {
-	Events []map[string]interface{} `json:"events"`
-}
-
 // PutProjectCastingsRequest defines model for PutProjectCastingsRequest.
 type PutProjectCastingsRequest struct {
 	Assignments []struct {
@@ -8038,6 +8062,27 @@ type SkillAgentBinding struct {
 	TeamName  *string             `json:"team_name,omitempty"`
 }
 
+// SkillArchiveContent defines model for SkillArchiveContent.
+type SkillArchiveContent struct {
+	Content     string `json:"content"`
+	ContentType string `json:"content_type"`
+	Path        string `json:"path"`
+	SizeBytes   int64  `json:"size_bytes"`
+	Truncated   bool   `json:"truncated"`
+}
+
+// SkillArchiveEntry defines model for SkillArchiveEntry.
+type SkillArchiveEntry struct {
+	ContentType string                `json:"content_type"`
+	Kind        SkillArchiveEntryKind `json:"kind"`
+	Path        string                `json:"path"`
+	Previewable bool                  `json:"previewable"`
+	SizeBytes   int64                 `json:"size_bytes"`
+}
+
+// SkillArchiveEntryKind defines model for SkillArchiveEntry.Kind.
+type SkillArchiveEntryKind string
+
 // SkillInstallBlockedTarget defines model for SkillInstallBlockedTarget.
 type SkillInstallBlockedTarget struct {
 	DigitalEmployeeId *openapi_types.UUID `json:"digital_employee_id,omitempty"`
@@ -8085,6 +8130,15 @@ type SkillRuntimeMCPServerRef struct {
 	ServerName  string             `json:"server_name"`
 }
 
+// SkillSlugConflict defines model for SkillSlugConflict.
+type SkillSlugConflict struct {
+	Code    string             `json:"code"`
+	Message string             `json:"message"`
+	Name    string             `json:"name"`
+	SkillId openapi_types.UUID `json:"skill_id"`
+	Slug    string             `json:"slug"`
+}
+
 // SkillTeamBinding defines model for SkillTeamBinding.
 type SkillTeamBinding struct {
 	TeamId   openapi_types.UUID `json:"team_id"`
@@ -8110,13 +8164,10 @@ type StopDigitalEmployeeRunRequest struct {
 	Reason string `json:"reason"`
 }
 
-// SubmitDigitalEmployeePermissionChangeRequest role 与 permission_policy 至少提供一项；省略的字段表示不改。
+// SubmitDigitalEmployeePermissionChangeRequest 必须提供 permission_policy。职责描述（role）已退出审批链路。
 type SubmitDigitalEmployeePermissionChangeRequest struct {
-	// PermissionPolicy 目标权限策略；省略表示不改。常见键 grants、allowed_actions。
-	PermissionPolicy *map[string]interface{} `json:"permission_policy,omitempty"`
-
-	// Role 目标角色；省略表示不改 role
-	Role *string `json:"role,omitempty"`
+	// PermissionPolicy 目标权限策略。常见键 grants、allowed_actions。
+	PermissionPolicy map[string]interface{} `json:"permission_policy"`
 }
 
 // SubmitDigitalEmployeePermissionChangeResponse defines model for SubmitDigitalEmployeePermissionChangeResponse.
@@ -8206,26 +8257,6 @@ type SystemConfigItem struct {
 // SystemConfigListResponse defines model for SystemConfigListResponse.
 type SystemConfigListResponse struct {
 	Items []SystemConfigItem `json:"items"`
-}
-
-// Task defines model for Task.
-type Task struct {
-	AssignedNodeId *string                 `json:"assigned_node_id,omitempty"`
-	CancelledAt    *time.Time              `json:"cancelled_at,omitempty"`
-	CreatedAt      *time.Time              `json:"created_at,omitempty"`
-	CreatorId      *openapi_types.UUID     `json:"creator_id,omitempty"`
-	Description    *string                 `json:"description,omitempty"`
-	Id             openapi_types.UUID      `json:"id"`
-	Params         *map[string]interface{} `json:"params,omitempty"`
-	Priority       int32                   `json:"priority"`
-	ProviderType   string                  `json:"provider_type"`
-	Status         TaskStatus              `json:"status"`
-	TargetNodeId   *string                 `json:"target_node_id,omitempty"`
-	TeamId         *openapi_types.UUID     `json:"team_id,omitempty"`
-	TenantId       openapi_types.UUID      `json:"tenant_id"`
-	Title          string                  `json:"title"`
-	UpdatedAt      *time.Time              `json:"updated_at,omitempty"`
-	WorkspacePath  *string                 `json:"workspace_path,omitempty"`
 }
 
 // TaskResultAcceptanceResult defines model for TaskResultAcceptanceResult.
@@ -8422,10 +8453,13 @@ type TeamUserAvatarProvider string
 // TeamUserAvatarStyle defines model for TeamUserAvatar.Style.
 type TeamUserAvatarStyle string
 
-// UpdateDigitalEmployeeProfileRequest defines model for UpdateDigitalEmployeeProfileRequest.
+// UpdateDigitalEmployeeProfileRequest 至少提供 description 或 role 之一
 type UpdateDigitalEmployeeProfileRequest struct {
 	// Description 员工说明；空字符串表示清空
-	Description string `json:"description"`
+	Description *string `json:"description,omitempty"`
+
+	// Role 可选展示别名（职责描述）；留空则按剧本角色派生，不得写入空串
+	Role *string `json:"role,omitempty"`
 }
 
 // UpdateDigitalEmployeeStatusRequest defines model for UpdateDigitalEmployeeStatusRequest.
@@ -8435,9 +8469,12 @@ type UpdateDigitalEmployeeStatusRequest struct {
 
 // UpdateEmployeeTemplateRequest defines model for UpdateEmployeeTemplateRequest.
 type UpdateEmployeeTemplateRequest struct {
-	BudgetPolicy             *map[string]interface{} `json:"budget_policy,omitempty"`
-	CapabilityBindings       *map[string]interface{} `json:"capability_bindings,omitempty"`
-	DefaultRole              *string                 `json:"default_role,omitempty"`
+	BudgetPolicy       *map[string]interface{} `json:"budget_policy,omitempty"`
+	CapabilityBindings *map[string]interface{} `json:"capability_bindings,omitempty"`
+	DefaultRole        *string                 `json:"default_role,omitempty"`
+
+	// DefaultRoleKeys 创建员工时默认绑定的剧本角色键（role_vocabulary.role_key）。
+	DefaultRoleKeys          *[]string               `json:"default_role_keys,omitempty"`
 	Description              *string                 `json:"description,omitempty"`
 	Label                    string                  `json:"label"`
 	Metadata                 *map[string]interface{} `json:"metadata,omitempty"`
@@ -8488,11 +8525,6 @@ type UpdateSystemConfigRequest struct {
 	Value *int64 `json:"value,omitempty"`
 }
 
-// UpdateTaskStatusRequest defines model for UpdateTaskStatusRequest.
-type UpdateTaskStatusRequest struct {
-	Status TaskStatus `json:"status"`
-}
-
 // UpdateTeamConstitutionRequest defines model for UpdateTeamConstitutionRequest.
 type UpdateTeamConstitutionRequest map[string]interface{}
 
@@ -8519,11 +8551,17 @@ type UploadSkillRequest struct {
 	// RuntimeTools Comma-separated CLI tool names required by the skill at runtime.
 	RuntimeTools *string `json:"runtime_tools,omitempty"`
 
+	// Slug Optional durable identity. When omitted, derived from SKILL.md frontmatter name then zip filename — not from the display name.
+	Slug *string `json:"slug,omitempty"`
+
 	// Tags Comma-separated uploaded skill labels.
 	Tags *string `json:"tags,omitempty"`
 
 	// TeamIds Comma-separated team UUIDs that can use the skill.
 	TeamIds *string `json:"team_ids,omitempty"`
+
+	// Version Optional skill version; overrides SKILL.md frontmatter when set.
+	Version *string `json:"version,omitempty"`
 }
 
 // UpsertEnvironmentVariableRequest defines model for UpsertEnvironmentVariableRequest.
@@ -9251,46 +9289,14 @@ type PresignRuntimeSkillArchiveDownloadJSONBody struct {
 	ArchiveObjectRef string `json:"archive_object_ref"`
 }
 
-// ClaimRuntimeTaskParams defines parameters for ClaimRuntimeTask.
-type ClaimRuntimeTaskParams struct {
-	Timeout *int                `form:"timeout,omitempty" json:"timeout,omitempty"`
-	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
-}
-
-// CompleteRuntimeTaskParams defines parameters for CompleteRuntimeTask.
-type CompleteRuntimeTaskParams struct {
-	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
-}
-
-// PushRuntimeTaskEventsParams defines parameters for PushRuntimeTaskEvents.
-type PushRuntimeTaskEventsParams struct {
-	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
-}
-
-// FailRuntimeTaskParams defines parameters for FailRuntimeTask.
-type FailRuntimeTaskParams struct {
-	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
-}
-
-// RenewRuntimeTaskLeaseParams defines parameters for RenewRuntimeTaskLease.
-type RenewRuntimeTaskLeaseParams struct {
-	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
-}
-
-// UpdateRuntimeTaskStatusParams defines parameters for UpdateRuntimeTaskStatus.
-type UpdateRuntimeTaskStatusParams struct {
-	XNodeID RuntimeNodeIdHeader `json:"X-Node-ID"`
-}
-
 // ListSkillsParams defines parameters for ListSkills.
 type ListSkillsParams struct {
 	Q *string `form:"q,omitempty" json:"q,omitempty"`
 }
 
-// ListTasksParams defines parameters for ListTasks.
-type ListTasksParams struct {
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset *Offset `form:"offset,omitempty" json:"offset,omitempty"`
+// GetSkillArchiveContentParams defines parameters for GetSkillArchiveContent.
+type GetSkillArchiveContentParams struct {
+	Path string `form:"path" json:"path"`
 }
 
 // ListTeamsParams defines parameters for ListTeams.
@@ -9620,18 +9626,6 @@ type RevokeRuntimeSessionJSONRequestBody = RevokeRuntimeSessionRequest
 // PresignRuntimeSkillArchiveDownloadJSONRequestBody defines body for PresignRuntimeSkillArchiveDownload for application/json ContentType.
 type PresignRuntimeSkillArchiveDownloadJSONRequestBody PresignRuntimeSkillArchiveDownloadJSONBody
 
-// CompleteRuntimeTaskJSONRequestBody defines body for CompleteRuntimeTask for application/json ContentType.
-type CompleteRuntimeTaskJSONRequestBody = CompleteTaskRequest
-
-// PushRuntimeTaskEventsJSONRequestBody defines body for PushRuntimeTaskEvents for application/json ContentType.
-type PushRuntimeTaskEventsJSONRequestBody = PushTaskEventsRequest
-
-// FailRuntimeTaskJSONRequestBody defines body for FailRuntimeTask for application/json ContentType.
-type FailRuntimeTaskJSONRequestBody = FailTaskRequest
-
-// UpdateRuntimeTaskStatusJSONRequestBody defines body for UpdateRuntimeTaskStatus for application/json ContentType.
-type UpdateRuntimeTaskStatusJSONRequestBody = UpdateTaskStatusRequest
-
 // CreateScenarioTemplateJSONRequestBody defines body for CreateScenarioTemplate for application/json ContentType.
 type CreateScenarioTemplateJSONRequestBody = CreateScenarioTemplateRequest
 
@@ -9644,6 +9638,9 @@ type CreateScenarioTemplateVersionJSONRequestBody = CreateScenarioTemplateVersio
 // UploadSkillMultipartRequestBody defines body for UploadSkill for multipart/form-data ContentType.
 type UploadSkillMultipartRequestBody = UploadSkillRequest
 
+// ReplaceSkillArchiveMultipartRequestBody defines body for ReplaceSkillArchive for multipart/form-data ContentType.
+type ReplaceSkillArchiveMultipartRequestBody = UploadSkillRequest
+
 // InstallSkillJSONRequestBody defines body for InstallSkill for application/json ContentType.
 type InstallSkillJSONRequestBody = InstallSkillRequest
 
@@ -9652,12 +9649,6 @@ type ReplaceSkillMCPDependenciesJSONRequestBody = ReplaceSkillMCPDependenciesReq
 
 // UpdateSystemConfigJSONRequestBody defines body for UpdateSystemConfig for application/json ContentType.
 type UpdateSystemConfigJSONRequestBody = UpdateSystemConfigRequest
-
-// CreateTaskJSONRequestBody defines body for CreateTask for application/json ContentType.
-type CreateTaskJSONRequestBody = CreateTaskRequest
-
-// UpdateTaskStatusJSONRequestBody defines body for UpdateTaskStatus for application/json ContentType.
-type UpdateTaskStatusJSONRequestBody = UpdateTaskStatusRequest
 
 // CreateTeamJSONRequestBody defines body for CreateTeam for application/json ContentType.
 type CreateTeamJSONRequestBody = CreateTeamRequest
@@ -10494,6 +10485,9 @@ type ServerInterface interface {
 	// Delete a digital employee personal MCP binding
 	// (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId})
 	DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId openapi_types.UUID)
+	// Get pending permission-change approval for a digital employee
+	// (GET /api/v1/digital-employees/{employeeId}/permission-change)
+	GetDigitalEmployeePermissionChange(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
 	// Submit a digital employee permission change for approval
 	// (POST /api/v1/digital-employees/{employeeId}/permission-changes)
 	SubmitDigitalEmployeePermissionChange(w http.ResponseWriter, r *http.Request, employeeId EmployeeId)
@@ -10956,30 +10950,15 @@ type ServerInterface interface {
 	// Presign a direct download URL for a skill archive
 	// (POST /api/v1/runtime/skills/presign)
 	PresignRuntimeSkillArchiveDownload(w http.ResponseWriter, r *http.Request)
-	// Deprecated legacy Runtime task claim; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-	// (POST /api/v1/runtime/tasks/claim)
-	ClaimRuntimeTask(w http.ResponseWriter, r *http.Request, params ClaimRuntimeTaskParams)
-	// Deprecated legacy Runtime task completion; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-	// (POST /api/v1/runtime/tasks/{taskId}/complete)
-	CompleteRuntimeTask(w http.ResponseWriter, r *http.Request, taskId TaskId, params CompleteRuntimeTaskParams)
-	// Deprecated legacy Runtime task events; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-	// (POST /api/v1/runtime/tasks/{taskId}/events)
-	PushRuntimeTaskEvents(w http.ResponseWriter, r *http.Request, taskId TaskId, params PushRuntimeTaskEventsParams)
-	// Deprecated legacy Runtime task failure; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-	// (POST /api/v1/runtime/tasks/{taskId}/fail)
-	FailRuntimeTask(w http.ResponseWriter, r *http.Request, taskId TaskId, params FailRuntimeTaskParams)
-	// Deprecated legacy Runtime task lease; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-	// (POST /api/v1/runtime/tasks/{taskId}/lease)
-	RenewRuntimeTaskLease(w http.ResponseWriter, r *http.Request, taskId TaskId, params RenewRuntimeTaskLeaseParams)
-	// Update a Runtime Agent task status
-	// (PUT /api/v1/runtime/tasks/{taskId}/status)
-	UpdateRuntimeTaskStatus(w http.ResponseWriter, r *http.Request, taskId TaskId, params UpdateRuntimeTaskStatusParams)
 	// List tenant scenario templates (read-only registry)
 	// (GET /api/v1/scenario-templates)
 	ListScenarioTemplates(w http.ResponseWriter, r *http.Request)
 	// Create a tenant scenario template (v1 = main row + version row 1)
 	// (POST /api/v1/scenario-templates)
 	CreateScenarioTemplate(w http.ResponseWriter, r *http.Request)
+	// Soft-delete a scenario template (hidden from registry; historical demands keep the key)
+	// (DELETE /api/v1/scenario-templates/{templateKey})
+	DeleteScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string)
 	// Get one scenario template by key
 	// (GET /api/v1/scenario-templates/{templateKey})
 	GetScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string)
@@ -11007,6 +10986,15 @@ type ServerInterface interface {
 	// Get a skill with archive metadata and bindings
 	// (GET /api/v1/skills/{skillId})
 	GetSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
+	// Replace the zip archive of an existing skill without changing bindings
+	// (POST /api/v1/skills/{skillId}/archive)
+	ReplaceSkillArchive(w http.ResponseWriter, r *http.Request, skillId SkillId)
+	// Read one text file from a skill zip
+	// (GET /api/v1/skills/{skillId}/archive/content)
+	GetSkillArchiveContent(w http.ResponseWriter, r *http.Request, skillId SkillId, params GetSkillArchiveContentParams)
+	// List files inside a skill zip for read-only preview
+	// (GET /api/v1/skills/{skillId}/archive/entries)
+	ListSkillArchiveEntries(w http.ResponseWriter, r *http.Request, skillId SkillId)
 	// Load a skill onto a team or employee as a logical capability binding
 	// (POST /api/v1/skills/{skillId}/install)
 	InstallSkill(w http.ResponseWriter, r *http.Request, skillId SkillId)
@@ -11025,21 +11013,6 @@ type ServerInterface interface {
 	// Set a system config override (validated against server-side registry bounds)
 	// (PUT /api/v1/system-configs/{configKey})
 	UpdateSystemConfig(w http.ResponseWriter, r *http.Request, configKey string)
-	// List tasks
-	// (GET /api/v1/tasks)
-	ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams)
-	// Create a task
-	// (POST /api/v1/tasks)
-	CreateTask(w http.ResponseWriter, r *http.Request)
-	// Get a task
-	// (GET /api/v1/tasks/{taskId})
-	GetTask(w http.ResponseWriter, r *http.Request, taskId TaskId)
-	// Cancel a task
-	// (POST /api/v1/tasks/{taskId}/cancel)
-	CancelTask(w http.ResponseWriter, r *http.Request, taskId TaskId)
-	// Update task status
-	// (PUT /api/v1/tasks/{taskId}/status)
-	UpdateTaskStatus(w http.ResponseWriter, r *http.Request, taskId TaskId)
 	// List tenant teams
 	// (GET /api/v1/teams)
 	ListTeams(w http.ResponseWriter, r *http.Request, params ListTeamsParams)
@@ -11499,6 +11472,12 @@ func (_ Unimplemented) CreateEmployeeMCPBindingV2(w http.ResponseWriter, r *http
 // Delete a digital employee personal MCP binding
 // (DELETE /api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId})
 func (_ Unimplemented) DeleteEmployeeMCPBindingV2(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, bindingId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get pending permission-change approval for a digital employee
+// (GET /api/v1/digital-employees/{employeeId}/permission-change)
+func (_ Unimplemented) GetDigitalEmployeePermissionChange(w http.ResponseWriter, r *http.Request, employeeId EmployeeId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -12426,42 +12405,6 @@ func (_ Unimplemented) PresignRuntimeSkillArchiveDownload(w http.ResponseWriter,
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Deprecated legacy Runtime task claim; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-// (POST /api/v1/runtime/tasks/claim)
-func (_ Unimplemented) ClaimRuntimeTask(w http.ResponseWriter, r *http.Request, params ClaimRuntimeTaskParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Deprecated legacy Runtime task completion; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-// (POST /api/v1/runtime/tasks/{taskId}/complete)
-func (_ Unimplemented) CompleteRuntimeTask(w http.ResponseWriter, r *http.Request, taskId TaskId, params CompleteRuntimeTaskParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Deprecated legacy Runtime task events; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-// (POST /api/v1/runtime/tasks/{taskId}/events)
-func (_ Unimplemented) PushRuntimeTaskEvents(w http.ResponseWriter, r *http.Request, taskId TaskId, params PushRuntimeTaskEventsParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Deprecated legacy Runtime task failure; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-// (POST /api/v1/runtime/tasks/{taskId}/fail)
-func (_ Unimplemented) FailRuntimeTask(w http.ResponseWriter, r *http.Request, taskId TaskId, params FailRuntimeTaskParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Deprecated legacy Runtime task lease; use RuntimeCommand start_session and ProjectTaskAttempt writeback
-// (POST /api/v1/runtime/tasks/{taskId}/lease)
-func (_ Unimplemented) RenewRuntimeTaskLease(w http.ResponseWriter, r *http.Request, taskId TaskId, params RenewRuntimeTaskLeaseParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Update a Runtime Agent task status
-// (PUT /api/v1/runtime/tasks/{taskId}/status)
-func (_ Unimplemented) UpdateRuntimeTaskStatus(w http.ResponseWriter, r *http.Request, taskId TaskId, params UpdateRuntimeTaskStatusParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
 // List tenant scenario templates (read-only registry)
 // (GET /api/v1/scenario-templates)
 func (_ Unimplemented) ListScenarioTemplates(w http.ResponseWriter, r *http.Request) {
@@ -12471,6 +12414,12 @@ func (_ Unimplemented) ListScenarioTemplates(w http.ResponseWriter, r *http.Requ
 // Create a tenant scenario template (v1 = main row + version row 1)
 // (POST /api/v1/scenario-templates)
 func (_ Unimplemented) CreateScenarioTemplate(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Soft-delete a scenario template (hidden from registry; historical demands keep the key)
+// (DELETE /api/v1/scenario-templates/{templateKey})
+func (_ Unimplemented) DeleteScenarioTemplate(w http.ResponseWriter, r *http.Request, templateKey string) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -12528,6 +12477,24 @@ func (_ Unimplemented) GetSkill(w http.ResponseWriter, r *http.Request, skillId 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Replace the zip archive of an existing skill without changing bindings
+// (POST /api/v1/skills/{skillId}/archive)
+func (_ Unimplemented) ReplaceSkillArchive(w http.ResponseWriter, r *http.Request, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read one text file from a skill zip
+// (GET /api/v1/skills/{skillId}/archive/content)
+func (_ Unimplemented) GetSkillArchiveContent(w http.ResponseWriter, r *http.Request, skillId SkillId, params GetSkillArchiveContentParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List files inside a skill zip for read-only preview
+// (GET /api/v1/skills/{skillId}/archive/entries)
+func (_ Unimplemented) ListSkillArchiveEntries(w http.ResponseWriter, r *http.Request, skillId SkillId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Load a skill onto a team or employee as a logical capability binding
 // (POST /api/v1/skills/{skillId}/install)
 func (_ Unimplemented) InstallSkill(w http.ResponseWriter, r *http.Request, skillId SkillId) {
@@ -12561,36 +12528,6 @@ func (_ Unimplemented) ResetSystemConfig(w http.ResponseWriter, r *http.Request,
 // Set a system config override (validated against server-side registry bounds)
 // (PUT /api/v1/system-configs/{configKey})
 func (_ Unimplemented) UpdateSystemConfig(w http.ResponseWriter, r *http.Request, configKey string) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// List tasks
-// (GET /api/v1/tasks)
-func (_ Unimplemented) ListTasks(w http.ResponseWriter, r *http.Request, params ListTasksParams) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Create a task
-// (POST /api/v1/tasks)
-func (_ Unimplemented) CreateTask(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Get a task
-// (GET /api/v1/tasks/{taskId})
-func (_ Unimplemented) GetTask(w http.ResponseWriter, r *http.Request, taskId TaskId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Cancel a task
-// (POST /api/v1/tasks/{taskId}/cancel)
-func (_ Unimplemented) CancelTask(w http.ResponseWriter, r *http.Request, taskId TaskId) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Update task status
-// (PUT /api/v1/tasks/{taskId}/status)
-func (_ Unimplemented) UpdateTaskStatus(w http.ResponseWriter, r *http.Request, taskId TaskId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -14621,6 +14558,32 @@ func (siw *ServerInterfaceWrapper) DeleteEmployeeMCPBindingV2(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteEmployeeMCPBindingV2(w, r, employeeId, bindingId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDigitalEmployeePermissionChange operation middleware
+func (siw *ServerInterfaceWrapper) GetDigitalEmployeePermissionChange(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDigitalEmployeePermissionChange(w, r, employeeId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -20230,334 +20193,6 @@ func (siw *ServerInterfaceWrapper) PresignRuntimeSkillArchiveDownload(w http.Res
 	handler.ServeHTTP(w, r)
 }
 
-// ClaimRuntimeTask operation middleware
-func (siw *ServerInterfaceWrapper) ClaimRuntimeTask(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ClaimRuntimeTaskParams
-
-	// ------------- Optional query parameter "timeout" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "timeout", r.URL.Query(), &params.Timeout, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "timeout"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "timeout", Err: err})
-		}
-		return
-	}
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Node-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Node-ID")]; found {
-		var XNodeID RuntimeNodeIdHeader
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Node-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Node-ID", valueList[0], &XNodeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Node-ID", Err: err})
-			return
-		}
-
-		params.XNodeID = XNodeID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Node-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Node-ID", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ClaimRuntimeTask(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CompleteRuntimeTask operation middleware
-func (siw *ServerInterfaceWrapper) CompleteRuntimeTask(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "taskId" -------------
-	var taskId TaskId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params CompleteRuntimeTaskParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Node-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Node-ID")]; found {
-		var XNodeID RuntimeNodeIdHeader
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Node-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Node-ID", valueList[0], &XNodeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Node-ID", Err: err})
-			return
-		}
-
-		params.XNodeID = XNodeID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Node-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Node-ID", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CompleteRuntimeTask(w, r, taskId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PushRuntimeTaskEvents operation middleware
-func (siw *ServerInterfaceWrapper) PushRuntimeTaskEvents(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "taskId" -------------
-	var taskId TaskId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params PushRuntimeTaskEventsParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Node-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Node-ID")]; found {
-		var XNodeID RuntimeNodeIdHeader
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Node-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Node-ID", valueList[0], &XNodeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Node-ID", Err: err})
-			return
-		}
-
-		params.XNodeID = XNodeID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Node-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Node-ID", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PushRuntimeTaskEvents(w, r, taskId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// FailRuntimeTask operation middleware
-func (siw *ServerInterfaceWrapper) FailRuntimeTask(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "taskId" -------------
-	var taskId TaskId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params FailRuntimeTaskParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Node-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Node-ID")]; found {
-		var XNodeID RuntimeNodeIdHeader
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Node-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Node-ID", valueList[0], &XNodeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Node-ID", Err: err})
-			return
-		}
-
-		params.XNodeID = XNodeID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Node-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Node-ID", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.FailRuntimeTask(w, r, taskId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RenewRuntimeTaskLease operation middleware
-func (siw *ServerInterfaceWrapper) RenewRuntimeTaskLease(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "taskId" -------------
-	var taskId TaskId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params RenewRuntimeTaskLeaseParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Node-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Node-ID")]; found {
-		var XNodeID RuntimeNodeIdHeader
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Node-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Node-ID", valueList[0], &XNodeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Node-ID", Err: err})
-			return
-		}
-
-		params.XNodeID = XNodeID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Node-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Node-ID", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RenewRuntimeTaskLease(w, r, taskId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateRuntimeTaskStatus operation middleware
-func (siw *ServerInterfaceWrapper) UpdateRuntimeTaskStatus(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "taskId" -------------
-	var taskId TaskId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params UpdateRuntimeTaskStatusParams
-
-	headers := r.Header
-
-	// ------------- Required header parameter "X-Node-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Node-ID")]; found {
-		var XNodeID RuntimeNodeIdHeader
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Node-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Node-ID", valueList[0], &XNodeID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Node-ID", Err: err})
-			return
-		}
-
-		params.XNodeID = XNodeID
-
-	} else {
-		err := fmt.Errorf("Header parameter X-Node-ID is required, but not found")
-		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Node-ID", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateRuntimeTaskStatus(w, r, taskId, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ListScenarioTemplates operation middleware
 func (siw *ServerInterfaceWrapper) ListScenarioTemplates(w http.ResponseWriter, r *http.Request) {
 
@@ -20577,6 +20212,32 @@ func (siw *ServerInterfaceWrapper) CreateScenarioTemplate(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateScenarioTemplate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteScenarioTemplate operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScenarioTemplate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "templateKey" -------------
+	var templateKey string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "templateKey", chi.URLParam(r, "templateKey"), &templateKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "templateKey", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteScenarioTemplate(w, r, templateKey)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -20815,6 +20476,100 @@ func (siw *ServerInterfaceWrapper) GetSkill(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// ReplaceSkillArchive operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceSkillArchive(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceSkillArchive(w, r, skillId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSkillArchiveContent operation middleware
+func (siw *ServerInterfaceWrapper) GetSkillArchiveContent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSkillArchiveContentParams
+
+	// ------------- Required query parameter "path" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "path", r.URL.Query(), &params.Path, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSkillArchiveContent(w, r, skillId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSkillArchiveEntries operation middleware
+func (siw *ServerInterfaceWrapper) ListSkillArchiveEntries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "skillId" -------------
+	var skillId SkillId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "skillId", chi.URLParam(r, "skillId"), &skillId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "skillId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSkillArchiveEntries(w, r, skillId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // InstallSkill operation middleware
 func (siw *ServerInterfaceWrapper) InstallSkill(w http.ResponseWriter, r *http.Request) {
 
@@ -20950,144 +20705,6 @@ func (siw *ServerInterfaceWrapper) UpdateSystemConfig(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateSystemConfig(w, r, configKey)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListTasks operation middleware
-func (siw *ServerInterfaceWrapper) ListTasks(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListTasksParams
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "offset" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListTasks(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateTask operation middleware
-func (siw *ServerInterfaceWrapper) CreateTask(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateTask(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetTask operation middleware
-func (siw *ServerInterfaceWrapper) GetTask(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "taskId" -------------
-	var taskId TaskId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetTask(w, r, taskId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CancelTask operation middleware
-func (siw *ServerInterfaceWrapper) CancelTask(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "taskId" -------------
-	var taskId TaskId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CancelTask(w, r, taskId)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateTaskStatus operation middleware
-func (siw *ServerInterfaceWrapper) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "taskId" -------------
-	var taskId TaskId
-
-	err = runtime.BindStyledParameterWithOptions("simple", "taskId", chi.URLParam(r, "taskId"), &taskId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "taskId", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateTaskStatus(w, r, taskId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -22500,6 +22117,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/mcp-bindings-v2/{bindingId}", wrapper.DeleteEmployeeMCPBindingV2)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/permission-change", wrapper.GetDigitalEmployeePermissionChange)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/digital-employees/{employeeId}/permission-changes", wrapper.SubmitDigitalEmployeePermissionChange)
 	})
 	r.Group(func(r chi.Router) {
@@ -22962,28 +22582,13 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/api/v1/runtime/skills/presign", wrapper.PresignRuntimeSkillArchiveDownload)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/runtime/tasks/claim", wrapper.ClaimRuntimeTask)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/runtime/tasks/{taskId}/complete", wrapper.CompleteRuntimeTask)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/runtime/tasks/{taskId}/events", wrapper.PushRuntimeTaskEvents)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/runtime/tasks/{taskId}/fail", wrapper.FailRuntimeTask)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/runtime/tasks/{taskId}/lease", wrapper.RenewRuntimeTaskLease)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/runtime/tasks/{taskId}/status", wrapper.UpdateRuntimeTaskStatus)
-	})
-	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/scenario-templates", wrapper.ListScenarioTemplates)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/scenario-templates", wrapper.CreateScenarioTemplate)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/scenario-templates/{templateKey}", wrapper.DeleteScenarioTemplate)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/scenario-templates/{templateKey}", wrapper.GetScenarioTemplate)
@@ -23013,6 +22618,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/api/v1/skills/{skillId}", wrapper.GetSkill)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/skills/{skillId}/archive", wrapper.ReplaceSkillArchive)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/skills/{skillId}/archive/content", wrapper.GetSkillArchiveContent)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/skills/{skillId}/archive/entries", wrapper.ListSkillArchiveEntries)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v1/skills/{skillId}/install", wrapper.InstallSkill)
 	})
 	r.Group(func(r chi.Router) {
@@ -23029,21 +22643,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v1/system-configs/{configKey}", wrapper.UpdateSystemConfig)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/tasks", wrapper.ListTasks)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/tasks", wrapper.CreateTask)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/api/v1/tasks/{taskId}", wrapper.GetTask)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/api/v1/tasks/{taskId}/cancel", wrapper.CancelTask)
-	})
-	r.Group(func(r chi.Router) {
-		r.Put(options.BaseURL+"/api/v1/tasks/{taskId}/status", wrapper.UpdateTaskStatus)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/teams", wrapper.ListTeams)

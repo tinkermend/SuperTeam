@@ -365,10 +365,158 @@
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  position: relative;
 }
-.hub-thread:has(.hub-entry) {
-  justify-content: flex-end;
+.hub-thread-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.hub-jump {
+  position: sticky;
+  bottom: 8px;
+  z-index: 2;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--aurora-hairline);
+  background: color-mix(in oklab, var(--aurora-surface, #fff) 88%, transparent);
+  color: var(--aurora-ink);
+  font-size: 12px;
+  font-weight: 650;
+  border-radius: 999px;
+  padding: 5px 12px 5px 8px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px color-mix(in oklab, var(--aurora-ink) 12%, transparent);
+}
+.hub-jump:hover {
+  color: var(--brand-deep);
+  border-color: color-mix(in oklab, var(--brand) 35%, var(--aurora-hairline));
+}
+.hub-thread-grow {
+  flex: 1 0 0;
+  min-height: 0;
+  pointer-events: none;
+}
+.hub-history-chip {
+  align-self: center;
+  border: 1px solid var(--aurora-hairline);
+  background: color-mix(in oklab, var(--aurora-ink) 4%, transparent);
+  color: var(--aurora-ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.hub-history-chip:hover {
+  background: color-mix(in oklab, var(--brand) 10%, transparent);
+  color: var(--brand-deep);
+}
+.hub-live {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+.hub-process-chip {
+  align-self: flex-start;
+  border: 1px solid var(--aurora-hairline);
+  background: color-mix(in oklab, var(--aurora-ink) 4%, transparent);
+  color: var(--aurora-ink-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.hub-process-chip:hover {
+  color: var(--aurora-ink);
+}
+.hub-tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--aurora-ink-2);
+  font-size: 12.5px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.hub-tool-row.is-running .hub-tool-name {
+  color: var(--brand-deep, var(--brand));
+}
+.hub-tool-state,
+.hub-tool-hint {
+  font-size: 11.5px;
+  color: var(--aurora-ink-3);
+}
+.hub-tool-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--ok, #3c9a5f);
+}
+.hub-tool-dot[data-status="error"] {
+  background: var(--danger, #d14647);
+}
+.hub-tool {
+  min-width: 0;
+}
+.hub-tool-excerpts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 0 6px 22px;
+}
+.hub-tool-excerpt {
+  margin: 0;
+  max-height: 10rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--aurora-ink-2);
+  background: color-mix(in oklab, var(--aurora-ink) 4%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.hub-tool-excerpt-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--aurora-ink-3);
+  margin-bottom: 4px;
+}
+.hub-tool-excerpt-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--aurora-ink-3);
+}
+.hub-stop {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: color-mix(in oklab, var(--danger, #d14647) 12%, transparent);
+  color: var(--danger-text, #8a2f2d);
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 8px 20px;
+  border: 1px solid color-mix(in oklab, var(--danger, #d14647) 35%, transparent);
+  border-radius: 11px;
+  cursor: pointer;
+}
+.hub-stop:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .hub-entry {
   display: flex;
@@ -377,9 +525,36 @@
 }
 .hub-turn-human {
   display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 10px;
+}
+.hub-turn-human-body {
+  display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: calc(100% - 46px);
+}
+.hub-human-avatar,
+.hub-human-avatar-fallback {
+  flex: none;
+}
+.hub-human-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--aurora-hairline);
+  background: color-mix(in oklab, var(--brand) 12%, transparent);
+  color: var(--brand-deep);
+  font-size: 13px;
+  font-weight: 700;
 }
 .hub-speaker {
   margin: 0;
@@ -388,7 +563,8 @@
 }
 .hub-q {
   margin: 0;
-  max-width: 76%;
+  width: fit-content;
+  max-width: 100%;
   background: var(--aurora-send, var(--brand));
   color: #fff;
   font-size: 13.5px;
@@ -396,7 +572,8 @@
   padding: 9px 14px;
   border-radius: 14px 14px 4px 14px;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .hub-notice {
   margin: 0;
@@ -414,7 +591,8 @@
   flex-direction: column;
   gap: 3px;
   min-width: 0;
-  max-width: 82%;
+  flex: 1 1 auto;
+  max-width: calc(100% - 46px);
 }
 .hub-a {
   display: flex;
@@ -428,12 +606,35 @@
   line-height: 1.65;
   padding: 10px 14px;
   border-radius: 4px 14px 14px 14px;
-  white-space: pre-wrap;
   word-break: break-word;
+  min-width: 0;
+  width: 100%;
 }
-.hub-a p {
+.hub-a-json {
   margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
 }
+.hub-a .hub-md {
+  width: 100%;
+}
+.hub-a-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  width: 100%;
+}
+.hub-a-meta {
+  margin: 0;
+  margin-right: auto;
+  font-size: 11.5px;
+  color: var(--aurora-ink-3);
+}
+.hub-a-action,
 .hub-convert {
   display: inline-flex;
   align-items: center;
@@ -446,6 +647,10 @@
   padding: 2px 0;
   cursor: pointer;
 }
+.hub-a-action {
+  color: var(--aurora-ink-2);
+}
+.hub-a-action:hover,
 .hub-convert:hover {
   text-decoration: underline;
 }
@@ -454,7 +659,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 82%;
+  max-width: 100%;
   padding: 8px 12px;
   border-left: 3px solid var(--danger, #d14647);
   background: color-mix(in oklab, var(--danger, #d14647) 6%, transparent);
@@ -545,10 +750,12 @@
 }
 .hub-textarea {
   width: 100%;
-  min-height: 72px;
+  min-height: 48px;
+  max-height: 168px;
   border: 0;
   outline: 0;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
   background: transparent;
   font: inherit;
   font-size: 14px;

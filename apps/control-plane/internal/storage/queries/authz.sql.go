@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const GetActiveTeamMembership = `-- name: GetActiveTeamMembership :one
@@ -183,59 +182,4 @@ func (q *Queries) GetProjectAuthzFacts(ctx context.Context, arg GetProjectAuthzF
 	var i GetProjectAuthzFactsRow
 	err := row.Scan(&i.HumanOwnerUserIds, &i.IsMember, &i.TeamID)
 	return i, err
-}
-
-const RuntimeNodeCoversTaskScope = `-- name: RuntimeNodeCoversTaskScope :one
-SELECT EXISTS (
-  SELECT 1
-  FROM tasks t
-  JOIN runtime_nodes rn ON rn.tenant_id = t.tenant_id
-  JOIN runtime_node_scopes rns ON rns.runtime_node_id = rn.id
-  WHERE t.id = $1::uuid
-    AND t.tenant_id = $2::uuid
-    AND t.team_id IS NOT DISTINCT FROM $3::uuid
-    AND t.deleted_at IS NULL
-    AND rn.node_id = $4::varchar
-    AND rn.status = 'online'
-    AND rn.last_heartbeat_at > $5::timestamptz
-    AND rn.disabled_at IS NULL
-    AND rn.archived_at IS NULL
-    AND rns.tenant_id = t.tenant_id
-    AND rns.status = 'active'
-    AND rns.disabled_at IS NULL
-    AND (
-      (
-        rns.scope_type = 'tenant'
-        AND rns.team_id IS NULL
-        AND rns.scope_value = t.tenant_id::text
-      )
-      OR (
-        rns.scope_type = 'team'
-        AND t.team_id IS NOT NULL
-        AND rns.team_id = t.team_id
-        AND rns.scope_value = t.team_id::text
-      )
-    )
-)
-`
-
-type RuntimeNodeCoversTaskScopeParams struct {
-	TaskID             uuid.UUID          `json:"task_id"`
-	TenantID           uuid.UUID          `json:"tenant_id"`
-	TeamID             uuid.NullUUID      `json:"team_id"`
-	NodeID             string             `json:"node_id"`
-	LastHeartbeatAfter pgtype.Timestamptz `json:"last_heartbeat_after"`
-}
-
-func (q *Queries) RuntimeNodeCoversTaskScope(ctx context.Context, arg RuntimeNodeCoversTaskScopeParams) (bool, error) {
-	row := q.db.QueryRow(ctx, RuntimeNodeCoversTaskScope,
-		arg.TaskID,
-		arg.TenantID,
-		arg.TeamID,
-		arg.NodeID,
-		arg.LastHeartbeatAfter,
-	)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
 }

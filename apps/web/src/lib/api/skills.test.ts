@@ -8,6 +8,7 @@ import {
   listEmployeeSkills,
   listSkills,
   listTeamSkills,
+  replaceSkillArchive,
   unbindEmployeeSkill,
   unbindTeamSkill,
   uploadSkill,
@@ -123,6 +124,7 @@ describe("skills API", () => {
       expect(init?.body).toBeInstanceOf(FormData);
       const formData = init?.body as FormData;
       expect(formData.get("name")).toBe("custom-diagnose");
+      expect(formData.get("slug")).toBe("custom-diagnose");
       expect(formData.get("description")).toBe("自定义诊断");
       expect(formData.get("tags")).toBe("诊断,自动化");
       expect(formData.get("risk_level")).toBe("medium");
@@ -137,6 +139,7 @@ describe("skills API", () => {
           description: "自定义诊断",
           file: new File(["zip"], "skill.zip", { type: "application/zip" }),
           name: "custom-diagnose",
+          slug: "custom-diagnose",
           tags: ["诊断", "自动化"],
           risk_level: "medium",
         },
@@ -163,6 +166,7 @@ describe("skills API", () => {
       expect(init?.body).toBeInstanceOf(FormData);
       const formData = init?.body as FormData;
       expect(formData.has("name")).toBe(false);
+      expect(formData.has("slug")).toBe(false);
       expect(formData.has("description")).toBe(false);
       expect(formData.has("runtime_tools")).toBe(false);
       expect(formData.has("runtime_env")).toBe(false);
@@ -190,6 +194,22 @@ describe("skills API", () => {
     expect(fetcher).toHaveBeenCalledWith(
       "http://control-plane.local/api/v1/skills/skill%201%2Fops",
       expect.objectContaining({ credentials: "include", method: "DELETE" }),
+    );
+  });
+
+  it("replaces a skill archive by id", async () => {
+    const skill = makeSkill({ version: "v0.2.0" });
+    const fetcher = vi.fn(async () => new Response(JSON.stringify(skill), { headers: { "content-type": "application/json" } }));
+    await expect(
+      replaceSkillArchive(
+        { baseUrl: "http://control-plane.local", fetcher },
+        "skill 1/ops",
+        { file: new File(["zip"], "skill.zip") },
+      ),
+    ).resolves.toEqual(skill);
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://control-plane.local/api/v1/skills/skill%201%2Fops/archive",
+      expect.objectContaining({ credentials: "include", method: "POST" }),
     );
   });
 

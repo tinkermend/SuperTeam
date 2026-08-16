@@ -1,5 +1,6 @@
 import {
   type ApiClientOptions,
+  deleteJson,
   getJson,
   patchJson,
   postJson,
@@ -115,6 +116,28 @@ export function patchScenarioTemplate(
     `/api/v1/scenario-templates/${encodeURIComponent(templateKey)}`,
     input,
     "patch scenario template",
+  );
+}
+
+export function deleteScenarioTemplate(
+  options: ApiClientOptions,
+  templateKey: string,
+): Promise<void> {
+  return deleteJson(
+    options,
+    `/api/v1/scenario-templates/${encodeURIComponent(templateKey)}`,
+    "delete scenario template",
+  );
+}
+
+export function getScenarioTemplate(
+  options: ApiClientOptions,
+  templateKey: string,
+): Promise<ScenarioTemplate> {
+  return getJson<ScenarioTemplate>(
+    options,
+    `/api/v1/scenario-templates/${encodeURIComponent(templateKey)}`,
+    "scenario template",
   );
 }
 

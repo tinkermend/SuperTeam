@@ -11,6 +11,7 @@ export type EmployeeTemplate = {
   label: string;
   description: string;
   default_role: string;
+  default_role_keys?: string[];
   recommended_skills: string[];
   recommended_mcp_servers: string[];
   recommended_provider_types: string[];
@@ -29,6 +30,7 @@ export type CreateEmployeeTemplateInput = {
   label: string;
   description?: string;
   default_role?: string;
+  default_role_keys?: string[];
   recommended_skills?: string[];
   recommended_mcp_servers?: string[];
   recommended_provider_types?: string[];

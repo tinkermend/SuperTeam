@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>C · 配线架</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #d9e4ea;
+      --ink: #0b1f33;
+      --hi: #ffe500;
+      --jack: #0b1f33;
+      --muted: #4d6275;
+      --paper: #f4f8fb;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink); font-family:"IBM Plex Sans","PingFang SC",sans-serif; }
+    header { display:flex; justify-content:space-between; padding:16px 22px; }
+    a { color:var(--muted); text-decoration:none; font-size:13px; }
+    .hi {
+      background: var(--hi); color: var(--ink);
+      font-family: "Barlow Condensed", sans-serif;
+      font-weight: 800; letter-spacing: .04em;
+      padding: 10px 22px; font-size: 22px;
+    }
+    .stage { display:grid; grid-template-columns: 220px 1fr 280px; min-height: calc(100vh - 120px); }
+    .col { padding: 18px; }
+    .col h2 {
+      font-family: "Barlow Condensed", sans-serif; font-size: 18px; letter-spacing:.08em;
+      margin: 0 0 12px; text-transform: uppercase;
+    }
+    .jack {
+      display:flex; align-items:center; gap:10px;
+      background: var(--paper); border: 1px solid #b7c7d3; padding: 8px 10px; margin-bottom: 8px;
+      cursor: pointer;
+    }
+    .jack .dot { width:14px; height:14px; border-radius:50%; background:var(--jack); box-shadow: inset 0 0 0 3px #fff, 0 0 0 2px var(--jack); }
+    .jack.on { outline: 3px solid var(--hi); }
+    .slots { display:flex; flex-direction:column; gap:10px; }
+    .slot {
+      display:grid; grid-template-columns: 72px 1fr auto; gap:10px; align-items:center;
+      background: var(--paper); min-height: 72px; padding: 10px 12px;
+      border-left: 8px solid var(--jack);
+    }
+    .slot.empty { border-left-color: #9aafbd; background: repeating-linear-gradient(135deg,#eef3f6,#eef3f6 8px,#e4ecf1 8px,#e4ecf1 16px); }
+    .n { font-family:"Barlow Condensed",sans-serif; font-size:28px; font-weight:800; }
+    input.title { font: inherit; font-size: 18px; font-weight: 600; border:0; background:transparent; width:100%; }
+    .wired { font-family:"IBM Plex Mono",monospace; font-size:12px; }
+    .addslot {
+      border: 2px dashed #0b1f33; background: transparent; min-height: 56px;
+      font-family: "Barlow Condensed", sans-serif; font-size: 20px; font-weight: 700; cursor: pointer;
+    }
+    .clip {
+      background: var(--hi); border:0; font-weight:800; padding: 8px 10px; cursor:pointer;
+      font-family: "Barlow Condensed", sans-serif; letter-spacing:.06em;
+    }
+    .side { background: #0b1f33; color: #e8f1f6; }
+    .side h2 { color: var(--hi); }
+    .side p { font-size: 14px; line-height: 1.6; color: #c5d4de; }
+    .depth-list { list-style:none; padding:0; }
+    .depth-list li { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08); font-family: "Barlow Condensed", sans-serif; font-size: 20px; }
+    .depth-list li.live { color: var(--hi); }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="./index.html">← 方案总览</a>
+    <div class="hi">PATCHBAY · 角色插孔接到步骤插孔 · 步数不封顶</div>
+  </header>
+  <div class="stage">
+    <div class="col">
+      <h2>角色词表</h2>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 12px">点一个角色，再点右侧空槽，就是分派。和软件交付无关，值班/诊断/研究都能插。</p>
+      <div id="jacks"></div>
+    </div>
+    <div class="col">
+      <h2>步骤槽 · 想加多少加多少</h2>
+      <input class="title" id="scene" value="生产故障处置" style="font-size:28px;font-family:'Barlow Condensed',sans-serif;font-weight:800;margin-bottom:12px" />
+      <div class="slots" id="slots"></div>
+      <button class="addslot" id="add" style="width:100%;margin-top:10px">+ 加空槽</button>
+    </div>
+    <div class="col side">
+      <h2>深度夹</h2>
+      <p>模板声明哪些槽可以当出口。任务发起时，人只在这些出口里选「这次走到哪」——五站模板可以只跑到定界。</p>
+      <ul class="depth-list" id="depth"></ul>
+      <p id="hint" style="margin-top:18px;font-size:13px"></p>
+    </div>
+  </div>
+  <script>
+    const ROLES = ["值班","诊断","操作","验证","采集","分析","开发","审查","测试","研究","撰稿"];
+    let selected = "诊断";
+    let nodes = [
+      { title: "接报", role: "值班", exit: true },
+      { title: "定界", role: "诊断", exit: true },
+      { title: "根因", role: "诊断", exit: true },
+      { title: "止血", role: "操作", exit: true },
+      { title: "复盘验证", role: "验证", exit: true },
+    ];
+    let depthIdx = 1;
+    function render() {
+      document.getElementById("jacks").innerHTML = ROLES.map((r) =>
+        `<button class="jack ${r===selected?"on":""}" data-r="${r}"><span class="dot"></span>${r}</button>`
+      ).join("");
+      document.querySelectorAll("#jacks .jack").forEach((b) => b.onclick = () => { selected = b.dataset.r; render(); });
+      document.getElementById("slots").innerHTML = nodes.map((n, i) => `
+        <div class="slot ${n.role?"":"empty"}">
+          <div class="n">${String(i+1).padStart(2,"0")}</div>
+          <div>
+            <input class="title" value="${n.title}" data-i="${i}" data-k="title" placeholder="这一站叫什么" />
+            <div class="wired">${n.role ? "已接 → " + n.role : "空槽 · 点我接上当前角色「" + selected + "」"}</div>
+          </div>
+          <div>
+            <button class="clip" data-exit="${i}">${n.exit ? "出口" : "设出口"}</button>
+            <button data-patch="${i}" style="display:block;margin-top:6px;cursor:pointer">接线</button>
+            <button data-del="${i}" style="display:block;margin-top:6px;cursor:pointer">拔掉</button>
+          </div>
+        </div>
+      `).join("");
+      document.querySelectorAll("[data-k]").forEach((el) => {
+        el.oninput = () => { nodes[Number(el.dataset.i)].title = el.value; renderDepth(); };
+      });
+      document.querySelectorAll("[data-patch]").forEach((el) => {
+        el.onclick = () => { nodes[Number(el.dataset.patch)].role = selected; render(); };
+      });
+      document.querySelectorAll("[data-exit]").forEach((el) => {
+        el.onclick = () => { const i = Number(el.dataset.exit); nodes[i].exit = !nodes[i].exit; render(); };
+      });
+      document.querySelectorAll("[data-del]").forEach((el) => {
+        el.onclick = () => { if (nodes.length>1) { nodes.splice(Number(el.dataset.del),1); render(); } };
+      });
+      renderDepth();
+    }
+    function renderDepth() {
+      const ex = nodes.map((n,i)=>({n,i})).filter((x)=>x.n.exit);
+      if (depthIdx >= ex.length) depthIdx = Math.max(0, ex.length-1);
+      document.getElementById("depth").innerHTML = ex.map((x, k) =>
+        `<li class="${k===depthIdx?"live":""}" data-d="${k}">${x.n.title || "未命名"} · ${x.n.role || "未接线"}</li>`
+      ).join("") || "<li>还没有出口</li>";
+      document.querySelectorAll("#depth [data-d]").forEach((el) => {
+        el.onclick = () => { depthIdx = Number(el.dataset.d); renderDepth(); };
+      });
+      const cur = ex[depthIdx];
+      document.getElementById("hint").textContent = cur
+        ? `模拟任务发起：这次最深走到「${cur.n.title}」。后面的槽仍在模板里，只是这单不跑。`
+        : "把至少一个槽标成出口。";
+    }
+    document.getElementById("add").onclick = () => {
+      nodes.push({ title: "", role: "", exit: false });
+      render();
+    };
+    render();
+  </script>
+</body>
+</html>

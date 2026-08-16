@@ -38,6 +38,7 @@ type Service struct {
 	roleStore EmployeeRoleStore
 	// castingImpact 预检/级联解除编制（可选；未注入则移除角色不查编制）。
 	castingImpact CastingImpactGateway
+	userNames     UserDisplayLookup
 	oplogLogger   oplog.Logger
 }
 
@@ -89,6 +90,15 @@ type RoleVocabularyValidator interface {
 	UnknownKeys(ctx context.Context, tenantID uuid.UUID, keys []string) ([]string, error)
 }
 
+type roleTitleResolver interface {
+	TitleForKey(ctx context.Context, tenantID uuid.UUID, roleKey string) (string, error)
+}
+
+// UserDisplayLookup resolves auth user display names for API responses.
+type UserDisplayLookup interface {
+	DisplayNames(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]string, error)
+}
+
 // EmployeeRoleStore persists multi-value role bindings for digital employees.
 type EmployeeRoleStore interface {
 	ListRoleKeys(ctx context.Context, tenantID, employeeID uuid.UUID) ([]string, error)
@@ -104,6 +114,10 @@ func (s *Service) SetRoleVocabularyValidator(validator RoleVocabularyValidator) 
 // SetEmployeeRoleStore injects the multi-value role binding store.
 func (s *Service) SetEmployeeRoleStore(store EmployeeRoleStore) {
 	s.roleStore = store
+}
+
+func (s *Service) SetUserDisplayLookup(lookup UserDisplayLookup) {
+	s.userNames = lookup
 }
 
 func (s *Service) SetCastingImpactGateway(g CastingImpactGateway) {
@@ -315,20 +329,6 @@ var supportedDigitalEmployeeProviderTypes = map[string]struct{}{
 	"claude-code": {},
 	"opencode":    {},
 	"codex":       {},
-}
-
-// supportedDigitalEmployeeRoles 收敛提交治理变更时可接受的 role(防任意 role)。
-// TODO: 以后改为从 employee type 注册表的 DefaultRole 动态取,当前封闭集合是务实过渡。
-var supportedDigitalEmployeeRoles = map[string]struct{}{
-	"requirements_analyst": {},
-	"backend_engineer":     {},
-	"frontend_engineer":    {},
-	"qa_engineer":          {},
-	"code_reviewer":        {},
-	"devops_engineer":      {},
-	"postgres_operator":    {},
-	"finance_reviewer":     {},
-	"e2e-capability-probe": {},
 }
 
 func NewService(repository Repository) (*Service, error) {
@@ -786,6 +786,9 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 	}
 
 	roleKeys := normalizeRoleKeys(normalized.RoleKeys)
+	if len(roleKeys) == 0 {
+		roleKeys = normalizeRoleKeys(definition.DefaultRoleKeys)
+	}
 	if err := s.validateRoleKeys(ctx, normalized.TenantID, roleKeys); err != nil {
 		return nil, err
 	}
@@ -797,14 +800,17 @@ func (s *Service) CreateDigitalEmployee(ctx context.Context, req CreateDigitalEm
 			return err
 		}
 		record = createdRecord
-		if s.roleStore != nil && len(roleKeys) > 0 {
-			if err := s.roleStore.ReplaceRoleKeys(ctx, normalized.TenantID, createdRecord.ID, roleKeys); err != nil {
-				return err
-			}
-		}
 		return nil
 	}); err != nil {
 		return nil, err
+	}
+
+	// roleStore 走独立连接，不能放进上面的事务：员工行未提交时插入
+	// digital_employee_roles 会撞 FK digital_employee_roles_digital_employee_id_fkey。
+	if s.roleStore != nil && len(roleKeys) > 0 {
+		if err := s.roleStore.ReplaceRoleKeys(ctx, normalized.TenantID, record.ID, roleKeys); err != nil {
+			return nil, fmt.Errorf("bind employee role keys: %w", err)
+		}
 	}
 
 	employee := employeeFromRecord(record)
@@ -1445,8 +1451,34 @@ func (s *Service) UpdateProfile(ctx context.Context, req UpdateProfileRequest) (
 	if req.DigitalEmployeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: employee_id is required", ErrInvalidInput)
 	}
-	description := trimOptionalString(req.Description)
-	record, err := s.repository.UpdateDigitalEmployeeProfile(ctx, req.TenantID, req.DigitalEmployeeID, description)
+	if req.Description == nil && req.Role == nil {
+		return nil, fmt.Errorf("%w: description or role is required", ErrInvalidInput)
+	}
+	current, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
+	if err != nil {
+		return nil, fmt.Errorf("get digital employee: %w", err)
+	}
+	description := current.Description
+	if req.Description != nil {
+		description = trimOptionalString(req.Description)
+	}
+	role := strings.TrimSpace(current.Role)
+	if req.Role != nil {
+		trimmed := strings.TrimSpace(*req.Role)
+		if trimmed == "" {
+			derived, deriveErr := s.deriveRoleDisplay(ctx, req.TenantID, req.DigitalEmployeeID, current)
+			if deriveErr != nil {
+				return nil, deriveErr
+			}
+			role = derived
+		} else {
+			role = trimmed
+		}
+	}
+	if role == "" {
+		return nil, fmt.Errorf("%w: role is required", ErrInvalidInput)
+	}
+	record, err := s.repository.UpdateDigitalEmployeeProfile(ctx, req.TenantID, req.DigitalEmployeeID, description, role)
 	if err != nil {
 		return nil, fmt.Errorf("update digital employee profile: %w", err)
 	}
@@ -1634,15 +1666,8 @@ func (s *Service) SubmitPermissionChange(ctx context.Context, req SubmitPermissi
 	if req.TenantID == uuid.Nil || req.DigitalEmployeeID == uuid.Nil {
 		return nil, fmt.Errorf("%w: tenant_id and digital_employee_id are required", ErrInvalidInput)
 	}
-	if req.Role == nil && req.PermissionPolicy == nil {
+	if req.PermissionPolicy == nil {
 		return nil, ErrPermissionChangeEmpty
-	}
-	if req.Role != nil {
-		if trimmed := strings.TrimSpace(*req.Role); trimmed == "" {
-			return nil, fmt.Errorf("%w: role must not be blank", ErrInvalidInput)
-		} else if !s.isValidRole(trimmed) {
-			return nil, fmt.Errorf("%w: role not recognized", ErrInvalidInput)
-		}
 	}
 
 	employee, err := s.repository.GetDigitalEmployee(ctx, req.TenantID, req.DigitalEmployeeID)
@@ -1665,22 +1690,16 @@ func (s *Service) SubmitPermissionChange(ctx context.Context, req SubmitPermissi
 
 	// 目标值 + current/after diff 随 ContextPayload 承载,供权限中心弹窗渲染 + 批准时写回。
 	payload := map[string]any{
-		"employee_id":   req.DigitalEmployeeID.String(),
-		"employee_name": employee.Name,
-		"current_role":  employee.Role,
-		"requested_by":  req.RequesterUserID.String(),
-	}
-	if req.Role != nil {
-		payload["target_role"] = *req.Role
-	}
-	if req.PermissionPolicy != nil {
-		payload["target_permission_policy"] = req.PermissionPolicy
-		// 保留当前 permission_policy 供 diff 渲染(map 克隆避免引用)。
-		payload["current_permission_policy"] = cloneMap(employee.PermissionPolicy)
+		"employee_id":                req.DigitalEmployeeID.String(),
+		"employee_name":              employee.Name,
+		"current_role":               employee.Role,
+		"requested_by":               req.RequesterUserID.String(),
+		"target_permission_policy":   req.PermissionPolicy,
+		"current_permission_policy":  cloneMap(employee.PermissionPolicy),
 	}
 
 	risk := "high"
-	summary := permissionChangeSummary(employee.Role, employee.Name, req.Role, req.PermissionPolicy != nil)
+	summary := permissionChangeSummary(employee.Name, true)
 	return s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
 		TenantID:       req.TenantID,
 		ResourceType:   permission.ResourceTypeEmployeeConfigRevision,
@@ -1728,10 +1747,105 @@ func (s *Service) ActivateConfigRevision(ctx context.Context, in permission.Acti
 	return nil
 }
 
-// isValidRole 校验 role 在已知 employee type 默认角色集合内(防任意 role)。
-func (s *Service) isValidRole(role string) bool {
-	_, ok := supportedDigitalEmployeeRoles[role]
-	return ok
+func (s *Service) GetPendingPermissionChange(ctx context.Context, tenantID, employeeID uuid.UUID) (*PendingPermissionChange, error) {
+	if tenantID == uuid.Nil || employeeID == uuid.Nil {
+		return nil, fmt.Errorf("%w: tenant_id and employee_id are required", ErrInvalidInput)
+	}
+	if _, err := s.repository.GetDigitalEmployee(ctx, tenantID, employeeID); err != nil {
+		return nil, err
+	}
+	if s.approvals == nil {
+		return nil, nil
+	}
+	req, err := s.approvals.GetRequestByResource(ctx, tenantID, permission.ResourceTypeEmployeeConfigRevision, employeeID)
+	if err != nil {
+		if errors.Is(err, approval.ErrApprovalNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if req == nil {
+		return nil, nil
+	}
+	payload := req.ContextPayload
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	currentPolicy, _ := mapFromPayload(payload, "current_permission_policy")
+	targetPolicy, _ := mapFromPayload(payload, "target_permission_policy")
+	currentRole, _ := stringFromPayload(payload, "current_role")
+	targetRole, _ := stringFromPayload(payload, "target_role")
+	ids := make([]uuid.UUID, 0, 2)
+	if req.RequesterID != nil && *req.RequesterID != uuid.Nil {
+		ids = append(ids, *req.RequesterID)
+	}
+	if req.TargetUserID != uuid.Nil {
+		ids = append(ids, req.TargetUserID)
+	}
+	names := map[uuid.UUID]string{}
+	if s.userNames != nil && len(ids) > 0 {
+		lookedUp, lookupErr := s.userNames.DisplayNames(ctx, ids)
+		if lookupErr != nil {
+			slog.Default().Warn("permission change display names lookup failed", "error", lookupErr)
+		} else {
+			names = lookedUp
+		}
+	}
+	requesterName := "未知用户"
+	if req.RequesterID != nil {
+		if n := strings.TrimSpace(names[*req.RequesterID]); n != "" {
+			requesterName = n
+		}
+	}
+	approverName := "未知用户"
+	if n := strings.TrimSpace(names[req.TargetUserID]); n != "" {
+		approverName = n
+	}
+	risk := ""
+	if req.RiskLevel != nil {
+		risk = *req.RiskLevel
+	}
+	return &PendingPermissionChange{
+		RequestID:               req.ID,
+		Status:                  string(req.Status),
+		RiskLevel:               risk,
+		CreatedAt:               req.CreatedAt,
+		RequesterName:           requesterName,
+		ApproverName:            approverName,
+		CurrentPermissionPolicy: currentPolicy,
+		TargetPermissionPolicy:  targetPolicy,
+		CurrentRole:             currentRole,
+		TargetRole:              targetRole,
+	}, nil
+}
+
+func (s *Service) deriveRoleDisplay(ctx context.Context, tenantID, employeeID uuid.UUID, current DigitalEmployeeRecord) (string, error) {
+	if s.roleStore != nil {
+		keys, err := s.roleStore.ListRoleKeys(ctx, tenantID, employeeID)
+		if err != nil {
+			return "", fmt.Errorf("list role keys: %w", err)
+		}
+		if len(keys) > 0 {
+			first := keys[0]
+			if resolver, ok := s.roleVocabulary.(roleTitleResolver); ok {
+				title, titleErr := resolver.TitleForKey(ctx, tenantID, first)
+				if titleErr != nil {
+					return "", titleErr
+				}
+				if strings.TrimSpace(title) != "" {
+					return strings.TrimSpace(title), nil
+				}
+			}
+			return first, nil
+		}
+	}
+	if role := strings.TrimSpace(current.Role); role != "" {
+		return role, nil
+	}
+	if t := strings.TrimSpace(current.EmployeeType); t != "" {
+		return t, nil
+	}
+	return "", fmt.Errorf("%w: role is required", ErrInvalidInput)
 }
 
 // employeeBusy 报告员工是否有进行中工作(派发运行态)。完整在役项目占用校验见后续独立项。
@@ -1746,22 +1860,11 @@ func (s *Service) employeeBusy(ctx context.Context, tenantID, employeeID uuid.UU
 	return state.Status == DigitalEmployeeOperationalStatusWorking || state.Status == DigitalEmployeeOperationalStatusQueued, nil
 }
 
-func permissionChangeSummary(currentRole, name string, role *string, hasPolicy bool) string {
-	parts := []string{}
-	if role != nil {
-		if currentRole == *role {
-			parts = append(parts, fmt.Sprintf("角色保持 %s", *role))
-		} else {
-			parts = append(parts, fmt.Sprintf("角色 %s → %s", currentRole, *role))
-		}
-	}
+func permissionChangeSummary(name string, hasPolicy bool) string {
 	if hasPolicy {
-		parts = append(parts, "更新权限策略(permission_policy)")
+		return fmt.Sprintf("更新 %s 的权限策略", name)
 	}
-	if len(parts) == 0 {
-		return name
-	}
-	return name + ":" + strings.Join(parts, "、")
+	return name
 }
 
 func stringFromPayload(payload map[string]any, key string) (string, bool) {
