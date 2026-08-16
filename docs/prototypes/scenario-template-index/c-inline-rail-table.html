@@ -90,7 +90,6 @@
             <tr>
               <th>模板</th>
               <th>骨架</th>
-              <th>席位</th>
               <th>最深收口</th>
               <th>状态</th>
               <th>更新</th>
@@ -122,7 +121,6 @@
             <p class="key" style="margin-top:4px">${t.key}</p>
           </td>
           <td>${chainHtml(t)}</td>
-          <td class="seats" title="${t.roles.join(" · ")}">${t.roles.length ? t.roles.join(" · ") : `<span class="generic">无约束</span>`}</td>
           <td class="deepest">${t.deepest || `<span class="generic">generic</span>`}</td>
           <td><span class="pill ${t.status === "active" ? "pill-ok" : "pill-mute"}"><span class="dot"></span>${statusLabel(t.status)}</span></td>
           <td class="time">${t.updated}</td>

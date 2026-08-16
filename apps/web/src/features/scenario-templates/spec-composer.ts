@@ -367,6 +367,126 @@ export function composerFromSpec(spec: Record<string, unknown>): ComposerDraft {
   return { nodes };
 }
 
+export type ListChainStation = {
+  step: string;
+  title: string;
+  roleKey: string;
+  roleTitle: string;
+  exit: boolean;
+  exitLabel: string;
+};
+
+export type ListChainGroup = {
+  stations: ListChainStation[];
+};
+
+export type ListChainPreview = {
+  empty: boolean;
+  serial: boolean;
+  groups: ListChainGroup[];
+  roles: Array<{ key: string; title: string }>;
+  deepestExit: string | null;
+  tooltip: string;
+};
+
+function depKey(dependsOn: string[]): string {
+  return [...new Set(dependsOn.filter(Boolean))].sort().join("\0");
+}
+
+function roleTitleMap(roles: SpecRole[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const role of roles) {
+    const key = String(role.key ?? "").trim();
+    if (!key) continue;
+    map.set(key, String(role.title ?? "").trim() || key);
+  }
+  return map;
+}
+
+function stationFromStep(
+  step: SpecStep,
+  index: number,
+  titles: Map<string, string>,
+  exits: SpecExit[],
+): ListChainStation {
+  const stepKey = String(step.step ?? `step_${index + 1}`);
+  const roleKey = String(step.role ?? "");
+  const roleTitle = titles.get(roleKey) || roleKey;
+  const namedTitle = String(step.title ?? "").trim();
+  const title = namedTitle || roleTitle || stepKey;
+  const produceNames = (step.produces_defaults ?? [])
+    .map((item) => String(item.name ?? "").trim())
+    .filter(Boolean);
+  const matchedExit = exits.find((exit) => produceNames.includes(String(exit.deliverable ?? "")));
+  const exitLabel = String(matchedExit?.label ?? matchedExit?.deliverable ?? "").trim();
+  return {
+    step: stepKey,
+    title,
+    roleKey,
+    roleTitle,
+    exit: Boolean(matchedExit),
+    exitLabel,
+  };
+}
+
+function groupStations(stations: ListChainStation[], steps: SpecStep[], serial: boolean): ListChainGroup[] {
+  if (serial) {
+    return stations.map((station) => ({ stations: [station] }));
+  }
+  const order: string[] = [];
+  const buckets = new Map<string, ListChainStation[]>();
+  stations.forEach((station, index) => {
+    const deps = Array.isArray(steps[index]?.depends_on)
+      ? steps[index]!.depends_on!.map(String)
+      : [];
+    const key = depKey(deps);
+    if (!buckets.has(key)) {
+      order.push(key);
+      buckets.set(key, []);
+    }
+    buckets.get(key)!.push(station);
+  });
+  return order.map((key) => ({ stations: buckets.get(key) ?? [] }));
+}
+
+/** 列表页只读预览。空骨架不塞编辑器占位站。 */
+export function listChainFromSpec(spec: Record<string, unknown>): ListChainPreview {
+  const steps = asObjectArray(spec.skeleton) as SpecStep[];
+  const exits = asObjectArray(spec.exits) as SpecExit[];
+  const roles = (asObjectArray(spec.roles) as SpecRole[]).map((role) => {
+    const key = String(role.key ?? "").trim();
+    return { key, title: String(role.title ?? "").trim() || key };
+  }).filter((role) => role.key);
+  const titles = roleTitleMap(asObjectArray(spec.roles) as SpecRole[]);
+  if (steps.length === 0) {
+    return {
+      empty: true,
+      serial: true,
+      groups: [],
+      roles,
+      deepestExit: null,
+      tooltip: "无骨架 · generic 行为",
+    };
+  }
+  const serial = isSerialSkeleton(spec);
+  const stations = steps.map((step, index) => stationFromStep(step, index, titles, exits));
+  const lastExit = exits[exits.length - 1];
+  const deepestExit = lastExit
+    ? String(lastExit.label ?? "").trim() || String(lastExit.deliverable ?? "").trim() || null
+    : null;
+  const tooltip = stations
+    .map((station) => `${station.title}${station.roleTitle ? `（${station.roleTitle}）` : ""}`)
+    .join(" → ");
+  return {
+    empty: false,
+    serial,
+    groups: groupStations(stations, steps, serial),
+    roles,
+    deepestExit,
+    tooltip,
+  };
+}
+
 export function isSerialSkeleton(spec: Record<string, unknown>): boolean {
   const steps = asObjectArray(spec.skeleton) as SpecStep[];
   if (steps.length === 0) return true;

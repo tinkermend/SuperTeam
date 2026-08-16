@@ -139,6 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- 2026-08-17 场景模板首页改为链入表：去掉行展开、版本历史、指标卡与席位列；骨架/并行/收口由列表 spec 派生；支持状态筛选、名称搜索与分页。方案见 `docs/prototypes/scenario-template-index/redesign-spec.md`。
+
 - 2026-08-13 23:13 任务中枢铺满视口 + 右栏长 git 文案不再溢出。工作台 `Main fixed` 吃 Header 以下剩余高度，去掉 `.hub-body` 的 `calc(100dvh - 12.25rem)`；对话 tabpanel 补 `.hub-face` 参与 flex。git 面板 `min-w-0`/`break-all`，离线 pill 允许换行且不再与正文重复同一句。定向 vitest 38 绿。**真实浏览器**（web pid=61430 / CP pid=63396，cwd 本 checkout，1600×980）：三栏 bottom=968 / `innerHeight`=980（底隙 12px）；`批二基线项目 P1` 分支 `feature/casting-expansion-merge-state-tracking` 与离线 pill 均 `overflows=false`。
 
 - 2026-08-13 20:45 任务中枢两面对照实拍后重做（上一轮只改了对话壳，任务面仍是玻璃发起表 + KPI 时间河道）。**对话**：员工花名册/身份头加大头像并给出职能说明（无 description 时用旁路说明），会话行补最近提问两行缩略，composer 加实底输入框。**任务**：左栏改为在途实例列表（状态走 `status-labels`「待人工确认」，去掉 5 张 KPI 与时间河道）；中栏实底发起（场景模板卡片 + 编制/可跑性，去掉 `.glass`）；点实例看摘要/阻塞；两面右栏都挂项目 git。定向 vitest 34 绿。**真实浏览器**（web pid=61430 / CP pid=63396，cwd 本 checkout，浅色 1600×980）：`?face=chat` 身份头「诊断-E」+ 说明、会话缩略、composer 框、右轨 git x=1316；`?face=task` 无「时间河道」/KPI、实例「待人工确认」、模板卡、点「P5 external demand probe」出阻塞摘要，右轨 git 在。

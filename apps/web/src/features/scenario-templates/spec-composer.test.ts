@@ -6,6 +6,7 @@ import {
   emptyComposerDraft,
   isSerialSkeleton,
   isValidTemplateKey,
+  listChainFromSpec,
   specFromComposer,
   suggestTemplateKey,
   validateComposerDraft,
@@ -242,5 +243,74 @@ describe("spec-composer", () => {
     expect(text).toContain("开发 → 审查 → 发布");
     expect(text).toContain("独立验证");
     expect(text).toContain("人类确认");
+  });
+
+  it("does not invent a placeholder station for an empty skeleton", () => {
+    const preview = listChainFromSpec({ roles: [{ key: "ops", title: "值班" }], skeleton: [] });
+    expect(preview.empty).toBe(true);
+    expect(preview.groups).toEqual([]);
+    expect(preview.deepestExit).toBeNull();
+    expect(preview.roles).toEqual([{ key: "ops", title: "值班" }]);
+    expect(preview.tooltip).toContain("generic");
+  });
+
+  it("marks a station as an exit when any produce matches", () => {
+    const preview = listChainFromSpec({
+      roles: [
+        { key: "developer", title: "开发" },
+        { key: "reviewer", title: "审查" },
+      ],
+      skeleton: [
+        {
+          step: "develop",
+          role: "developer",
+          produces_defaults: [
+            { name: "head_commit" },
+            { name: "branch_ref" },
+          ],
+        },
+        {
+          step: "review",
+          role: "reviewer",
+          depends_on: ["develop"],
+          produces_defaults: [{ name: "review_verdict" }],
+        },
+      ],
+      exits: [
+        { deliverable: "branch_ref", label: "交付分支" },
+        { deliverable: "review_verdict", label: "审查通过" },
+      ],
+    });
+    expect(preview.serial).toBe(true);
+    expect(preview.groups.map((group) => group.stations.map((item) => item.title))).toEqual([
+      ["开发"],
+      ["审查"],
+    ]);
+    expect(preview.groups[0]?.stations[0]?.exit).toBe(true);
+    expect(preview.groups[0]?.stations[0]?.exitLabel).toBe("交付分支");
+    expect(preview.deepestExit).toBe("审查通过");
+  });
+
+  it("groups parallel stations that share depends_on", () => {
+    const preview = listChainFromSpec({
+      roles: [
+        { key: "developer", title: "开发" },
+        { key: "reviewer", title: "审查" },
+        { key: "tester", title: "测试" },
+      ],
+      skeleton: [
+        { step: "develop", role: "developer" },
+        { step: "review", role: "reviewer", depends_on: ["develop"] },
+        { step: "test", role: "tester", depends_on: ["develop"] },
+        { step: "release", title: "发布", role: "developer", depends_on: ["review", "test"] },
+      ],
+    });
+    expect(preview.serial).toBe(false);
+    expect(preview.groups.map((group) => group.stations.map((item) => item.title))).toEqual([
+      ["开发"],
+      ["审查", "测试"],
+      ["发布"],
+    ]);
+    expect(preview.deepestExit).toBeNull();
   });
 });

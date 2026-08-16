@@ -1,135 +1,179 @@
 # 场景模板首页 · 链入表落地方案
 
-状态：待实现。对照原型：`c-inline-rail-table.html`（已按真实接口校正）。编辑页方案见 `docs/prototypes/scenario-template-composer/redesign-spec.md`，本文只改 **列表页** `/scenario-templates`。
+状态：已落地（Console 列表页）。对照原型：`c-inline-rail-table.html`。编辑页方案见 `docs/prototypes/scenario-template-composer/redesign-spec.md`，本文只改 **列表页** `/scenario-templates`。
 
-## 0. 结论
+## 0. 已拍板
 
-首页改成 **软壳装脆数据的链入表**：一行一个模板，骨架画在行内，**去掉展开层和版本历史**。数据只吃 `GET /api/v1/scenario-templates` 返回的主表 + `spec`，**不**再为展开去打 versions / role-view。
+1. 布局用 **链入表**（方案 C）。不做剧目卡、不做主从预览栏。
+2. **去掉展开层和版本历史**。产品面无「升版」；`active_version` / versions API 本页不出现、不请求。
+3. 数据只吃 `GET /api/v1/scenario-templates`（主表 + `spec`）。不打 `role-view`、`versions`、`playbook-readiness`。
+4. **顶部**：`ShellPageHeader`（标题 + 一句职责）+ `Main` 内主 CTA「新建模板」。**不要 MetricCard**。
+5. **筛选**：状态三档（全部 / 启用中 / 已禁用，默认全部）+ **名称搜索**（客户端，匹配 `name` 与 `template_key`）。不要按席位/步数筛。状态 chip 个数来自未过滤全集。
+6. **分页**：客户端切页，默认每页 10，可选 10/20/50。筛/搜/改页大小回到第 1 页。不新增列表 API query。
+6. 启停 / 删除确认框文案保持现网，不把停用后果写进每一行。
 
-作者心智与编辑页一致：点「编辑」改当前配置；「保存更改」后台仍写不可变版本行，只给进行中规划钉 spec，**产品面不出现版本号**。
+## 1. 结论
 
-## 1. 和真实接口的对照（原型里哪些能落地）
+首页是治理用的实体目录：扫有哪些骨架、最深能收到哪一档，然后编辑 / 启停 / 删除。新规划只匹配启用中的模板——这句话放页头副文案和停用确认框，不靠指标卡重复。
 
-列表项来自 `listScenarioTemplates`（`ScenarioTemplate`）：`name`、`description`、`template_key`、`status`、`updated_at`、`spec`。`spec` 内已有 `roles[]`、`skeleton[]`、`exits[]`。
+作者心智与编辑页一致：点「编辑」改当前配置；「保存更改」后台仍写不可变版本行，只给进行中规划钉 spec。
 
-| 原型列 | 落地口径 | 接口 |
+## 2. 接口对照
+
+列表项来自 `listScenarioTemplates`：`name`、`description`、`template_key`、`status`、`updated_at`、`spec`（`roles` / `skeleton` / `exits`）。
+
+| 列 / 控件 | 口径 | 来源 |
 |---|---|---|
 | 模板名称 / 描述 | 原样 | `name` / `description` |
 | key | 等宽补充，不作主指称 | `template_key` |
-| 骨架链 | **派生**，不是 spec 上的独立字段 | `spec.skeleton` + `spec.exits` + `spec.roles` |
-| 席位 | 名称，不是 key | `spec.roles[].title`，缺则 `key` |
-| 最深收口 | `exits` 数组**最后一项**的 `label`（浅→深，与现展开区文案一致） | `spec.exits` |
-| 状态 | `StatusPill` + 词表 | `status`：`active` / `disabled` → `statusLabel`（启用中 / 已禁用） |
-| 更新 | 相对时间 | `updated_at` |
-| 筛选全部/启用/停用 | **前端滤** | 列表 API 无 query；不要新接口 |
-| 启停 / 删除 | 现有确认框文案保留 | `PATCH` status；`DELETE` 软删 |
+| 骨架链 | **派生**，见 §3 | `spec.skeleton` + `exits` + `roles` |
+| 最深收口 | `exits` 数组最后一项的 label，空则 deliverable | `spec.exits`（浅→深，与现展开区、规划确认卡同一顺序约定） |
+| 状态 pill | `statusLabel` | `active` → 启用中；`disabled` → 已禁用 |
+| 更新 | 相对时间 | `updated_at`（只展示，**不**拿来重排） |
+| 名称搜索 | 前端滤 name / template_key | 列表 API 无 query |
+| 分页 | 前端 slice | 默认 10，选项 10/20/50 |
+| 启停 / 删除 | 现确认框 | `PATCH` status；`DELETE` 软删 |
 
-### 1.1 骨架链怎么从 spec 算（禁止再发明 `step.exit`）
+列表 SQL 已是 `ORDER BY created_at ASC, template_key ASC`。本页 **保持服务端顺序**，不要改成 `updated_at` 倒序——这是注册表不是任务队列，种子/创建顺序更稳。`DESIGN.md`「工作对象默认新近优先」适用于任务/审批，不套到模板登记。
 
-骨架站 **没有** `exit` 布尔字段。是否可收口与编辑器同一规则（`spec-composer.ts` 的 `composerFromSpec`）：
+### 2.1 明确不做
 
-- 站的产物名 = `skeleton[].produces_defaults[0].name`，没有则 `${step}_outcome`
-- 若 `exits[].deliverable` 等于该产物名，该站可收口
-- 站上展示名 = `skeleton[].title`（若有）→ 否则该站 `role` 在 `spec.roles` 里的 `title` → 否则 `step` 键。**禁止**在列表里手写「接入 / 定界」这类种子故事名。
-
-可收口用 **品牌色小圆点**（与编辑页「蓝点可收口」同一语言），不要在每个节点上写「· 可收口」长文案。
-
-串行：`depends_on` 恰好是上一站 → 画 `A → B → C`。判定复用已有 `isSerialSkeleton(spec)`。
-
-并行（种子 `software_delivery`：审查 ∥ 测试都依赖 develop）：**禁止**拉成假的一条直线。按 `depends_on` 把同依赖的站画成 `开发 →（审查 ∥ 测试）→ 发布`。一期编辑器仍不改并行图；列表只如实预览。
-
-链过长（建议 **>5 个可见节点**，并行组算一组）：行内显示前 4 组 + `+N`，完整链进 `title` / tooltip。禁止为读完一条链而横向滚整表。
-
-无骨架（generic 或空 `skeleton`）：行内灰字 **「无骨架 · generic 行为」**，与停用确认框里的 generic 回落语义一致。不要编造占位站。
-
-### 1.2 明确不做（原型曾暗示、接口也有、但首页不该用）
-
-| 能力 | 为什么列表不用 |
+| 能力 | 原因 |
 |---|---|
-| `GET .../versions`、`active_version` | 产品面无「升版」；钉 spec 是规划内部的事 |
-| `GET .../role-view` | 出口所需角色、独立性、租户持有者人数是编制/规划语义；编辑页方案已定 **模板页不掺项目就绪度**。列表再 N+1 打 role-view 无必要 |
-| `playbook-readiness` | 绑定项目；列表无项目上下文 |
-| 展开区验收判据 | `default_acceptance_criteria` 在 spec 里，给编辑/规划用；首页扫的是链和收口 |
-| 列表筛选 API、服务端排序 | 现网租户模板量小；先客户端滤 `status`、按 `updated_at` 倒序（工作对象默认新近优先） |
+| `GET .../versions`、`active_version` | 产品面无升版 |
+| `GET .../role-view` | 出口所需角色、独立性、持有人数是编制/规划语义；禁止 N+1 |
+| `playbook-readiness` | 绑定项目；列表无项目 |
+| 展开验收判据 | 给编辑/规划用 |
+| 人类门 / 独立验证标记 | 检修台的事，列表不画第二套约束 |
+| 列表筛选 API、按更新时间重排 | 量小；顺序跟登记 |
+| 本页搜索 / URL 同步筛选 | 量小；Cmd+K 已在壳上。筛选只活在组件 state |
+| 按 `template_key === "generic"` 特判 | 只认空 `skeleton`，文案走 §3.4 |
 
-`listScenarioTemplateVersions` 可留在 API 客户端供以后审计用，**本页不再调用**。
+`listScenarioTemplateVersions` 可留在 API 客户端，本页不再调用。
 
-## 2. 页面结构（Soft-Flat）
+## 3. 骨架链派生（禁止第二套语义）
 
-Tier：实体目录。容器：**柔和白卡外壳 + 内部脆数据表**（`WorkSurface` + `DataTable`）。不要玻璃卡、不要两张空洞 MetricCard。
+### 3.1 不要直接 `composerFromSpec`
+
+`composerFromSpec` 在空骨架时会 `emptyComposerDraft()` **塞一个占位站**，那是编辑器起步用的。列表若复用，generic 会画出假节点。
+
+抽只读函数（建议 `spec-composer.ts` 旁或同文件导出，供列表与单测共用），例如 `listChainFromSpec(spec)`：
+
+- 复用 `isSerialSkeleton`
+- **不要**调用 `composerFromSpec` / `emptyComposerDraft`
+
+### 3.2 可收口
+
+骨架站没有 `exit` 字段。与规划侧 `StepByProduce` 对齐：**该站 `produces_defaults` 任一名**等于某个 `exits[].deliverable`，则该站可收口。
+
+不要只对 `produces_defaults[0]`（编辑器 `composerFromSpec` 目前如此）。种子 `software_delivery` 的 develop 同时产 `branch_ref` 与 `head_commit`，出口可能对其中任一个。
+
+没有 `produces_defaults` 时：不要用编辑器的 `${step}_outcome` 去猜出口。对不上就不点蓝点。v1 无 `exits` 的模板：整链无蓝点，最深收口列走 §3.5。
+
+蓝点：品牌色小圆，`aria-label="可收口"`，`title` 用该站匹配到的 `exits[].label`。不要在节点上写「· 可收口」。**不要**页级图例条。
+
+### 3.3 站名
+
+`skeleton[].title`（若有）→ 该站 `role` 在 `spec.roles` 的 `title` → 否则 `step` 键。禁止手写种子剧情名。不请求角色词表。
+
+### 3.4 串行 / 并行 / 空
+
+- 空 `skeleton`：**「无骨架 · generic 行为」**。不编造占位站。
+- `isSerialSkeleton` 为真：一站一组，`A → B → C`。
+- 否则按 **相同 `depends_on` 集合**（忽略顺序、空数组当「无依赖」）分组，组的出现顺序 = 骨架数组里该依赖集合第一次出现的位置。同组画 `（审查 ∥ 测试）`。  
+  例：`develop []` → `review [develop]`、`test [develop]` → `release [review,test]` 得到 `开发 →（审查 ∥ 测试）→ 发布`。  
+  两个都无依赖的根会并成一组，这是「无边」骨架的如实预览，不是 bug。
+- 更乱的图（交叉依赖、多父不对称）**不要**做完整分层拓扑。组内按骨架原顺序；组间按首次出现。看不清的，tooltip 用 `站名（角色）` 按骨架顺序列全。
+- 一期编辑器仍不改并行；列表只预览。非串行模板进编辑页会被拒存——列表不拦截「编辑」，点进去由编辑页说明。
+
+链过长：**可见组 >5** 时行内前 4 组 + `+N`，完整链进该单元格 `title`。禁止为读链而让整页横滚。
+
+### 3.5 最深收口列
+
+- 有 `exits`：最后一项 `label`，空则 `deliverable`。
+- 无 `exits`（含 v1、generic）：mute **「generic」**。不要写长句。
+- 有骨架但出口与产物对不上：列仍用 `exits` 最后一项（规划认 exits 数组）；链上可以没有蓝点。不要为了对齐蓝点去改列口径。
+
+**列表不单独开席位列。** 站名默认就是角色 title，并排会和骨架重复。编制要填哪些人，进编辑页看。`spec.roles` 仍用于站名回退。
+
+## 4. 页面结构
+
+Tier：实体目录（`page-archetypes.md`）。`Main width="wide"`。**柔和白卡外壳 + 内部脆表**（`WorkSurface` + `DataTable`）。不要玻璃。
 
 ```
-[ShellPageHeader 场景模板]
-[右上 新建模板 → /scenario-templates/new]
-
-[工具条：全部 n | 启用中 n | 已禁用 n]   ← chip，aria-pressed
-[WorkSurface
-  表头 sticky
-  行：模板 | 骨架 | 席位 | 最深收口 | 状态 | 更新 | 操作
+[ShellPageHeader 图标 + 标题 + 副文案]
+[Main
+  右对齐 新建模板 → /scenario-templates/new     ← 唯一实心主 CTA
+  ListToolbar：ToolbarSearch 名称 + Chip 全部 n | 启用中 n | 已禁用 n
+  WorkSurface
+    加载：TableSkeleton（不要整页空白）
+    失败：ErrorState
+    全集空：EmptyState + 指向新建
+    筛选空：EmptyNoMatch（例如没有已禁用的）+ 动作「查看全部」
+    有行：表
 ]
 ```
 
-- Header 副文案改为能说清职责，例如：「声明这类活要经过哪些席位、收到哪一档；新规划只匹配启用中的模板。」
-- 计数写在 chip 上，不再单独占两张指标卡。
-- 空 / 加载 / 失败仍用现有 `EmptyState` / `LoadingState` / `ErrorState`，落在 WorkSurface 内。
-- 密度：跟随全站表格「舒适 / 紧凑」若壳层已有则接上；本页不单独做一套。
+- 副文案：「声明席位与收口档位。新规划只匹配启用中的模板。」
+- Chip 用现成 `Chip` / `ListToolbar`，`aria-pressed`。计数永远相对 **未过滤** 列表。过滤后表格变空 ≠ 租户没有模板。
+- 密度：不为本页单做舒适/紧凑开关。
+- 不改角色词表等其它目录的 MetricCard。
 
-## 3. 列与交互
+## 5. 列、交互、响应式
 
 **模板**  
-主名 `name`（truncate）。下一行 `description` 两行 clamp。再下一行等宽 `template_key`（`text-ink-3`）。对象指称用名称。
+`name` truncate。`description` 两行 clamp，空则省略第二行（不要「—」占行）。等宽 `template_key`。
 
-**骨架**  
-见 §1.1。节点：`card-soft` 底、小圆角、12px；箭头 `ink-3`。可收口站左边品牌点。并行组外一层弱线框。
-
-**席位**  
-`roles[].title` 用 ` · ` 连接；空则「无约束」。过长 truncate + title 列出全称。不展示 `required_capabilities`、不展示持有人数。
-
-**最深收口**  
-有 `exits`：最后一项 `label`，空 label 则 `deliverable`（用户可见优先 label）。无 exits：mute 文案「generic」。不要写「规划走 generic 行为」这种长句进单元格。
-
-**状态**  
-`StatusPill`：`active` → tone `ok`；`disabled` → `mute`。文案走 `statusLabel`。
-
-**更新**  
-`formatRelativeTime(updated_at)`，`tabular-nums`。
+**骨架 / 最深收口 / 状态 / 更新**  
+见上。状态 pill 与按钮文案分开：pill 用 `statusLabel`（启用中 / 已禁用）；按钮仍是 **停用 / 启用**（动作）。
 
 **操作**  
-行内保留 **编辑**（`Link` → `/scenario-templates/$templateKey/edit`）、**停用/启用**。删除进「更多」或保持现按钮但视觉降为 ghost；确认框文案不改。`stopPropagation` 避免误触。
+行内：**编辑**（`Link` → `/scenario-templates/$templateKey/edit`）、**停用或启用**。  
+**删除** 进 `ActionMenu`（`destructive`），不要三颗同权按钮。确认框不改。菜单与按钮 `click` 都 `stopPropagation`。
 
-点击行：不展开。若点击落在非按钮区，与「编辑」同一路由（整行可进对象）。键盘：操作按钮可 tab；行 click 不是唯一入口。
+**整行进入编辑**  
+不展开。点非控件区域 `navigate` 到同一编辑路由。名称也是 `Link`，保证键盘和中键新标签。不要把 `<a>` 包整行 `<tr>`。
 
-启停/删除继续用现 `ConfirmDialog`。停用后新规划回落 generic、已实例化项目不受影响——这句话留在确认框，不要写进每一行。
+**响应式**  
+`md` 以下：保留 模板、骨架、状态、操作；最深收口 / 更新可 `hidden md:table-cell`。骨架格允许换行，不靠整表横滚当第一策略。
 
-## 4. 样式约束（落地时比 HTML 原型更产品化）
+**停用行**  
+名称、描述用 `text-ink-2`。不要整行红底、不要左侧 danger bar（停用不是阻断事故）。
 
-对照 `DESIGN.md` / `docs/design-system/data-display.md`，不要把原型里的内联 CSS 抄进 feature：
+启停/删除继续 `ConfirmDialog`。权限：与现页相同，路由级；本页不新做 `PermissionDenied` 分支，除非现网列表已有。
 
-- Token：`--brand #2F5FFF`、冷灰底、白卡 `--r-card` ~22px、内层 ~14px、按钮 ~12px、弥散阴影只在外壳。
-- 组件：`ShellPageHeader`、`Main width="wide"`、`Button`、`StatusPill`、`WorkSurface`、`DataTable`/`Th`/`Td`/`Tr`、`ConfirmDialog`。链节点用本页小组件，颜色只吃 CSS 变量，不写死第二套蓝。
-- 一行最多一个语义色编码：状态 pill；链上的蓝点是品牌强调，不算第二套状态色。
-- 停用行：降低名称对比（`text-ink-2`），不要整行大红底。
-- 动效：hover 行背景即可；不要卡片上浮、不要入场动画。
-- 中文：状态进 `status-labels.ts`；骨架站名来自 spec/词表映射，不在 JSX 里写死种子剧情。
+## 6. 样式
 
-## 5. 测试与范围
+对照 `DESIGN.md` / `data-display.md` / `page-archetypes.md`。不要把原型内联 CSS 抄进 feature。
 
-改 `apps/web/src/features/scenario-templates/index.tsx` 与 `index.test.tsx`：
+- Token 与组件：`ShellPageHeader`、`Button`、`Chip`、`ListToolbar`、`StatusPill`、`WorkSurface`、`DataTable`、`ActionMenu`、`ConfirmDialog`、`EmptyNoMatch`。链节点本页小组件，颜色只吃 CSS 变量。
+- 一行一个语义色：状态 pill。蓝点是品牌强调，不是第二套状态色。
+- hover 行背景即可。不要入场动画、不要页脚图例。
+- `generic` 作为用户可见词仅出现在「无骨架 · generic 行为」和最深收口「generic」——这是现网规划回落用语，不要改成「默认模板」之类新词。
 
-- 去掉展开、versions mock、验收判据展开用例。
-- 断言：串行链可见站名/角色名；可收口点来自 exit↔produce 匹配；并行行出现 `∥` 或等价结构，而不是假直线。
-- 断言：页面 **没有**「版本历史」「当前版本」「v2」。
+## 7. 测试与范围
+
+改 `index.tsx`、`index.test.tsx`；派生函数单测（可放 `spec-composer.test.ts`）。
+
+- 不再 mock / 调用 `listScenarioTemplateVersions`、`getScenarioTemplateRoleView`。
+- 无「版本历史」「当前版本」「v2」作为版本号（模板 key 里带 v2 仍可出现）。
+- 空骨架 → 无占位站，文案 generic。
+- 串行链站名来自 role title；蓝点来自 **任一** produce ↔ exit。
+- 并行 fixture（审查/测试同依赖 develop）出现 `∥`，不是假直线。
+- 筛选：点「已禁用」只剩 disabled；计数在过滤后仍显示全集的已禁用个数。
+- 筛选空 ≠ 新建空态。
 - 启停/删除用例保留。
-- 筛选 chip 按 status 过滤。
+- 不渲染验收判据展开句。
 
-**不改**：OpenAPI、sqlc、versions 表、role-view、编辑页 composer、Control Plane 保存语义。
+**不改**：OpenAPI、sqlc、versions 表、role-view、编辑页保存语义、列表 SQL 顺序。
 
-**轻量验证**：纯 Console 列表信息架构；`corepack pnpm --filter @superteam/web test` 覆盖本页即可，不强制 Runtime/Provider。
+**验证**：纯 Console 信息架构。`corepack pnpm --filter @superteam/web test` 覆盖本页与派生函数。不强制 Runtime/Provider。CHANGELOG 记用户可见变化（展开/版本历史去掉、链入表、状态筛选）。
 
-## 6. 分步
+## 8. 分步
 
-1. 抽列表用的只读派生（或直接复用 `composerFromSpec` + `isSerialSkeleton`，避免第二套 exit 匹配）。
-2. 链节点 UI + 并行压缩。
-3. 拆掉 `ScenarioTemplateRow` 展开与 versions/role-view query。
-4. 工具条筛选替换 MetricCard。
-5. 更新测试与本页副文案。
+1. `listChainFromSpec`（含并行分组、exit 匹配、空骨架）+ 单测。
+2. 链节点 UI（蓝点、∥、+N）。
+3. 拆掉展开、versions、role-view、MetricCard、验收区。
+4. `ListToolbar` 状态筛选 + 两种空态。
+5. 操作列：编辑 / 启停 / `ActionMenu` 删除；行进编辑。
+6. 更新测试、副文案、`CHANGELOG.md`。
