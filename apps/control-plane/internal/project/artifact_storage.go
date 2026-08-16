@@ -77,6 +77,13 @@ func (s *Service) artifactMaxFileSizeBytes(ctx context.Context, tenantID uuid.UU
 	return effective
 }
 
+func isObjectStoreAccessDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "failure_family=object_store_access")
+}
+
 func (s *Service) artifactPresignUploadTTL(ctx context.Context, tenantID uuid.UUID) time.Duration {
 	if s.systemConfig == nil {
 		return systemconfig.DefaultDurationFor(systemconfig.KeyArtifactPresignUploadTTL)
@@ -134,7 +141,12 @@ func (s *Service) PresignRuntimeArtifactUpload(ctx context.Context, req PresignR
 	key := fmt.Sprintf("%s%s/sha256/%s", artifactObjectKeyPrefix, req.TenantID, sha)
 	exists, _, err := s.artifactObjectStore.StatObject(ctx, key)
 	if err != nil {
-		return PresignRuntimeArtifactResult{}, fmt.Errorf("stat artifact object: %w", err)
+		if isObjectStoreAccessDenied(err) {
+			return PresignRuntimeArtifactResult{}, fmt.Errorf("stat artifact object: %w", err)
+		}
+		slog.Default().Warn("artifact stat failed; issuing put presign anyway",
+			"key", key, "error", err)
+		exists = false
 	}
 	if exists {
 		return PresignRuntimeArtifactResult{ObjectKey: key, AlreadyExists: true}, nil

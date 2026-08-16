@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -32,6 +33,8 @@ type Config struct {
 	Postgres    PostgresConfig    `yaml:"postgres"`
 	Redis       RedisConfig       `yaml:"redis"`
 	ObjectStore ObjectStoreConfig `yaml:"objectStore"`
+	// ObjectStoreSources is filled by applyEnv; not loaded from yaml.
+	ObjectStoreSources ObjectStoreSources `yaml:"-"`
 	Temporal    TemporalConfig    `yaml:"temporal"`
 	Planner     PlannerConfig     `yaml:"planner"`
 	Security    SecurityConfig    `yaml:"security"`
@@ -119,6 +122,16 @@ type ObjectStoreConfig struct {
 	AccessKeyID     string `yaml:"accessKeyId"`
 	SecretAccessKey string `yaml:"secretAccessKey"`
 	ForcePathStyle  bool   `yaml:"forcePathStyle"`
+}
+
+// ObjectStoreSources records whether each object-store field came from yaml or env.
+type ObjectStoreSources struct {
+	Endpoint        string
+	Region          string
+	Bucket          string
+	AccessKeyID     string
+	SecretAccessKey string
+	ForcePathStyle  string
 }
 
 type EmployeeEnvConfig struct {
@@ -231,6 +244,7 @@ func defaultConfig() Config {
 }
 
 func applyEnv(cfg Config) Config {
+	yamlObjectStore := cfg.ObjectStore
 	cfg.Environment = envOrDefault("CONTROL_PLANE_ENV", cfg.Environment)
 	cfg.HTTP.Addr = envOrDefault("CONTROL_PLANE_ADDR", cfg.HTTP.Addr)
 	if value, ok := os.LookupEnv("CONTROL_PLANE_CORS_ALLOWED_ORIGINS"); ok {
@@ -286,6 +300,8 @@ func applyEnv(cfg Config) Config {
 	}
 	cfg.EmployeeEnv.Keys = envOrDefault("SUPERTEAM_ENV_ENCRYPTION_KEYS", cfg.EmployeeEnv.Keys)
 	cfg.EmployeeEnv.ActiveKeyID = envOrDefault("SUPERTEAM_ENV_ENCRYPTION_ACTIVE_KEY_ID", cfg.EmployeeEnv.ActiveKeyID)
+	cfg.ObjectStoreSources = objectStoreSourcesFromEnv()
+	warnObjectStoreEnvOverrides(yamlObjectStore, cfg.ObjectStore, cfg.ObjectStoreSources)
 	return cfg
 }
 
@@ -416,4 +432,67 @@ func splitAndTrim(value string) []string {
 		}
 	}
 	return out
+}
+
+func envFieldSource(key string) string {
+	if _, ok := os.LookupEnv(key); ok {
+		return "env"
+	}
+	return "yaml"
+}
+
+func objectStoreSourcesFromEnv() ObjectStoreSources {
+	return ObjectStoreSources{
+		Endpoint:        envFieldSource("S3_ENDPOINT"),
+		Region:          envFieldSource("S3_REGION"),
+		Bucket:          envFieldSource("S3_BUCKET"),
+		AccessKeyID:     envFieldSource("S3_ACCESS_KEY_ID"),
+		SecretAccessKey: envFieldSource("S3_SECRET_ACCESS_KEY"),
+		ForcePathStyle:  envFieldSource("S3_FORCE_PATH_STYLE"),
+	}
+}
+
+func warnObjectStoreEnvOverrides(yamlStore, final ObjectStoreConfig, sources ObjectStoreSources) {
+	warn := func(field, source, yamlVal, envVal string, secret bool) {
+		if source != "env" {
+			return
+		}
+		if strings.TrimSpace(yamlVal) == "" {
+			return
+		}
+		if !secret && yamlVal == envVal {
+			return
+		}
+		if secret {
+			slog.Warn("object store field overridden by environment", "field", field, "source", "env")
+			return
+		}
+		slog.Warn("object store field overridden by environment",
+			"field", field, "source", "env", "yaml", yamlVal, "env", envVal)
+	}
+	warn("endpoint", sources.Endpoint, yamlStore.Endpoint, final.Endpoint, false)
+	warn("region", sources.Region, yamlStore.Region, final.Region, false)
+	warn("bucket", sources.Bucket, yamlStore.Bucket, final.Bucket, false)
+	warn("accessKeyId", sources.AccessKeyID, yamlStore.AccessKeyID, final.AccessKeyID, true)
+	warn("secretAccessKey", sources.SecretAccessKey, yamlStore.SecretAccessKey, final.SecretAccessKey, true)
+	if sources.ForcePathStyle == "env" && yamlStore.ForcePathStyle != final.ForcePathStyle {
+		slog.Warn("object store field overridden by environment",
+			"field", "forcePathStyle", "source", "env", "yaml", yamlStore.ForcePathStyle, "env", final.ForcePathStyle)
+	}
+}
+
+// LogObjectStore prints endpoint/bucket/region/forcePathStyle and yaml|env sources. Never logs keys.
+func LogObjectStore(cfg Config) {
+	slog.Info("object store config",
+		"endpoint", cfg.ObjectStore.Endpoint,
+		"region", cfg.ObjectStore.Region,
+		"bucket", cfg.ObjectStore.Bucket,
+		"forcePathStyle", cfg.ObjectStore.ForcePathStyle,
+		"endpoint_source", cfg.ObjectStoreSources.Endpoint,
+		"region_source", cfg.ObjectStoreSources.Region,
+		"bucket_source", cfg.ObjectStoreSources.Bucket,
+		"accessKeyId_source", cfg.ObjectStoreSources.AccessKeyID,
+		"secretAccessKey_source", cfg.ObjectStoreSources.SecretAccessKey,
+		"forcePathStyle_source", cfg.ObjectStoreSources.ForcePathStyle,
+	)
 }

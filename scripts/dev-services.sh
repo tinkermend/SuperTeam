@@ -436,6 +436,13 @@ start_service() {
             ensure_feishu_connector_token
             ensure_feishu_connector_control_plane_url
             ;;
+        runtime-agent)
+            # Runtime 上传走 CP 预签名，不应继承过期的 S3_*（会静默覆盖 yaml）。
+            unset S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY S3_FORCE_PATH_STYLE || true
+            ;;
+        control-plane)
+            log_info "object store: 起服前可用 ./scripts/ops/init-object-store.sh --check 核对桶（CP 不会 CreateBucket）"
+            ;;
     esac
 
     if [ "$service" = "openfga" ]; then

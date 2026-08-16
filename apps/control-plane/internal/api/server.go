@@ -66,6 +66,8 @@ type Server struct {
 	feishuConnectorHandler         *feishu.ConnectorHTTPHandler
 	feishuAdminHandler             *feishu.AdminHTTPHandler
 	feishuOAuthHandler             *feishu.OAuthHTTPHandler
+	objectStoreHealthProbe         func(context.Context) error
+	objectStoreBucket              string
 }
 
 func NewServer(taskHandler *handlers.TaskHandler, runtimeHandler *handlers.RuntimeHandler, runtimeAuthService ...middleware.AuthService) *Server {
@@ -296,6 +298,12 @@ func (s *Server) SetAllowedOrigins(origins []string) {
 	s.registerRoutes()
 }
 
+func (s *Server) SetObjectStoreHealthProbe(probe func(context.Context) error, bucket string) {
+	s.objectStoreHealthProbe = probe
+	s.objectStoreBucket = bucket
+	s.registerRoutes()
+}
+
 func (s *Server) SetRuntimeCommandWritebackHandler(runtimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler) {
 	s.runtimeCommandWritebackHandler = runtimeCommandWritebackHandler
 	s.registerRoutes()
@@ -309,6 +317,11 @@ func (s *Server) registerRoutes() {
 	s.router.Use(middleware.CORS(s.allowedOrigins))
 
 	s.router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		deep := r.URL.Query().Get("deep") == "1"
+		if s.objectStoreHealthProbe != nil {
+			writeHealthResponseWithProbe(w, s.objectStoreHealthProbe, s.objectStoreBucket, deep)
+			return
+		}
 		writeHealthResponse(w)
 	})
 	if s.authService != nil {

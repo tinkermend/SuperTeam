@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -992,6 +993,19 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	server.SetFeishuHandlers(feishuConnectorHandler, feishuAdminHandler)
 	server.SetFeishuOAuthHandler(feishuOAuthHandler)
 	server.SetServiceAuth(serviceAuthMiddlewareAdapter{core: serviceAuthCore}, feishuService)
+	if stores != nil && stores.ObjectStore != nil {
+		store := stores.ObjectStore
+		bucket := store.Bucket()
+		probe := func(ctx context.Context) error {
+			return store.PingBucket(ctx)
+		}
+		if err := probe(context.Background()); err != nil {
+			slog.Error("object store bucket probe failed at startup", "bucket", bucket, "error", err)
+		} else {
+			slog.Info("object store bucket probe ok", "bucket", bucket)
+		}
+		server.SetObjectStoreHealthProbe(probe, bucket)
+	}
 
 	return &Container{
 		Queries:                        q,

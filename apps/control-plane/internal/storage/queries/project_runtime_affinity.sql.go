@@ -96,41 +96,28 @@ inserted AS (
         metadata,
         idempotency_key
     FROM input
-    ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO NOTHING
+    ON CONFLICT (tenant_id, attempt_id, idempotency_key) DO UPDATE SET
+        status = EXCLUDED.status,
+        command_argv = EXCLUDED.command_argv,
+        exit_code = EXCLUDED.exit_code,
+        duration_ms = EXCLUDED.duration_ms,
+        log_ref = EXCLUDED.log_ref,
+        stdout_sha256 = EXCLUDED.stdout_sha256,
+        stderr_sha256 = EXCLUDED.stderr_sha256,
+        artifact_refs = EXCLUDED.artifact_refs,
+        artifact_hashes = EXCLUDED.artifact_hashes,
+        git_branch = EXCLUDED.git_branch,
+        git_base_ref = EXCLUDED.git_base_ref,
+        git_head_sha = EXCLUDED.git_head_sha,
+        git_diff_sha256 = EXCLUDED.git_diff_sha256,
+        metadata = EXCLUDED.metadata,
+        capability_manifest_version = EXCLUDED.capability_manifest_version,
+        provider_auth_mode = EXCLUDED.provider_auth_mode,
+        provider_session_id = EXCLUDED.provider_session_id
     RETURNING id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at, digital_employee_id, capability_manifest_version, provider_auth_mode
 )
 SELECT id, tenant_id, project_id, project_task_id, attempt_id, runtime_node_id, provider_session_id, attestation_type, status, command_argv, exit_code, duration_ms, log_ref, stdout_sha256, stderr_sha256, artifact_refs, artifact_hashes, git_branch, git_base_ref, git_head_sha, git_diff_sha256, metadata, idempotency_key, created_at, updated_at, digital_employee_id, capability_manifest_version, provider_auth_mode
 FROM inserted
-UNION ALL
-SELECT existing.id, existing.tenant_id, existing.project_id, existing.project_task_id, existing.attempt_id, existing.runtime_node_id, existing.provider_session_id, existing.attestation_type, existing.status, existing.command_argv, existing.exit_code, existing.duration_ms, existing.log_ref, existing.stdout_sha256, existing.stderr_sha256, existing.artifact_refs, existing.artifact_hashes, existing.git_branch, existing.git_base_ref, existing.git_head_sha, existing.git_diff_sha256, existing.metadata, existing.idempotency_key, existing.created_at, existing.updated_at, existing.digital_employee_id, existing.capability_manifest_version, existing.provider_auth_mode
-FROM project_task_attestations existing
-JOIN input
-  ON existing.tenant_id = input.tenant_id
- AND existing.attempt_id = input.attempt_id
- AND existing.idempotency_key = input.idempotency_key
-WHERE NOT EXISTS (SELECT 1 FROM inserted)
-  AND existing.project_id = input.project_id
-  AND existing.project_task_id = input.project_task_id
-  AND existing.runtime_node_id = input.runtime_node_id
-  AND existing.digital_employee_id = input.digital_employee_id
-  AND existing.capability_manifest_version IS NOT DISTINCT FROM input.capability_manifest_version
-  AND existing.provider_auth_mode = input.provider_auth_mode
-  AND existing.provider_session_id IS NOT DISTINCT FROM input.provider_session_id
-  AND existing.attestation_type = input.attestation_type
-  AND existing.status = input.status
-  AND existing.command_argv = input.command_argv
-  AND existing.exit_code IS NOT DISTINCT FROM input.exit_code
-  AND existing.duration_ms IS NOT DISTINCT FROM input.duration_ms
-  AND existing.log_ref IS NOT DISTINCT FROM input.log_ref
-  AND existing.stdout_sha256 IS NOT DISTINCT FROM input.stdout_sha256
-  AND existing.stderr_sha256 IS NOT DISTINCT FROM input.stderr_sha256
-  AND existing.artifact_refs = input.artifact_refs
-  AND existing.artifact_hashes = input.artifact_hashes
-  AND existing.git_branch IS NOT DISTINCT FROM input.git_branch
-  AND existing.git_base_ref IS NOT DISTINCT FROM input.git_base_ref
-  AND existing.git_head_sha IS NOT DISTINCT FROM input.git_head_sha
-  AND existing.git_diff_sha256 IS NOT DISTINCT FROM input.git_diff_sha256
-  AND existing.metadata = input.metadata
 `
 
 type CreateProjectTaskAttestationParams struct {

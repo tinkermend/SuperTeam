@@ -21,6 +21,7 @@ func main() {
 	}
 
 	log.Printf("Starting server on %s", cfg.HTTP.Addr)
+	config.LogObjectStore(cfg)
 	if err := app.Run(context.Background(), cfg); err != nil {
 		log.Fatal(err)
 	}

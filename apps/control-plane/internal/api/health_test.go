@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -53,6 +54,31 @@ func assertHealthResponse(t *testing.T, handler http.Handler) {
 	}
 	if engine, _ := pc["schema_engine"].(string); engine != "jsonschema" && engine != "structural" {
 		t.Fatalf("unexpected schema_engine: %#v", pc["schema_engine"])
+	}
+}
+
+func TestProductServerHealthProbeFailureReturns503(t *testing.T) {
+	server := NewServer(nil, nil)
+	server.SetObjectStoreHealthProbe(func(context.Context) error {
+		return errors.New("head bucket missing")
+	}, "missing-bucket")
+
+	request := httptest.NewRequest(http.MethodGet, "/health", nil)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", response.Code, response.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if body["status"] != "degraded" {
+		t.Fatalf("status=%#v", body["status"])
+	}
+	os, _ := body["object_store"].(map[string]any)
+	if os["status"] != "error" || os["bucket"] != "missing-bucket" {
+		t.Fatalf("object_store=%#v", os)
 	}
 }
 

@@ -75,6 +75,41 @@ func TestPresignRuntimeArtifactUploadDerivesTenantScopedKey(t *testing.T) {
 	}
 }
 
+func TestPresignRuntimeArtifactUploadIssuesPutWhenStatFails(t *testing.T) {
+	tenantID := uuid.New()
+	sha := strings.Repeat("ab", 32)
+	store := &fakeArtifactObjectStore{statErr: fmt.Errorf("head object: timeout")}
+	service, _ := newArtifactStorageTestService(t, store)
+
+	result, err := service.PresignRuntimeArtifactUpload(context.Background(), PresignRuntimeArtifactRequest{
+		TenantID:  tenantID,
+		Sha256:    sha,
+		SizeBytes: 1024,
+	})
+	if err != nil {
+		t.Fatalf("presign: %v", err)
+	}
+	if result.AlreadyExists || result.UploadURL == "" {
+		t.Fatalf("expected put URL after failed stat, got %#v", result)
+	}
+}
+
+func TestPresignRuntimeArtifactUploadRejectsAccessDeniedStat(t *testing.T) {
+	tenantID := uuid.New()
+	sha := strings.Repeat("ab", 32)
+	store := &fakeArtifactObjectStore{statErr: fmt.Errorf("object store access denied: failure_family=object_store_access: head")}
+	service, _ := newArtifactStorageTestService(t, store)
+
+	_, err := service.PresignRuntimeArtifactUpload(context.Background(), PresignRuntimeArtifactRequest{
+		TenantID:  tenantID,
+		Sha256:    sha,
+		SizeBytes: 1024,
+	})
+	if err == nil {
+		t.Fatal("expected access denied to fail presign")
+	}
+}
+
 func TestPresignRuntimeArtifactUploadRejectsInvalidInput(t *testing.T) {
 	store := &fakeArtifactObjectStore{}
 	service, _ := newArtifactStorageTestService(t, store)

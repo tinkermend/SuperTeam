@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -98,6 +99,54 @@ func TestS3ObjectStoreExistsReturnsFalseForMissingObject(t *testing.T) {
 	}
 }
 
+func TestS3ObjectStoreStatTreatsForbiddenAsMissingWhenBucketReachable(t *testing.T) {
+	client := &recordingS3Client{headErr: apiError{code: "403", message: "forbidden"}}
+	store, err := NewS3ObjectStore(client, "superteam-artifacts")
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	stat, err := store.StatObject(t.Context(), "missing-key")
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if stat.Exists {
+		t.Fatal("403 with reachable bucket must be treated as missing")
+	}
+	if client.headBucketN != 1 {
+		t.Fatalf("expected HeadBucket, got %d", client.headBucketN)
+	}
+}
+
+func TestS3ObjectStoreStatForbiddenSurfacesAccessDeniedWhenBucketAlsoForbidden(t *testing.T) {
+	client := &recordingS3Client{
+		headErr:       apiError{code: "AccessDenied", message: "denied"},
+		headBucketErr: apiError{code: "AccessDenied", message: "denied"},
+	}
+	store, err := NewS3ObjectStore(client, "superteam-artifacts")
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	_, err = store.StatObject(t.Context(), "k")
+	if err == nil || !errors.Is(err, ErrObjectStoreAccessDenied) {
+		t.Fatalf("expected ErrObjectStoreAccessDenied, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "failure_family=object_store_access") {
+		t.Fatalf("expected failure_family in error, got %v", err)
+	}
+}
+
+func TestS3ObjectStoreStatTreatsHTTP403AsMissingWhenBucketReachable(t *testing.T) {
+	client := &recordingS3Client{headErr: httpStatusErr{status: 403, message: "forbidden"}}
+	store, err := NewS3ObjectStore(client, "superteam-artifacts")
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	stat, err := store.StatObject(t.Context(), "k")
+	if err != nil || stat.Exists {
+		t.Fatalf("stat=%+v err=%v", stat, err)
+	}
+}
+
 func TestS3ObjectStoreRejectsInvalidInput(t *testing.T) {
 	if _, err := NewS3ObjectStore(nil, "bucket"); err == nil {
 		t.Fatal("expected nil S3 client to fail")
@@ -132,6 +181,10 @@ type recordingS3Client struct {
 	getContentType string
 	headInput      *s3.HeadObjectInput
 	headErr        error
+	headN          int
+	headSize       int64
+	headBucketErr  error
+	headBucketN    int
 	deleteInput    *s3.DeleteObjectInput
 }
 
@@ -157,10 +210,23 @@ func (c *recordingS3Client) GetObject(ctx context.Context, input *s3.GetObjectIn
 
 func (c *recordingS3Client) HeadObject(ctx context.Context, input *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error) {
 	c.headInput = input
+	c.headN++
 	if c.headErr != nil {
 		return nil, c.headErr
 	}
+	if c.headSize != 0 {
+		size := c.headSize
+		return &s3.HeadObjectOutput{ContentLength: &size}, nil
+	}
 	return &s3.HeadObjectOutput{}, nil
+}
+
+func (c *recordingS3Client) HeadBucket(ctx context.Context, input *s3.HeadBucketInput, optFns ...func(*s3.Options)) (*s3.HeadBucketOutput, error) {
+	c.headBucketN++
+	if c.headBucketErr != nil {
+		return nil, c.headBucketErr
+	}
+	return &s3.HeadBucketOutput{}, nil
 }
 
 func (c *recordingS3Client) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {

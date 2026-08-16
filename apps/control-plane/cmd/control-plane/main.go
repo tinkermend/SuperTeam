@@ -25,6 +25,7 @@ func Main() {
 	}
 
 	log.Printf("control-plane listening on %s", cfg.HTTP.Addr)
+	config.LogObjectStore(cfg)
 	if err := app.Run(context.Background(), cfg); err != nil {
 		log.Fatal(err)
 	}

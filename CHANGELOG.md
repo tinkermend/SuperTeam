@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-08-16 22:35 对象存储 B 期：HeadObject 403 在桶可达时当缺对象并继续签发 PUT，真无权限带 `failure_family=object_store_access`；stat 其它失败不再把 presign 打成 500。attestation 同键冲突改为更新终态。启动日志打印桶配置来源（不打密钥）；`/health` HeadBucket 失败返回 503。Runtime 起服去掉继承的 `S3_*`。验证：`go test ./internal/storage ./internal/project ./internal/config ./internal/api ./internal/app`。
+
 - 2026-08-14 11:06 同一主机同一 `node_id` 只允许一个 runtime-agent：启动时对 `$HOME/.superteam/runtime-agent/locks/<node_id>.lock` 做非阻塞 flock，第二个进程立即退出（错误含占用 pid）。`--once` 不占锁。验证：`cargo test --test instance_lock_test` + daemon_test 绿；**真实链路**（runtime-agent 脚本 pid=44627 / 进程 pid=44647）第二次 `cargo run --config apps/runtime-agent/config.yaml` 立刻 exit 1：`already running for node local-dev-node (pid 44647)`。
 
 - 2026-08-14 10:59 Runtime 命令 WebSocket：同 `node_id` 新连接踢旧连接时关闭码改为 policy-violation + `replaced by new connection`；agent 识别后 30s～5min 退避（普通断线 2s～60s 指数+抖动），Close 帧不再当协议错误空转，重复日志 30s 合并。验证：`go test ./internal/runtime ./internal/api`、`cargo test --lib controlplane::ws` 绿；**真实链路**（CP pid=40674 / runtime-agent pid=41250，cwd 本 checkout）重启后会话建立，30s 内无 `websocket read failed` 刷屏。

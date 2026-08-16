@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"github.com/aws/smithy-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -200,6 +200,7 @@ type S3API interface {
 	PutObject(ctx context.Context, input *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
 	GetObject(ctx context.Context, input *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	HeadObject(ctx context.Context, input *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	HeadBucket(ctx context.Context, input *s3.HeadBucketInput, optFns ...func(*s3.Options)) (*s3.HeadBucketOutput, error)
 	DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
 }
 
@@ -254,6 +255,28 @@ func NewS3ObjectStore(client S3API, bucket string) (*S3ObjectStore, error) {
 		client: client,
 		bucket: bucket,
 	}, nil
+}
+
+func (s *S3ObjectStore) Bucket() string {
+	if s == nil {
+		return ""
+	}
+	return s.bucket
+}
+
+// ErrObjectStoreAccessDenied is a real credential/policy failure (HeadBucket also forbidden).
+var ErrObjectStoreAccessDenied = errors.New("object store access denied")
+
+// PingBucket HeadBucket the configured bucket. Missing bucket is an error.
+func (s *S3ObjectStore) PingBucket(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return errors.New("object store is not configured")
+	}
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(s.bucket)})
+	if err != nil {
+		return fmt.Errorf("head bucket %q: %w", s.bucket, err)
+	}
+	return nil
 }
 
 func (s *S3ObjectStore) PutObject(ctx context.Context, key string, body io.Reader, options PutObjectOptions) (ObjectRef, error) {
@@ -320,16 +343,11 @@ func (s *S3ObjectStore) Exists(ctx context.Context, key string) (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "NotFound", "NoSuchKey", "404":
-			return false, nil
-		}
+	missing, accessErr := s.classifyHeadObjectError(ctx, key, err)
+	if missing {
+		return false, nil
 	}
-
-	return false, fmt.Errorf("head object %q: %w", key, err)
+	return false, accessErr
 }
 
 // SetPresigner attaches URL-presigning capability; without it Presign* fail.
@@ -350,14 +368,11 @@ func (s *S3ObjectStore) StatObject(ctx context.Context, key string) (ObjectStat,
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) {
-			switch apiErr.ErrorCode() {
-			case "NotFound", "NoSuchKey", "404":
-				return ObjectStat{}, nil
-			}
+		missing, accessErr := s.classifyHeadObjectError(ctx, key, err)
+		if missing {
+			return ObjectStat{}, nil
 		}
-		return ObjectStat{}, fmt.Errorf("head object %q: %w", key, err)
+		return ObjectStat{}, accessErr
 	}
 
 	stat := ObjectStat{Exists: true, ContentType: aws.ToString(output.ContentType)}
@@ -365,6 +380,43 @@ func (s *S3ObjectStore) StatObject(ctx context.Context, key string) (ObjectStat,
 		stat.SizeBytes = *output.ContentLength
 	}
 	return stat, nil
+}
+
+func (s *S3ObjectStore) classifyHeadObjectError(ctx context.Context, key string, err error) (missing bool, wrapped error) {
+	if isS3ObjectMissing(err) {
+		return true, nil
+	}
+	if isS3ObjectForbidden(err) {
+		if pingErr := s.PingBucket(ctx); pingErr == nil {
+			slog.Warn("head object forbidden; treating as missing because bucket is reachable",
+				"bucket", s.bucket, "key", key)
+			return true, nil
+		}
+		return false, fmt.Errorf("%w: failure_family=object_store_access: head object %q: %w", ErrObjectStoreAccessDenied, key, err)
+	}
+	return false, fmt.Errorf("head object %q: %w", key, err)
+}
+
+func isS3ObjectMissing(err error) bool {
+	if s3APIErrorCodeIn(err, "NotFound", "NoSuchKey", "404") {
+		return true
+	}
+	return s3HTTPStatus(err) == 404
+}
+
+func isS3ObjectForbidden(err error) bool {
+	if s3APIErrorCodeIn(err, "AccessDenied", "Forbidden", "403") {
+		return true
+	}
+	return s3HTTPStatus(err) == 403
+}
+
+func s3HTTPStatus(err error) int {
+	var statusErr interface{ HTTPStatusCode() int }
+	if errors.As(err, &statusErr) {
+		return statusErr.HTTPStatusCode()
+	}
+	return 0
 }
 
 // PresignPut signs a direct-upload URL for key. Callers own key derivation and

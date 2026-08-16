@@ -288,6 +288,8 @@ employeeEnv:
 	}
 	require.Equal(t, "v2:env-key", cfg.EmployeeEnv.Keys)
 	require.Equal(t, "v2", cfg.EmployeeEnv.ActiveKeyID)
+	require.Equal(t, "env", cfg.ObjectStoreSources.Bucket)
+	require.Equal(t, "yaml", cfg.ObjectStoreSources.Endpoint)
 }
 
 func TestLoadFromFilePlannerConfig(t *testing.T) {
