@@ -14,6 +14,7 @@ import {
   type SubmitSuccessResult,
 } from "./components/task-launch-form";
 import { ChatPanel, type ConvertToTaskPayload } from "./components/chat-panel";
+import { HubTopbar } from "./components/hub-topbar";
 import { HubContextRail } from "./components/hub-context-rail";
 import {
   HubInstanceSummary,
@@ -80,13 +81,18 @@ export function TaskLaunchPage({
   const face = resolveFace(search);
 
   const tabBar = (
-    <PageTabs aria-label="任务中枢视图" role="tablist">
-      <PageTabList>
+    <PageTabs
+      aria-label="任务中枢视图"
+      className="rounded-[10px] bg-card-soft p-[3px] shadow-none"
+      role="tablist"
+    >
+      <PageTabList className="gap-0.5">
         <PageTab
           id="task-hub-tab-chat"
           active={face === "chat"}
           aria-controls="task-hub-panel-chat"
           aria-selected={face === "chat"}
+          className="rounded-[8px] px-4 py-1.5 text-[12.5px]"
           onClick={() =>
             navigate({
               search: { project: search.project, face: "chat" },
@@ -103,6 +109,7 @@ export function TaskLaunchPage({
           active={face === "task"}
           aria-controls="task-hub-panel-task"
           aria-selected={face === "task"}
+          className="rounded-[8px] px-4 py-1.5 text-[12.5px]"
           onClick={() =>
             navigate({
               search: {
@@ -369,7 +376,21 @@ export function TaskLaunchView({
 
   return (
     <TaskLaunchShell
-      tabs={tabs}
+      // 对话面的工具条由 ChatPanel 自持（换项目要连带清线程），任务面在此渲染同一条。
+      tabs={
+        face === "chat" ? null : (
+          <HubTopbar
+            apiOptions={apiOptions}
+            lead={tabs}
+            onProjectChange={handleProjectChange}
+            projectId={selectedProjectId}
+            projects={activeProjects}
+            projectsError={projectsQuery.isError}
+            projectsLoading={projectsQuery.isLoading}
+            resolvedProject={resolvedProject}
+          />
+        )
+      }
       title={title}
       description={HUB_SUBTITLE}
       width="wide"
@@ -390,6 +411,7 @@ export function TaskLaunchView({
             projectsError={projectsQuery.isError}
             projectsLoading={projectsQuery.isLoading}
             resolvedProject={resolvedProject}
+            topbarLead={tabs}
           />
         </div>
       ) : (
@@ -426,7 +448,6 @@ export function TaskLaunchView({
                   mode={mode}
                   onContentChange={setContent}
                   onModeChange={handleModeChange}
-                  onProjectChange={handleProjectChange}
                   onSuccessDismiss={handleSuccessDismiss}
                   onSubmit={(projectId, input) => {
                     setSubmitError("");
@@ -449,7 +470,6 @@ export function TaskLaunchView({
                   }}
                   projects={activeProjects}
                   projectsLoading={projectsQuery.isLoading}
-                  resolvedProject={resolvedProject}
                   selectedProjectId={selectedProjectId}
                   submitError={submitError}
                   successResult={successResult}

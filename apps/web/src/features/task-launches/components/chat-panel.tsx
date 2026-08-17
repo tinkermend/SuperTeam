@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRightLeft,
@@ -35,11 +42,8 @@ import { listProjectMembers, getProject, refreshProjectWorkspaceGitStatus, type 
 import { listProjectSkillBindings } from "@/lib/api/skills";
 import { failureFamilyLabel } from "@/lib/status-labels";
 import { ProjectWorkspaceGitPanel } from "@/features/projects/components/project-workspace-git-panel";
-import {
-  NoProjectsEmptyState,
-  ProjectPicker,
-  type ProjectChangeHandler,
-} from "./task-launch-form";
+import { type ProjectChangeHandler } from "./task-launch-form";
+import { HubTopbar } from "./hub-topbar";
 import { useStickToBottom } from "./use-stick-to-bottom";
 import { useChatActivityStream } from "./use-chat-activity-stream";
 import { ChatLiveProcess } from "./chat-live-process";
@@ -199,6 +203,9 @@ export type ChatPanelProps = {
   projectsLoading?: boolean;
   /** 父层缓存的已选项目（搜索越界）。 */
   resolvedProject?: Project | null;
+  /** 工具条前置槽：任务中枢把「对话 / 任务」页签放进项目切换同一条工具条，
+   * 顶部只留一截控件；独立渲染 ChatPanel 时不传即可。 */
+  topbarLead?: ReactNode;
 };
 
 function isActiveEntryStatus(status: DigitalEmployeeRunStatus | "sending"): boolean {
@@ -345,6 +352,7 @@ export function ChatPanel({
   projectsError = false,
   projectsLoading = false,
   resolvedProject = null,
+  topbarLead,
 }: ChatPanelProps) {
   const [employeeId, setEmployeeId] = useState("");
   const [question, setQuestion] = useState("");
@@ -940,25 +948,16 @@ export function ChatPanel({
 
   return (
     <div className="hub-chat">
-      <div className="hub-top">
-        <span className="hub-top-label">项目</span>
-        {projectsLoading ? (
-          <p className="tl-proj-none-text">加载项目…</p>
-        ) : projectsError ? (
-          <p className="tl-proj-none-text">项目列表加载失败</p>
-        ) : projects.length === 0 ? (
-          <NoProjectsEmptyState />
-        ) : (
-          <ProjectPicker
-            apiOptions={apiOptions}
-            onChange={handleProjectChange}
-            projects={projects}
-            resolvedProject={resolvedProject}
-            value={projectId}
-          />
-        )}
-        <span className="hub-top-note">对话按项目锚定，产出默认旁路</span>
-      </div>
+      <HubTopbar
+        apiOptions={apiOptions}
+        lead={topbarLead}
+        onProjectChange={handleProjectChange}
+        projectId={projectId}
+        projects={projects}
+        projectsError={projectsError}
+        projectsLoading={projectsLoading}
+        resolvedProject={resolvedProject}
+      />
 
       <div className="hub-body">
         <aside className="hub-rail hub-rail-left" aria-label="数字员工与会话">

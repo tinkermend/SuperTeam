@@ -10,7 +10,6 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   ChevronsUpDown,
-  FolderOpen,
   ListChecks,
   RefreshCw,
   SendHorizontal,
@@ -96,13 +95,11 @@ type TaskLaunchFormProps = {
   mode: Exclude<LaunchMode, "chat">;
   onContentChange: (content: string) => void;
   onModeChange: (mode: Exclude<LaunchMode, "chat">) => void;
-  onProjectChange: ProjectChangeHandler;
   onSubmit: (projectId: string, input: SubmitProjectDemandInput) => void;
   onSuccessDismiss?: () => void;
+  /** 项目锚点由顶部工具条选定；表单只消费它做校验、编制与预算查询。 */
   projects: Project[];
   projectsLoading?: boolean;
-  /** 父层缓存的已选项目（含搜索选出、不在 browse 首页的项），供触发器显示名称。 */
-  resolvedProject?: Project | null;
   selectedProjectId?: string;
   submitError?: string;
   successResult?: SubmitSuccessResult | null;
@@ -119,12 +116,10 @@ export function TaskLaunchForm({
   mode,
   onContentChange,
   onModeChange,
-  onProjectChange,
   onSubmit,
   onSuccessDismiss,
   projects,
   projectsLoading = false,
-  resolvedProject = null,
   selectedProjectId,
   submitError,
   successResult = null,
@@ -159,6 +154,11 @@ export function TaskLaunchForm({
   });
   const projectId = selectedProjectId || activeProjects[0]?.id || "";
   const hasNoProjects = !projectsLoading && activeProjects.length === 0;
+
+  // 项目锚点在顶部工具条上换，表单收不到回调；换锚点即撤销上一轮的校验提示。
+  useEffect(() => {
+    setError("");
+  }, [projectId]);
 
   const templatesQuery = useQuery({
     queryFn: () => listScenarioTemplates(apiOptions),
@@ -223,11 +223,6 @@ export function TaskLaunchForm({
     queryFn: () => getProjectBudgetSummary(apiOptions, projectId),
   });
   const budgetExhausted = budget?.exhausted ?? false;
-
-  function handleProjectChange(project: Project) {
-    setError("");
-    onProjectChange(project);
-  }
 
   function handleSubmit() {
     const trimmedContent = content.trim();
@@ -391,19 +386,6 @@ export function TaskLaunchForm({
         </div>
 
         <div className="tl-params" data-testid="task-launch-parameters">
-          <LaunchChip icon={<FolderOpen aria-hidden />} label="项目" required>
-            {hasNoProjects ? (
-              <NoProjectsEmptyState />
-            ) : (
-              <ProjectPicker
-                apiOptions={apiOptions}
-                onChange={handleProjectChange}
-                projects={activeProjects}
-                resolvedProject={resolvedProject}
-                value={projectId}
-              />
-            )}
-          </LaunchChip>
           <div className="tl-chip">
             <div className="tl-chip-label">
               <Workflow aria-hidden />
@@ -813,28 +795,5 @@ export function ProjectPicker({
         </div>
       </PopoverContent>
     </Popover>
-  );
-}
-
-export function LaunchChip({
-  children,
-  icon,
-  label,
-  required,
-}: {
-  children: ReactNode;
-  icon: ReactNode;
-  label: string;
-  required?: boolean;
-}) {
-  return (
-    <div className="tl-chip">
-      <div className="tl-chip-label">
-        {icon}
-        {label}
-        {required ? <span className="tl-req">*</span> : null}
-      </div>
-      {children}
-    </div>
   );
 }

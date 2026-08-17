@@ -643,6 +643,8 @@ describe("TaskLaunchView", () => {
     );
 
     await waitFor(() => expect(getByText("需求描述")).toBeTruthy());
+    // 项目锚点在顶部工具条上，加载期先显示「加载项目…」，等落定再断言控件。
+    await waitFor(() => expect(getByText("客户接入项目")).toBeTruthy());
 
     expect(getByText("发起任务")).toBeTruthy();
     expect(queryByText("提交后由协调线程动态编排")).toBeNull();

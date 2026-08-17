@@ -9,38 +9,77 @@
 .hub-task {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 0;
   min-height: 0;
   flex: 1 1 auto;
   height: 100%;
 }
 
-.hub-top {
+/* —— 顶部工具条 ——
+ * 页签与项目切换合流成一条，且与下方 .hub-rail / .hub-main 用同一张皮
+ * （实底 + 面板描边 + 同圆角），读作工作台的一块面板而非浮在极光上的孤岛。
+ */
+.hub-topbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: none;
-}
-.hub-top-label {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--aurora-ink-2);
-  flex: none;
-}
-.hub-top .tl-proj-trigger {
-  max-width: 320px;
-}
-.hub-top-note {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--aurora-ink-3);
+  width: 100%;
   min-width: 0;
-  max-width: 42%;
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-height: 46px;
+  padding: 5px 12px 5px 6px;
+  border-radius: var(--aurora-r-inner, 14px);
+  background: var(--card, var(--aurora-panel));
+  border: 1px solid var(--aurora-panel-border);
+}
+.hub-topbar-sep {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  background: var(--aurora-hairline);
+}
+
+/* 项目切换在这里是上下文开关，不是表单字段：静息无边框、hover 才显形。
+ * 只作用于工具条内；任务发起表单里的同一个选择器仍保持字段皮。 */
+.hub-topbar .tl-proj-trigger {
+  width: auto;
+  min-width: 0;
+  max-width: 340px;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 9px;
+  font-size: 13.5px;
+  font-weight: 650;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.hub-topbar .tl-proj-trigger:hover {
+  border-color: transparent;
+  background: color-mix(in oklab, var(--aurora-ink) 6%, transparent);
+}
+.hub-topbar .tl-proj-trigger:focus-visible,
+.hub-topbar .tl-proj-trigger[data-state="open"] {
+  border-color: color-mix(in oklab, var(--brand) 32%, transparent);
+  background: color-mix(in oklab, var(--brand) 8%, transparent);
+  box-shadow: none;
+}
+.hub-topbar .tl-proj-trigger-name {
+  flex: 0 1 auto;
+}
+.hub-topbar .tl-proj-trigger-caret {
+  width: 13px;
+  height: 13px;
+}
+.hub-topbar .tl-proj-none {
+  min-height: 0;
+  padding: 0;
+  gap: 6px 10px;
+}
+.hub-topbar .tl-proj-none-text {
+  font-size: 12.5px;
+  color: var(--aurora-ink-3);
 }
 
 .hub-body {
@@ -244,8 +283,18 @@
   flex: 1;
   min-height: 0;
 }
+.hub-session-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  border-radius: 11px;
+}
+.hub-session-row.is-active {
+  background: color-mix(in oklab, var(--brand) 11%, transparent);
+}
 .hub-session {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -262,7 +311,30 @@
   background: color-mix(in oklab, var(--aurora-ink) 5%, transparent);
 }
 .hub-session.is-active {
-  background: color-mix(in oklab, var(--brand) 11%, transparent);
+  background: transparent;
+}
+.hub-session-delete {
+  flex: none;
+  margin-top: 8px;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--aurora-ink-3);
+  cursor: pointer;
+}
+.hub-session-delete:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--destructive, #c2410c) 12%, transparent);
+  color: var(--destructive, #c2410c);
+}
+.hub-session-delete:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 .hub-session-title {
   font-size: 12.5px;
