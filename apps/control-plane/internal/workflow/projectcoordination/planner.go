@@ -112,6 +112,10 @@ type RouteDecisionPlan struct {
 	// ConstraintNotes are server-authored annotations surfaced alongside the plan
 	// (e.g. forced human gates); they do not affect the plan fingerprint.
 	ConstraintNotes []PlanConstraintNote
+	// RiskAttribution records who authored each high-risk signal on this plan
+	// (planner_self_reported vs platform_derived:*). F2: attribution only;
+	// planTouchesHighRisk still reads the boolean/level fields unchanged.
+	RiskAttribution []RiskSignalAttribution
 }
 
 // PlanExitOption is one scenario_template exit choice, carried into the plan for

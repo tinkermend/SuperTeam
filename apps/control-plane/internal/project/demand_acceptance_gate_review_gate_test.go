@@ -35,6 +35,7 @@ func humanJudgmentCriterion(id string) DemandAcceptanceCriterion {
 		Statement:          "人类负责人确认交付符合需求意图",
 		VerificationMethod: demandCriterionVerificationMethodHumanJudgment,
 		Severity:           demandAcceptanceCriterionSeverityBlocking,
+		Source:             CriterionSourcePlatformInjected,
 	}
 }
 
@@ -146,17 +147,31 @@ func TestReviewGateVerdictNotMiscountedAsExecutor(t *testing.T) {
 	require.Equal(t, demandCriterionJudgeTypeReviewGate, judgeType)
 }
 
-// TestHumanJudgmentStillHeldByDefault (regression): a blocking human_judgment
-// criterion with NO verdict is STILL held — the reversal must not leak into the
-// human backstop.
+// TestHumanJudgmentStillHeldByDefault (regression): a blocking declarative
+// human_judgment criterion with NO verdict is STILL held — the reversal must
+// not leak into the human backstop.
 func TestHumanJudgmentStillHeldByDefault(t *testing.T) {
 	criterion := humanJudgmentCriterion("crit_hj")
 	pending := ResolveUnsatisfiedBlockingCriteria([]DemandAcceptanceCriterion{criterion}, nil)
 	require.Equal(t, []string{"crit_hj"}, pending)
 }
 
-// TestAutomatedTestUnchanged (regression): automated_test remains held-by-default
-// — no verdict holds, executor satisfied/not_applicable releases, executor
+// TestPlannerAuthoredHumanJudgmentDoesNotHoldConvergence: F4 E6 — planner-
+// authored human_judgment is not a pre-sign and must not park convergence.
+func TestPlannerAuthoredHumanJudgmentDoesNotHoldConvergence(t *testing.T) {
+	criterion := DemandAcceptanceCriterion{
+		CriterionID:        "crit_planner_hj",
+		Statement:          "planner 自撰人类判断",
+		VerificationMethod: demandCriterionVerificationMethodHumanJudgment,
+		Severity:           demandAcceptanceCriterionSeverityBlocking,
+		Source:             CriterionSourcePlannerAuthored,
+	}
+	require.Empty(t, ResolveUnsatisfiedBlockingCriteria([]DemandAcceptanceCriterion{criterion}, nil))
+}
+
+// TestAutomatedTestUnchanged (regression + F3 / E5): automated_test remains
+// held-by-default — no verdict holds, executor satisfied releases, executor
+// not_applicable HOLDS (no longer counts as machine release), executor
 // unsatisfied holds.
 func TestAutomatedTestUnchanged(t *testing.T) {
 	criterion := automatedTestCriterion("crit_at")
@@ -169,9 +184,10 @@ func TestAutomatedTestUnchanged(t *testing.T) {
 	sat := []DemandCriterionVerdict{executorVerdict("crit_at", demandCriterionVerdictSatisfied)}
 	require.Empty(t, ResolveUnsatisfiedBlockingCriteria([]DemandAcceptanceCriterion{criterion}, sat))
 
-	// Executor not_applicable → released.
+	// Executor not_applicable → held (F3 / E5).
 	na := []DemandCriterionVerdict{executorVerdict("crit_at", demandCriterionVerdictNotApplicable)}
-	require.Empty(t, ResolveUnsatisfiedBlockingCriteria([]DemandAcceptanceCriterion{criterion}, na))
+	require.Equal(t, []string{"crit_at"},
+		ResolveUnsatisfiedBlockingCriteria([]DemandAcceptanceCriterion{criterion}, na))
 
 	// Executor unsatisfied → held.
 	unsat := []DemandCriterionVerdict{executorVerdict("crit_at", demandCriterionVerdictUnsatisfied)}

@@ -5604,6 +5604,30 @@ paths:
           description: Only the thread initiator may rename
         "404":
           description: Thread not found
+    delete:
+      operationId: deleteDigitalEmployeeChatThread
+      summary: Soft-delete a chat thread on the platform (initiator only)
+      description: >
+        Marks the thread's chat tasks as deleted so it disappears from the
+        hub. Does not cancel or erase the corresponding Claude Code / OpenCode
+        provider session.
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+        - name: threadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Chat thread removed from the platform
+        "403":
+          description: Only the thread initiator may delete
+        "404":
+          description: Thread not found
+        "409":
+          description: Thread has an in-progress run
   /api/v1/digital-employees/{employeeId}/runs/{runId}:
     get:
       operationId: getDigitalEmployeeRun
@@ -8643,6 +8667,13 @@ components:
             - skip
         autonomy_tier:
           $ref: "#/components/schemas/AutomationAutonomyTier"
+        pinned_exit_deliverable:
+          type: string
+          nullable: true
+          description: full_auto 绑多出口剧本时钉死的 exit；与 acknowledge_exit_tier_semantics 二选一
+        acknowledge_exit_tier_semantics:
+          type: boolean
+          description: 显式确认浅档自动、深档停人的分档语义
         actor_user_id:
           type: string
           format: uuid
@@ -8768,6 +8799,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/AutomationAutonomyTier"
           description: 缺省 pause_at_gate（遇闸暂停）；full_auto 须显式选择
+        pinned_exit_deliverable:
+          type: string
+          nullable: true
+        acknowledge_exit_tier_semantics:
+          type: boolean
     PatchAutomationRuleRequest:
       type: object
       properties:
@@ -8795,6 +8831,11 @@ components:
           type: string
         autonomy_tier:
           $ref: "#/components/schemas/AutomationAutonomyTier"
+        pinned_exit_deliverable:
+          type: string
+          nullable: true
+        acknowledge_exit_tier_semantics:
+          type: boolean
     ProjectDemandStatus:
       type: string
       enum:

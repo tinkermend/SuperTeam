@@ -1,7 +1,8 @@
 # 自治治理模型：能力信封 × 策略闸 × 剧本承载（Autonomy Envelope / Policy / Playbook）
 
 - 日期：2026-08-13
-- 状态：**开放问题已全部收口**（2026-08-13 续评；#4 确认走 A：`coordination_policy.autonomy_ceiling`）；模型待按 §9 分期立实施计划。本文不含实现、不含任务中枢 UI
+- 状态：**P0–P5 已实施**；**§4.1 / §4.2 / §4.3 / §5.3 / §5.6 / §5.7 / §9 已被增补稿修订**——`2026-08-17-autonomy-gate-inventory-and-acceptance-policy-design.md` 以代码读证重做闸点清单，发现本文 §4.1 漏盘 13 个 `decision_type`、虚列 3 个从未铸出的动作（其中 2 个还进了 `full_auto` 白名单）；发现**验收是全平台唯一一处仍在「跳过闸」而非「策略放行闸」的地方**，违反 §4.2 承重句；发现**剧本 `human_gate` 声明被 `full_auto` 白名单静默覆盖**，反向违反 §5.3 单向阀。§5.6「按 exit 档细分」留白已兑现（落在验收闸），§9 最后一期保留但重定义为「验收闸无条件触发 + 证据充分性门禁」。**读上述章节前先看增补稿 §9 对照表**
+- 状态（2026-08-13 原文）：开放问题已全部收口（#4 确认走 A：`coordination_policy.autonomy_ceiling`）；模型待按 §9 分期立实施计划。本文不含实现、不含任务中枢 UI
 - 系列：承接「任务中枢三模式」（`2026-07-13-task-hub-tri-mode-design.md`）、「剧本可落地化」（`2026-07-27-workspace-and-playbook-alignment-baseline.md`、`2026-08-04-role-vocabulary-and-casting-design.md`）；与任务中枢 UI 重构（`2026-08-13-task-hub-workbench-design.md`）**刻意分离**（治理模型在本文，工作台 IA 在彼）
 - 交付性质：治理模型设计（概念定义 + 合成规则 + 落点映射 + 分期）；涉及 Control Plane 策略解析、模板 spec 扩展、一项 schema 退役（§6）
 - 目标读者：评审人（人类）与后续实施会话

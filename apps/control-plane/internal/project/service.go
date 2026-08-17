@@ -4291,6 +4291,11 @@ func (s *Service) validateAcceptanceCriterionAttestation(ctx context.Context, ta
 		if criterion.VerificationMethod != demandAcceptanceVerificationMethodAutomatedTest {
 			continue
 		}
+		// Platform produces-deliverable criteria are proven by result
+		// deliverables (projected below), not by command attestations.
+		if strings.HasPrefix(criterion.CriterionID, "produces_delivered:") {
+			continue
+		}
 		result, ok := matchAcceptanceResultToSnapshotCriterion(contract.AcceptanceResults, criterion)
 		if !ok {
 			continue
@@ -4307,12 +4312,39 @@ func (s *Service) validateAcceptanceCriterionAttestation(ctx context.Context, ta
 	if err != nil {
 		return nil, err
 	}
-	if len(serverRefs) > 0 {
-		return nil, nil
+	// Criterion grain (F3): one attempt-level attestation must not unlock every
+	// claimed green automated_test criterion. Prefer EvidenceRefs on the result
+	// that match a server-verified attestation; otherwise consume unused server
+	// refs (legacy path where the employee never echoes attestation refs).
+	available := make(map[string]struct{}, len(serverRefs))
+	for _, ref := range serverRefs {
+		available[ref] = struct{}{}
 	}
 	var errs []TaskResultValidationError
 	for _, criterion := range claimed {
-		errs = append(errs, "acceptance_result_attestation_required:"+criterion.CriterionID)
+		result, ok := matchAcceptanceResultToSnapshotCriterion(contract.AcceptanceResults, criterion)
+		if !ok {
+			continue
+		}
+		consumed := ""
+		for _, ref := range result.EvidenceRefs {
+			ref = strings.TrimSpace(ref)
+			if _, ok := available[ref]; ok {
+				consumed = ref
+				break
+			}
+		}
+		if consumed == "" {
+			for ref := range available {
+				consumed = ref
+				break
+			}
+		}
+		if consumed == "" {
+			errs = append(errs, "acceptance_result_attestation_required:"+criterion.CriterionID)
+			continue
+		}
+		delete(available, consumed)
 	}
 	return errs, nil
 }
@@ -4506,6 +4538,55 @@ func (s *Service) projectDemandCriterionVerdicts(ctx context.Context, task Proje
 			JudgeID:        *task.AssignedDigitalEmployeeID,
 			Reason:         reason,
 			EvidenceRefs:   evidenceRefs,
+			ProjectTaskID:  &task.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	return s.projectProducesDeliverableVerdicts(ctx, task, snapshot, contract)
+}
+
+// projectProducesDeliverableVerdicts auto-satisfies platform-injected
+// produces_delivered:* criteria when the completed contract actually delivered
+// the declared produce (F3 / E2). No employee AcceptanceResults entry is
+// required — ValidateTaskResultContract already rejected missing produces.
+func (s *Service) projectProducesDeliverableVerdicts(ctx context.Context, task ProjectTask, snapshot []DemandAcceptanceCriterion, contract TaskResultContract) error {
+	if task.AssignedDigitalEmployeeID == nil {
+		return nil
+	}
+	delivered := map[string]bool{}
+	for _, d := range contract.Deliverables {
+		name := strings.TrimSpace(d.Name)
+		if name != "" && (strings.TrimSpace(d.Value) != "" || strings.TrimSpace(d.Ref) != "") {
+			delivered[name] = true
+		}
+	}
+	plannedKey := ""
+	if task.PlannedTaskKey != nil {
+		plannedKey = strings.TrimSpace(*task.PlannedTaskKey)
+	}
+	for _, criterion := range criteriaSatisfiedByTask(snapshot, task) {
+		if !strings.HasPrefix(criterion.CriterionID, "produces_delivered:") {
+			continue
+		}
+		name := strings.TrimPrefix(criterion.CriterionID, "produces_delivered:")
+		if plannedKey != "" {
+			name = strings.TrimPrefix(name, plannedKey+":")
+		}
+		if !delivered[name] {
+			continue
+		}
+		if err := s.repository.CreateDemandCriterionVerdict(ctx, CreateDemandCriterionVerdictRequest{
+			TenantID:       task.TenantID,
+			ProjectID:      task.ProjectID,
+			DemandID:       criterion.DemandID,
+			PlanRevisionID: criterion.PlanRevisionID,
+			CriterionID:    criterion.CriterionID,
+			Verdict:        demandCriterionVerdictSatisfied,
+			JudgeType:      demandCriterionJudgeTypeExecutor,
+			JudgeID:        *task.AssignedDigitalEmployeeID,
+			Reason:         "平台核对：deliverable \"" + name + "\" 已交付",
+			EvidenceRefs:   []string{"platform_produces_check:" + name},
 			ProjectTaskID:  &task.ID,
 		}); err != nil {
 			return err

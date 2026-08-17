@@ -56,6 +56,8 @@ type Integration struct {
 	SkillIDs            []uuid.UUID
 	ScenarioTemplateKey *string
 	AutonomyTier        string
+	PinnedExitDeliverable        *string
+	AcknowledgeExitTierSemantics bool
 	MaxCallsPerHour     int32
 	Status              string
 	CreatedByUserID     uuid.UUID
@@ -85,6 +87,8 @@ type CreateIntegrationRequest struct {
 	SkillIDs            []uuid.UUID
 	ScenarioTemplateKey *string
 	AutonomyTier        string
+	PinnedExitDeliverable        *string
+	AcknowledgeExitTierSemantics bool
 	MaxCallsPerHour     *int32
 }
 
@@ -102,6 +106,9 @@ type UpdateIntegrationRequest struct {
 	ScenarioTemplateKeySet bool
 	ScenarioTemplateKey    *string
 	AutonomyTier           *string
+	PinnedExitDeliverable  *string
+	AcknowledgeExitTierSemanticsSet bool
+	AcknowledgeExitTierSemantics    bool
 	MaxCallsPerHour        *int32
 	Status                 *string
 }

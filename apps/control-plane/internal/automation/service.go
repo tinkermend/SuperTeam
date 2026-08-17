@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/superteam/control-plane/internal/autonomypolicy"
 	"github.com/superteam/control-plane/internal/project"
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 )
 
 // AlertNotifier fans out automation fire failure alerts to project owners.
@@ -34,10 +35,11 @@ type RuleFailureAlert struct {
 	FireID       uuid.UUID
 }
 
-// PlaybookAutonomySource resolves a scenario template's autonomy_ceiling (P3).
-// Optional: nil skips playbook ceiling checks at rule save (fire-time still applies via coordination).
+// PlaybookAutonomySource resolves a scenario template's autonomy_ceiling (P3)
+// and parsed spec for full_auto exit-pin prechecks (F6).
 type PlaybookAutonomySource interface {
 	PlaybookAutonomyCeiling(ctx context.Context, tenantID uuid.UUID, templateKey string) (string, error)
+	PlaybookSpec(ctx context.Context, tenantID uuid.UUID, templateKey string) (scenariotemplate.SpecV2, error)
 }
 
 type Service struct {
@@ -178,6 +180,11 @@ func (s *Service) CreateRule(ctx context.Context, req CreateRuleRequest) (Rule, 
 	if err := s.validateAutonomyAgainstCeilings(ctx, req.TenantID, autonomyTier, projectInfo.CoordinationPolicy, req.ScenarioTemplateKey); err != nil {
 		return Rule{}, err
 	}
+	pinnedExit := trimPtr(req.PinnedExitDeliverable)
+	ackExit := req.AcknowledgeExitTierSemantics
+	if err := s.validateFullAutoExitPin(ctx, req.TenantID, autonomyTier, req.ScenarioTemplateKey, pinnedExit, ackExit); err != nil {
+		return Rule{}, err
+	}
 
 	enabled := true
 	if req.Enabled != nil {
@@ -201,6 +208,8 @@ func (s *Service) CreateRule(ctx context.Context, req CreateRuleRequest) (Rule, 
 		Timezone:              timezone,
 		OverlapPolicy:         OverlapSkip,
 		AutonomyTier:          autonomyTier,
+		PinnedExitDeliverable: pinnedExit,
+		AcknowledgeExitTierSemantics: ackExit,
 		ActorUserID:           req.ActorUserID,
 	}
 	created, err := s.repo.CreateRule(ctx, rule)
@@ -285,10 +294,19 @@ func (s *Service) UpdateRule(ctx context.Context, req UpdateRuleRequest) (Rule, 
 		}
 		rule.AutonomyTier = tier
 	}
+	if req.PinnedExitDeliverable != nil {
+		rule.PinnedExitDeliverable = trimPtr(req.PinnedExitDeliverable)
+	}
+	if req.AcknowledgeExitTierSemanticsSet {
+		rule.AcknowledgeExitTierSemantics = req.AcknowledgeExitTierSemantics
+	}
 	if projectInfo, err := s.projects.GetProject(ctx, req.TenantID, rule.ProjectID); err == nil {
 		if err := s.validateAutonomyAgainstCeilings(ctx, req.TenantID, rule.AutonomyTier, projectInfo.CoordinationPolicy, rule.ScenarioTemplateKey); err != nil {
 			return Rule{}, err
 		}
+	}
+	if err := s.validateFullAutoExitPin(ctx, req.TenantID, rule.AutonomyTier, rule.ScenarioTemplateKey, rule.PinnedExitDeliverable, rule.AcknowledgeExitTierSemantics); err != nil {
+		return Rule{}, err
 	}
 
 	if err := validateModeFields(rule.CoordinationMode, CreateRuleRequest{
@@ -526,6 +544,15 @@ func (s *Service) Fire(ctx context.Context, tenantID, ruleID uuid.UUID, schedule
 		if s.demands == nil {
 			return s.failFire(ctx, rule, fire, "demand_submitter_missing", "demand submitter is not configured")
 		}
+		effectiveTier := s.effectiveAutonomyTier(ctx, tenantID, rule.AutonomyTier, projectInfo.CoordinationPolicy, rule.ScenarioTemplateKey)
+		sourceRefs := map[string]any{
+			"automation_rule_id":                     rule.ID.String(),
+			"automation_fire_id":                     fire.ID.String(),
+			project.AutonomyTierSnapshotSourceRefKey: effectiveTier,
+		}
+		if pin := strings.TrimSpace(ptrString(rule.PinnedExitDeliverable)); pin != "" {
+			sourceRefs[project.PinnedExitDeliverableSourceRefKey] = pin
+		}
 		result, err := s.demands.SubmitDemand(ctx, DemandSubmitRequest{
 			TenantID:            tenantID,
 			ProjectID:           rule.ProjectID,
@@ -535,10 +562,7 @@ func (s *Service) Fire(ctx context.Context, tenantID, ruleID uuid.UUID, schedule
 			CoordinationMode:    rule.CoordinationMode,
 			ScenarioTemplateKey: rule.ScenarioTemplateKey,
 			SourceType:          string(project.DemandSourceAutomation),
-			SourceRefs: map[string]any{
-				"automation_rule_id": rule.ID.String(),
-				"automation_fire_id": fire.ID.String(),
-			},
+			SourceRefs:          sourceRefs,
 		})
 		if err != nil {
 			return s.failFire(ctx, rule, fire, "submit_demand_failed", err.Error())
@@ -799,22 +823,12 @@ func normalizeAutonomyTier(raw string) (string, error) {
 }
 
 func (s *Service) validateAutonomyAgainstCeilings(ctx context.Context, tenantID uuid.UUID, tier string, policy map[string]any, scenarioTemplateKey *string) error {
-	projectCeiling := autonomypolicy.CoordinationPolicyCeiling(policy)
-	playbookCeiling := ""
-	if scenarioTemplateKey != nil {
-		key := strings.TrimSpace(*scenarioTemplateKey)
-		if key != "" && s != nil && s.playbooks != nil {
-			ceil, err := s.playbooks.PlaybookAutonomyCeiling(ctx, tenantID, key)
-			if err != nil {
-				return fmt.Errorf("%w: playbook autonomy ceiling: %v", ErrInvalidInput, err)
-			}
-			playbookCeiling = strings.TrimSpace(ceil)
-		}
-	}
-	effective := autonomypolicy.Effective(playbookCeiling, projectCeiling, tier)
+	effective := s.effectiveAutonomyTier(ctx, tenantID, tier, policy, scenarioTemplateKey)
 	if effective == tier {
 		return nil
 	}
+	projectCeiling := autonomypolicy.CoordinationPolicyCeiling(policy)
+	playbookCeiling := s.playbookCeiling(ctx, tenantID, scenarioTemplateKey)
 	switch {
 	case playbookCeiling != "" && autonomypolicy.Effective(playbookCeiling, "", tier) != tier:
 		return fmt.Errorf("%w: autonomy_tier %q exceeds playbook autonomy_ceiling %q", ErrInvalidInput, tier, playbookCeiling)
@@ -823,6 +837,81 @@ func (s *Service) validateAutonomyAgainstCeilings(ctx context.Context, tenantID 
 	default:
 		return fmt.Errorf("%w: autonomy_tier %q exceeds autonomy ceiling", ErrInvalidInput, tier)
 	}
+}
+
+func (s *Service) playbookCeiling(ctx context.Context, tenantID uuid.UUID, scenarioTemplateKey *string) string {
+	if scenarioTemplateKey == nil {
+		return ""
+	}
+	key := strings.TrimSpace(*scenarioTemplateKey)
+	if key == "" || s == nil || s.playbooks == nil {
+		return ""
+	}
+	ceil, err := s.playbooks.PlaybookAutonomyCeiling(ctx, tenantID, key)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(ceil)
+}
+
+func (s *Service) effectiveAutonomyTier(ctx context.Context, tenantID uuid.UUID, tier string, policy map[string]any, scenarioTemplateKey *string) string {
+	return autonomypolicy.Effective(
+		s.playbookCeiling(ctx, tenantID, scenarioTemplateKey),
+		autonomypolicy.CoordinationPolicyCeiling(policy),
+		tier,
+	)
+}
+
+func (s *Service) validateFullAutoExitPin(
+	ctx context.Context,
+	tenantID uuid.UUID,
+	tier string,
+	scenarioTemplateKey *string,
+	pinned *string,
+	acknowledge bool,
+) error {
+	if strings.TrimSpace(tier) != AutonomyTierFullAuto {
+		return nil
+	}
+	if scenarioTemplateKey == nil || strings.TrimSpace(*scenarioTemplateKey) == "" {
+		return nil
+	}
+	if s.playbooks == nil {
+		return nil
+	}
+	spec, err := s.playbooks.PlaybookSpec(ctx, tenantID, strings.TrimSpace(*scenarioTemplateKey))
+	if err != nil {
+		return fmt.Errorf("%w: load playbook for exit pin check: %v", ErrInvalidInput, err)
+	}
+	if !scenariotemplate.RequiresFullAutoExitPin(spec) {
+		return nil
+	}
+	pin := strings.TrimSpace(ptrString(pinned))
+	if err := scenariotemplate.ValidatePinnedExitDeliverable(spec, pin); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if pin == "" && !acknowledge {
+		preview := scenariotemplate.PreviewExitAutonomy(spec)
+		stopping := make([]string, 0)
+		for _, exit := range preview {
+			if exit.StopsHuman {
+				stopping = append(stopping, exit.Deliverable)
+			}
+		}
+		return fmt.Errorf(
+			"%w: full_auto rules bound to multi-exit playbooks require pinned_exit_deliverable or acknowledge_exit_tier_semantics=true (exits that stop humans: %s)",
+			ErrInvalidInput,
+			strings.Join(stopping, ","),
+		)
+	}
+	return nil
+}
+
+func ptrString(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 func validateModeFields(mode string, req CreateRuleRequest) error {

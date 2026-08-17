@@ -17,6 +17,8 @@ INSERT INTO automation_rules (
     timezone,
     overlap_policy,
     autonomy_tier,
+    pinned_exit_deliverable,
+    acknowledge_exit_tier_semantics,
     actor_user_id,
     disabled_reason,
     consecutive_failure_count,
@@ -39,6 +41,8 @@ INSERT INTO automation_rules (
     sqlc.arg('timezone')::varchar,
     sqlc.arg('overlap_policy')::varchar,
     sqlc.arg('autonomy_tier')::varchar,
+    sqlc.narg('pinned_exit_deliverable')::varchar,
+    sqlc.arg('acknowledge_exit_tier_semantics')::boolean,
     sqlc.arg('actor_user_id')::uuid,
     sqlc.narg('disabled_reason')::varchar,
     sqlc.arg('consecutive_failure_count')::int,
@@ -81,6 +85,8 @@ UPDATE automation_rules SET
     interval_seconds = sqlc.narg('interval_seconds')::int,
     timezone = sqlc.arg('timezone')::varchar,
     autonomy_tier = sqlc.arg('autonomy_tier')::varchar,
+    pinned_exit_deliverable = sqlc.narg('pinned_exit_deliverable')::varchar,
+    acknowledge_exit_tier_semantics = sqlc.arg('acknowledge_exit_tier_semantics')::boolean,
     temporal_schedule_id = sqlc.narg('temporal_schedule_id')::varchar,
     updated_at = NOW()
 WHERE tenant_id = sqlc.arg('tenant_id')::uuid

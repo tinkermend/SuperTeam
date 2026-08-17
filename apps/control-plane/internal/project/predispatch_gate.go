@@ -29,13 +29,14 @@ const (
 )
 
 const (
-	PreDispatchHumanActionPermissionApproval = "permission_approval"
-	PreDispatchHumanActionRiskApproval       = "risk_approval"
-	PreDispatchHumanActionMissingContext     = "missing_context"
-	PreDispatchHumanActionToolAuthorization  = "tool_authorization"
-	PreDispatchHumanActionRuntimeRecovery    = "runtime_recovery"
-	PreDispatchHumanActionBudgetApproval     = "budget_approval"
-	PreDispatchHumanActionReplanDecision     = "replan_decision"
+	// Predispatch human actions that EvaluatePreDispatchGate can actually mint.
+	// permission_approval / tool_authorization / replan_decision were retired
+	// (2026-08-17 autonomy gate inventory F1): they were never cast by the gate
+	// and the first two falsely sat on the full_auto whitelist.
+	PreDispatchHumanActionRiskApproval    = "risk_approval"
+	PreDispatchHumanActionMissingContext  = "missing_context"
+	PreDispatchHumanActionRuntimeRecovery = "runtime_recovery"
+	PreDispatchHumanActionBudgetApproval  = "budget_approval"
 )
 
 type PreDispatchGateInput struct {

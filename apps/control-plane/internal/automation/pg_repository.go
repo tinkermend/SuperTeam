@@ -41,6 +41,8 @@ func (r *PgRepository) CreateRule(ctx context.Context, rule Rule) (Rule, error) 
 		ConsecutiveFailureCount: rule.ConsecutiveFailureCount,
 		TemporalScheduleID:      textPtr(rule.TemporalScheduleID),
 		AutonomyTier:            rule.AutonomyTier,
+		PinnedExitDeliverable:   textPtr(rule.PinnedExitDeliverable),
+		AcknowledgeExitTierSemantics: rule.AcknowledgeExitTierSemantics,
 	})
 	if err != nil {
 		return Rule{}, err
@@ -95,6 +97,8 @@ func (r *PgRepository) UpdateRule(ctx context.Context, rule Rule) (Rule, error) 
 		IntervalSeconds:       int4Ptr(rule.IntervalSeconds),
 		Timezone:              rule.Timezone,
 		AutonomyTier:          rule.AutonomyTier,
+		PinnedExitDeliverable: textPtr(rule.PinnedExitDeliverable),
+		AcknowledgeExitTierSemantics: rule.AcknowledgeExitTierSemantics,
 		TemporalScheduleID:    textPtr(rule.TemporalScheduleID),
 	})
 	if err != nil {
@@ -353,6 +357,8 @@ func ruleFromRow(row queries.AutomationRule) Rule {
 		Timezone:                row.Timezone,
 		OverlapPolicy:           row.OverlapPolicy,
 		AutonomyTier:            row.AutonomyTier,
+		PinnedExitDeliverable:   textFrom(row.PinnedExitDeliverable),
+		AcknowledgeExitTierSemantics: row.AcknowledgeExitTierSemantics,
 		ActorUserID:             row.ActorUserID,
 		DisabledReason:          textFrom(row.DisabledReason),
 		ConsecutiveFailureCount: row.ConsecutiveFailureCount,

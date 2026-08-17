@@ -10673,6 +10673,9 @@ type ServerInterface interface {
 	// List chat threads for an employee in a project
 	// (GET /api/v1/digital-employees/{employeeId}/chat-threads)
 	ListDigitalEmployeeChatThreads(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListDigitalEmployeeChatThreadsParams)
+	// Soft-delete a chat thread on the platform (initiator only)
+	// (DELETE /api/v1/digital-employees/{employeeId}/chat-threads/{threadId})
+	DeleteDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, threadId openapi_types.UUID)
 	// Rename a chat thread (initiator only)
 	// (PATCH /api/v1/digital-employees/{employeeId}/chat-threads/{threadId})
 	PatchDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, threadId openapi_types.UUID)
@@ -11633,6 +11636,12 @@ func (_ Unimplemented) GetDigitalEmployee(w http.ResponseWriter, r *http.Request
 // List chat threads for an employee in a project
 // (GET /api/v1/digital-employees/{employeeId}/chat-threads)
 func (_ Unimplemented) ListDigitalEmployeeChatThreads(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, params ListDigitalEmployeeChatThreadsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Soft-delete a chat thread on the platform (initiator only)
+// (DELETE /api/v1/digital-employees/{employeeId}/chat-threads/{threadId})
+func (_ Unimplemented) DeleteDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request, employeeId EmployeeId, threadId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -14503,6 +14512,41 @@ func (siw *ServerInterfaceWrapper) ListDigitalEmployeeChatThreads(w http.Respons
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListDigitalEmployeeChatThreads(w, r, employeeId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDigitalEmployeeChatThread operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "employeeId" -------------
+	var employeeId EmployeeId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "employeeId", chi.URLParam(r, "employeeId"), &employeeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "employeeId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "threadId" -------------
+	var threadId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "threadId", chi.URLParam(r, "threadId"), &threadId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "threadId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDigitalEmployeeChatThread(w, r, employeeId, threadId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -22303,6 +22347,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/digital-employees/{employeeId}/chat-threads", wrapper.ListDigitalEmployeeChatThreads)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v1/digital-employees/{employeeId}/chat-threads/{threadId}", wrapper.DeleteDigitalEmployeeChatThread)
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/api/v1/digital-employees/{employeeId}/chat-threads/{threadId}", wrapper.PatchDigitalEmployeeChatThread)

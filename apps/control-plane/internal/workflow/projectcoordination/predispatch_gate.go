@@ -324,6 +324,14 @@ func (s *ProjectStore) ApplyPreDispatchGateDecision(ctx context.Context, input A
 		"project_task_permission", "project_task_plan_invalid",
 		"project_task_budget_approval", "project_task_human_wait":
 		return s.applyTaskHumanWaitRelease(ctx, input, decision)
+	case "project_task_iteration_exhausted":
+		// Spec 2026-08-17 §3.1 F0: this card previously fell through to an empty
+		// return while RequestProjectTaskIterationExhaustedReview had already
+		// blocked all downstream — humans could close the card but never resume
+		// the graph. Apply here (activity-side) so long-lived coordinators whose
+		// histories already routed this type through the default path gain the
+		// release without a sticky GetVersion fence.
+		return s.applyIterationExhaustedDecision(ctx, input, decision)
 	case "project_task_approval":
 		if decision.DispatchGateResultID == nil || *decision.DispatchGateResultID == uuid.Nil {
 			return s.applyTaskHumanWaitRelease(ctx, input, decision)

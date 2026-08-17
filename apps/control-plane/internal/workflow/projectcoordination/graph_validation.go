@@ -156,8 +156,8 @@ func ApplyPlanningProfileScores(snapshot CoordinationSnapshot, plan *RouteDecisi
 		task.MissingCapabilities = append([]string(nil), score.MissingCapabilities...)
 		task.PlanningProfileSnapshotHash = PlanningProfileSnapshotHash(profile)
 		if len(score.HardFailures) > 0 {
-			task.RequiresHumanApproval = true
-			plan.RequiresHumanReview = true
+			markTaskRequiresHumanApprovalPlatform(plan, task, RiskSourcePlatformProfileScore)
+			markPlanRequiresHumanReviewPlatform(plan, RiskSourcePlatformProfileScore)
 		}
 	}
 }

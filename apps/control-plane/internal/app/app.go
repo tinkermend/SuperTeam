@@ -81,6 +81,7 @@ type Container struct {
 	// coordination plus automation, which registers onto it rather than running a
 	// second worker on the same queue.
 	CoordinationWorker             lifecycleWorker
+	CoordinationStore              *projectcoordination.ProjectStore
 	TemporalClientClose            func()
 	RuntimeHandler                 *handlers.RuntimeHandler
 	RuntimeCommandWritebackHandler *handlers.RuntimeCommandWritebackHandler
@@ -1019,6 +1020,7 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 		InboxChangeNotifier:            inboxChangeNotifier,
 		FeishuOutboxNotifier:           feishuOutboxNotifier,
 		CoordinationWorker:             coordinationWorker,
+		CoordinationStore:              coordinationStore,
 		TemporalClientClose:            temporalClientClose,
 		RuntimeHandler:                 runtimeHandler,
 		RuntimeCommandWritebackHandler: runtimeCommandWritebackHandler,
@@ -1102,6 +1104,10 @@ func runContainer(ctx context.Context, container *Container, addr string) error 
 		go startStuckTaskReconciler(ctx, container.ProjectService, container.SystemConfig)
 		// 项目工作区 git 状态采样看门狗（spec 2026-08-12 P1）。
 		go startWorkspaceGitStatusReconciler(ctx, container.ProjectService, container.SystemConfig)
+	}
+	if container.CoordinationStore != nil {
+		// Autonomy F7: full_auto recovery gates auto_recheck when workspace/budget heals.
+		go startAutoRecheckRecoveryReconciler(ctx, container.CoordinationStore)
 	}
 	if container.InboxChangeNotifier != nil {
 		go container.InboxChangeNotifier.Start(ctx)
@@ -1212,6 +1218,14 @@ func (a playbookAutonomyCeilingAdapter) PlaybookAutonomyCeiling(ctx context.Cont
 		return "", err
 	}
 	return strings.TrimSpace(spec.AutonomyCeiling), nil
+}
+
+func (a playbookAutonomyCeilingAdapter) PlaybookSpec(ctx context.Context, tenantID uuid.UUID, templateKey string) (scenariotemplate.SpecV2, error) {
+	template, err := a.service.GetByKey(ctx, tenantID, templateKey)
+	if err != nil {
+		return scenariotemplate.SpecV2{}, err
+	}
+	return scenariotemplate.ParseSpec(template.Spec)
 }
 
 // roleHolderCounterAdapter backs scenario-template role-view holder_count

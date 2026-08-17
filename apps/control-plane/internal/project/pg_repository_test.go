@@ -1084,7 +1084,7 @@ func TestNotApplicableDoesNotEscapeHighRiskOversight(t *testing.T) {
 	require.NoError(t, err)
 	verdicts, err := repo.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
 	require.NoError(t, err)
-	require.Equal(t, []string{"human_final_confirmation"}, ResolveUnsatisfiedBlockingCriteria(criteria, verdicts))
+	require.Equal(t, []string{"ci-green", "human_final_confirmation"}, ResolveUnsatisfiedBlockingCriteria(criteria, verdicts))
 }
 
 // TestCreateReviewGateVerdictReadsBack proves the review_gate aggregate row

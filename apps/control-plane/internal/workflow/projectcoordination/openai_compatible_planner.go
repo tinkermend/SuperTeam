@@ -211,6 +211,8 @@ func (p *OpenAICompatibleRoutePlanner) Plan(ctx context.Context, snapshot Coordi
 		// high-risk plan carries the injected human criterion the executor cannot
 		// self-satisfy.
 		ensureHumanJudgmentCriterion(&plan, snapshot.CoordinationPolicy)
+		foldTemplateAcceptanceCriteria(snapshot, &plan)
+		stripPlannerOnlyRiskFlags(&plan)
 		return plan, nil
 	}
 	if lastErr == nil {
@@ -361,7 +363,7 @@ func buildPlannerSystemPrompt(snapshot CoordinationSnapshot) string {
 		"selection_score must be an integer from 0 to 100; use 0 when unsure because the platform recomputes the authoritative score.",
 		"selection_confidence is your own 0.0-1.0 confidence that the selected employee's described role and experience fit this task. Judge it from the employee's description, not from capability name overlap.",
 		"produces is a list of short, stable, snake_case keys naming the artifacts this task hands to downstream tasks, for example load_test_report. Every key a task lists in input_requirements.required_inputs must appear in the produces of one of its DIRECT blockers (declare the edge in blocked_by_keys; one edge = one handoff). At execution time the platform injects each task's direct blockers' results as upstream_results into its dispatch request, and a completed task must return result_contract.deliverables covering every name in its produces.",
-		"When the snapshot contains scenario_template, first choose exit_deliverable: exactly one deliverable name from scenario_template.spec.exits that best matches how far the demand asks to go — prefer the SHALLOWEST exit that satisfies the demand; never go deeper than the demand explicitly requires (if snapshot.pinned_exit_deliverable is set, you MUST use it verbatim). Then instantiate ONLY the skeleton steps in the dependency-ancestor closure of the step producing that deliverable: one task per included step in order, honoring depends_on edges, seeding each task's produces from that step's produces_defaults (names verbatim) and its input_requirements.required_inputs from required_inputs_defaults; use the matching spec.roles required_capabilities as capability annotations and fold the spec.default_acceptance_criteria whose applies_from_exit is at or before your chosen exit into plan_acceptance_criteria. You may add tasks the demand genuinely needs beyond the skeleton, but never drop an included skeleton step or rename its produces names. Every skeleton-derived task is still a full task object: include ALL required task fields exactly as for any other task.",
+		"When the snapshot contains scenario_template, first choose exit_deliverable: exactly one deliverable name from scenario_template.spec.exits that best matches how far the demand asks to go — prefer the SHALLOWEST exit that satisfies the demand; never go deeper than the demand explicitly requires (if snapshot.pinned_exit_deliverable is set, you MUST use it verbatim). Then instantiate ONLY the skeleton steps in the dependency-ancestor closure of the step producing that deliverable: one task per included step in order, honoring depends_on edges, seeding each task's produces from that step's produces_defaults (names verbatim) and its input_requirements.required_inputs from required_inputs_defaults; use the matching spec.roles required_capabilities as capability annotations. Do NOT fold or invent plan_acceptance_criteria from the template — the platform folds spec.default_acceptance_criteria server-side after you choose the exit. You may add tasks the demand genuinely needs beyond the skeleton, but never drop an included skeleton step or rename its produces names. Every skeleton-derived task is still a full task object: include ALL required task fields exactly as for any other task.",
 		"For any task you ADD beyond the skeleton, you MUST set role_key to exactly one key from the active role vocabulary injected in the user snapshot (role_vocabulary). Skeleton-derived tasks inherit role from the template step — do not invent role keys. Never invent role_key values outside that list.",
 		"Set template_key exactly to scenario_template.key when scenario_template is present; otherwise choose a short descriptive key.",
 		"input_requirements.required_inputs lists the produces keys this task consumes from upstream. Each entry is either a plain string key or an object {\"name\": <key>, \"kind\": <type hint like git_commit|branch_ref|artifact_ref>, \"required\": true|false}; the name is what must be supplied by a direct blocker's produces. Put any other context you want to record under planner_notes instead; nothing else in input_requirements is read.",
@@ -454,6 +456,8 @@ func decodePlannerJSON(content string) (RouteDecisionPlan, error) {
 			RoleKey:                  strings.TrimSpace(task.RoleKey),
 		})
 	}
+	attributePlannerSelfReportedRisk(&plan)
+	attributePlannerAuthoredCriteria(plan.PlanAcceptanceCriteria)
 	return plan, nil
 }
 
@@ -705,9 +709,6 @@ func decodeRequiredPlannerObject(raw json.RawMessage, field string) (map[string]
 // plannerRequiredInputs extracts the one key of input_requirements that decides
 // anything. Everything else in that map is free-form planner prose and must not
 // reach a gate or a validator. See the 2026-07-10 plan-phase refactor spec §4.2.
-// plannerRequiredInputs extracts the one key of input_requirements that decides
-// anything. Everything else in that map is free-form planner prose and must not
-// reach a gate or a validator. See the 2026-07-10 plan-phase refactor spec §4.2.
 // Entries take the v2 string form or the v3 object form {"name", "kind",
 // "required"} (2026-08-16 handoff package spec §3.3); only the name decides
 // graph supply, so objects are normalized to their name here.
@@ -794,9 +795,9 @@ func applyRequiredHumanReviewPolicy(snapshot CoordinationSnapshot, plan *RouteDe
 	if plan == nil || !requiredHumanReviewPolicyEnabled(snapshot.CoordinationPolicy) {
 		return
 	}
-	plan.RequiresHumanReview = true
+	markPlanRequiresHumanReviewPlatform(plan, RiskSourcePlatformPolicy)
 	for i := range plan.Tasks {
-		plan.Tasks[i].RequiresHumanApproval = true
+		markTaskRequiresHumanApprovalPlatform(plan, &plan.Tasks[i], RiskSourcePlatformPolicy)
 	}
 }
 
@@ -829,7 +830,7 @@ func synthesizeRequiredReviewPlan(snapshot CoordinationSnapshot, pool []uuid.UUI
 	if len(budgetEstimate) == 0 {
 		budgetEstimate["mode"] = "policy_default"
 	}
-	return RouteDecisionPlan{
+	plan := RouteDecisionPlan{
 		Reason:              reason,
 		RequiresHumanReview: true,
 		BudgetEstimate:      budgetEstimate,
@@ -868,6 +869,9 @@ func synthesizeRequiredReviewPlan(snapshot CoordinationSnapshot, pool []uuid.UUI
 			},
 		}},
 	}
+	markPlanRequiresHumanReviewPlatform(&plan, RiskSourcePlatformPolicy)
+	markTaskRequiresHumanApprovalPlatform(&plan, &plan.Tasks[0], RiskSourcePlatformPolicy)
+	return plan
 }
 
 func requiredHumanReviewPolicyEnabled(policy map[string]any) bool {

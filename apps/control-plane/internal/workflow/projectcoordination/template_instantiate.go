@@ -164,8 +164,9 @@ func InstantiatePlanFromTemplate(snapshot CoordinationSnapshot) (RouteDecisionPl
 			ID:                 id,
 			Statement:          criterion.Statement,
 			SatisfiedBy:        satisfied,
-			VerificationMethod: criterion.VerificationMethod,
-			Severity:           criterion.Severity,
+			VerificationMethod: strings.TrimSpace(criterion.VerificationMethod),
+			Severity:           strings.TrimSpace(criterion.Severity),
+			Source:             CriterionSourceTemplateDeclared,
 		})
 	}
 	for i := range criteria {

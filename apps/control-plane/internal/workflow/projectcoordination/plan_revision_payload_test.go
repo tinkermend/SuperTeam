@@ -169,16 +169,29 @@ func TestValidatePlanRevisionPayloadRejectsDuplicateKeyDanglingDependencyAndCycl
 	})
 }
 
-func TestValidatePlanRevisionPayloadHighRiskRequiresReviewButRemainsAcceptable(t *testing.T) {
+func TestValidatePlanRevisionPayloadPlannerHighRiskDoesNotForceReview(t *testing.T) {
 	payload := validPlanRevisionPayload(uuid.New())
 	payload.Tasks[0].RiskLevel = "critical"
+	payload.Tasks[0].HumanReviewRequired = true
+
+	result := ValidatePlanRevisionPayload(payload)
+
+	require.True(t, result.Acceptable)
+	require.False(t, result.ReviewRequired, "F6: planner self-reported risk must not force plan_review")
+	require.Len(t, result.PlanFingerprint, 64)
+}
+
+func TestValidatePlanRevisionPayloadPlatformRiskForcesReview(t *testing.T) {
+	payload := validPlanRevisionPayload(uuid.New())
+	payload.RiskAttribution = []RiskSignalAttribution{{
+		Kind: RiskSignalPlanRequiresHumanReview, Source: RiskSourcePlatformPolicy,
+	}}
 
 	result := ValidatePlanRevisionPayload(payload)
 
 	require.True(t, result.Acceptable)
 	require.True(t, result.ReviewRequired)
-	require.Contains(t, result.ReviewReasons, "high_risk_task:root")
-	require.Len(t, result.PlanFingerprint, 64)
+	require.Contains(t, result.ReviewReasons, "platform_derived_risk")
 }
 
 func TestValidatePlanRevisionPayloadRejectsMissingStructuralRequirements(t *testing.T) {

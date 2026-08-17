@@ -68,6 +68,8 @@ type Rule struct {
 	Timezone                string
 	OverlapPolicy           string
 	AutonomyTier            string
+	PinnedExitDeliverable   *string
+	AcknowledgeExitTierSemantics bool
 	ActorUserID             uuid.UUID
 	DisabledReason          *string
 	ConsecutiveFailureCount int32
@@ -109,6 +111,10 @@ type CreateRuleRequest struct {
 	Enabled               *bool
 	// AutonomyTier: empty → pause_at_gate. full_auto must be explicit.
 	AutonomyTier string
+	// PinnedExitDeliverable / AcknowledgeExitTierSemantics: F6 §6.5.6 —
+	// full_auto + multi-exit playbook requires one of these.
+	PinnedExitDeliverable        *string
+	AcknowledgeExitTierSemantics bool
 }
 
 type UpdateRuleRequest struct {
@@ -126,6 +132,10 @@ type UpdateRuleRequest struct {
 	IntervalSeconds       *int32
 	Timezone              *string
 	AutonomyTier          *string
+	PinnedExitDeliverable *string
+	// AcknowledgeExitTierSemanticsSet applies AcknowledgeExitTierSemantics when true.
+	AcknowledgeExitTierSemanticsSet bool
+	AcknowledgeExitTierSemantics    bool
 }
 
 type ListRulesRequest struct {

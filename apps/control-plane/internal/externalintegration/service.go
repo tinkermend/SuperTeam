@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/autonomypolicy"
+	"github.com/superteam/control-plane/internal/project"
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 )
 
 // ProjectGateway exposes the project facts the two verbs need (live reference).
@@ -26,11 +28,11 @@ type ProjectInfo struct {
 	CoordinationPolicy map[string]any
 }
 
-// PlaybookAutonomySource resolves a scenario template's autonomy_ceiling.
-// Optional: nil skips playbook ceiling checks at save time (call/gate time
-// still applies via coordination).
+// PlaybookAutonomySource resolves a scenario template's autonomy_ceiling and
+// parsed spec for full_auto exit-pin prechecks (F6).
 type PlaybookAutonomySource interface {
 	PlaybookAutonomyCeiling(ctx context.Context, tenantID uuid.UUID, templateKey string) (string, error)
+	PlaybookSpec(ctx context.Context, tenantID uuid.UUID, templateKey string) (scenariotemplate.SpecV2, error)
 }
 
 // ChatRunner creates the envelope chat run (verb 1). The employee service
@@ -146,6 +148,11 @@ func (s *Service) CreateIntegration(ctx context.Context, req CreateIntegrationRe
 	if err := s.validateTierAgainstCeilings(ctx, req.TenantID, tier, projectInfo.CoordinationPolicy, scenarioKey); err != nil {
 		return Integration{}, err
 	}
+	pinnedExit := normalizeScenarioKey(req.PinnedExitDeliverable) // reuse trim helper for optional string
+	ackExit := req.AcknowledgeExitTierSemantics
+	if err := s.validateFullAutoExitPin(ctx, req.TenantID, tier, scenarioKey, pinnedExit, ackExit); err != nil {
+		return Integration{}, err
+	}
 	maxCalls := int32(DefaultMaxCallsPerHour)
 	if req.MaxCallsPerHour != nil {
 		if *req.MaxCallsPerHour <= 0 {
@@ -164,6 +171,8 @@ func (s *Service) CreateIntegration(ctx context.Context, req CreateIntegrationRe
 		SkillIDs:            skillIDs,
 		ScenarioTemplateKey: scenarioKey,
 		AutonomyTier:        tier,
+		PinnedExitDeliverable: pinnedExit,
+		AcknowledgeExitTierSemantics: ackExit,
 		MaxCallsPerHour:     maxCalls,
 		Status:              StatusActive,
 		CreatedByUserID:     req.CreatedByUserID,
@@ -231,6 +240,12 @@ func (s *Service) UpdateIntegration(ctx context.Context, req UpdateIntegrationRe
 		}
 		integration.AutonomyTier = tier
 	}
+	if req.PinnedExitDeliverable != nil {
+		integration.PinnedExitDeliverable = normalizeScenarioKey(req.PinnedExitDeliverable)
+	}
+	if req.AcknowledgeExitTierSemanticsSet {
+		integration.AcknowledgeExitTierSemantics = req.AcknowledgeExitTierSemantics
+	}
 	if req.MaxCallsPerHour != nil {
 		if *req.MaxCallsPerHour <= 0 {
 			return Integration{}, fmt.Errorf("%w: max_calls_per_hour must be positive", ErrInvalidInput)
@@ -252,6 +267,9 @@ func (s *Service) UpdateIntegration(ctx context.Context, req UpdateIntegrationRe
 		return Integration{}, err
 	}
 	if err := s.validateTierAgainstCeilings(ctx, req.TenantID, integration.AutonomyTier, projectInfo.CoordinationPolicy, integration.ScenarioTemplateKey); err != nil {
+		return Integration{}, err
+	}
+	if err := s.validateFullAutoExitPin(ctx, req.TenantID, integration.AutonomyTier, integration.ScenarioTemplateKey, integration.PinnedExitDeliverable, integration.AcknowledgeExitTierSemantics); err != nil {
 		return Integration{}, err
 	}
 	updated, err := s.repo.UpdateIntegration(ctx, integration)
@@ -402,6 +420,15 @@ func (s *Service) ExecuteDemandSubmit(ctx context.Context, integration Integrati
 	if err := s.consumeBudget(ctx, integration); err != nil {
 		return ExternalDemandResult{}, err
 	}
+	sourceRefs := map[string]any{
+		"external_integration_id":                integration.ID.String(),
+		project.AutonomyTierSnapshotSourceRefKey: effective,
+	}
+	if integration.PinnedExitDeliverable != nil {
+		if pin := strings.TrimSpace(*integration.PinnedExitDeliverable); pin != "" {
+			sourceRefs[project.PinnedExitDeliverableSourceRefKey] = pin
+		}
+	}
 	demandID, status, err := s.demands.SubmitExternalDemand(ctx, DemandGatewayRequest{
 		TenantID:            integration.TenantID,
 		ProjectID:           integration.ProjectID,
@@ -410,9 +437,7 @@ func (s *Service) ExecuteDemandSubmit(ctx context.Context, integration Integrati
 		Content:             content,
 		CoordinationMode:    mode,
 		ScenarioTemplateKey: integration.ScenarioTemplateKey,
-		SourceRefs: map[string]any{
-			"external_integration_id": integration.ID.String(),
-		},
+		SourceRefs:          sourceRefs,
 	})
 	if err != nil {
 		return ExternalDemandResult{}, err
@@ -527,20 +552,74 @@ func (s *Service) validateSkillEnvelope(ctx context.Context, tenantID, projectID
 
 func (s *Service) validateTierAgainstCeilings(ctx context.Context, tenantID uuid.UUID, tier string, policy map[string]any, scenarioTemplateKey *string) error {
 	projectCeiling := autonomypolicy.CoordinationPolicyCeiling(policy)
-	if projectCeiling != "" && autonomypolicy.Rank(tier) > autonomypolicy.Rank(projectCeiling) {
-		return fmt.Errorf("%w: autonomy tier %s exceeds project coordination_policy.autonomy_ceiling %s", ErrInvalidInput, tier, projectCeiling)
-	}
+	playbookCeiling := ""
 	if scenarioTemplateKey != nil && s.playbooks != nil {
 		key := strings.TrimSpace(*scenarioTemplateKey)
 		if key != "" {
 			ceiling, err := s.playbooks.PlaybookAutonomyCeiling(ctx, tenantID, key)
-			if err != nil {
-				return fmt.Errorf("%w: scenario template %s: %v", ErrInvalidInput, key, err)
-			}
-			if ceiling != "" && autonomypolicy.Rank(tier) > autonomypolicy.Rank(ceiling) {
-				return fmt.Errorf("%w: autonomy tier %s exceeds playbook %s autonomy_ceiling %s", ErrInvalidInput, tier, key, ceiling)
+			if err == nil {
+				playbookCeiling = strings.TrimSpace(ceiling)
 			}
 		}
+	}
+	effective := autonomypolicy.Effective(playbookCeiling, projectCeiling, tier)
+	if effective == tier {
+		return nil
+	}
+	switch {
+	case playbookCeiling != "" && autonomypolicy.Effective(playbookCeiling, "", tier) != tier:
+		return fmt.Errorf("%w: autonomy_tier %q exceeds playbook autonomy_ceiling %q", ErrInvalidInput, tier, playbookCeiling)
+	case projectCeiling != "":
+		return fmt.Errorf("%w: autonomy_tier %q exceeds project coordination_policy.autonomy_ceiling %q", ErrInvalidInput, tier, projectCeiling)
+	default:
+		return fmt.Errorf("%w: autonomy_tier %q exceeds autonomy ceiling", ErrInvalidInput, tier)
+	}
+}
+
+func (s *Service) validateFullAutoExitPin(
+	ctx context.Context,
+	tenantID uuid.UUID,
+	tier string,
+	scenarioTemplateKey *string,
+	pinned *string,
+	acknowledge bool,
+) error {
+	if strings.TrimSpace(tier) != autonomypolicy.TierFullAuto {
+		return nil
+	}
+	if scenarioTemplateKey == nil || strings.TrimSpace(*scenarioTemplateKey) == "" {
+		return nil
+	}
+	if s.playbooks == nil {
+		return nil
+	}
+	spec, err := s.playbooks.PlaybookSpec(ctx, tenantID, strings.TrimSpace(*scenarioTemplateKey))
+	if err != nil {
+		return fmt.Errorf("%w: load playbook for exit pin check: %v", ErrInvalidInput, err)
+	}
+	if !scenariotemplate.RequiresFullAutoExitPin(spec) {
+		return nil
+	}
+	pin := ""
+	if pinned != nil {
+		pin = strings.TrimSpace(*pinned)
+	}
+	if err := scenariotemplate.ValidatePinnedExitDeliverable(spec, pin); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if pin == "" && !acknowledge {
+		preview := scenariotemplate.PreviewExitAutonomy(spec)
+		stopping := make([]string, 0)
+		for _, exit := range preview {
+			if exit.StopsHuman {
+				stopping = append(stopping, exit.Deliverable)
+			}
+		}
+		return fmt.Errorf(
+			"%w: full_auto integrations bound to multi-exit playbooks require pinned_exit_deliverable or acknowledge_exit_tier_semantics=true (exits that stop humans: %s)",
+			ErrInvalidInput,
+			strings.Join(stopping, ","),
+		)
 	}
 	return nil
 }

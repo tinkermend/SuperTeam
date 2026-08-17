@@ -954,6 +954,7 @@ function CoordinationPolicyPanel({
   }
 
   const requireReview = parsed?.require_human_review_for_new_demands === true;
+  const requireAcceptance = parsed?.require_human_acceptance === true;
   const maxIterationsRaw = parsed?.max_plan_iterations;
   const maxIterations =
     typeof maxIterationsRaw === "number" && Number.isFinite(maxIterationsRaw)
@@ -1003,6 +1004,20 @@ function CoordinationPolicyPanel({
               onCheckedChange={(next) =>
                 setKey("require_human_review_for_new_demands", next)
               }
+            />
+          </label>
+          <label className="flex items-start justify-between gap-4 rounded-[12px] border border-line bg-card-soft p-4">
+            <div className="min-w-0">
+              <span className="text-[13px] font-semibold text-ink">本项目一律要人验收</span>
+              <p className="mt-0.5 text-[12px] text-ink-3">
+                开启后注入声明式人类验收判据，压过自动化「完全自动化」档（单向阀）。
+              </p>
+            </div>
+            <Switch
+              aria-label="本项目一律要人验收"
+              checked={requireAcceptance}
+              disabled={controlsDisabled}
+              onCheckedChange={(next) => setKey("require_human_acceptance", next)}
             />
           </label>
           <div className="grid gap-2 rounded-[12px] border border-line bg-card-soft p-4">

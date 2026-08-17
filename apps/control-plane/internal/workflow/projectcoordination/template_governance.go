@@ -349,6 +349,7 @@ func migrateReviewerRoleToAdversarial(constraint scenariotemplate.SpecConstraint
 		SatisfiedBy:        []string{reviewedTask.Key},
 		VerificationMethod: VerificationMethodAdversarialReview,
 		Severity:           CriterionSeverityBlocking,
+		Source:             CriterionSourcePlatformInjected,
 	})
 	plan.ConstraintNotes = append(plan.ConstraintNotes, PlanConstraintNote{
 		Kind:    "adversarial_review",
@@ -654,7 +655,7 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 			if !ok {
 				return invalidRouteDecision("constraint human_gate violated: target step %q has no corresponding task in the plan", constraint.Target)
 			}
-			task.RequiresHumanApproval = true
+			markTaskRequiresHumanApprovalPlatform(plan, task, RiskSourcePlatformTemplateGovernance)
 			plan.ConstraintNotes = append(plan.ConstraintNotes, PlanConstraintNote{
 				Kind:    "human_gate",
 				Message: fmt.Sprintf("发布任务已强制人类审批：由 human_gate@%s v%d 触发", snapshot.ScenarioTemplate.Key, snapshot.ScenarioTemplate.Version),
@@ -688,7 +689,7 @@ func EnforceScenarioTemplateGovernance(snapshot CoordinationSnapshot, plan *Rout
 		if !shared {
 			continue
 		}
-		plan.RequiresHumanReview = true
+		markPlanRequiresHumanReviewPlatform(plan, RiskSourcePlatformTemplateGovernance)
 		plan.ConstraintNotes = append(plan.ConstraintNotes, PlanConstraintNote{
 			Kind:    "collapse",
 			Message: fmt.Sprintf("角色折叠：%s 与 %s 由同一员工承担，已自动标注待人工复核", roleTitleOrKey(roleTitle, rule.Roles[0]), roleTitleOrKey(roleTitle, rule.Roles[1])),
@@ -722,7 +723,7 @@ func appendLowFeasibilityNotes(snapshot CoordinationSnapshot, plan *RouteDecisio
 			Kind:    "low_feasibility",
 			Message: message,
 		})
-		plan.RequiresHumanReview = true
+		markPlanRequiresHumanReviewPlatform(plan, RiskSourcePlatformTemplateGovernance)
 	}
 }
 

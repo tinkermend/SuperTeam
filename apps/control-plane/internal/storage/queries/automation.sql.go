@@ -97,6 +97,8 @@ INSERT INTO automation_rules (
     timezone,
     overlap_policy,
     autonomy_tier,
+    pinned_exit_deliverable,
+    acknowledge_exit_tier_semantics,
     actor_user_id,
     disabled_reason,
     consecutive_failure_count,
@@ -119,36 +121,40 @@ INSERT INTO automation_rules (
     $15::varchar,
     $16::varchar,
     $17::varchar,
-    $18::uuid,
-    $19::varchar,
-    $20::int,
-    $21::varchar
+    $18::varchar,
+    $19::boolean,
+    $20::uuid,
+    $21::varchar,
+    $22::int,
+    $23::varchar
 )
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type CreateAutomationRuleParams struct {
-	TenantID                uuid.UUID     `json:"tenant_id"`
-	TeamID                  uuid.UUID     `json:"team_id"`
-	ProjectID               uuid.UUID     `json:"project_id"`
-	Name                    string        `json:"name"`
-	Enabled                 bool          `json:"enabled"`
-	CoordinationMode        string        `json:"coordination_mode"`
-	DemandTitleTemplate     pgtype.Text   `json:"demand_title_template"`
-	DemandBodyTemplate      pgtype.Text   `json:"demand_body_template"`
-	ScenarioTemplateKey     pgtype.Text   `json:"scenario_template_key"`
-	DigitalEmployeeID       uuid.NullUUID `json:"digital_employee_id"`
-	ChatObjectiveTemplate   pgtype.Text   `json:"chat_objective_template"`
-	ScheduleKind            string        `json:"schedule_kind"`
-	CronExpr                pgtype.Text   `json:"cron_expr"`
-	IntervalSeconds         pgtype.Int4   `json:"interval_seconds"`
-	Timezone                string        `json:"timezone"`
-	OverlapPolicy           string        `json:"overlap_policy"`
-	AutonomyTier            string        `json:"autonomy_tier"`
-	ActorUserID             uuid.UUID     `json:"actor_user_id"`
-	DisabledReason          pgtype.Text   `json:"disabled_reason"`
-	ConsecutiveFailureCount int32         `json:"consecutive_failure_count"`
-	TemporalScheduleID      pgtype.Text   `json:"temporal_schedule_id"`
+	TenantID                     uuid.UUID     `json:"tenant_id"`
+	TeamID                       uuid.UUID     `json:"team_id"`
+	ProjectID                    uuid.UUID     `json:"project_id"`
+	Name                         string        `json:"name"`
+	Enabled                      bool          `json:"enabled"`
+	CoordinationMode             string        `json:"coordination_mode"`
+	DemandTitleTemplate          pgtype.Text   `json:"demand_title_template"`
+	DemandBodyTemplate           pgtype.Text   `json:"demand_body_template"`
+	ScenarioTemplateKey          pgtype.Text   `json:"scenario_template_key"`
+	DigitalEmployeeID            uuid.NullUUID `json:"digital_employee_id"`
+	ChatObjectiveTemplate        pgtype.Text   `json:"chat_objective_template"`
+	ScheduleKind                 string        `json:"schedule_kind"`
+	CronExpr                     pgtype.Text   `json:"cron_expr"`
+	IntervalSeconds              pgtype.Int4   `json:"interval_seconds"`
+	Timezone                     string        `json:"timezone"`
+	OverlapPolicy                string        `json:"overlap_policy"`
+	AutonomyTier                 string        `json:"autonomy_tier"`
+	PinnedExitDeliverable        pgtype.Text   `json:"pinned_exit_deliverable"`
+	AcknowledgeExitTierSemantics bool          `json:"acknowledge_exit_tier_semantics"`
+	ActorUserID                  uuid.UUID     `json:"actor_user_id"`
+	DisabledReason               pgtype.Text   `json:"disabled_reason"`
+	ConsecutiveFailureCount      int32         `json:"consecutive_failure_count"`
+	TemporalScheduleID           pgtype.Text   `json:"temporal_schedule_id"`
 }
 
 func (q *Queries) CreateAutomationRule(ctx context.Context, arg CreateAutomationRuleParams) (AutomationRule, error) {
@@ -170,6 +176,8 @@ func (q *Queries) CreateAutomationRule(ctx context.Context, arg CreateAutomation
 		arg.Timezone,
 		arg.OverlapPolicy,
 		arg.AutonomyTier,
+		arg.PinnedExitDeliverable,
+		arg.AcknowledgeExitTierSemantics,
 		arg.ActorUserID,
 		arg.DisabledReason,
 		arg.ConsecutiveFailureCount,
@@ -201,6 +209,8 @@ func (q *Queries) CreateAutomationRule(ctx context.Context, arg CreateAutomation
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutonomyTier,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -273,7 +283,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type DisableAutomationRuleSystemParams struct {
@@ -310,6 +320,8 @@ func (q *Queries) DisableAutomationRuleSystem(ctx context.Context, arg DisableAu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutonomyTier,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -339,7 +351,7 @@ func (q *Queries) GetAutomationFireByIdempotency(ctx context.Context, idempotenc
 }
 
 const GetAutomationRule = `-- name: GetAutomationRule :one
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier FROM automation_rules
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics FROM automation_rules
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -377,6 +389,8 @@ func (q *Queries) GetAutomationRule(ctx context.Context, arg GetAutomationRulePa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutonomyTier,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -434,7 +448,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type IncrementAutomationRuleFailureCountParams struct {
@@ -470,6 +484,8 @@ func (q *Queries) IncrementAutomationRuleFailureCount(ctx context.Context, arg I
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutonomyTier,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -528,7 +544,7 @@ func (q *Queries) ListAutomationFires(ctx context.Context, arg ListAutomationFir
 }
 
 const ListAutomationRules = `-- name: ListAutomationRules :many
-SELECT ar.id, ar.tenant_id, ar.team_id, ar.project_id, ar.name, ar.enabled, ar.coordination_mode, ar.demand_title_template, ar.demand_body_template, ar.scenario_template_key, ar.digital_employee_id, ar.chat_objective_template, ar.schedule_kind, ar.cron_expr, ar.interval_seconds, ar.timezone, ar.overlap_policy, ar.actor_user_id, ar.disabled_reason, ar.consecutive_failure_count, ar.temporal_schedule_id, ar.created_at, ar.updated_at, ar.autonomy_tier FROM automation_rules ar
+SELECT ar.id, ar.tenant_id, ar.team_id, ar.project_id, ar.name, ar.enabled, ar.coordination_mode, ar.demand_title_template, ar.demand_body_template, ar.scenario_template_key, ar.digital_employee_id, ar.chat_objective_template, ar.schedule_kind, ar.cron_expr, ar.interval_seconds, ar.timezone, ar.overlap_policy, ar.actor_user_id, ar.disabled_reason, ar.consecutive_failure_count, ar.temporal_schedule_id, ar.created_at, ar.updated_at, ar.autonomy_tier, ar.pinned_exit_deliverable, ar.acknowledge_exit_tier_semantics FROM automation_rules ar
 JOIN projects p ON p.id = ar.project_id AND p.tenant_id = ar.tenant_id
 WHERE ar.tenant_id = $1::uuid
   AND p.deleted_at IS NULL
@@ -593,6 +609,8 @@ func (q *Queries) ListAutomationRules(ctx context.Context, arg ListAutomationRul
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AutonomyTier,
+			&i.PinnedExitDeliverable,
+			&i.AcknowledgeExitTierSemantics,
 		); err != nil {
 			return nil, err
 		}
@@ -605,7 +623,7 @@ func (q *Queries) ListAutomationRules(ctx context.Context, arg ListAutomationRul
 }
 
 const ListAutomationRulesByProject = `-- name: ListAutomationRulesByProject :many
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 FROM automation_rules
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
@@ -650,6 +668,8 @@ func (q *Queries) ListAutomationRulesByProject(ctx context.Context, arg ListAuto
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AutonomyTier,
+			&i.PinnedExitDeliverable,
+			&i.AcknowledgeExitTierSemantics,
 		); err != nil {
 			return nil, err
 		}
@@ -662,7 +682,7 @@ func (q *Queries) ListAutomationRulesByProject(ctx context.Context, arg ListAuto
 }
 
 const ListEnabledAutomationRulesByActor = `-- name: ListEnabledAutomationRulesByActor :many
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier FROM automation_rules
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics FROM automation_rules
 WHERE tenant_id = $1::uuid
   AND actor_user_id = $2::uuid
   AND enabled = TRUE
@@ -707,6 +727,8 @@ func (q *Queries) ListEnabledAutomationRulesByActor(ctx context.Context, arg Lis
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AutonomyTier,
+			&i.PinnedExitDeliverable,
+			&i.AcknowledgeExitTierSemantics,
 		); err != nil {
 			return nil, err
 		}
@@ -719,7 +741,7 @@ func (q *Queries) ListEnabledAutomationRulesByActor(ctx context.Context, arg Lis
 }
 
 const ListEnabledAutomationRulesByActorOnProject = `-- name: ListEnabledAutomationRulesByActorOnProject :many
-SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier FROM automation_rules
+SELECT id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics FROM automation_rules
 WHERE tenant_id = $1::uuid
   AND project_id = $2::uuid
   AND actor_user_id = $3::uuid
@@ -766,6 +788,8 @@ func (q *Queries) ListEnabledAutomationRulesByActorOnProject(ctx context.Context
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AutonomyTier,
+			&i.PinnedExitDeliverable,
+			&i.AcknowledgeExitTierSemantics,
 		); err != nil {
 			return nil, err
 		}
@@ -783,7 +807,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type ResetAutomationRuleFailureCountParams struct {
@@ -819,6 +843,8 @@ func (q *Queries) ResetAutomationRuleFailureCount(ctx context.Context, arg Reset
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutonomyTier,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -834,7 +860,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $3::uuid
   AND id = $4::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type SetAutomationRuleEnabledParams struct {
@@ -877,6 +903,8 @@ func (q *Queries) SetAutomationRuleEnabled(ctx context.Context, arg SetAutomatio
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutonomyTier,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -887,7 +915,7 @@ UPDATE automation_rules SET
     updated_at = NOW()
 WHERE tenant_id = $2::uuid
   AND id = $3::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type SetAutomationRuleScheduleIDParams struct {
@@ -924,6 +952,8 @@ func (q *Queries) SetAutomationRuleScheduleID(ctx context.Context, arg SetAutoma
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutonomyTier,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -990,28 +1020,32 @@ UPDATE automation_rules SET
     interval_seconds = $9::int,
     timezone = $10::varchar,
     autonomy_tier = $11::varchar,
-    temporal_schedule_id = $12::varchar,
+    pinned_exit_deliverable = $12::varchar,
+    acknowledge_exit_tier_semantics = $13::boolean,
+    temporal_schedule_id = $14::varchar,
     updated_at = NOW()
-WHERE tenant_id = $13::uuid
-  AND id = $14::uuid
-RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier
+WHERE tenant_id = $15::uuid
+  AND id = $16::uuid
+RETURNING id, tenant_id, team_id, project_id, name, enabled, coordination_mode, demand_title_template, demand_body_template, scenario_template_key, digital_employee_id, chat_objective_template, schedule_kind, cron_expr, interval_seconds, timezone, overlap_policy, actor_user_id, disabled_reason, consecutive_failure_count, temporal_schedule_id, created_at, updated_at, autonomy_tier, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type UpdateAutomationRuleParams struct {
-	Name                  string        `json:"name"`
-	DemandTitleTemplate   pgtype.Text   `json:"demand_title_template"`
-	DemandBodyTemplate    pgtype.Text   `json:"demand_body_template"`
-	ScenarioTemplateKey   pgtype.Text   `json:"scenario_template_key"`
-	DigitalEmployeeID     uuid.NullUUID `json:"digital_employee_id"`
-	ChatObjectiveTemplate pgtype.Text   `json:"chat_objective_template"`
-	ScheduleKind          string        `json:"schedule_kind"`
-	CronExpr              pgtype.Text   `json:"cron_expr"`
-	IntervalSeconds       pgtype.Int4   `json:"interval_seconds"`
-	Timezone              string        `json:"timezone"`
-	AutonomyTier          string        `json:"autonomy_tier"`
-	TemporalScheduleID    pgtype.Text   `json:"temporal_schedule_id"`
-	TenantID              uuid.UUID     `json:"tenant_id"`
-	ID                    uuid.UUID     `json:"id"`
+	Name                         string        `json:"name"`
+	DemandTitleTemplate          pgtype.Text   `json:"demand_title_template"`
+	DemandBodyTemplate           pgtype.Text   `json:"demand_body_template"`
+	ScenarioTemplateKey          pgtype.Text   `json:"scenario_template_key"`
+	DigitalEmployeeID            uuid.NullUUID `json:"digital_employee_id"`
+	ChatObjectiveTemplate        pgtype.Text   `json:"chat_objective_template"`
+	ScheduleKind                 string        `json:"schedule_kind"`
+	CronExpr                     pgtype.Text   `json:"cron_expr"`
+	IntervalSeconds              pgtype.Int4   `json:"interval_seconds"`
+	Timezone                     string        `json:"timezone"`
+	AutonomyTier                 string        `json:"autonomy_tier"`
+	PinnedExitDeliverable        pgtype.Text   `json:"pinned_exit_deliverable"`
+	AcknowledgeExitTierSemantics bool          `json:"acknowledge_exit_tier_semantics"`
+	TemporalScheduleID           pgtype.Text   `json:"temporal_schedule_id"`
+	TenantID                     uuid.UUID     `json:"tenant_id"`
+	ID                           uuid.UUID     `json:"id"`
 }
 
 func (q *Queries) UpdateAutomationRule(ctx context.Context, arg UpdateAutomationRuleParams) (AutomationRule, error) {
@@ -1027,6 +1061,8 @@ func (q *Queries) UpdateAutomationRule(ctx context.Context, arg UpdateAutomation
 		arg.IntervalSeconds,
 		arg.Timezone,
 		arg.AutonomyTier,
+		arg.PinnedExitDeliverable,
+		arg.AcknowledgeExitTierSemantics,
 		arg.TemporalScheduleID,
 		arg.TenantID,
 		arg.ID,
@@ -1057,6 +1093,8 @@ func (q *Queries) UpdateAutomationRule(ctx context.Context, arg UpdateAutomation
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutonomyTier,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }

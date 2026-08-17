@@ -316,6 +316,10 @@ type AutomationRule struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	// 自治档位：pause_at_gate（缺省，遇闸停车等人）| full_auto（闸照触发但策略自动放行，resolved_by=policy:{rule_id}）
 	AutonomyTier string `json:"autonomy_tier"`
+	// full_auto + 多出口剧本时可选钉死的 exit deliverable；与 acknowledge_exit_tier_semantics 二选一
+	PinnedExitDeliverable pgtype.Text `json:"pinned_exit_deliverable"`
+	// 创建者显式确认「浅档自动、深档停人」的分档语义；未 pin exit 时用于满足预签完整性
+	AcknowledgeExitTierSemantics bool `json:"acknowledge_exit_tier_semantics"`
 }
 
 // 租户级能力词汇注册表：场景模板角色 required_capabilities 与员工能力声明共享的键，插行即扩展，不建代码枚举
@@ -652,6 +656,10 @@ type ExternalIntegration struct {
 	CreatedByUserID   uuid.UUID          `json:"created_by_user_id"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	// 同 automation_rules.pinned_exit_deliverable
+	PinnedExitDeliverable pgtype.Text `json:"pinned_exit_deliverable"`
+	// 同 automation_rules.acknowledge_exit_tier_semantics
+	AcknowledgeExitTierSemantics bool `json:"acknowledge_exit_tier_semantics"`
 }
 
 // 外部集成专用 token（与 connector service token 分家）：明文仅签发时返回一次，可独立吊销

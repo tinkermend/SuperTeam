@@ -780,6 +780,7 @@ type CreateDemandAcceptanceCriterionRequest struct {
 	VerificationMethod string
 	Severity           string
 	SatisfiedBy        []string
+	Source             string
 }
 
 // CreateDemandCriterionVerdictRequest records one judgment against a

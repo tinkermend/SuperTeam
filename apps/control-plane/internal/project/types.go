@@ -1633,7 +1633,10 @@ type DemandAcceptanceCriterion struct {
 	VerificationMethod string
 	Severity           string
 	SatisfiedBy        []string
-	CreatedAt          time.Time
+	// Source is template_declared / platform_injected / planner_authored
+	// (autonomy F2/F4). Empty on legacy rows — InferCriterionSource recovers.
+	Source    string
+	CreatedAt time.Time
 }
 
 // DemandCriterionVerdict is one judgment against a demand_acceptance_criteria

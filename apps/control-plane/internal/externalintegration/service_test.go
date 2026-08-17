@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/autonomypolicy"
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 )
 
 type memoryRepo struct {
@@ -165,10 +166,17 @@ func (f *fakeDemands) SubmitExternalDemand(_ context.Context, req DemandGatewayR
 	return uuid.New(), "pending_review", nil
 }
 
-type fakePlaybooks struct{ ceiling string }
+type fakePlaybooks struct {
+	ceiling string
+	spec    scenariotemplate.SpecV2
+}
 
 func (f fakePlaybooks) PlaybookAutonomyCeiling(_ context.Context, _ uuid.UUID, _ string) (string, error) {
 	return f.ceiling, nil
+}
+
+func (f fakePlaybooks) PlaybookSpec(_ context.Context, _ uuid.UUID, _ string) (scenariotemplate.SpecV2, error) {
+	return f.spec, nil
 }
 
 func newTestService(repo Repository, projects ProjectGateway) (*Service, *fakeChats, *fakeDemands) {

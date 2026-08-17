@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -472,6 +473,7 @@ func (s *ProjectStore) LoadProjectCoordinationSnapshot(ctx context.Context, inpu
 		DemandConstraintExemptions: demandExemptions,
 		PlaybookCasting:            playbookCasting,
 		RoleVocabulary:             roleVocabulary,
+		PinnedExitDeliverable:      project.DemandPinnedExitDeliverable(demand),
 	}, nil
 }
 
@@ -770,6 +772,14 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 			"produces":            stringsToAny(plannedTask.Produces),
 			"planner_notes":       plannerNotes,
 		}
+		// 模板锚定快照（spec 2026-08-16 交接包 §3.2）：envelope 的 template_key/
+		// version 取实例化时锁定的值，不随模板升版漂移。
+		if key := strings.TrimSpace(input.Payload.TemplateKey); key != "" {
+			metadata["template_key"] = key
+			if input.Payload.TemplateVersion > 0 {
+				metadata["template_version"] = input.Payload.TemplateVersion
+			}
+		}
 		graphTasks = append(graphTasks, project.ProjectTaskGraphCreateTask{
 			Key:                       plannedTask.PlannedTaskKey,
 			Title:                     plannedTask.Title,
@@ -814,6 +824,7 @@ func (s *ProjectStore) DecomposeAcceptedPlanRevision(ctx context.Context, input 
 				VerificationMethod: criterion.VerificationMethod,
 				Severity:           criterion.Severity,
 				SatisfiedBy:        append([]string(nil), criterion.SatisfiedBy...),
+				Source:             criterion.Source,
 			})
 		}
 		// ON CONFLICT (tenant_id, demand_id, plan_revision_id, criterion_id) DO
@@ -996,6 +1007,52 @@ func (s *ProjectStore) ResolveReadyDownstream(ctx context.Context, input Resolve
 	return readyIDs, nil
 }
 
+// resolveTaskCoordinationMode 实现 spec 2026-08-17-recovery-mode-and-active-
+// run-poisoning-fix §1.3（P1-A）的五行决策表（自上而下首个命中）：
+//
+//	r1 修订指针非 nil 且可读        → 按修订（mode nil → loop，§8.4 回兼容）
+//	r2 修订指针非 nil 但读失败      → plan（保守回退）
+//	r3 指针 nil、demand 可读、图上有带修订任务 → demand.coordination_mode
+//	r4 指针 nil、demand 可读、全图无修订       → loop（史前需求回兼容）
+//	r5 其余（demand/图不可读或锚缺失）         → plan（catch-all 保守）
+//
+// 模式本是需求级属性（059 冻结于需求提交）；任务→修订的间接链对动态任务天然
+// 脆弱（恢复替换任务曾漏继承修订而被 r-前默认 loop 误判，真链 demand 3b644046）。
+func (s *ProjectStore) resolveTaskCoordinationMode(ctx context.Context, task project.ProjectTask) string {
+	if task.AcceptedPlanRevisionID != nil {
+		rev, err := s.repository.GetPlanRevision(ctx, task.TenantID, task.ProjectID, *task.AcceptedPlanRevisionID)
+		if err != nil {
+			return project.CoordinationModePlan
+		}
+		if rev.CoordinationMode != nil && *rev.CoordinationMode == project.CoordinationModePlan {
+			return project.CoordinationModePlan
+		}
+		return project.CoordinationModeLoop
+	}
+	if task.DemandID == nil || task.CoordinationJobID == nil {
+		return project.CoordinationModePlan
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, task.TenantID, *task.DemandID)
+	if err != nil || demand.ProjectID != task.ProjectID {
+		return project.CoordinationModePlan
+	}
+	siblings, err := s.repository.ListProjectTasksByCoordinationJob(ctx, task.TenantID, task.ProjectID, *task.CoordinationJobID)
+	if err != nil {
+		return project.CoordinationModePlan
+	}
+	for _, sibling := range siblings {
+		if sibling.AcceptedPlanRevisionID != nil {
+			// r3：tri-mode 时代的需求，模式以需求为准。
+			if strings.TrimSpace(demand.CoordinationMode) == project.CoordinationModeLoop {
+				return project.CoordinationModeLoop
+			}
+			return project.CoordinationModePlan
+		}
+	}
+	// r4：史前需求（024 前无修订指针、059 前无模式列；回填 'plan' 非其真实语义）。
+	return project.CoordinationModeLoop
+}
+
 func (s *ProjectStore) InspectTaskResultDecision(ctx context.Context, input InspectTaskResultDecisionInput) (InspectTaskResultDecisionResult, error) {
 	if s.repository == nil {
 		return InspectTaskResultDecisionResult{}, ErrActivityStoreRequired
@@ -1011,36 +1068,17 @@ func (s *ProjectStore) InspectTaskResultDecision(ctx context.Context, input Insp
 	if err != nil || result == nil {
 		return InspectTaskResultDecisionResult{}, err
 	}
-	// Resolve the task's coordination mode from its accepted plan revision. The
-	// mode gates whether an upstream blocker auto-supplements (loop) or holds for
-	// a human decision (plan), so the two "we don't know the mode" cases must be
-	// kept apart — they used to share one swallowing branch:
-	//
-	//   - revision reads fine but carries a nil mode: resolve to loop. This is
-	//     tri-mode spec §8.4's deliberate back-compat rule — plans created before
-	//     the mode column keep their original auto-supplement behavior.
-	//   - the revision cannot be read at all (missing row, transient failure):
-	//     the mode is genuinely unknown, so resolve to plan, not loop. Spec §8.4
-	//     already settled this trade-off for the analogous demand-default case:
-	//     "plan 缺省误报最坏多问一次, loop 缺省误判最坏烧预算跑歪图". Falling through
-	//     to loop here would auto-dispatch supplement tasks on what may well be a
-	//     plan-mode demand, bypassing the human gate with no trace.
-	//
-	// Resolving to plan (rather than propagating the error) also keeps the
-	// coordinator alive: a returned error makes Temporal retry the activity
-	// indefinitely, and there is no coordinator-liveness alert today, so a
-	// permanently unreadable revision would stall the thread silently. Holding for
-	// a human decision instead surfaces in the inbox, which is both safe and live.
-	mode := project.CoordinationModeLoop
-	if task.AcceptedPlanRevisionID != nil {
-		rev, err := s.repository.GetPlanRevision(ctx, input.TenantID, input.ProjectID, *task.AcceptedPlanRevisionID)
-		switch {
-		case err != nil:
-			mode = project.CoordinationModePlan
-		case rev.CoordinationMode != nil && *rev.CoordinationMode == project.CoordinationModePlan:
-			mode = project.CoordinationModePlan
-		}
-	}
+	// Resolve the task's coordination mode for the blocked-declaration fork
+	// (loop auto-supplements, plan holds for a human). Authority order per spec
+	// 2026-08-17-recovery-mode-and-active-run-poisoning-fix §1.3 (P1-A): the
+	// task's own accepted plan revision first; for revision-pointer-nil tasks
+	// (recovery replacements, legacy rows) the demand is authoritative — a
+	// tri-mode-era demand resolves by demand.coordination_mode, a pre-059
+	// demand (no task in its graph carries a revision pointer) keeps the
+	// historical loop auto-supplement behavior. Unreadable anything → plan
+	// (better to ask the human once too often than to auto-chain past the
+	// human gate with no trace).
+	mode := s.resolveTaskCoordinationMode(ctx, task)
 	return InspectTaskResultDecisionResult{
 		ResultID:         result.ID,
 		Decision:         string(result.Decision),
@@ -1288,6 +1326,14 @@ func synthesizeAdversarialRevision(criterionID, statement string, judgements []p
 // CreateUpstreamSupplementTasks appends a task for the owner of each missing
 // input. The blocked source is downstream of that owner and is re-run when the
 // supplement completes.
+//
+// H1b（spec 2026-08-16 交接包 §4.4 预算补链）三点增量：
+//   - 缺口名可以结论槽位（notes）：无 produces owner 时按申报方的直接 blocker
+//     定 owner——notes 本就没有图结构供给方，"谁该写"就是边的那一头。
+//   - 按边预算：同一条 owner→申报方 边只自动补一次；再申报即 EdgeExhausted，
+//     调用方升级人类澄清卡，不做 AI 间无限拉扯（对齐 08-16 拍板 8）。
+//   - 工单注入：缺口清单（name+reason）与申报方 consumer_view 写进补做任务，
+//     让补做者知道"下游是谁、缺什么、为什么"。
 func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input CreateUpstreamSupplementInput) (CreateUpstreamSupplementResult, error) {
 	if s.repository == nil {
 		return CreateUpstreamSupplementResult{}, ErrActivityStoreRequired
@@ -1321,24 +1367,106 @@ func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input 
 			owners[produced] = task
 		}
 	}
-
-	seen := make(map[uuid.UUID]struct{})
-	result := CreateUpstreamSupplementResult{}
+	// notes 声明没有 produces 供给方：owner = 申报方的直接 blocker。
+	noteOwners := map[string][]project.ProjectTask{}
 	for _, missing := range input.MissingInputs {
-		owner, ok := owners[missing]
-		if !ok {
-			return CreateUpstreamSupplementResult{}, project.ErrInvalidProject
-		}
-		if _, duplicate := seen[owner.ID]; duplicate {
+		if _, ok := owners[missing]; ok {
 			continue
 		}
-		seen[owner.ID] = struct{}{}
+		if !noteDeclaredByTask(source, missing) {
+			return CreateUpstreamSupplementResult{}, project.ErrInvalidProject
+		}
+		if _, cached := noteOwners[missing]; cached {
+			continue
+		}
+		deps, err := s.repository.ListProjectTaskDependencies(ctx, input.TenantID, input.ProjectID, []uuid.UUID{source.ID})
+		if err != nil {
+			return CreateUpstreamSupplementResult{}, err
+		}
+		var blockers []project.ProjectTask
+		for _, dep := range deps {
+			blocker, err := s.repository.GetProjectTask(ctx, input.TenantID, dep.BlockerTaskID)
+			if err != nil {
+				return CreateUpstreamSupplementResult{}, err
+			}
+			blockers = append(blockers, blocker)
+		}
+		noteOwners[missing] = blockers
+	}
+	// 按边预算（同边一次）：既有补做 RevisionOfTaskID==owner 且
+	// supplement_for==source 的边视为已用。siblings 已含全部同图任务。
+	supplementedEdges := handoffSupplementedEdges(siblings, source.ID)
+
+	consumerView := ""
+	if value, ok := source.HandoffContract["consumer_view"].(string); ok {
+		consumerView = strings.TrimSpace(value)
+	}
+	// 按 owner 分组缺口：一个 owner 一个补做任务，工单带全它名下的缺口。
+	ownerOrder := []uuid.UUID{}
+	ownerGaps := map[uuid.UUID][]map[string]any{}
+	ownerGapLines := map[uuid.UUID][]string{}
+	var edgeExhausted []string
+	assignGap := func(owner project.ProjectTask, missing string) {
+		gap := map[string]any{"name": missing}
+		line := missing
+		if reason := strings.TrimSpace(input.MissingInputReasons[missing]); reason != "" {
+			gap["reason"] = reason
+			line += "（原因：" + reason + "）"
+		}
+		if _, exists := ownerGaps[owner.ID]; !exists {
+			ownerOrder = append(ownerOrder, owner.ID)
+		}
+		ownerGaps[owner.ID] = append(ownerGaps[owner.ID], gap)
+		ownerGapLines[owner.ID] = append(ownerGapLines[owner.ID], line)
+	}
+	for _, missing := range input.MissingInputs {
+		if owner, ok := owners[missing]; ok {
+			if supplementedEdges[owner.ID] {
+				edgeExhausted = append(edgeExhausted, missing)
+				continue
+			}
+			assignGap(owner, missing)
+			continue
+		}
+		blockers := noteOwners[missing]
+		exhausted := len(blockers) > 0
+		for _, blocker := range blockers {
+			if !supplementedEdges[blocker.ID] {
+				exhausted = false
+				break
+			}
+		}
+		if exhausted {
+			edgeExhausted = append(edgeExhausted, missing)
+			continue
+		}
+		for _, blocker := range blockers {
+			assignGap(blocker, missing)
+		}
+	}
+
+	result := CreateUpstreamSupplementResult{EdgeExhausted: edgeExhausted}
+	siblingsByID := map[uuid.UUID]project.ProjectTask{}
+	for _, task := range siblings {
+		siblingsByID[task.ID] = task
+	}
+	for _, ownerID := range ownerOrder {
+		owner := siblingsByID[ownerID]
+		inputRequirements := cloneAnyMap(owner.InputRequirements)
+		inputRequirements["supplement_gaps"] = ownerGaps[owner.ID]
+		if consumerView != "" {
+			inputRequirements["consumer_view"] = consumerView
+		}
+		summary := "上游补做：" + strings.Join(ownerGapLines[owner.ID], "、")
+		if consumerView != "" {
+			summary += "；下游视角：" + consumerView
+		}
 		supplement, err := s.repository.CreateProjectTask(ctx, project.CreateProjectTaskRequest{
 			TenantID:                  input.TenantID,
 			ProjectID:                 input.ProjectID,
 			DemandID:                  source.DemandID,
 			Title:                     owner.Title,
-			Summary:                   "上游补做：" + strings.Join(input.MissingInputs, ", "),
+			Summary:                   summary,
 			Status:                    project.ProjectTaskStatusPlanned,
 			AssignedDigitalEmployeeID: owner.AssignedDigitalEmployeeID,
 			RiskLevel:                 stringPtrValue(owner.RiskLevel),
@@ -1361,8 +1489,71 @@ func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input 
 			return CreateUpstreamSupplementResult{}, err
 		}
 		result.TaskIDs = append(result.TaskIDs, supplement.ID)
+		// 把申报方的依赖边从 owner 重挂到补做任务（同 A 期恢复路径语义）：否则
+		// B 重派时编译的仍是 owner 的旧结果，补做产出对消费者不可见（真链
+		// E2E 发现的 v1 潜在盲区）。只动申报方的边，owner 的其他下游不受影响。
+		if dependencyRepository, ok := s.repository.(recoveryDependencyRepository); ok {
+			if _, err := dependencyRepository.RewireProjectTaskDependencies(ctx, project.RewireProjectTaskDependenciesRequest{
+				TenantID:         input.TenantID,
+				ProjectID:        input.ProjectID,
+				DependentTaskIDs: []uuid.UUID{source.ID},
+				OldBlockerTaskID: owner.ID,
+				NewBlockerTaskID: supplement.ID,
+			}); err != nil {
+				return CreateUpstreamSupplementResult{}, err
+			}
+		}
+		for _, gap := range ownerGaps[owner.ID] {
+			name, _ := gap["name"].(string)
+			reason, _ := gap["reason"].(string)
+			s.recordHandoffSupplementLedger(ctx, input.TenantID, input.ProjectID, source.ID, supplement.ID, owner.ID, name, reason, planIteration)
+		}
+	}
+	if len(result.EdgeExhausted) > 0 {
+		s.recordHandoffBudgetExhaustedLedger(ctx, input.TenantID, input.ProjectID, source.ID, result.EdgeExhausted)
 	}
 	return result, nil
+}
+
+// recordHandoffSupplementLedger 把按边预算的支出记账（幂等键 = 补做任务 id）。
+func (s *ProjectStore) recordHandoffSupplementLedger(ctx context.Context, tenantID, projectID, sourceTaskID, supplementTaskID, ownerTaskID uuid.UUID, missing, reason string, planIteration int32) {
+	sourceID := sourceTaskID
+	metadata := map[string]any{
+		"missing":       missing,
+		"owner_task_id": ownerTaskID.String(),
+		"iteration":     planIteration,
+	}
+	if reason != "" {
+		metadata["reason"] = reason
+	}
+	_, _ = s.repository.CreateExecutionLedgerEvent(ctx, project.CreateExecutionLedgerEventRequest{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  &sourceID,
+		EventType:      project.ExecutionLedgerEventHandoffSupplementCreated,
+		SourceType:     "project_task",
+		SourceID:       supplementTaskID.String(),
+		ActorType:      "project_coordinator",
+		OutputSummary:  "补链预算支出：为缺口 " + missing + " 建上游补做（第 " + strconv.FormatInt(int64(planIteration), 10) + " 轮）",
+		Metadata:       metadata,
+		IdempotencyKey: "project_task_supplement:" + supplementTaskID.String() + ":handoff.supplement_created",
+	})
+}
+
+func (s *ProjectStore) recordHandoffBudgetExhaustedLedger(ctx context.Context, tenantID, projectID, sourceTaskID uuid.UUID, exhausted []string) {
+	sourceID := sourceTaskID
+	_, _ = s.repository.CreateExecutionLedgerEvent(ctx, project.CreateExecutionLedgerEventRequest{
+		TenantID:       tenantID,
+		ProjectID:      projectID,
+		ProjectTaskID:  &sourceID,
+		EventType:      project.ExecutionLedgerEventHandoffBudgetExhausted,
+		SourceType:     "project_task",
+		SourceID:       sourceTaskID.String(),
+		ActorType:      "project_coordinator",
+		OutputSummary:  "补链预算耗尽：缺口 " + strings.Join(exhausted, ", ") + " 已自动补做一轮仍未解决，升级人类澄清",
+		Metadata:       map[string]any{"exhausted": exhausted},
+		IdempotencyKey: "project_task_budget:" + sourceTaskID.String() + ":" + strconv.FormatInt(time.Now().UnixNano(), 10),
+	})
 }
 
 func (s *ProjectStore) HoldDownstreamForFailure(ctx context.Context, input HoldDownstreamForFailureInput) (DecisionRequestResult, error) {
@@ -1507,7 +1698,11 @@ func (s *ProjectStore) RequestProjectTaskIterationExhaustedReview(ctx context.Co
 		Title:          "处理项目任务修订耗尽",
 		Summary:        summary,
 		RiskLevel:      "high",
-		Options:        []any{"approved", "rejected", "needs_more_evidence"},
+		// Align with task_failure_recovery: retry resumes the graph via a
+		// replacement task; cancel_downstream ends the blocked branch. Do not
+		// offer needs_more_evidence — it would settle the card while downstream
+		// stays blocked forever (spec 2026-08-17 §3.1).
+		Options:        []any{"retry", "cancel_downstream"},
 		ContextPayload: iterationExhaustedContext(input, reason, summary, downstreamIDs),
 	})
 	if err != nil {
@@ -1591,7 +1786,7 @@ func (s *ProjectStore) RequestUpstreamSupplementReview(ctx context.Context, inpu
 			return DecisionRequestResult{}, err
 		}
 	}
-	summary := upstreamSupplementReviewSummary(input.MissingInputs)
+	summary := upstreamSupplementReviewSummaryWithReasons(input)
 	approvalRequest, err := s.approvals.CreateRequest(ctx, approval.CreateRequestInput{
 		TenantID:       input.TenantID,
 		ResourceType:   "project_task",
@@ -1651,8 +1846,29 @@ func upstreamSupplementReviewSummary(missingInputs []string) string {
 	return "任务缺少上游输入（" + strings.Join(missingInputs, "、") + "），需要人类判断是否补做"
 }
 
+// upstreamSupplementReviewSummaryWithReasons 带逐项原因与预算状态构造卡面
+// （spec 2026-08-16 交接包 §4.4：预算耗尽的卡面须注明已自动补做一轮）。
+func upstreamSupplementReviewSummaryWithReasons(input RequestUpstreamSupplementReviewInput) string {
+	if len(input.MissingInputs) == 0 {
+		return upstreamSupplementReviewSummary(input.MissingInputs)
+	}
+	lines := make([]string, 0, len(input.MissingInputs))
+	for _, missing := range input.MissingInputs {
+		if reason := strings.TrimSpace(input.MissingInputReasons[missing]); reason != "" {
+			lines = append(lines, missing+"（原因："+reason+"）")
+			continue
+		}
+		lines = append(lines, missing)
+	}
+	summary := "任务缺少上游输入（" + strings.Join(lines, "、") + "）"
+	if input.EdgeBudgetExhausted {
+		summary += "；该边已自动补做一轮仍未解决，本轮缺口：" + strings.Join(input.MissingInputs, "、")
+	}
+	return summary + "，需要人类判断是否补做"
+}
+
 func upstreamSupplementReviewContext(input RequestUpstreamSupplementReviewInput, summary string) map[string]any {
-	return map[string]any{
+	context := map[string]any{
 		"project_id":         input.ProjectID.String(),
 		"project_task_id":    input.ProjectTaskID.String(),
 		"result_id":          input.ResultID.String(),
@@ -1660,6 +1876,13 @@ func upstreamSupplementReviewContext(input RequestUpstreamSupplementReviewInput,
 		"missing_inputs":     append([]string(nil), input.MissingInputs...),
 		"summary":            summary,
 	}
+	if len(input.MissingInputReasons) > 0 {
+		context["missing_input_reasons"] = input.MissingInputReasons
+	}
+	if input.EdgeBudgetExhausted {
+		context["edge_budget_exhausted"] = true
+	}
+	return context
 }
 
 // applyUpstreamSupplementReviewDecision applies the human's approve/reject call on an
@@ -1830,6 +2053,19 @@ func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input A
 	if decision.DecisionType == "upstream_supplement_review" {
 		return s.applyUpstreamSupplementReviewDecision(ctx, input, decision)
 	}
+	if decision.DecisionType == "project_task_iteration_exhausted" {
+		gateResult, err := s.applyIterationExhaustedDecision(ctx, ApplyPreDispatchGateDecisionInput{
+			TenantID:          input.TenantID,
+			ProjectID:         input.ProjectID,
+			DecisionRequestID: input.DecisionRequestID,
+			Decision:          input.Decision,
+			Payload:           input.Payload,
+		}, decision)
+		if err != nil {
+			return ApplyFailureRecoveryDecisionResult{}, err
+		}
+		return ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: gateResult.ReadyTaskIDs}, nil
+	}
 	if decision.DecisionType != "task_failure_recovery" || decision.ProjectTaskID == nil {
 		return ApplyFailureRecoveryDecisionResult{}, project.ErrInvalidProject
 	}
@@ -1873,6 +2109,79 @@ func (s *ProjectStore) ApplyFailureRecoveryDecision(ctx context.Context, input A
 		return ApplyFailureRecoveryDecisionResult{ReadyTaskIDs: []uuid.UUID{}}, nil
 	default:
 		return ApplyFailureRecoveryDecisionResult{}, project.ErrInvalidProject
+	}
+}
+
+// applyIterationExhaustedDecision applies the human call on a
+// project_task_iteration_exhausted card (spec 2026-08-17 §3.1 F0).
+//
+// retry / approved → create a recovery replacement task and rewire dependents
+// (same as task_failure_recovery), so blocked downstream can resume.
+// cancel_downstream / rejected → cancel the blocked downstream branch.
+// needs_more_evidence → no-op (should not be offered on new cards).
+func (s *ProjectStore) applyIterationExhaustedDecision(
+	ctx context.Context,
+	input ApplyPreDispatchGateDecisionInput,
+	decision project.DecisionRequest,
+) (ApplyPreDispatchGateDecisionResult, error) {
+	if decision.ProjectTaskID == nil || *decision.ProjectTaskID == uuid.Nil {
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	recoveryInput := ApplyFailureRecoveryDecisionInput{
+		TenantID:          input.TenantID,
+		ProjectID:         input.ProjectID,
+		DecisionRequestID: input.DecisionRequestID,
+		Decision:          input.Decision,
+		Payload:           input.Payload,
+	}
+	action, err := parseFailureRecoveryAction(input.Decision, input.Payload)
+	if err != nil {
+		return ApplyPreDispatchGateDecisionResult{}, err
+	}
+	if action.Action == "needs_more_evidence" {
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	}
+	source, err := s.repository.GetProjectTask(ctx, input.TenantID, *decision.ProjectTaskID)
+	if err != nil {
+		return ApplyPreDispatchGateDecisionResult{}, err
+	}
+	if source.ProjectID != input.ProjectID {
+		return ApplyPreDispatchGateDecisionResult{}, project.ErrProjectNotFound
+	}
+	switch action.Action {
+	case "retry":
+		replacement, err := s.createRecoveryReplacementTask(ctx, recoveryInput, decision, source, action)
+		if err != nil {
+			return ApplyPreDispatchGateDecisionResult{}, err
+		}
+		ready, err := s.recoveryReplacementReadyResult(ctx, input.TenantID, input.ProjectID, replacement)
+		if err != nil {
+			return ApplyPreDispatchGateDecisionResult{}, err
+		}
+		return ApplyPreDispatchGateDecisionResult{ReadyTaskIDs: ready.ReadyTaskIDs}, nil
+	case "reassign":
+		if action.NewDigitalEmployeeID == nil {
+			return ApplyPreDispatchGateDecisionResult{}, project.ErrInvalidProject
+		}
+		if err := s.validateActiveDigitalProjectMember(ctx, input.TenantID, input.ProjectID, *action.NewDigitalEmployeeID); err != nil {
+			return ApplyPreDispatchGateDecisionResult{}, err
+		}
+		replacement, err := s.createRecoveryReplacementTask(ctx, recoveryInput, decision, source, action)
+		if err != nil {
+			return ApplyPreDispatchGateDecisionResult{}, err
+		}
+		ready, err := s.recoveryReplacementReadyResult(ctx, input.TenantID, input.ProjectID, replacement)
+		if err != nil {
+			return ApplyPreDispatchGateDecisionResult{}, err
+		}
+		return ApplyPreDispatchGateDecisionResult{ReadyTaskIDs: ready.ReadyTaskIDs}, nil
+	case "cancel_downstream":
+		if err := s.cancelFailureDownstream(ctx, recoveryInput, source); err != nil {
+			return ApplyPreDispatchGateDecisionResult{}, err
+		}
+		return ApplyPreDispatchGateDecisionResult{}, nil
+	default:
+		return ApplyPreDispatchGateDecisionResult{}, project.ErrInvalidProject
 	}
 }
 
@@ -2156,6 +2465,10 @@ func (s *ProjectStore) createRecoveryReplacementTask(ctx context.Context, input 
 			PlannedTaskKey:            &replacementKey,
 			TaskKind:                  source.TaskKind,
 			StageIndex:                source.StageIndex,
+			// 与其余动态路径（revision/rework/supplement）对齐继承计划修订：
+			// nil 会让模式解析与派发闸的计划漂移检测双双跳过（spec
+			// 2026-08-17 P1-B；存量/重放的 nil 行由模式解析规则 3 兜底）。
+			AcceptedPlanRevisionID:    source.AcceptedPlanRevisionID,
 			ExpectedOutputs:           append([]any(nil), source.ExpectedOutputs...),
 			InputRequirements:         cloneAnyMap(source.InputRequirements),
 			HandoffContract:           cloneAnyMap(source.HandoffContract),
@@ -3437,26 +3750,52 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		handoffContract["requires_runtime_attestation"] = true
 	}
 	runMetadata := map[string]any{
-		"source":                           "project_task_dispatch",
-		"actor_type":                       "project_coordinator",
-		"project_id":                       input.ProjectID.String(),
-		"demand_id":                        demand.ID.String(),
-		"project_task_id":                  task.ID.String(),
-		"project_task_attempt_id":          attemptID.String(),
-		"project_task_lease_token":         leaseToken,
-		"execution_context_packet_version": "v1",
-		"expected_outputs":                 append([]any(nil), task.ExpectedOutputs...),
-		"input_requirements":               cloneAnyMap(task.InputRequirements),
-		"handoff_contract":                 handoffContract,
-		"workspace_mode":                   workspaceMode,
-		"base_ref":                         baseRef,
+		"source":                   "project_task_dispatch",
+		"actor_type":               "project_coordinator",
+		"project_id":               input.ProjectID.String(),
+		"demand_id":                demand.ID.String(),
+		"project_task_id":          task.ID.String(),
+		"project_task_attempt_id":  attemptID.String(),
+		"project_task_lease_token": leaseToken,
+		"expected_outputs":         append([]any(nil), task.ExpectedOutputs...),
+		"input_requirements":       cloneAnyMap(task.InputRequirements),
+		"handoff_contract":         handoffContract,
+		"workspace_mode":           workspaceMode,
+		"base_ref":                 baseRef,
 	}
 	if projectGit != nil {
 		runMetadata["project_git"] = projectGit
 	}
 	addDispatchGateMetadata(runMetadata, gate.Gate)
-	upstreamResults := s.collectUpstreamResults(ctx, input.TenantID, input.ProjectID, task)
-	executionContextPacket := projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attemptID, leaseToken, handoffContract, gate.Gate, upstreamResults)
+	// 阶段交接包编译（spec 2026-08-16 交接包 §4.2）：编译失败降级 v1
+	// upstream_results，绝不因编译器缺陷阻断调度；未闸覆盖边的缺口/同名冲突
+	// 停住派发转澄清卡，不静默派发（§3.4）。
+	var upstreamResults []map[string]any
+	var handoffPackage map[string]any
+	var noteSpecs []downstreamNoteSpec
+	packetVersion := "v1"
+	compiled, compileErr := s.compileHandoffPackage(ctx, input.TenantID, input.ProjectID, task)
+	switch {
+	case compileErr != nil:
+		slog.WarnContext(ctx, "handoff package compile failed; degrading to v1 upstream_results", "error", compileErr, "project_task_id", task.ID)
+		upstreamResults = s.collectUpstreamResults(ctx, input.TenantID, input.ProjectID, task)
+	case compiled.RetryWhenResultsLand:
+		// blocker 完成但结果契约未落（写回在途）：此刻编译的包必然缺槽，派发
+		// 只会让下游误报缺口。暂缓派发，等结果落地触发的完成信号重派。
+		slog.WarnContext(ctx, "handoff package deferred: blocker result pending", "project_task_id", task.ID)
+		return ErrProjectTaskDispatchRetryLater
+	case len(compiled.Clarifications) > 0:
+		if err := s.holdForHandoffClarification(ctx, input, task, compiled.Clarifications); err != nil {
+			return err
+		}
+		return nil
+	default:
+		handoffPackage = compiled.Package
+		noteSpecs = s.handoffNotesExpectations(ctx, input.TenantID, input.ProjectID, task)
+		packetVersion = "v2"
+	}
+	runMetadata["execution_context_packet_version"] = packetVersion
+	executionContextPacket := projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attemptID, leaseToken, handoffContract, gate.Gate, upstreamResults, handoffPackage)
 	queueResult, err := s.repository.QueueProjectTaskWithAttempt(ctx, project.QueueProjectTaskRequest{
 		TenantID:                      input.TenantID,
 		ProjectID:                     input.ProjectID,
@@ -3501,7 +3840,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
 		DispatchUserID:       projectRecord.HumanOwnerUserID,
 		Objective:            task.Title,
-		Prompt:               projectTaskRunPrompt(projectRecord, demand, task, upstreamResults),
+		Prompt:               projectTaskRunPrompt(projectRecord, demand, task, upstreamResults, handoffPackage, noteSpecs),
 		IdempotencyKey:       attemptIdempotencyKey,
 		Metadata:             runMetadata,
 		WorkspaceMode:        workspaceMode,
@@ -3587,7 +3926,30 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 	if workspaceMode == WorkspaceModeBranch || workspaceMode == WorkspaceModeDetachedRun {
 		handoffContract["requires_runtime_attestation"] = true
 	}
-	upstreamResults := s.collectUpstreamResults(ctx, input.TenantID, input.ProjectID, task)
+	// 交接包（spec 2026-08-16 §4.2 恢复路径）：排队 attempt 的 packet 若已带
+	// v2 handoff_package 则直接复用（派发期编译的权威快照）；缺失时重新编译。
+	// 恢复路径出现澄清缺口时不把已排队 attempt 拉回 waiting_human（原派发已过
+	// 闸），降级 v1 并留痕。
+	var upstreamResults []map[string]any
+	var handoffPackage map[string]any
+	var noteSpecs []downstreamNoteSpec
+	if packetHandoff := handoffPackageFromPacket(attempt.ExecutionContextPacket); packetHandoff != nil {
+		handoffPackage = packetHandoff
+		noteSpecs = s.handoffNotesExpectations(ctx, input.TenantID, input.ProjectID, task)
+	} else if compiled, compileErr := s.compileHandoffPackage(ctx, input.TenantID, input.ProjectID, task); compileErr != nil {
+		slog.WarnContext(ctx, "handoff package compile failed on resume; degrading to v1 upstream_results", "error", compileErr, "project_task_id", task.ID)
+		upstreamResults = s.collectUpstreamResults(ctx, input.TenantID, input.ProjectID, task)
+	} else if len(compiled.Clarifications) > 0 {
+		slog.WarnContext(ctx, "handoff clarifications appeared on resume; degrading to v1 upstream_results", "project_task_id", task.ID)
+		upstreamResults = s.collectUpstreamResults(ctx, input.TenantID, input.ProjectID, task)
+	} else {
+		handoffPackage = compiled.Package
+		noteSpecs = s.handoffNotesExpectations(ctx, input.TenantID, input.ProjectID, task)
+	}
+	packetVersion := nonEmptyString(attempt.ExecutionContextPacketVersion, "v1")
+	if handoffPackage != nil && packetVersion == "v1" {
+		packetVersion = "v2"
+	}
 	runMetadata := map[string]any{
 		"source":                           "project_task_dispatch",
 		"actor_type":                       "project_coordinator",
@@ -3615,7 +3977,7 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 		DigitalEmployeeID:    *task.AssignedDigitalEmployeeID,
 		DispatchUserID:       projectRecord.HumanOwnerUserID,
 		Objective:            task.Title,
-		Prompt:               projectTaskRunPrompt(projectRecord, demand, task, upstreamResults),
+		Prompt:               projectTaskRunPrompt(projectRecord, demand, task, upstreamResults, handoffPackage, noteSpecs),
 		IdempotencyKey:       attempt.IdempotencyKey,
 		Metadata:             runMetadata,
 		WorkspaceMode:        workspaceMode,
@@ -3627,7 +3989,7 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 	}
 	boundExecutionContextPacket := cloneAnyMap(attempt.ExecutionContextPacket)
 	if len(boundExecutionContextPacket) == 0 {
-		boundExecutionContextPacket = projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attempt.ID, attempt.LeaseToken, handoffContract, project.PreDispatchGateResult{}, upstreamResults)
+		boundExecutionContextPacket = projectTaskDispatchExecutionContextPacket(input.ProjectID, demand.ID, task, attempt.ID, attempt.LeaseToken, handoffContract, project.PreDispatchGateResult{}, upstreamResults, handoffPackage)
 	}
 	projectTaskDispatchAttachRun(boundExecutionContextPacket, run)
 	_, err = s.repository.BindProjectTaskAttemptRun(ctx, project.BindProjectTaskAttemptRunRequest{
@@ -3783,7 +4145,7 @@ func projectTaskAttemptDispatchIdempotencyKey(taskID uuid.UUID, attemptNo int32)
 	return "project-task:" + taskID.String() + ":attempt:" + strconv.FormatInt(int64(attemptNo), 10) + ":dispatch"
 }
 
-func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectDemand, task project.ProjectTask, upstreamResults []map[string]any) string {
+func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectDemand, task project.ProjectTask, upstreamResults []map[string]any, handoffPackage map[string]any, noteSpecs []downstreamNoteSpec) string {
 	content := ""
 	if demand.Content != nil {
 		content = *demand.Content
@@ -3791,6 +4153,17 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 	summary := ""
 	if task.Summary != nil {
 		summary = *task.Summary
+	}
+	var upstreamSection string
+	var upstreamGuidance string
+	var handoffNotesRequirement string
+	if handoffPackage != nil {
+		upstreamSection = renderHandoffPackagePromptSections(handoffPackage)
+		upstreamGuidance = "resolved_inputs/upstream_notes 是平台按你的 input_requirements 声明从直接上游编译的交接内容，优先复用其中的值与引用，不要重做上游已完成的工作。\n"
+		handoffNotesRequirement = renderDownstreamNoteRequirement(noteSpecs)
+	} else {
+		upstreamSection = "upstream_results: " + taskContractJSON(upstreamResults) + "\n"
+		upstreamGuidance = "upstream_results 是你直接上游任务的真实产出，优先复用其中的值与引用，不要重做上游已完成的工作。\n"
 	}
 	return "项目任务执行请求\n" +
 		"项目ID: " + projectRecord.ID.String() + "\n" +
@@ -3804,16 +4177,84 @@ func projectTaskRunPrompt(projectRecord project.Project, demand project.ProjectD
 		"input_requirements: " + taskContractJSON(task.InputRequirements) + "\n" +
 		"handoff_contract: " + taskContractJSON(task.HandoffContract) + "\n" +
 		"produces: " + taskContractJSON(plannerProducesFromMetadata(task.PlannerMetadata)) + "\n" +
-		"upstream_results: " + taskContractJSON(upstreamResults) + "\n" +
+		upstreamSection +
 		"结果契约要求: 最终答案必须包含一个 ```json 代码块，顶层字段为 result_contract。" +
 		"result_contract.status 使用 completed；summary 填写结论；" +
 		"acceptance_results 必须逐条覆盖 handoff_contract.acceptance_criteria，status 使用 passed 并带 evidence_refs；" +
 		"evidence_refs/verification 用于说明已读取或验证的证据。" +
 		"result_contract 必须含 deliverables 数组，逐项覆盖 produces 列出的每个产出名（每项含 name 与 value 或 ref）；produces 为空时可省略。" +
+		"如果你缺少上游输入而无法继续（派工单声明的 required_inputs 槽位或 handoff_contract.notes 结论槽位未由上游提供），不要硬编或臆造：result_contract.status 使用 blocked，blocker.reason 与 blocker.required_by 必填（required_by 填 \"upstream\"），blocker.missing_inputs 列出缺口名（必须是本任务声明过的名字），并在 blocker.missing_input_reasons 逐项给出原因；平台会解析缺口归属补链或转人工，不会判你失败。" +
 		"文件形态的交付物必须写入 `.superteam/sessions/<本轮 command_id>/deliverables/` 这一层输出子目录（不要进入其上级目录），并在对应项的 ref 填相对路径（如 `.superteam/sessions/<本轮 command_id>/deliverables/report.html`）；纯值型交付物（结论、数字、链接）用 value。\n" +
-		"upstream_results 是你直接上游任务的真实产出，优先复用其中的值与引用，不要重做上游已完成的工作。\n" +
+		handoffNotesRequirement +
+		upstreamGuidance +
 		"请按项目任务要求执行，并直接输出结论、证据、工件引用、不确定性和 result_contract。" +
 		"你只需要给出最终答案；Runtime Agent 会在本轮结束后记录该答案。"
+}
+
+// renderHandoffPackagePromptSections 把交接包渲染成 prompt 的三段
+// （resolved_inputs / upstream_notes / upstream_index，spec §4.2 步骤 5），
+// 替代 v1 的 upstream_results 整包 JSON。
+func renderHandoffPackagePromptSections(handoffPackage map[string]any) string {
+	var builder strings.Builder
+	if inputs, ok := handoffPackage["resolved_inputs"].([]map[string]any); ok && len(inputs) > 0 {
+		builder.WriteString("resolved_inputs（按你的 input_requirements 声明解析的直接上游事实槽位）:\n")
+		for _, input := range inputs {
+			name, _ := input["name"].(string)
+			if missing, _ := input["missing"].(string); missing != "" {
+				builder.WriteString(fmt.Sprintf("- %s: [上游未交付，标记 %s]\n", name, missing))
+				continue
+			}
+			kind, _ := input["kind"].(string)
+			value, _ := input["value"].(string)
+			ref, _ := input["ref"].(string)
+			parts := ""
+			if value != "" {
+				parts = value
+			} else if ref != "" {
+				parts = "ref:" + ref
+			}
+			if kind != "" {
+				builder.WriteString(fmt.Sprintf("- %s (%s): %s\n", name, kind, parts))
+			} else {
+				builder.WriteString(fmt.Sprintf("- %s: %s\n", name, parts))
+			}
+		}
+	}
+	if notes, ok := handoffPackage["upstream_notes"].([]map[string]any); ok && len(notes) > 0 {
+		builder.WriteString("upstream_notes（上游按声明交付的结论槽位）:\n")
+		for _, note := range notes {
+			name, _ := note["name"].(string)
+			value, _ := note["value"].(string)
+			source, _ := note["source_task_id"].(string)
+			builder.WriteString(fmt.Sprintf("- %s: %s (来源任务 %s)\n", name, value, source))
+		}
+	}
+	if index, ok := handoffPackage["upstream_index"].([]map[string]any); ok && len(index) > 0 {
+		builder.WriteString("upstream_index（上游其余产出的紧凑索引，仅指针不展开；需要深挖时按 log_ref/evidence 引用取）: " + taskContractJSON(index) + "\n")
+	}
+	return builder.String()
+}
+
+// renderDownstreamNoteRequirement 是结论槽位的需求回传（spec §4.3）：上游派工单
+// 列出其下游声明的 notes 字段，声明有消费方才不会退化成空壳。无声明时返回空串。
+func renderDownstreamNoteRequirement(specs []downstreamNoteSpec) string {
+	if len(specs) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("result_contract.handoff_notes：你的下游任务声明了以下结论字段，完成时在 handoff_notes 数组逐项给出 {name, value}（散文不打回，但下游按名消费，缺失会投影到验收视图）：\n")
+	for _, spec := range specs {
+		names := make([]string, 0, len(spec.Notes))
+		for _, note := range spec.Notes {
+			if note.Description != "" {
+				names = append(names, note.Name+"（"+note.Description+"）")
+				continue
+			}
+			names = append(names, note.Name)
+		}
+		builder.WriteString(fmt.Sprintf("- 下游「%s」需要：%s\n", spec.DependentTitle, strings.Join(names, "、")))
+	}
+	return builder.String()
 }
 
 // Rotate nothing here: the full upstream summary stays available through the
@@ -3878,7 +4319,7 @@ func (s *ProjectStore) collectUpstreamResults(ctx context.Context, tenantID, pro
 	return results
 }
 
-func projectTaskDispatchExecutionContextPacket(projectID, demandID uuid.UUID, task project.ProjectTask, attemptID uuid.UUID, leaseToken string, handoffContract map[string]any, gate project.PreDispatchGateResult, upstreamResults []map[string]any) map[string]any {
+func projectTaskDispatchExecutionContextPacket(projectID, demandID uuid.UUID, task project.ProjectTask, attemptID uuid.UUID, leaseToken string, handoffContract map[string]any, gate project.PreDispatchGateResult, upstreamResults []map[string]any, handoffPackage map[string]any) map[string]any {
 	packet := map[string]any{
 		"project_id":               projectID.String(),
 		"demand_id":                demandID.String(),
@@ -3890,7 +4331,11 @@ func projectTaskDispatchExecutionContextPacket(projectID, demandID uuid.UUID, ta
 		"input_requirements":       cloneAnyMap(task.InputRequirements),
 		"handoff_contract":         handoffContract,
 	}
-	if len(upstreamResults) > 0 {
+	if handoffPackage != nil {
+		// v2 交接包（spec §3.2）：版本走既有 execution_context_packet_version
+		// 列（"v2"），包内不造第二套版本键。
+		packet["handoff_package"] = cloneAnyMap(handoffPackage)
+	} else if len(upstreamResults) > 0 {
 		packet["upstream_results"] = upstreamResults
 	}
 	if task.AssignedDigitalEmployeeID != nil {
@@ -4650,6 +5095,9 @@ func (s *ProjectStore) ensureDemandAcceptanceDecision(ctx context.Context, tenan
 			return DecisionRequestResult{}, err
 		}
 	}
+	if err := s.maybePolicyAutoResolveDemandAcceptance(ctx, tenantID, projectID, demandID, decision.ID); err != nil {
+		return DecisionRequestResult{}, err
+	}
 	return DecisionRequestResult{ID: decision.ID}, nil
 }
 
@@ -5231,7 +5679,6 @@ func iterationExhaustedContext(input RequestProjectTaskIterationExhaustedReviewI
 func isRoutableDigitalProjectRole(role project.ProjectRole) bool {
 	return role == project.ProjectRoleExecutor || role == project.ProjectRoleReviewer
 }
-
 
 func maxAttemptsPtr(value int32) *int32 {
 	v := project.ClampProjectTaskMaxAttempts(value)

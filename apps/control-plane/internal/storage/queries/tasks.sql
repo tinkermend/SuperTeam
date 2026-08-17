@@ -663,6 +663,20 @@ WHERE t.id = tr.task_id
   AND t.deleted_at IS NULL
 RETURNING t.id, t.thread_title, t.creator_id;
 
+-- name: SoftDeleteDigitalEmployeeChatThreadTasks :execrows
+-- 平台侧软删整条 chat 会话（根轮 + 追问轮）。不碰 Provider 会话。
+UPDATE tasks t
+SET deleted_at = NOW(),
+    updated_at = NOW()
+FROM task_runs tr
+WHERE t.id = tr.task_id
+  AND t.tenant_id = tr.tenant_id
+  AND tr.tenant_id = sqlc.arg('tenant_id')::uuid
+  AND tr.digital_employee_id = sqlc.arg('digital_employee_id')::uuid
+  AND t.run_kind = 'chat'
+  AND t.deleted_at IS NULL
+  AND (t.chat_thread_id = sqlc.arg('thread_id')::uuid OR tr.id = sqlc.arg('thread_id')::uuid);
+
 -- name: GetActiveChatRunOnThread :one
 SELECT
   tr.id AS run_id,

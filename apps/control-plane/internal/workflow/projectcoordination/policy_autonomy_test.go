@@ -10,10 +10,25 @@ import (
 )
 
 func TestPolicyAutoResolvablePredispatchAction(t *testing.T) {
-	require.True(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionRiskApproval))
-	require.True(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionBudgetApproval))
-	require.False(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionMissingContext))
-	require.False(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionRuntimeRecovery))
+	tokenExhausted := project.PreDispatchGateResult{
+		Blockers: []project.PreDispatchGateBlocker{{Key: "budget.token_exhausted"}},
+	}
+	budgetMissing := project.PreDispatchGateResult{
+		Blockers: []project.PreDispatchGateBlocker{{Key: "budget.task_budget_missing"}},
+	}
+	require.False(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionRiskApproval, tokenExhausted))
+	require.True(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionBudgetApproval, tokenExhausted))
+	require.False(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionBudgetApproval, budgetMissing))
+	require.False(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionBudgetApproval, project.PreDispatchGateResult{}))
+	require.False(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionMissingContext, tokenExhausted))
+	require.False(t, policyAutoResolvablePredispatchAction(project.PreDispatchHumanActionRuntimeRecovery, tokenExhausted))
+}
+
+func tokenExhaustedBudgetGate(decisionID uuid.UUID) project.PreDispatchGateResult {
+	return project.PreDispatchGateResult{
+		DecisionRequestID: &decisionID,
+		Blockers:          []project.PreDispatchGateBlocker{{Key: "budget.token_exhausted"}},
+	}
 }
 
 func TestAutomationRuleIDFromDemand(t *testing.T) {
@@ -85,8 +100,8 @@ func TestMaybePolicyAutoResolvePredispatchGateFullAuto(t *testing.T) {
 		context.Background(),
 		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID, TaskID: taskID},
 		project.ProjectTask{ID: taskID, ProjectID: projectID, DemandID: &demandID},
-		project.PreDispatchGateResult{DecisionRequestID: &decisionID},
-		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionRiskApproval},
+		tokenExhaustedBudgetGate(decisionID),
+		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionBudgetApproval},
 	)
 	require.NoError(t, err)
 	require.Equal(t, 1, lookup.calls)
@@ -130,8 +145,8 @@ func TestMaybePolicyAutoResolvePredispatchGateProjectCeilingTightens(t *testing.
 		context.Background(),
 		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID},
 		project.ProjectTask{DemandID: &demandID, ProjectID: projectID},
-		project.PreDispatchGateResult{DecisionRequestID: &decisionID},
-		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionRiskApproval},
+		tokenExhaustedBudgetGate(decisionID),
+		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionBudgetApproval},
 	)
 	require.NoError(t, err)
 	require.Empty(t, resolver.reqs)
@@ -161,11 +176,80 @@ func TestMaybePolicyAutoResolvePredispatchGatePauseSkips(t *testing.T) {
 		context.Background(),
 		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID},
 		project.ProjectTask{DemandID: &demandID, ProjectID: projectID},
+		tokenExhaustedBudgetGate(decisionID),
+		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionBudgetApproval},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 1, lookup.calls)
+	require.Empty(t, resolver.reqs)
+}
+
+func TestMaybePolicyAutoResolvePredispatchGateRiskNeverAuto(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ruleID := uuid.New()
+	decisionID := uuid.New()
+
+	repo := &policyAutonomyRepoStub{
+		demand: project.ProjectDemand{
+			ID:         demandID,
+			TenantID:   tenantID,
+			ProjectID:  projectID,
+			SourceType: project.DemandSourceAutomation,
+			SourceRefs: map[string]any{"automation_rule_id": ruleID.String()},
+		},
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, CoordinationPolicy: map[string]any{}},
+	}
+	resolver := &stubGateResolver{}
+	store := NewProjectStore(repo).
+		WithAutomationAutonomyLookup(&stubAutonomyLookup{tier: autonomyTierFullAuto, actor: uuid.New()}).
+		WithGateDecisionResolver(resolver)
+
+	err := store.maybePolicyAutoResolvePredispatchGate(
+		context.Background(),
+		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID},
+		project.ProjectTask{DemandID: &demandID, ProjectID: projectID},
 		project.PreDispatchGateResult{DecisionRequestID: &decisionID},
 		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionRiskApproval},
 	)
 	require.NoError(t, err)
-	require.Equal(t, 1, lookup.calls)
+	require.Empty(t, resolver.reqs, "playbook/platform risk_approval must park under full_auto")
+}
+
+func TestMaybePolicyAutoResolvePredispatchGateBudgetMissingNeverAuto(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	ruleID := uuid.New()
+	decisionID := uuid.New()
+
+	repo := &policyAutonomyRepoStub{
+		demand: project.ProjectDemand{
+			ID:         demandID,
+			TenantID:   tenantID,
+			ProjectID:  projectID,
+			SourceType: project.DemandSourceAutomation,
+			SourceRefs: map[string]any{"automation_rule_id": ruleID.String()},
+		},
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, CoordinationPolicy: map[string]any{}},
+	}
+	resolver := &stubGateResolver{}
+	store := NewProjectStore(repo).
+		WithAutomationAutonomyLookup(&stubAutonomyLookup{tier: autonomyTierFullAuto, actor: uuid.New()}).
+		WithGateDecisionResolver(resolver)
+
+	err := store.maybePolicyAutoResolvePredispatchGate(
+		context.Background(),
+		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID},
+		project.ProjectTask{DemandID: &demandID, ProjectID: projectID},
+		project.PreDispatchGateResult{
+			DecisionRequestID: &decisionID,
+			Blockers:          []project.PreDispatchGateBlocker{{Key: "budget.task_budget_missing"}},
+		},
+		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionBudgetApproval},
+	)
+	require.NoError(t, err)
 	require.Empty(t, resolver.reqs)
 }
 
@@ -208,8 +292,8 @@ func TestMaybePolicyAutoResolvePredispatchGatePlaybookCeilingTightens(t *testing
 		context.Background(),
 		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID},
 		project.ProjectTask{DemandID: &demandID, ProjectID: projectID},
-		project.PreDispatchGateResult{DecisionRequestID: &decisionID},
-		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionRiskApproval},
+		tokenExhaustedBudgetGate(decisionID),
+		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionBudgetApproval},
 	)
 	require.NoError(t, err)
 	require.Empty(t, resolver.reqs)
@@ -256,8 +340,8 @@ func TestMaybePolicyAutoResolvePredispatchGateExternalIntegrationFullAuto(t *tes
 		context.Background(),
 		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID},
 		project.ProjectTask{DemandID: &demandID, ProjectID: projectID},
-		project.PreDispatchGateResult{DecisionRequestID: &decisionID},
-		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionRiskApproval},
+		tokenExhaustedBudgetGate(decisionID),
+		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionBudgetApproval},
 	)
 	require.NoError(t, err)
 	require.Equal(t, 1, lookup.calls)
@@ -298,8 +382,8 @@ func TestMaybePolicyAutoResolvePredispatchGateExternalCeilingTightens(t *testing
 		context.Background(),
 		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID},
 		project.ProjectTask{DemandID: &demandID, ProjectID: projectID},
-		project.PreDispatchGateResult{DecisionRequestID: &decisionID},
-		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionRiskApproval},
+		tokenExhaustedBudgetGate(decisionID),
+		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionBudgetApproval},
 	)
 	require.NoError(t, err)
 	// Live ceiling tighten → sync policy reject (never park external into inbox).
@@ -307,6 +391,41 @@ func TestMaybePolicyAutoResolvePredispatchGateExternalCeilingTightens(t *testing
 	require.Equal(t, project.PlanReviewDecisionReject, resolver.reqs[0].Decision)
 	require.Equal(t, actorID, resolver.reqs[0].DecidedByUserID)
 	require.Equal(t, "pause_at_gate", resolver.reqs[0].Payload["autonomy_tier"])
+}
+
+func TestMaybePolicyAutoResolvePredispatchGateExternalRiskRejects(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	integrationID := uuid.New()
+	decisionID := uuid.New()
+	actorID := uuid.New()
+
+	repo := &policyAutonomyRepoStub{
+		demand: project.ProjectDemand{
+			ID:         demandID,
+			TenantID:   tenantID,
+			ProjectID:  projectID,
+			SourceType: project.DemandSourceExternal,
+			SourceRefs: map[string]any{"external_integration_id": integrationID.String()},
+		},
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, CoordinationPolicy: map[string]any{}},
+	}
+	resolver := &stubGateResolver{}
+	store := NewProjectStore(repo).
+		WithExternalIntegrationAutonomyLookup(&stubExternalAutonomyLookup{tier: autonomyTierFullAuto, actor: actorID}).
+		WithGateDecisionResolver(resolver)
+
+	err := store.maybePolicyAutoResolvePredispatchGate(
+		context.Background(),
+		DispatchProjectTaskInput{TenantID: tenantID, ProjectID: projectID},
+		project.ProjectTask{DemandID: &demandID, ProjectID: projectID},
+		project.PreDispatchGateResult{DecisionRequestID: &decisionID},
+		&project.PreDispatchHumanActionRequest{Type: project.PreDispatchHumanActionRiskApproval},
+	)
+	require.NoError(t, err)
+	require.Len(t, resolver.reqs, 1)
+	require.Equal(t, project.PlanReviewDecisionReject, resolver.reqs[0].Decision)
 }
 
 func TestMaybePolicyAutoResolvePredispatchGateMissingContextNeverAuto(t *testing.T) {
@@ -330,9 +449,11 @@ func TestMaybePolicyAutoResolvePredispatchGateMissingContextNeverAuto(t *testing
 // policyAutonomyRepoStub only implements GetProjectDemand / GetProject for these unit tests.
 type policyAutonomyRepoStub struct {
 	project.Repository
-	demand        project.ProjectDemand
-	projectRecord project.Project
-	err           error
+	demand          project.ProjectDemand
+	projectRecord   project.Project
+	task            project.ProjectTask
+	pendingRecovery []project.DecisionRequest
+	err             error
 }
 
 func (r *policyAutonomyRepoStub) GetProjectDemand(ctx context.Context, tenantID, demandID uuid.UUID) (project.ProjectDemand, error) {
@@ -347,4 +468,19 @@ func (r *policyAutonomyRepoStub) GetProject(ctx context.Context, tenantID, proje
 		return r.projectRecord, nil
 	}
 	return project.Project{ID: projectID, TenantID: tenantID, CoordinationPolicy: map[string]any{}}, nil
+}
+
+func (r *policyAutonomyRepoStub) GetProjectTask(ctx context.Context, tenantID, taskID uuid.UUID) (project.ProjectTask, error) {
+	if r.task.ID != uuid.Nil {
+		return r.task, nil
+	}
+	return project.ProjectTask{}, project.ErrProjectNotFound
+}
+
+func (r *policyAutonomyRepoStub) ListPendingRecoveryDecisionsForAutoRecheck(ctx context.Context, limit int32) ([]project.DecisionRequest, error) {
+	return append([]project.DecisionRequest(nil), r.pendingRecovery...), nil
+}
+
+func (r *policyAutonomyRepoStub) SumProjectConsumedTokens(ctx context.Context, tenantID, projectID uuid.UUID) (int64, error) {
+	return 0, nil
 }

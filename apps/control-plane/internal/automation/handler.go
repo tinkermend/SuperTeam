@@ -102,6 +102,8 @@ func (h *HTTPHandler) CreateRule(w http.ResponseWriter, r *http.Request) {
 		Timezone:              body.Timezone,
 		Enabled:               body.Enabled,
 		AutonomyTier:          body.AutonomyTier,
+		PinnedExitDeliverable: body.PinnedExitDeliverable,
+		AcknowledgeExitTierSemantics: body.AcknowledgeExitTierSemantics,
 	})
 	if err != nil {
 		writeHandlerError(w, err)
@@ -141,7 +143,7 @@ func (h *HTTPHandler) PatchRule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	rule, err := h.service.UpdateRule(r.Context(), UpdateRuleRequest{
+	req := UpdateRuleRequest{
 		TenantID:              tenantID,
 		RuleID:                ruleID,
 		ActorUserID:           userID,
@@ -156,7 +158,13 @@ func (h *HTTPHandler) PatchRule(w http.ResponseWriter, r *http.Request) {
 		IntervalSeconds:       body.IntervalSeconds,
 		Timezone:              body.Timezone,
 		AutonomyTier:          body.AutonomyTier,
-	})
+		PinnedExitDeliverable: body.PinnedExitDeliverable,
+	}
+	if body.AcknowledgeExitTierSemantics != nil {
+		req.AcknowledgeExitTierSemanticsSet = true
+		req.AcknowledgeExitTierSemantics = *body.AcknowledgeExitTierSemantics
+	}
+	rule, err := h.service.UpdateRule(r.Context(), req)
 	if err != nil {
 		writeHandlerError(w, err)
 		return
@@ -311,6 +319,8 @@ type createRuleBody struct {
 	Timezone              string     `json:"timezone"`
 	Enabled               *bool      `json:"enabled"`
 	AutonomyTier          string     `json:"autonomy_tier"`
+	PinnedExitDeliverable *string    `json:"pinned_exit_deliverable"`
+	AcknowledgeExitTierSemantics bool `json:"acknowledge_exit_tier_semantics"`
 }
 
 type patchRuleBody struct {
@@ -325,6 +335,8 @@ type patchRuleBody struct {
 	IntervalSeconds       *int32     `json:"interval_seconds"`
 	Timezone              *string    `json:"timezone"`
 	AutonomyTier          *string    `json:"autonomy_tier"`
+	PinnedExitDeliverable *string    `json:"pinned_exit_deliverable"`
+	AcknowledgeExitTierSemantics *bool `json:"acknowledge_exit_tier_semantics"`
 }
 
 type listRulesResponse struct {
@@ -355,6 +367,8 @@ type ruleResponse struct {
 	Timezone                string        `json:"timezone"`
 	OverlapPolicy           string        `json:"overlap_policy"`
 	AutonomyTier            string        `json:"autonomy_tier"`
+	PinnedExitDeliverable   *string       `json:"pinned_exit_deliverable,omitempty"`
+	AcknowledgeExitTierSemantics bool     `json:"acknowledge_exit_tier_semantics"`
 	ActorUserID             uuid.UUID     `json:"actor_user_id"`
 	DisabledReason          *string       `json:"disabled_reason,omitempty"`
 	ConsecutiveFailureCount int32         `json:"consecutive_failure_count"`
@@ -399,6 +413,8 @@ func ruleResponseFrom(rule Rule) ruleResponse {
 		Timezone:                rule.Timezone,
 		OverlapPolicy:           rule.OverlapPolicy,
 		AutonomyTier:            rule.AutonomyTier,
+		PinnedExitDeliverable:   rule.PinnedExitDeliverable,
+		AcknowledgeExitTierSemantics: rule.AcknowledgeExitTierSemantics,
 		ActorUserID:             rule.ActorUserID,
 		DisabledReason:          rule.DisabledReason,
 		ConsecutiveFailureCount: rule.ConsecutiveFailureCount,

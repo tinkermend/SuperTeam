@@ -5596,6 +5596,25 @@ func (r *PgRepository) ListPendingDecisionsMissingOpenInbox(ctx context.Context,
 	return out, nil
 }
 
+func (r *PgRepository) ListPendingRecoveryDecisionsForAutoRecheck(ctx context.Context, limit int32) ([]DecisionRequest, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.q.ListPendingRecoveryDecisionsForAutoRecheck(ctx, limit)
+	if err != nil {
+		return nil, projectRepositoryError(err)
+	}
+	out := make([]DecisionRequest, 0, len(rows))
+	for _, row := range rows {
+		decision, err := decisionRequestFromRecord(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, decision)
+	}
+	return out, nil
+}
+
 // ListStrandedBlockedProjectTasks 见 queries/project.sql：除「上游全终态失败」外，
 // 还排除上游挂着 pending 决策、以及上游刚进终态（failureGrace 宽限）的情况。
 func (r *PgRepository) ListStrandedBlockedProjectTasks(ctx context.Context, limit int32, failureGrace time.Duration) ([]ProjectTask, error) {
@@ -5947,8 +5966,8 @@ func (r *PgRepository) scheduleProjectTaskRetryWithQueries(ctx context.Context, 
 		ID:               req.Task.ID,
 	})
 	if err != nil {
-		// 守卫 UPDATE：0 行 = 任务已被并发转走（如 blocked 申报的活跃位让渡）→
-		// 冲突而非 404/500（spec 2026-08-17 L1）。
+		// 守卫 UPDATE（status 窗口）：0 行 = 并发取代 → 冲突而非 404/500
+		//（spec 2026-08-17 L1）。
 		return ProjectTask{}, guardWritebackConflict(err)
 	}
 	return taskFromRecord(row)
@@ -5963,8 +5982,8 @@ func (r *PgRepository) moveProjectTaskToWaitingHumanWithQueries(ctx context.Cont
 		ID:               req.Task.ID,
 	})
 	if err != nil {
-		// 守卫 UPDATE（status 窗口）：0 行 = 并发取代 → 冲突而非 404/500
-		//（spec 2026-08-17 L1）。
+		// 守卫 UPDATE：0 行 = 任务已被并发转走（如 blocked 申报的活跃位让渡）→
+		// 冲突而非 404/500（spec 2026-08-17 L1）。
 		return ProjectTask{}, guardWritebackConflict(err)
 	}
 	return taskFromRecord(row)
@@ -6267,6 +6286,21 @@ func gatedCompletionStatusWithQueries(ctx context.Context, q *queries.Queries, t
 		return "", err
 	}
 	if unsatisfied > 0 {
+		return ProjectDemandStatusAcceptancePending, nil
+	}
+	// F4: policy-governed demands (create-time autonomy_tier_snapshot) always
+	// enter acceptance_pending so the gate is minted and may be policy-resolved
+	// with an audit trail — never silently complete when criteria are empty or
+	// all machine-released. Manual demands (no snapshot) keep legacy behaviour.
+	row, err := q.GetProjectDemand(ctx, queries.GetProjectDemandParams{TenantID: tenantID, ID: demandID})
+	if err != nil {
+		return "", err
+	}
+	demand, err := demandFromRecord(row)
+	if err != nil {
+		return "", err
+	}
+	if DemandAutonomyTierSnapshot(demand) != "" {
 		return ProjectDemandStatusAcceptancePending, nil
 	}
 	return ProjectDemandStatusCompleted, nil

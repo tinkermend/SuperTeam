@@ -99,6 +99,15 @@ var decisionActionRegistry = map[string][]registeredDecisionAction{
 		{action: Action{Key: "retry", Label: "重试任务", Tone: "positive", Metadata: map[string]any{"decision": "retry"}}, handler: handlerFailureRecoveryDecision},
 		{action: Action{Key: "cancel_downstream", Label: "取消下游", Tone: "destructive", RequiresComment: true, Metadata: map[string]any{"decision": "cancel_downstream"}}, handler: handlerFailureRecoveryDecision},
 	},
+	// Iteration-exhausted (spec 2026-08-17 §3.1): same resume/cancel vocabulary as
+	// task_failure_recovery. Coordinator applies via ApplyPreDispatchGateDecision
+	// (activity-side discrimination) so long-lived workflows gain the release
+	// without a sticky GetVersion fence; ApplyFailureRecoveryDecision also accepts
+	// this type for direct activity callers.
+	"project_task_iteration_exhausted": {
+		{action: Action{Key: "retry", Label: "继续迭代", Tone: "positive", Metadata: map[string]any{"decision": "retry"}}, handler: handlerFailureRecoveryDecision},
+		{action: Action{Key: "cancel_downstream", Label: "取消下游", Tone: "destructive", RequiresComment: true, Metadata: map[string]any{"decision": "cancel_downstream"}}, handler: handlerFailureRecoveryDecision},
+	},
 	// 扩编（执行期 §7.5）：approved 必须带 digital_employee_id + role_key（Web 弹窗选人）；
 	// rejected 关闭。不得发出 needs_more_evidence——服务端 ResolveDecision 会拒，且语义上
 	// 扩编没有「补证」路径。

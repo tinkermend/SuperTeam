@@ -2040,6 +2040,35 @@ func (q *Queries) ListTaskRunsByIDs(ctx context.Context, arg ListTaskRunsByIDsPa
 	return items, nil
 }
 
+const SoftDeleteDigitalEmployeeChatThreadTasks = `-- name: SoftDeleteDigitalEmployeeChatThreadTasks :execrows
+UPDATE tasks t
+SET deleted_at = NOW(),
+    updated_at = NOW()
+FROM task_runs tr
+WHERE t.id = tr.task_id
+  AND t.tenant_id = tr.tenant_id
+  AND tr.tenant_id = $1::uuid
+  AND tr.digital_employee_id = $2::uuid
+  AND t.run_kind = 'chat'
+  AND t.deleted_at IS NULL
+  AND (t.chat_thread_id = $3::uuid OR tr.id = $3::uuid)
+`
+
+type SoftDeleteDigitalEmployeeChatThreadTasksParams struct {
+	TenantID          uuid.UUID `json:"tenant_id"`
+	DigitalEmployeeID uuid.UUID `json:"digital_employee_id"`
+	ThreadID          uuid.UUID `json:"thread_id"`
+}
+
+// 平台侧软删整条 chat 会话（根轮 + 追问轮）。不碰 Provider 会话。
+func (q *Queries) SoftDeleteDigitalEmployeeChatThreadTasks(ctx context.Context, arg SoftDeleteDigitalEmployeeChatThreadTasksParams) (int64, error) {
+	result, err := q.db.Exec(ctx, SoftDeleteDigitalEmployeeChatThreadTasks, arg.TenantID, arg.DigitalEmployeeID, arg.ThreadID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const UpdateChatThreadTitle = `-- name: UpdateChatThreadTitle :one
 UPDATE tasks t
 SET thread_title = $1::text,

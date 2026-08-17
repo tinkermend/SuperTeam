@@ -631,6 +631,12 @@ type Querier interface {
 	// 例外（spec 2026-08-11）：仍处「预检闸审批形态」的任务交给下面的 zombie 扫描 heal，
 	// 不得当「缺卡」进补建列表。两个列表的条件严格互补，任务不会两边都落空。
 	ListOrphanWaitingHumanProjectTasks(ctx context.Context, batchLimit int32) ([]ProjectTask, error)
+	// 活跃 run × 关联 attempt 已终态 的交叉核对（spec 2026-08-17 L3）：attempt 终态
+	// 是确定性死亡证据——真活跃 run 的 attempt 必然非终态，不会误扫。run→attempt 关联
+	// 走命令回执 payload 的 metadata.project_task_attempt_id（派发期 runMetadata 写入）；
+	// 老 run/非项目 run 无此路径自然不命中。waiting_human 纳入终态集（释放必走新
+	// attempt，旧 run 不会再进展），其 finished_at 可能为 NULL，宽限口径 COALESCE。
+	ListOrphanedActiveDigitalEmployeeRuns(ctx context.Context, arg ListOrphanedActiveDigitalEmployeeRunsParams) ([]ListOrphanedActiveDigitalEmployeeRunsRow, error)
 	// Pending decision SoT rows with no open inbox projection. Create/upsert is not
 	// one transaction: a failed Upsert (or inbox cancelled without converging the
 	// decision) leaves project UI "待处理" while inbox has nothing to act on.
@@ -641,6 +647,9 @@ type Querier interface {
 	// 去重:同一 message_id 已有 pending/sent 的 card_update 则不再重复入队。
 	ListPendingOrSentCardUpdatesByResource(ctx context.Context, arg ListPendingOrSentCardUpdatesByResourceParams) ([]FeishuOutbox, error)
 	ListPendingProjectWorkspaceDeleteRequests(ctx context.Context, tenantID uuid.UUID) ([]ProjectWorkspaceDeleteRequest, error)
+	// Autonomy F7: pending recovery-family decisions that auto_recheck may probe
+	// and release without a human when the underlying fact has healed.
+	ListPendingRecoveryDecisionsForAutoRecheck(ctx context.Context, batchLimit int32) ([]ProjectDecisionRequest, error)
 	// Permission-center read path: reads the approval domain directly (never via the
 	// inbox projection). view=mine → target_user_id = actor; view=team → target_user_id NULL.
 	ListPermissionApprovals(ctx context.Context, arg ListPermissionApprovalsParams) ([]ApprovalRequest, error)
@@ -961,6 +970,8 @@ type Querier interface {
 	// CAS: ready 仅从 pending|error|ready；error 仅从 pending；pending 可从 pending|error|ready（reclone）。
 	SetProjectWorkspaceReady(ctx context.Context, arg SetProjectWorkspaceReadyParams) (Project, error)
 	SkillExistsForTenant(ctx context.Context, arg SkillExistsForTenantParams) (bool, error)
+	// 平台侧软删整条 chat 会话（根轮 + 追问轮）。不碰 Provider 会话。
+	SoftDeleteDigitalEmployeeChatThreadTasks(ctx context.Context, arg SoftDeleteDigitalEmployeeChatThreadTasksParams) (int64, error)
 	SoftDeleteDigitalEmployeeEnvironmentVariablesForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeEnvironmentVariablesForDeleteParams) ([]uuid.UUID, error)
 	SoftDeleteDigitalEmployeeForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeForDeleteParams) (DigitalEmployee, error)
 	SoftDeleteDigitalEmployeeMCPBindingsV2ForDelete(ctx context.Context, arg SoftDeleteDigitalEmployeeMCPBindingsV2ForDeleteParams) ([]uuid.UUID, error)
@@ -979,6 +990,12 @@ type Querier interface {
 	// 项目 token 已消耗:对项目下所有任务的所有 attempt 的心跳累加值求和(P1-A 预算熔断)。
 	// budget_consumed_tokens 由 runtime 心跳单调累加,天然把失败与返工的消耗算进去。
 	SumProjectConsumedTokens(ctx context.Context, arg SumProjectConsumedTokensParams) (int64, error)
+	// blocked_resolvable_upstream 申报后任务转 blocked 等补做:旧 attempt 必须出让
+	// 活跃位(uq_project_task_attempts_active 把非终态计入活跃),否则补做完成后的
+	// 重派发在插新 attempt 时撞唯一约束。终态取 cancelled(申报由补链取代,与
+	// SupersedeWaitingHumanProjectTaskAttempt 同词表理由)。已被其他路径置终态时
+	// 命中 0 行,属合法情形。
+	SupersedeBlockedUpstreamSupplementAttempt(ctx context.Context, arg SupersedeBlockedUpstreamSupplementAttemptParams) (int64, error)
 	// Clears the partial unique index uq_project_plan_revisions_current_accepted so a
 	// newer pending_review revision can be accepted (casting-expansion replan / request_changes).
 	SupersedeCurrentAcceptedProjectPlanRevisions(ctx context.Context, arg SupersedeCurrentAcceptedProjectPlanRevisionsParams) error
@@ -1000,6 +1017,11 @@ type Querier interface {
 	// is in from_statuses. No matching row (wrong current status) yields no rows so the
 	// caller can treat it as an idempotent no-op via ErrNoRows.
 	TransitionProjectStatus(ctx context.Context, arg TransitionProjectStatusParams) (Project, error)
+	// blocked_resolvable_upstream 申报后任务转 blocked 等补做。run 绑定必须一并清除:
+	// DispatchProjectTask 对带 run 绑定且已有 dispatched 事件的任务按"已派发"幂等
+	// 短路,残留绑定会让补做完成后的重派发静默 no-op(同
+	// ReleaseProjectTaskWaitingHumanForRedispatch 的注释)。
+	TransitionProjectTaskBlockedForUpstreamSupplement(ctx context.Context, arg TransitionProjectTaskBlockedForUpstreamSupplementParams) (ProjectTask, error)
 	// TryAcquireRuntimeNodeSlot atomically reserves one execution slot on a node.
 	// The capacity guard (current_load < max_slots) and liveness guards
 	// (status = 'online', fresh heartbeat) live inside the same UPDATE statement,
@@ -1076,24 +1098,7 @@ type Querier interface {
 	UpsertSystemConfigOverride(ctx context.Context, arg UpsertSystemConfigOverrideParams) (SystemConfigOverride, error)
 	UpsertUserProjectTeamScope(ctx context.Context, arg UpsertUserProjectTeamScopeParams) (UserProjectTeamScope, error)
 	UserHasActiveProjectTeamScope(ctx context.Context, arg UserHasActiveProjectTeamScopeParams) (bool, error)
-	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)	// 活跃 run × 关联 attempt 已终态 的交叉核对（spec 2026-08-17 L3）：attempt 终态
-	// 是确定性死亡证据——真活跃 run 的 attempt 必然非终态，不会误扫。run→attempt 关联
-	// 走命令回执 payload 的 metadata.project_task_attempt_id（派发期 runMetadata 写入）；
-	// 老 run/非项目 run 无此路径自然不命中。waiting_human 纳入终态集（释放必走新
-	// attempt，旧 run 不会再进展），其 finished_at 可能为 NULL，宽限口径 COALESCE。
-	ListOrphanedActiveDigitalEmployeeRuns(ctx context.Context, arg ListOrphanedActiveDigitalEmployeeRunsParams) ([]ListOrphanedActiveDigitalEmployeeRunsRow, error)
-	// blocked_resolvable_upstream 申报后任务转 blocked 等补做:旧 attempt 必须出让
-	// 活跃位(uq_project_task_attempts_active 把非终态计入活跃),否则补做完成后的
-	// 重派发在插新 attempt 时撞唯一约束。终态取 cancelled(申报由补链取代,与
-	// SupersedeWaitingHumanProjectTaskAttempt 同词表理由)。已被其他路径置终态时
-	// 命中 0 行,属合法情形。
-	SupersedeBlockedUpstreamSupplementAttempt(ctx context.Context, arg SupersedeBlockedUpstreamSupplementAttemptParams) (int64, error)
-	// blocked_resolvable_upstream 申报后任务转 blocked 等补做。run 绑定必须一并清除:
-	// DispatchProjectTask 对带 run 绑定且已有 dispatched 事件的任务按"已派发"幂等
-	// 短路,残留绑定会让补做完成后的重派发静默 no-op(同
-	// ReleaseProjectTaskWaitingHumanForRedispatch 的注释)。
-	TransitionProjectTaskBlockedForUpstreamSupplement(ctx context.Context, arg TransitionProjectTaskBlockedForUpstreamSupplementParams) (ProjectTask, error)
-
+	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)
 }
 
 var _ Querier = (*Queries)(nil)

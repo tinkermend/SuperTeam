@@ -15,35 +15,17 @@ const (
 	// demandCriterionVerdictNotApplicable is the third verdict value, projected
 	// only from an executor's contract-valid not_applicable acceptance result
 	// (which requires a human_accepted_reason) for an automated_test criterion.
-	// It RELEASES the convergence gate for THAT criterion — a blocking
-	// automated_test criterion the executor justifiably marked N/A must not
-	// deadlock the demand. A human verdict still overrides it (see
-	// criterionEffectiveVerdict). Humans never sign not_applicable directly
+	// As of the 2026-08-17 autonomy gate inventory F3 / E5, not_applicable does
+	// NOT release the convergence gate: it is an executor self-report that
+	// skips attestation, so counting it as machine release would let an
+	// executor N/A every automated_test criterion and complete a demand with
+	// zero evidence. The verdict is still projected for the acceptance panel
+	// (humans can override to satisfied); only the gate hold/release rule
+	// changed. Humans never sign not_applicable directly
 	// (SignDemandCriterionVerdict rejects it), and the executor-verdict
 	// projection path (Service.projectDemandCriterionVerdicts) explicitly
 	// skips human_judgment criteria — so not_applicable can only ever apply
 	// to automated_test criteria, never to the human backstop itself.
-	//
-	// The human_judgment fallback criterion is NOT mandatory since the
-	// autonomy-posture default flip (Task 1 of the 2026-07 autonomy posture
-	// calibration): a low-risk demand may legitimately carry no human
-	// criterion at all, in which case not_applicable-ing every automated_test
-	// criterion genuinely completes the demand with zero human touchpoints —
-	// that is the intended, bounded outcome for low-risk work.
-	// The bound holds for high-risk work: every high-risk-classified demand
-	// (projectcoordination.planTouchesHighRisk — constitutional, never
-	// policy-exemptable) gets a human_judgment blocking criterion injected
-	// onto its snapshot (projectcoordination.ensureHumanJudgmentCriterion,
-	// re-run in the planner AFTER every high-risk flag is final — so a plan
-	// pushed high-risk only by governance or scoring still carries it, not
-	// just plans high-risk at decode time), and an executor cannot
-	// self-satisfy or self-N/A that criterion (see above). So an executor
-	// N/A-ing every automated_test criterion on a high-risk demand still
-	// leaves the injected human criterion unresolved, holding the gate at
-	// acceptance_pending. See TestNotApplicableDoesNotEscapeHighRiskOversight
-	// (pg_repository_test.go) for the pinned gate-layer proof, and
-	// TestGovernanceDerivedHighRiskInjectsHumanCriterion
-	// (openai_compatible_planner_test.go) for the injection-timing proof.
 	demandCriterionVerdictNotApplicable = "not_applicable"
 	demandCriterionJudgeTypeHuman       = "human"
 	// demandCriterionVerificationMethodHumanJudgment mirrors
@@ -100,9 +82,10 @@ const (
 //   - A human verdict (satisfied or unsatisfied) always wins.
 //   - Absent a human verdict, the criterion is satisfied iff at least one
 //     executor verdict for it is satisfied; else not_applicable iff at least
-//     one executor verdict for it is not_applicable (both release the gate);
-//     with only unsatisfied executor verdicts the effective verdict is
-//     unsatisfied.
+//     one executor verdict for it is not_applicable (effective verdict only —
+//     the convergence gate no longer treats N/A as release, see
+//     ResolveUnsatisfiedBlockingCriteria); with only unsatisfied executor
+//     verdicts the effective verdict is unsatisfied.
 //   - With no verdict at all it is unresolved (hasVerdict=false).
 //
 // It also returns the judge type and evidence refs behind the winning verdict
@@ -183,13 +166,9 @@ func criterionEffectiveVerdict(verdicts []DemandCriterionVerdict, criterionID st
 //   - A human verdict for a criterion — satisfied or unsatisfied — always
 //     takes precedence over any executor verdict for the same criterion.
 //   - Absent a human verdict, the criterion is released iff at least one
-//     executor verdict for it is satisfied or not_applicable (the executor's
-//     justified N/A on an automated_test criterion releases the gate for
-//     that criterion only; see demandCriterionVerdictNotApplicable for why
-//     this cannot escape oversight on high-risk demands — which always
-//     carry an injected human_judgment criterion the executor cannot
-//     touch — and legitimately needs no human backstop on low-risk
-//     demands that carry no human criterion at all).
+//     executor (or adversarial/review_gate) verdict for it is satisfied.
+//     Executor not_applicable does NOT release (F3 / E5): N/A is a self-report
+//     without attestation and must not count as machine evidence.
 //   - A blocking criterion with no verdict at all is unsatisfied (awaiting
 //     sign-off).
 //   - non_blocking criteria are never included, regardless of verdicts.
@@ -256,7 +235,13 @@ func ResolveUnsatisfiedBlockingCriteria(criteria []DemandAcceptanceCriterion, ve
 			}
 			continue
 		}
-		if !hasVerdict || (verdict != demandCriterionVerdictSatisfied && verdict != demandCriterionVerdictNotApplicable) {
+		if !hasVerdict || verdict != demandCriterionVerdictSatisfied {
+			// E6 / pre-sign: planner-authored human_judgment must not park the
+			// gate (autonomy F4). Declarative human_judgment still holds.
+			if c.VerificationMethod == demandCriterionVerificationMethodHumanJudgment &&
+				!IsDeclarativeHumanJudgment(c) {
+				continue
+			}
 			pending = append(pending, c.CriterionID)
 		}
 	}

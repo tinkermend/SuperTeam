@@ -37,6 +37,8 @@ func (r *PgRepository) CreateIntegration(ctx context.Context, integration Integr
 		SkillIds:            skillIDs,
 		ScenarioTemplateKey: textPtr(integration.ScenarioTemplateKey),
 		AutonomyTier:        integration.AutonomyTier,
+		PinnedExitDeliverable: textPtr(integration.PinnedExitDeliverable),
+		AcknowledgeExitTierSemantics: integration.AcknowledgeExitTierSemantics,
 		MaxCallsPerHour:     integration.MaxCallsPerHour,
 		Status:              integration.Status,
 		CreatedByUserID:     integration.CreatedByUserID,
@@ -97,6 +99,8 @@ func (r *PgRepository) UpdateIntegration(ctx context.Context, integration Integr
 		SkillIds:            skillIDs,
 		ScenarioTemplateKey: textPtr(integration.ScenarioTemplateKey),
 		AutonomyTier:        integration.AutonomyTier,
+		PinnedExitDeliverable: textPtr(integration.PinnedExitDeliverable),
+		AcknowledgeExitTierSemantics: integration.AcknowledgeExitTierSemantics,
 		MaxCallsPerHour:     integration.MaxCallsPerHour,
 		Status:              integration.Status,
 		TenantID:            integration.TenantID,
@@ -198,6 +202,7 @@ func integrationFromRow(row queries.ExternalIntegration) (Integration, error) {
 		AllowDemandSubmit: row.AllowDemandSubmit,
 		SkillIDs:          skillIDs,
 		AutonomyTier:      row.AutonomyTier,
+		AcknowledgeExitTierSemantics: row.AcknowledgeExitTierSemantics,
 		MaxCallsPerHour:   row.MaxCallsPerHour,
 		Status:            row.Status,
 		CreatedByUserID:   row.CreatedByUserID,
@@ -207,6 +212,10 @@ func integrationFromRow(row queries.ExternalIntegration) (Integration, error) {
 	if row.ScenarioTemplateKey.Valid {
 		key := row.ScenarioTemplateKey.String
 		integration.ScenarioTemplateKey = &key
+	}
+	if row.PinnedExitDeliverable.Valid {
+		pin := row.PinnedExitDeliverable.String
+		integration.PinnedExitDeliverable = &pin
 	}
 	return integration, nil
 }

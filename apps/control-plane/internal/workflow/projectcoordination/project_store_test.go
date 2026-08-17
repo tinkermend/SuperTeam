@@ -401,7 +401,7 @@ func TestEnsureDemandAcceptanceDecisionCreatesThreePieceAndIsIdempotent(t *testi
 			{ID: revisionID, TenantID: tenantID, ProjectID: projectID, DemandID: demandID, RevisionNumber: 1, Status: project.PlanRevisionStatusDecomposed},
 		},
 		demandAcceptanceCriteria: []project.DemandAcceptanceCriterion{
-			{TenantID: tenantID, ProjectID: projectID, DemandID: demandID, PlanRevisionID: revisionID, CriterionID: "core-flow-signoff", Statement: "人类确认核心链路可用", VerificationMethod: "human_judgment", Severity: "blocking"},
+			{TenantID: tenantID, ProjectID: projectID, DemandID: demandID, PlanRevisionID: revisionID, CriterionID: "core-flow-signoff", Statement: "人类确认核心链路可用", VerificationMethod: "human_judgment", Severity: "blocking", Source: project.CriterionSourcePlatformInjected},
 			{TenantID: tenantID, ProjectID: projectID, DemandID: demandID, PlanRevisionID: revisionID, CriterionID: "nice-to-have", Statement: "非阻塞的锦上添花判据", VerificationMethod: "human_judgment", Severity: "non_blocking"},
 		},
 	}
@@ -3682,6 +3682,7 @@ func TestProjectStoreRequestProjectTaskIterationExhaustedReviewCreatesDedicatedD
 	require.Equal(t, ownerID, approvals.last.TargetUserID)
 	require.Equal(t, sourceTaskID, approvals.last.ResourceID)
 	require.Equal(t, "project_task_iteration_exhausted", approvals.last.DecisionType)
+	require.Equal(t, []any{"retry", "cancel_downstream"}, approvals.last.Options)
 	require.Equal(t, "iteration_exhausted", approvals.last.ContextPayload["reason"])
 	require.Equal(t, "同一失败重复出现，需要人类判断是否继续", approvals.last.ContextPayload["summary"])
 	require.Equal(t, resultID.String(), approvals.last.ContextPayload["result_id"])
@@ -3697,6 +3698,111 @@ func TestProjectStoreRequestProjectTaskIterationExhaustedReviewCreatesDedicatedD
 	require.Equal(t, sourceTaskID, *decision.ProjectTaskID)
 	require.Len(t, inbox.upserts, 1)
 	require.Equal(t, decision.ID, inbox.upserts[0].ID)
+}
+
+// Spec 2026-08-17 §3.1 F0: approving iteration_exhausted must resume the graph
+// (replacement task + rewire), not no-op while downstream stays blocked.
+func TestApplyIterationExhaustedRetryResumesBlockedDownstream(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	sourceTaskID := uuid.New()
+	downstreamID := uuid.New()
+	decisionID := uuid.New()
+	sourceTaskIDPtr := sourceTaskID
+	source := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, sourceTaskID, "completed")
+	source.AssignedDigitalEmployeeID = &employeeID
+	source.PlannedTaskKey = strPtr("A#1")
+	source.Title = "分析问题"
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		tasks: []project.ProjectTask{
+			source,
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, downstreamID, "blocked"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, downstreamID, sourceTaskID),
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &sourceTaskIDPtr,
+			DecisionType:   "project_task_iteration_exhausted",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	result, err := store.ApplyPreDispatchGateDecision(context.Background(), ApplyPreDispatchGateDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "retry",
+	})
+	require.NoError(t, err)
+	replacement := requireRecoveryReplacementTask(t, repo, sourceTaskID)
+	require.Equal(t, []uuid.UUID{replacement.ID}, result.ReadyTaskIDs)
+	requireDependency(t, repo.taskDependencies, downstreamID, replacement.ID)
+	requireNoDependency(t, repo.taskDependencies, downstreamID, sourceTaskID)
+
+	repo.setTaskStatus(replacement.ID, "completed")
+	repo.setTaskLatestResult(replacement.ID, projectStoreTaskResult(tenantID, projectID, replacement.ID, project.TaskResultDecisionCompleteAccepted, "accepted"))
+	ready, err := store.ResolveReadyDownstream(context.Background(), ResolveReadyDownstreamInput{
+		TenantID:        tenantID,
+		ProjectID:       projectID,
+		CompletedTaskID: replacement.ID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []uuid.UUID{downstreamID}, ready)
+	require.Equal(t, "planned", repo.taskStatus(downstreamID))
+}
+
+func TestApplyIterationExhaustedCancelDownstreamEndsBlockedBranch(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	demandID := uuid.New()
+	jobID := uuid.New()
+	routeID := uuid.New()
+	employeeID := uuid.New()
+	sourceTaskID := uuid.New()
+	downstreamID := uuid.New()
+	decisionID := uuid.New()
+	sourceTaskIDPtr := sourceTaskID
+	source := projectStoreTask(tenantID, projectID, demandID, jobID, routeID, sourceTaskID, "completed")
+	source.AssignedDigitalEmployeeID = &employeeID
+	repo := &projectStoreMemoryRepository{
+		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
+		tasks: []project.ProjectTask{
+			source,
+			projectStoreTask(tenantID, projectID, demandID, jobID, routeID, downstreamID, "blocked"),
+		},
+		taskDependencies: []project.ProjectTaskDependency{
+			projectStoreDependency(tenantID, projectID, jobID, downstreamID, sourceTaskID),
+		},
+		decisionRequests: []project.DecisionRequest{{
+			ID:             decisionID,
+			TenantID:       tenantID,
+			ProjectID:      projectID,
+			ProjectTaskID:  &sourceTaskIDPtr,
+			DecisionType:   "project_task_iteration_exhausted",
+			StatusSnapshot: "pending",
+		}},
+	}
+	store := NewProjectStore(repo)
+
+	result, err := store.ApplyPreDispatchGateDecision(context.Background(), ApplyPreDispatchGateDecisionInput{
+		TenantID:          tenantID,
+		ProjectID:         projectID,
+		DecisionRequestID: decisionID,
+		Decision:          "cancel_downstream",
+	})
+	require.NoError(t, err)
+	require.Empty(t, result.ReadyTaskIDs)
+	require.Equal(t, "cancelled", repo.taskStatus(downstreamID))
 }
 
 func TestProjectStoreRequestUpstreamSupplementReviewCreatesDedicatedDecisionAndBlocksDownstream(t *testing.T) {
@@ -4871,7 +4977,6 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.NotContains(t, dispatchedEvent.Payload, "runtime_node_id")
 }
 
-
 func TestDispatchProjectTaskWritesSessionContinuityOnResumeAndSkip(t *testing.T) {
 	tenantID := uuid.New()
 	projectID := uuid.New()
@@ -4962,11 +5067,11 @@ func TestDispatchProjectTaskShortCircuitBackfillsMissingContinuity(t *testing.T)
 	runID := uuid.New()
 	runtimeTaskID := uuid.New()
 	packet := map[string]any{
-		"session_resume_status":  "skipped",
-		"session_resume_skip_reason": "session_node_mismatch",
+		"session_resume_status":             "skipped",
+		"session_resume_skip_reason":        "session_node_mismatch",
 		"session_resume_skipped_session_id": "sess-other-node",
-		"session_resume_summary": "原会话在其他运行节点，已主动开新会话",
-		"session_resume_label":   "已开新会话 · 原会话不在本节点",
+		"session_resume_summary":            "原会话在其他运行节点，已主动开新会话",
+		"session_resume_label":              "已开新会话 · 原会话不在本节点",
 	}
 	repo := &projectStoreMemoryRepository{
 		projectRecord: project.Project{ID: projectID, TenantID: tenantID, HumanOwnerUserID: uuid.New()},
@@ -4978,7 +5083,7 @@ func TestDispatchProjectTaskShortCircuitBackfillsMissingContinuity(t *testing.T)
 		}},
 		projectTaskAttempts: []project.ProjectTaskAttempt{{
 			ID: attemptID, TenantID: tenantID, ProjectTaskID: taskID,
-			Status: project.ProjectTaskAttemptStatusQueued,
+			Status:               project.ProjectTaskAttemptStatusQueued,
 			DigitalEmployeeRunID: &runID, RuntimeTaskID: &runtimeTaskID,
 			ExecutionContextPacket: packet,
 		}},
@@ -5035,7 +5140,7 @@ func TestDispatchProjectTaskSeparateAttemptsGetSeparateContinuity(t *testing.T) 
 				ExecutionContextPacket: map[string]any{
 					"session_resume_status": "skipped", "session_resume_skip_reason": "session_stale",
 					"session_resume_skipped_session_id": "s1",
-					"session_resume_summary": "原会话超过7天未活跃，已主动开新会话（未沿用旧会话）",
+					"session_resume_summary":            "原会话超过7天未活跃，已主动开新会话（未沿用旧会话）",
 				},
 			},
 		},
@@ -6481,6 +6586,7 @@ func (r *projectStoreMemoryRepository) CreateDemandAcceptanceCriteria(ctx contex
 			VerificationMethod: req.VerificationMethod,
 			Severity:           req.Severity,
 			SatisfiedBy:        append([]string(nil), req.SatisfiedBy...),
+			Source:             req.Source,
 		})
 	}
 	return nil

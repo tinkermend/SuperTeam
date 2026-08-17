@@ -1,8 +1,11 @@
 package projectcoordination
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 )
 
 // Verification method registry for PlanAcceptanceCriterion.VerificationMethod.
@@ -45,17 +48,13 @@ const (
 	fallbackHumanJudgmentCriterionStatement = "人类负责人确认交付符合需求意图"
 )
 
-// acceptanceHumanJudgmentExemptPolicyKey, when true in
-// projects.coordination_policy, exempts a plan from the *policy/template*
-// triggered fallback human-judgment criterion injection. It does NOT exempt
-// the high-risk trigger (see planTouchesHighRisk) — that one is constitutional
-// and cannot be waived by policy.
-const acceptanceHumanJudgmentExemptPolicyKey = "acceptance_human_judgment_exempt"
-
 // requireHumanAcceptancePolicyKey, when true in projects.coordination_policy,
 // opts a plan back into the fallback human-judgment criterion even when it is
 // not high-risk. Default (key absent/false) is autonomy: no injection.
 const requireHumanAcceptancePolicyKey = "require_human_acceptance"
+
+// acceptance_human_judgment_exempt was retired in F6 (unidirectional valve:
+// exemptions that loosen declarative injection are gone).
 
 // ambiguousCriterionMinRuneLength: a statement trimmed shorter than this is too
 // terse to be a judgeable assertion.
@@ -93,18 +92,12 @@ func normalizeCriterionDefaults(criterion *PlanAcceptanceCriterion) {
 // ordinary, non-high-risk plan under an empty/permissive policy gets NO
 // fallback criterion. Injection happens when:
 //
-//  1. planTouchesHighRisk(plan) — ALWAYS, constitutional, not exemptable by
-//     policy; OR
-//  2. (requireHumanAcceptance(policy) OR a template-declared human checkpoint
-//     — TODO(Task 4): read the selected exit's human_checkpoint declaration
-//     from template_governance once it lands) AND NOT
-//     acceptanceHumanJudgmentExempt(policy).
+//  1. planTouchesHighRisk(plan) — platform_derived risk only (F6); OR
+//  2. requireHumanAcceptance(policy) — project declarative acceptance.
 //
-// A planner-authored human_judgment criterion already present always
-// suppresses the fallback (never double-inject), regardless of which trigger
-// fired. Call after normalizeCriterionDefaults has run over every existing
-// criterion, so this only has to compare against the normalized
-// VerificationMethod value.
+// Template exit-tier human_judgment is folded server-side (F5) and does not
+// need a second inject here. A human_judgment criterion already present always
+// suppresses the fallback. Call after normalizeCriterionDefaults.
 func ensureHumanJudgmentCriterion(plan *RouteDecisionPlan, policy map[string]any) {
 	if plan == nil {
 		return
@@ -116,8 +109,8 @@ func ensureHumanJudgmentCriterion(plan *RouteDecisionPlan, policy map[string]any
 	}
 
 	highRisk := planTouchesHighRisk(plan)
-	policyOrTemplateTriggered := requireHumanAcceptance(policy) && !acceptanceHumanJudgmentExempt(policy)
-	if !highRisk && !policyOrTemplateTriggered {
+	policyTriggered := requireHumanAcceptance(policy)
+	if !highRisk && !policyTriggered {
 		return
 	}
 
@@ -126,19 +119,8 @@ func ensureHumanJudgmentCriterion(plan *RouteDecisionPlan, policy map[string]any
 		Statement:          fallbackHumanJudgmentCriterionStatement,
 		VerificationMethod: VerificationMethodHumanJudgment,
 		Severity:           CriterionSeverityBlocking,
+		Source:             CriterionSourcePlatformInjected,
 	})
-}
-
-// acceptanceHumanJudgmentExempt reads the legacy exemption key. It only
-// suppresses the requireHumanAcceptance/template-checkpoint trigger — never
-// the high-risk trigger, which is constitutional and unwaivable by policy.
-func acceptanceHumanJudgmentExempt(policy map[string]any) bool {
-	raw, ok := policy[acceptanceHumanJudgmentExemptPolicyKey]
-	if !ok {
-		return false
-	}
-	exempt, ok := raw.(bool)
-	return ok && exempt
 }
 
 // requireHumanAcceptance reads the require_human_acceptance policy key.
@@ -152,22 +134,17 @@ func requireHumanAcceptance(policy map[string]any) bool {
 	return ok && required
 }
 
-// planTouchesHighRisk reports whether the plan carries any high-risk signal:
-// plan-level RequiresHumanReview, any task's RequiresHumanApproval, or any
-// task's RiskLevel classifying as high (see isHighRiskLevel). This trigger is
-// constitutional — it is never exemptable by policy.
+// planTouchesHighRisk reports whether the plan carries a platform-derived
+// high-risk signal (F6 / §4.2): only RiskAttribution sources under
+// platform_derived:* count. Planner self-reported RequiresHumanReview /
+// RequiresHumanApproval / high RiskLevel are display-only and must not inject
+// the constitutional human_judgment criterion.
 func planTouchesHighRisk(plan *RouteDecisionPlan) bool {
 	if plan == nil {
 		return false
 	}
-	if plan.RequiresHumanReview {
-		return true
-	}
-	for _, task := range plan.Tasks {
-		if task.RequiresHumanApproval {
-			return true
-		}
-		if isConstitutionalHighRiskLevel(task.RiskLevel) {
+	for _, entry := range plan.RiskAttribution {
+		if strings.HasPrefix(entry.Source, "platform_derived:") {
 			return true
 		}
 	}
@@ -260,10 +237,8 @@ func isAmbiguousCriterionStatement(statement string) bool {
 // applyAcceptanceCriteriaDefaults runs the full plan-level acceptance-criteria
 // pipeline in order: normalize every criterion's method/severity defaults,
 // collapse excess blocking human_judgment criteria to a single gate, inject
-// the fallback human-judgment criterion if none exists (unless policy-exempt),
-// then flag ambiguous statements. Both planner production paths (the primary
-// decode and the required-review repair synthesis, which starts from zero
-// criteria of its own) must call this before ValidateRouteDecisionPlan.
+// platform produces-deliverable criteria (F3 / E2), inject the fallback
+// human-judgment criterion if warranted, then flag ambiguous statements.
 func applyAcceptanceCriteriaDefaults(plan *RouteDecisionPlan, policy map[string]any) {
 	if plan == nil {
 		return
@@ -272,8 +247,110 @@ func applyAcceptanceCriteriaDefaults(plan *RouteDecisionPlan, policy map[string]
 		normalizeCriterionDefaults(&plan.PlanAcceptanceCriteria[i])
 	}
 	collapseBlockingHumanJudgment(plan)
+	ensureProducesDeliverableCriteria(plan)
 	ensureHumanJudgmentCriterion(plan, policy)
 	markAmbiguousCriteria(plan)
+}
+
+// producesDeliverableCriterionIDPrefix marks platform-injected criteria that
+// assert a planner-declared produces key was delivered (autonomy F3 / E2).
+const producesDeliverableCriterionIDPrefix = "produces_delivered:"
+
+// ensureProducesDeliverableCriteria injects one blocking automated_test
+// criterion per (task, produces name) so demand-level acceptance cannot
+// complete while a declared handoff deliverable is missing. Task completion
+// already rejects missing produces; these criteria lift that check into the
+// demand gate and count as platform-generated machine evidence for E1.
+func ensureProducesDeliverableCriteria(plan *RouteDecisionPlan) {
+	if plan == nil {
+		return
+	}
+	existing := map[string]bool{}
+	for _, c := range plan.PlanAcceptanceCriteria {
+		existing[c.ID] = true
+	}
+	for _, task := range plan.Tasks {
+		key := strings.TrimSpace(task.Key)
+		if key == "" {
+			continue
+		}
+		for _, name := range task.Produces {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			id := producesDeliverableCriterionIDPrefix + key + ":" + name
+			if existing[id] {
+				continue
+			}
+			existing[id] = true
+			plan.PlanAcceptanceCriteria = append(plan.PlanAcceptanceCriteria, PlanAcceptanceCriterion{
+				ID:                 id,
+				Statement:          "任务 " + key + " 已交付 " + name,
+				SatisfiedBy:        []string{key},
+				VerificationMethod: VerificationMethodAutomatedTest,
+				Severity:           CriterionSeverityBlocking,
+				Source:             CriterionSourcePlatformInjected,
+				EvidenceHint:       "platform_produces_check",
+			})
+		}
+	}
+}
+
+// foldTemplateAcceptanceCriteria merges scenario_template.spec.default_acceptance_criteria
+// that apply to the plan's chosen exit into PlanAcceptanceCriteria (F5). Runs
+// server-side so planner cannot omit or rewrite template-declared criteria.
+func foldTemplateAcceptanceCriteria(snapshot CoordinationSnapshot, plan *RouteDecisionPlan) {
+	if plan == nil || snapshot.ScenarioTemplate == nil {
+		return
+	}
+	spec, err := scenariotemplate.ParseSpec(snapshot.ScenarioTemplate.Spec)
+	if err != nil || len(spec.DefaultAcceptanceCriteria) == 0 {
+		return
+	}
+	exit := strings.TrimSpace(plan.ExitDeliverable)
+	if exit == "" {
+		return
+	}
+	taskByStep := map[string]string{}
+	for _, task := range plan.Tasks {
+		if key := strings.TrimSpace(task.Key); key != "" {
+			taskByStep[key] = key
+		}
+	}
+	existing := map[string]bool{}
+	for _, c := range plan.PlanAcceptanceCriteria {
+		existing[c.ID] = true
+	}
+	for i, criterion := range spec.DefaultAcceptanceCriteria {
+		if !scenariotemplate.ExitCondMet(spec, scenariotemplate.SpecConstraintWhen{ExitAtOrBeyond: criterion.AppliesFromExit}, exit) {
+			continue
+		}
+		id := fmt.Sprintf("template_criterion_%d", i+1)
+		if existing[id] {
+			continue
+		}
+		satisfied := make([]string, 0)
+		if step, ok := spec.StepByProduce(criterion.AppliesFromExit); ok {
+			if key, found := taskByStep[step.Step]; found {
+				satisfied = append(satisfied, key)
+			}
+		}
+		if len(satisfied) == 0 && len(plan.Tasks) > 0 {
+			satisfied = []string{plan.Tasks[len(plan.Tasks)-1].Key}
+		}
+		entry := PlanAcceptanceCriterion{
+			ID:                 id,
+			Statement:          criterion.Statement,
+			SatisfiedBy:        satisfied,
+			VerificationMethod: strings.TrimSpace(criterion.VerificationMethod),
+			Severity:           strings.TrimSpace(criterion.Severity),
+			Source:             CriterionSourceTemplateDeclared,
+		}
+		normalizeCriterionDefaults(&entry)
+		plan.PlanAcceptanceCriteria = append(plan.PlanAcceptanceCriteria, entry)
+		existing[id] = true
+	}
 }
 
 // validateAcceptanceCriteriaSemantics rejects a plan whose acceptance criteria

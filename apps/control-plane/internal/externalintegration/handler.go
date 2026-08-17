@@ -77,6 +77,8 @@ func (h *HTTPHandler) CreateIntegration(w http.ResponseWriter, r *http.Request) 
 		SkillIDs:            body.SkillIDs,
 		ScenarioTemplateKey: body.ScenarioTemplateKey,
 		AutonomyTier:        body.AutonomyTier,
+		PinnedExitDeliverable: body.PinnedExitDeliverable,
+		AcknowledgeExitTierSemantics: body.AcknowledgeExitTierSemantics,
 		MaxCallsPerHour:     body.MaxCallsPerHour,
 	})
 	if err != nil {
@@ -312,6 +314,8 @@ type createIntegrationBody struct {
 	SkillIDs            []uuid.UUID `json:"skill_ids"`
 	ScenarioTemplateKey *string     `json:"scenario_template_key"`
 	AutonomyTier        string      `json:"autonomy_tier"`
+	PinnedExitDeliverable *string   `json:"pinned_exit_deliverable"`
+	AcknowledgeExitTierSemantics bool `json:"acknowledge_exit_tier_semantics"`
 	MaxCallsPerHour     *int32      `json:"max_calls_per_hour"`
 }
 
@@ -371,6 +375,8 @@ type integrationResponse struct {
 	SkillIDs            []uuid.UUID `json:"skill_ids"`
 	ScenarioTemplateKey *string     `json:"scenario_template_key"`
 	AutonomyTier        string      `json:"autonomy_tier"`
+	PinnedExitDeliverable *string   `json:"pinned_exit_deliverable,omitempty"`
+	AcknowledgeExitTierSemantics bool `json:"acknowledge_exit_tier_semantics"`
 	MaxCallsPerHour     int32       `json:"max_calls_per_hour"`
 	Status              string      `json:"status"`
 	CreatedByUserID     uuid.UUID   `json:"created_by_user_id"`
@@ -395,6 +401,8 @@ func integrationResponseFrom(integration Integration) integrationResponse {
 		SkillIDs:            skillIDs,
 		ScenarioTemplateKey: integration.ScenarioTemplateKey,
 		AutonomyTier:        integration.AutonomyTier,
+		PinnedExitDeliverable: integration.PinnedExitDeliverable,
+		AcknowledgeExitTierSemantics: integration.AcknowledgeExitTierSemantics,
 		MaxCallsPerHour:     integration.MaxCallsPerHour,
 		Status:              integration.Status,
 		CreatedByUserID:     integration.CreatedByUserID,

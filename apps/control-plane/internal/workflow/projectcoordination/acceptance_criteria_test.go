@@ -52,14 +52,18 @@ func TestFallbackInjectedWhenPolicyRequires(t *testing.T) {
 	require.Equal(t, "人类负责人确认交付符合需求意图", injected.Statement)
 	require.Equal(t, VerificationMethodHumanJudgment, injected.VerificationMethod)
 	require.Equal(t, CriterionSeverityBlocking, injected.Severity)
+	require.Equal(t, CriterionSourcePlatformInjected, injected.Source)
 	require.Empty(t, injected.SatisfiedBy)
 }
 
-// TestFallbackInjectedWhenHighRisk: a high-risk plan (plan-level
-// RequiresHumanReview here) injects the fallback even with an empty policy.
-func TestFallbackInjectedWhenHighRisk(t *testing.T) {
+// TestFallbackInjectedWhenPlatformHighRisk: only platform_derived risk
+// attribution injects the fallback (F6).
+func TestFallbackInjectedWhenPlatformHighRisk(t *testing.T) {
 	plan := &RouteDecisionPlan{
 		RequiresHumanReview: true,
+		RiskAttribution: []RiskSignalAttribution{
+			{Kind: RiskSignalPlanRequiresHumanReview, Source: RiskSourcePlatformPolicy},
+		},
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
 			{ID: "ac1", Statement: "登录失败返回 401", VerificationMethod: VerificationMethodAutomatedTest, SatisfiedBy: []string{"a"}},
 		},
@@ -71,28 +75,32 @@ func TestFallbackInjectedWhenHighRisk(t *testing.T) {
 	require.Equal(t, "human_final_confirmation", plan.PlanAcceptanceCriteria[1].ID)
 }
 
-// TestHighRiskInjectionNotExemptable: the high-risk trigger is constitutional
-// — acceptance_human_judgment_exempt must NOT suppress it, even set to true.
-func TestHighRiskInjectionNotExemptable(t *testing.T) {
+// TestPlannerSelfReportedHighRiskDoesNotInject: F6 — planner flags alone are
+// display-only and must not inject constitutional human_judgment.
+func TestPlannerSelfReportedHighRiskDoesNotInject(t *testing.T) {
 	plan := &RouteDecisionPlan{
+		RequiresHumanReview: true,
 		Tasks: []PlannedTask{
-			{Key: "t1", RequiresHumanApproval: true},
+			{Key: "t1", RequiresHumanApproval: true, RiskLevel: "high"},
+		},
+		RiskAttribution: []RiskSignalAttribution{
+			{Kind: RiskSignalPlanRequiresHumanReview, Source: RiskSourcePlannerSelfReported},
+			{Kind: RiskSignalTaskRequiresHumanApproval, TaskKey: "t1", Source: RiskSourcePlannerSelfReported},
+			{Kind: RiskSignalTaskRiskLevel, TaskKey: "t1", Source: RiskSourcePlannerSelfReported},
 		},
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
 			{ID: "ac1", Statement: "登录失败返回 401", VerificationMethod: VerificationMethodAutomatedTest, SatisfiedBy: []string{"a"}},
 		},
 	}
 
-	ensureHumanJudgmentCriterion(plan, map[string]any{"acceptance_human_judgment_exempt": true})
+	ensureHumanJudgmentCriterion(plan, nil)
 
-	require.Len(t, plan.PlanAcceptanceCriteria, 2, "high-risk injection must not be exemptable")
-	require.Equal(t, "human_final_confirmation", plan.PlanAcceptanceCriteria[1].ID)
+	require.Len(t, plan.PlanAcceptanceCriteria, 1)
 }
 
-// TestPolicyInjectionExemptable: the policy-driven trigger IS exemptable —
-// exempt=true suppresses require_human_acceptance when the plan is not
-// high-risk.
-func TestPolicyInjectionExemptable(t *testing.T) {
+// TestExemptKeyRetired: acceptance_human_judgment_exempt no longer suppresses
+// require_human_acceptance (F6 / §5 unidirectional valve).
+func TestExemptKeyRetired(t *testing.T) {
 	plan := &RouteDecisionPlan{
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
 			{ID: "ac1", Statement: "登录失败返回 401", VerificationMethod: VerificationMethodAutomatedTest, SatisfiedBy: []string{"a"}},
@@ -104,40 +112,18 @@ func TestPolicyInjectionExemptable(t *testing.T) {
 		"acceptance_human_judgment_exempt": true,
 	})
 
-	require.Len(t, plan.PlanAcceptanceCriteria, 1, "exemption should suppress the policy-driven trigger")
-}
-
-// TestHighRiskInjectedForChineseRiskLabel: risk_level is free-form LLM output
-// and Chinese high-risk labels are anticipated. A benign plan (empty policy, no
-// RequiresHumanReview/Approval) whose sole risk signal is a task RiskLevel in
-// the Chinese-inclusive high set must still inject the fallback — otherwise
-// high-risk work escapes human oversight (constitutional under-injection).
-func TestHighRiskInjectedForChineseRiskLabel(t *testing.T) {
-	for _, label := range []string{"严重", "高风险", "高", "high", "critical"} {
-		t.Run(label, func(t *testing.T) {
-			plan := &RouteDecisionPlan{
-				Tasks: []PlannedTask{
-					{Key: "t1", RiskLevel: label},
-				},
-				PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
-					{ID: "ac1", Statement: "登录失败返回 401", VerificationMethod: VerificationMethodAutomatedTest, SatisfiedBy: []string{"a"}},
-				},
-			}
-
-			ensureHumanJudgmentCriterion(plan, nil)
-
-			require.Len(t, plan.PlanAcceptanceCriteria, 2, "risk_level %q must trigger high-risk injection", label)
-			require.Equal(t, "human_final_confirmation", plan.PlanAcceptanceCriteria[1].ID)
-		})
-	}
+	require.Len(t, plan.PlanAcceptanceCriteria, 2, "exempt key must be ignored after F6 retirement")
 }
 
 // TestPlannerAuthoredHumanCriterionSuppressesFallback: a planner-authored
 // human_judgment criterion still suppresses the fallback, even when the plan
-// is high-risk (no double-injection).
+// is platform high-risk (no double-injection).
 func TestPlannerAuthoredHumanCriterionSuppressesFallback(t *testing.T) {
 	plan := &RouteDecisionPlan{
 		RequiresHumanReview: true,
+		RiskAttribution: []RiskSignalAttribution{
+			{Kind: RiskSignalPlanRequiresHumanReview, Source: RiskSourcePlatformPolicy},
+		},
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
 			{ID: "ac_human", Statement: "人类审阅并确认结果符合预期", VerificationMethod: VerificationMethodHumanJudgment},
 		},
@@ -190,9 +176,6 @@ func TestValidateCriteriaSemanticsAutomatedRequiresSatisfiedBy(t *testing.T) {
 	require.Contains(t, err.Error(), "ac1")
 }
 
-// TestAdversarialReviewMethodRegistered: adversarial_review is a known
-// verification_method — a criterion declaring it (with satisfied_by) passes
-// semantic validation like automated_test does.
 func TestAdversarialReviewMethodRegistered(t *testing.T) {
 	require.True(t, knownVerificationMethods[VerificationMethodAdversarialReview])
 	require.Equal(t, "adversarial_review", VerificationMethodAdversarialReview)
@@ -208,9 +191,6 @@ func TestAdversarialReviewMethodRegistered(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestAdversarialReviewRequiresSatisfiedBy: adversarial_review reviews a
-// specific task's output, so — same as automated_test — it must declare at
-// least one satisfied_by task. It is NOT exempted the way human_judgment is.
 func TestAdversarialReviewRequiresSatisfiedBy(t *testing.T) {
 	plan := RouteDecisionPlan{
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
@@ -225,8 +205,6 @@ func TestAdversarialReviewRequiresSatisfiedBy(t *testing.T) {
 	require.Contains(t, err.Error(), "ac1")
 }
 
-// TestUnknownMethodStillRejected: regression — adding adversarial_review to
-// the registry must not loosen rejection of genuinely unrecognized methods.
 func TestUnknownMethodStillRejected(t *testing.T) {
 	plan := RouteDecisionPlan{
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
@@ -241,8 +219,6 @@ func TestUnknownMethodStillRejected(t *testing.T) {
 	require.Contains(t, err.Error(), "vibe_check")
 }
 
-// TestCollapseBlockingHumanJudgmentKeepsOne: three blocking human criteria
-// collapse to one blocking + two non_blocking checklist items.
 func TestCollapseBlockingHumanJudgmentKeepsOne(t *testing.T) {
 	plan := &RouteDecisionPlan{
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
@@ -262,8 +238,6 @@ func TestCollapseBlockingHumanJudgmentKeepsOne(t *testing.T) {
 	require.Equal(t, CriterionSeverityBlocking, plan.PlanAcceptanceCriteria[3].Severity, "automated criteria untouched")
 }
 
-// TestCollapsePrefersHumanFinalConfirmation: when the fallback id is present,
-// it is the kept blocking gate even if it is not first.
 func TestCollapsePrefersHumanFinalConfirmation(t *testing.T) {
 	plan := &RouteDecisionPlan{
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
@@ -281,11 +255,12 @@ func TestCollapsePrefersHumanFinalConfirmation(t *testing.T) {
 	require.Equal(t, CriterionSeverityNonBlocking, plan.PlanAcceptanceCriteria[2].Severity)
 }
 
-// TestApplyDefaultsCollapsesThenInjects: high-risk + three planner human
-// criteria → collapse to one blocking human, no double-inject of fallback.
 func TestApplyDefaultsCollapsesThenInjects(t *testing.T) {
 	plan := &RouteDecisionPlan{
 		RequiresHumanReview: true,
+		RiskAttribution: []RiskSignalAttribution{
+			{Kind: RiskSignalPlanRequiresHumanReview, Source: RiskSourcePlatformPolicy},
+		},
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
 			{ID: "h1", Statement: "结论业务上可接受", VerificationMethod: VerificationMethodHumanJudgment},
 			{ID: "h2", Statement: "范围说明充分", VerificationMethod: VerificationMethodHumanJudgment},
@@ -313,11 +288,12 @@ func TestApplyDefaultsCollapsesThenInjects(t *testing.T) {
 	require.Len(t, plan.PlanAcceptanceCriteria, 3, "no fallback double-inject when planner already authored human")
 }
 
-// TestApplyDefaultsHighRiskInjectsSingleFallback: high-risk with only
-// automated criteria still gets exactly one human_final_confirmation.
 func TestApplyDefaultsHighRiskInjectsSingleFallback(t *testing.T) {
 	plan := &RouteDecisionPlan{
 		RequiresHumanReview: true,
+		RiskAttribution: []RiskSignalAttribution{
+			{Kind: RiskSignalPlanRequiresHumanReview, Source: RiskSourcePlatformTemplateGovernance},
+		},
 		PlanAcceptanceCriteria: []PlanAcceptanceCriterion{
 			{ID: "a1", Statement: "登录失败返回 401", SatisfiedBy: []string{"t1"}},
 		},
@@ -330,4 +306,25 @@ func TestApplyDefaultsHighRiskInjectsSingleFallback(t *testing.T) {
 	require.Equal(t, fallbackHumanJudgmentCriterionID, injected.ID)
 	require.Equal(t, VerificationMethodHumanJudgment, injected.VerificationMethod)
 	require.Equal(t, CriterionSeverityBlocking, injected.Severity)
+}
+
+func TestStripPlannerOnlyRiskFlags(t *testing.T) {
+	plan := &RouteDecisionPlan{
+		RequiresHumanReview: true,
+		Tasks: []PlannedTask{
+			{Key: "self", RequiresHumanApproval: true},
+			{Key: "gate", RequiresHumanApproval: true},
+		},
+		RiskAttribution: []RiskSignalAttribution{
+			{Kind: RiskSignalPlanRequiresHumanReview, Source: RiskSourcePlannerSelfReported},
+			{Kind: RiskSignalTaskRequiresHumanApproval, TaskKey: "self", Source: RiskSourcePlannerSelfReported},
+			{Kind: RiskSignalTaskRequiresHumanApproval, TaskKey: "gate", Source: RiskSourcePlatformTemplateGovernance},
+		},
+	}
+
+	stripPlannerOnlyRiskFlags(plan)
+
+	require.False(t, plan.RequiresHumanReview)
+	require.False(t, plan.Tasks[0].RequiresHumanApproval)
+	require.True(t, plan.Tasks[1].RequiresHumanApproval, "platform-derived human_gate must survive")
 }

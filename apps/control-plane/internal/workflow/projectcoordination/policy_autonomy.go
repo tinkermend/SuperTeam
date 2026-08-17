@@ -49,19 +49,35 @@ func (s *ProjectStore) WithGateDecisionResolver(resolver GateDecisionResolver) *
 	return s
 }
 
-// policyAutoResolvablePredispatchAction gates whose release can be signed by a
-// pre-authorized full_auto rule without inventing missing facts. missing_context
-// and runtime_recovery stay human even on full_auto (spec §4.3).
-func policyAutoResolvablePredispatchAction(actionType string) bool {
+// policyAutoResolvablePredispatchAction reports whether a minted predispatch
+// human action may be signed by a pre-authorized full_auto rule.
+//
+// F6 / §4.2 fifth step + §2.2 budget split:
+//   - risk_approval: never (only fires from platform/playbook declarations)
+//   - budget_approval: only sub-route ② token exhaustion (server fact);
+//     ① task_budget_missing / ③ needs_budget_approval are planner metadata
+//   - missing_context: never (human facts)
+//   - runtime_recovery: F7 auto_recheck, not blind policy sign
+func policyAutoResolvablePredispatchAction(actionType string, gate project.PreDispatchGateResult) bool {
 	switch strings.TrimSpace(actionType) {
-	case project.PreDispatchHumanActionRiskApproval,
-		project.PreDispatchHumanActionBudgetApproval,
-		project.PreDispatchHumanActionPermissionApproval,
-		project.PreDispatchHumanActionToolAuthorization:
-		return true
+	case project.PreDispatchHumanActionBudgetApproval:
+		return predispatchGateHasBlockerKey(gate, "budget.token_exhausted")
 	default:
 		return false
 	}
+}
+
+func predispatchGateHasBlockerKey(gate project.PreDispatchGateResult, key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return false
+	}
+	for _, blocker := range gate.Blockers {
+		if strings.TrimSpace(blocker.Key) == key {
+			return true
+		}
+	}
+	return false
 }
 
 func automationRuleIDFromDemand(demand project.ProjectDemand) (uuid.UUID, bool) {
@@ -188,8 +204,8 @@ func (s *ProjectStore) resolveDecisionAsPolicy(ctx context.Context, tenantID, pr
 
 // maybePolicyAutoResolvePredispatchGate mints-then-releases machine-decidable
 // predispatch waits when the demand's automation rule / external integration is
-// full_auto. External demands that are not full_auto are policy-rejected
-// (spec §4.4 / §10 — never park into inbox).
+// full_auto. Non-auto-resolvable gates park for automation; external demands
+// are always policy-rejected instead of parking (spec §4.4 / §10).
 func (s *ProjectStore) maybePolicyAutoResolvePredispatchGate(
 	ctx context.Context,
 	input DispatchProjectTaskInput,
@@ -200,7 +216,7 @@ func (s *ProjectStore) maybePolicyAutoResolvePredispatchGate(
 	if !s.policyAutoResolveConfigured() {
 		return nil
 	}
-	if action == nil || !policyAutoResolvablePredispatchAction(action.Type) {
+	if action == nil {
 		return nil
 	}
 	if gate.DecisionRequestID == nil || *gate.DecisionRequestID == uuid.Nil {
@@ -217,7 +233,7 @@ func (s *ProjectStore) maybePolicyAutoResolvePredispatchGate(
 	if err != nil {
 		return err
 	}
-	if ok {
+	if ok && policyAutoResolvablePredispatchAction(action.Type, gate) {
 		return s.resolveDecisionAsPolicy(ctx, input.TenantID, input.ProjectID, *gate.DecisionRequestID, ruleID, actorID, "approved", autonomyTierFullAuto)
 	}
 	return s.maybeRejectExternalHumanGate(ctx, input.TenantID, input.ProjectID, *gate.DecisionRequestID, demand, ruleID, actorID)
@@ -225,8 +241,7 @@ func (s *ProjectStore) maybePolicyAutoResolvePredispatchGate(
 
 // maybePolicyAutoResolvePlanReview auto-approves plan_review when the demand's
 // invoker is full_auto. External demands that are not full_auto are
-// policy-rejected instead of parking (spec §4.4 / §10). Acceptance remains
-// out of scope for auto-approve (P2).
+// policy-rejected instead of parking (spec §4.4 / §10).
 func (s *ProjectStore) maybePolicyAutoResolvePlanReview(ctx context.Context, input RequestPlanRevisionReviewInput, decisionID uuid.UUID) error {
 	if !s.policyAutoResolveConfigured() {
 		return nil
@@ -246,6 +261,55 @@ func (s *ProjectStore) maybePolicyAutoResolvePlanReview(ctx context.Context, inp
 		return s.resolveDecisionAsPolicy(ctx, input.TenantID, input.ProjectID, decisionID, ruleID, actorID, project.PlanReviewDecisionAccept, autonomyTierFullAuto)
 	}
 	return s.maybeRejectExternalHumanGate(ctx, input.TenantID, input.ProjectID, decisionID, demand, ruleID, actorID)
+}
+
+// maybePolicyAutoResolveDemandAcceptance auto-approves a freshly minted
+// demand_acceptance decision when the demand is full_auto AND the acceptance
+// evidence gate (E1–E6) passes. pause_at_gate / failed evidence parks for humans.
+func (s *ProjectStore) maybePolicyAutoResolveDemandAcceptance(ctx context.Context, tenantID, projectID, demandID, decisionID uuid.UUID) error {
+	if !s.policyAutoResolveConfigured() {
+		return nil
+	}
+	if decisionID == uuid.Nil {
+		return nil
+	}
+	demand, err := s.repository.GetProjectDemand(ctx, tenantID, demandID)
+	if err != nil {
+		return fmt.Errorf("load demand for demand_acceptance policy autonomy: %w", err)
+	}
+	// Prefer create-time snapshot; fall back to live lookup for in-flight demands
+	// created before F4 snapshotting.
+	snapshot := project.DemandAutonomyTierSnapshot(demand)
+	ruleID, actorID, ok, err := s.lookupFullAutoPolicy(ctx, tenantID, demand)
+	if err != nil {
+		return err
+	}
+	if snapshot != "" && snapshot != autonomyTierFullAuto {
+		ok = false
+	}
+	if !ok {
+		return s.maybeRejectExternalHumanGate(ctx, tenantID, projectID, decisionID, demand, ruleID, actorID)
+	}
+	revisions, err := s.repository.ListPlanRevisionsForDemand(ctx, tenantID, projectID, demandID)
+	if err != nil {
+		return err
+	}
+	revisionID := project.CurrentEffectivePlanRevisionID(revisions)
+	if revisionID == uuid.Nil {
+		return nil
+	}
+	criteria, err := s.repository.ListDemandAcceptanceCriteria(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return err
+	}
+	verdicts, err := s.repository.ListDemandCriterionVerdicts(ctx, tenantID, demandID, revisionID)
+	if err != nil {
+		return err
+	}
+	if reason := project.EvaluateAcceptanceEvidenceGate(criteria, verdicts); reason != project.AcceptanceEvidencePass {
+		return nil
+	}
+	return s.resolveDecisionAsPolicy(ctx, tenantID, projectID, decisionID, ruleID, actorID, "approved", autonomyTierFullAuto)
 }
 
 // maybeRejectExternalHumanGate closes a minted gate for external API demands

@@ -182,10 +182,10 @@ type LoadHumanDecisionRouteInput struct {
 }
 
 type HumanDecisionRouteResult struct {
-	Decision          ProjectDecisionSnapshot
-	PlanReview        *PlanReviewRoute
-	PlanningGap       *PlanningGapRoute
-	CastingExpansion  *CastingExpansionRoute
+	Decision         ProjectDecisionSnapshot
+	PlanReview       *PlanReviewRoute
+	PlanningGap      *PlanningGapRoute
+	CastingExpansion *CastingExpansionRoute
 }
 
 // CastingExpansionRoute carries demand + expansion hire info for mid-execution

@@ -29,7 +29,7 @@ WHERE tenant_id = $1::uuid
     OR budget_window_start <= NOW() - INTERVAL '1 hour'
     OR budget_window_count < max_calls_per_hour
   )
-RETURNING id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at
+RETURNING id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type ConsumeExternalIntegrationBudgetParams struct {
@@ -61,6 +61,8 @@ func (q *Queries) ConsumeExternalIntegrationBudget(ctx context.Context, arg Cons
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -77,6 +79,8 @@ INSERT INTO external_integrations (
     skill_ids,
     scenario_template_key,
     autonomy_tier,
+    pinned_exit_deliverable,
+    acknowledge_exit_tier_semantics,
     max_calls_per_hour,
     status,
     created_by_user_id
@@ -91,27 +95,31 @@ INSERT INTO external_integrations (
     $8::jsonb,
     $9::varchar,
     $10::varchar,
-    $11::int,
-    $12::varchar,
-    $13::uuid
+    $11::varchar,
+    $12::boolean,
+    $13::int,
+    $14::varchar,
+    $15::uuid
 )
-RETURNING id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at
+RETURNING id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type CreateExternalIntegrationParams struct {
-	TenantID            uuid.UUID   `json:"tenant_id"`
-	ProjectID           uuid.UUID   `json:"project_id"`
-	DigitalEmployeeID   uuid.UUID   `json:"digital_employee_id"`
-	Name                string      `json:"name"`
-	Description         string      `json:"description"`
-	AllowChatRun        bool        `json:"allow_chat_run"`
-	AllowDemandSubmit   bool        `json:"allow_demand_submit"`
-	SkillIds            []byte      `json:"skill_ids"`
-	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
-	AutonomyTier        string      `json:"autonomy_tier"`
-	MaxCallsPerHour     int32       `json:"max_calls_per_hour"`
-	Status              string      `json:"status"`
-	CreatedByUserID     uuid.UUID   `json:"created_by_user_id"`
+	TenantID                     uuid.UUID   `json:"tenant_id"`
+	ProjectID                    uuid.UUID   `json:"project_id"`
+	DigitalEmployeeID            uuid.UUID   `json:"digital_employee_id"`
+	Name                         string      `json:"name"`
+	Description                  string      `json:"description"`
+	AllowChatRun                 bool        `json:"allow_chat_run"`
+	AllowDemandSubmit            bool        `json:"allow_demand_submit"`
+	SkillIds                     []byte      `json:"skill_ids"`
+	ScenarioTemplateKey          pgtype.Text `json:"scenario_template_key"`
+	AutonomyTier                 string      `json:"autonomy_tier"`
+	PinnedExitDeliverable        pgtype.Text `json:"pinned_exit_deliverable"`
+	AcknowledgeExitTierSemantics bool        `json:"acknowledge_exit_tier_semantics"`
+	MaxCallsPerHour              int32       `json:"max_calls_per_hour"`
+	Status                       string      `json:"status"`
+	CreatedByUserID              uuid.UUID   `json:"created_by_user_id"`
 }
 
 func (q *Queries) CreateExternalIntegration(ctx context.Context, arg CreateExternalIntegrationParams) (ExternalIntegration, error) {
@@ -126,6 +134,8 @@ func (q *Queries) CreateExternalIntegration(ctx context.Context, arg CreateExter
 		arg.SkillIds,
 		arg.ScenarioTemplateKey,
 		arg.AutonomyTier,
+		arg.PinnedExitDeliverable,
+		arg.AcknowledgeExitTierSemantics,
 		arg.MaxCallsPerHour,
 		arg.Status,
 		arg.CreatedByUserID,
@@ -150,6 +160,8 @@ func (q *Queries) CreateExternalIntegration(ctx context.Context, arg CreateExter
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -212,7 +224,7 @@ func (q *Queries) GetActiveExternalIntegrationTokenBySHA(ctx context.Context, to
 }
 
 const GetExternalIntegration = `-- name: GetExternalIntegration :one
-SELECT id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at FROM external_integrations
+SELECT id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at, pinned_exit_deliverable, acknowledge_exit_tier_semantics FROM external_integrations
 WHERE tenant_id = $1::uuid
   AND id = $2::uuid
 `
@@ -244,6 +256,8 @@ func (q *Queries) GetExternalIntegration(ctx context.Context, arg GetExternalInt
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }
@@ -301,7 +315,7 @@ func (q *Queries) ListExternalIntegrationTokens(ctx context.Context, arg ListExt
 }
 
 const ListExternalIntegrationsByTenant = `-- name: ListExternalIntegrationsByTenant :many
-SELECT id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at FROM external_integrations
+SELECT id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at, pinned_exit_deliverable, acknowledge_exit_tier_semantics FROM external_integrations
 WHERE tenant_id = $1::uuid
   AND (
     $2::uuid IS NULL
@@ -343,6 +357,8 @@ func (q *Queries) ListExternalIntegrationsByTenant(ctx context.Context, arg List
 			&i.CreatedByUserID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PinnedExitDeliverable,
+			&i.AcknowledgeExitTierSemantics,
 		); err != nil {
 			return nil, err
 		}
@@ -406,26 +422,30 @@ UPDATE external_integrations SET
     skill_ids = $5::jsonb,
     scenario_template_key = $6::varchar,
     autonomy_tier = $7::varchar,
-    max_calls_per_hour = $8::int,
-    status = $9::varchar,
+    pinned_exit_deliverable = $8::varchar,
+    acknowledge_exit_tier_semantics = $9::boolean,
+    max_calls_per_hour = $10::int,
+    status = $11::varchar,
     updated_at = NOW()
-WHERE tenant_id = $10::uuid
-  AND id = $11::uuid
-RETURNING id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at
+WHERE tenant_id = $12::uuid
+  AND id = $13::uuid
+RETURNING id, tenant_id, project_id, digital_employee_id, name, description, allow_chat_run, allow_demand_submit, skill_ids, scenario_template_key, autonomy_tier, max_calls_per_hour, budget_window_start, budget_window_count, status, created_by_user_id, created_at, updated_at, pinned_exit_deliverable, acknowledge_exit_tier_semantics
 `
 
 type UpdateExternalIntegrationParams struct {
-	Name                string      `json:"name"`
-	Description         string      `json:"description"`
-	AllowChatRun        bool        `json:"allow_chat_run"`
-	AllowDemandSubmit   bool        `json:"allow_demand_submit"`
-	SkillIds            []byte      `json:"skill_ids"`
-	ScenarioTemplateKey pgtype.Text `json:"scenario_template_key"`
-	AutonomyTier        string      `json:"autonomy_tier"`
-	MaxCallsPerHour     int32       `json:"max_calls_per_hour"`
-	Status              string      `json:"status"`
-	TenantID            uuid.UUID   `json:"tenant_id"`
-	ID                  uuid.UUID   `json:"id"`
+	Name                         string      `json:"name"`
+	Description                  string      `json:"description"`
+	AllowChatRun                 bool        `json:"allow_chat_run"`
+	AllowDemandSubmit            bool        `json:"allow_demand_submit"`
+	SkillIds                     []byte      `json:"skill_ids"`
+	ScenarioTemplateKey          pgtype.Text `json:"scenario_template_key"`
+	AutonomyTier                 string      `json:"autonomy_tier"`
+	PinnedExitDeliverable        pgtype.Text `json:"pinned_exit_deliverable"`
+	AcknowledgeExitTierSemantics bool        `json:"acknowledge_exit_tier_semantics"`
+	MaxCallsPerHour              int32       `json:"max_calls_per_hour"`
+	Status                       string      `json:"status"`
+	TenantID                     uuid.UUID   `json:"tenant_id"`
+	ID                           uuid.UUID   `json:"id"`
 }
 
 func (q *Queries) UpdateExternalIntegration(ctx context.Context, arg UpdateExternalIntegrationParams) (ExternalIntegration, error) {
@@ -437,6 +457,8 @@ func (q *Queries) UpdateExternalIntegration(ctx context.Context, arg UpdateExter
 		arg.SkillIds,
 		arg.ScenarioTemplateKey,
 		arg.AutonomyTier,
+		arg.PinnedExitDeliverable,
+		arg.AcknowledgeExitTierSemantics,
 		arg.MaxCallsPerHour,
 		arg.Status,
 		arg.TenantID,
@@ -462,6 +484,8 @@ func (q *Queries) UpdateExternalIntegration(ctx context.Context, arg UpdateExter
 		&i.CreatedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PinnedExitDeliverable,
+		&i.AcknowledgeExitTierSemantics,
 	)
 	return i, err
 }

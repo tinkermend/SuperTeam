@@ -23,7 +23,10 @@ type PlanRevisionPayload struct {
 	HumanReview            PlanRevisionHumanReview          `json:"human_review"`
 	Tasks                  []PlanRevisionTask               `json:"tasks"`
 	PlanAcceptanceCriteria []PlanAcceptanceCriterion        `json:"plan_acceptance_criteria,omitempty"`
-	FinalSummaryContract   PlanRevisionFinalSummaryContract `json:"final_summary_contract"`
+	// RiskAttribution mirrors RouteDecisionPlan.RiskAttribution for audit /
+	// later source-based gates (F6). Omitted from fingerprint (annotation).
+	RiskAttribution      []RiskSignalAttribution          `json:"risk_attribution,omitempty"`
+	FinalSummaryContract PlanRevisionFinalSummaryContract `json:"final_summary_contract"`
 }
 
 type PlanRevisionRiskAssessment struct {
@@ -66,6 +69,11 @@ type PlanAcceptanceCriterion struct {
 	// AmbiguityFlag is server-computed by markAmbiguousCriteria; it flags a
 	// statement as too vague to judge without rejecting the plan.
 	AmbiguityFlag bool `json:"ambiguity_flag,omitempty"`
+	// Source is who authored this criterion: template_declared,
+	// platform_injected, or planner_authored (see risk_attribution.go). Empty
+	// on legacy payloads is treated as planner_authored by readers that need
+	// a source (F4 E6); F2 writers always set it going forward.
+	Source string `json:"source,omitempty"`
 }
 
 type PlanRevisionTask struct {
@@ -167,6 +175,7 @@ func BuildPlanRevisionPayload(plan RouteDecisionPlan) PlanRevisionPayload {
 		HumanReview:            humanReview,
 		Tasks:                  tasks,
 		PlanAcceptanceCriteria: plan.PlanAcceptanceCriteria,
+		RiskAttribution:        cloneRiskAttribution(plan.RiskAttribution),
 		FinalSummaryContract: PlanRevisionFinalSummaryContract{
 			RequiredSections: clonePlanRevisionStringSlice(defaultFinalSummaryRequiredSections),
 		},
@@ -192,10 +201,15 @@ func ValidatePlanRevisionPayload(payload PlanRevisionPayload) PlanRevisionPayloa
 		return result
 	}
 	result.PlanFingerprint = fingerprint
-	if payload.HumanReview.Required {
+	// F6: plan_review is only required for platform_derived risk signals.
+	// Planner self-reported HumanReview / high RiskLevel no longer force review.
+	if payloadHasPlatformDerivedRisk(payload) {
 		result.ReviewRequired = true
 		for _, reason := range payload.HumanReview.Reasons {
 			result.ReviewReasons = appendUniqueString(result.ReviewReasons, reason)
+		}
+		if len(result.ReviewReasons) == 0 {
+			result.ReviewReasons = append(result.ReviewReasons, "platform_derived_risk")
 		}
 	}
 	validateFinalSummaryContract(payload.FinalSummaryContract, &result)
@@ -229,14 +243,6 @@ func ValidatePlanRevisionPayload(payload PlanRevisionPayload) PlanRevisionPayloa
 		if len(nonEmptyPlanRevisionStrings(task.AcceptanceCriteria)) == 0 {
 			result.Errors = append(result.Errors, "missing_acceptance_criteria:"+key)
 		}
-		if task.HumanReviewRequired {
-			result.ReviewRequired = true
-			result.ReviewReasons = appendUniqueString(result.ReviewReasons, "task_requires_human_approval:"+key)
-		}
-		if isHighRiskLevel(task.RiskLevel) {
-			result.ReviewRequired = true
-			result.ReviewReasons = appendUniqueString(result.ReviewReasons, "high_risk_task:"+key)
-		}
 	}
 	for _, task := range payload.Tasks {
 		taskKey := strings.TrimSpace(task.PlannedTaskKey)
@@ -258,6 +264,15 @@ func ValidatePlanRevisionPayload(payload PlanRevisionPayload) PlanRevisionPayloa
 		result.Acceptable = false
 	}
 	return result
+}
+
+func payloadHasPlatformDerivedRisk(payload PlanRevisionPayload) bool {
+	for _, entry := range payload.RiskAttribution {
+		if strings.HasPrefix(entry.Source, "platform_derived:") {
+			return true
+		}
+	}
+	return false
 }
 
 func PlanRevisionPayloadToPlannedTasks(payload PlanRevisionPayload) []PlannedTask {
@@ -357,6 +372,7 @@ func canonicalPlanAcceptanceCriteria(criteria []PlanAcceptanceCriterion) []PlanA
 			Severity:           criterion.Severity,
 			EvidenceHint:       criterion.EvidenceHint,
 			AmbiguityFlag:      criterion.AmbiguityFlag,
+			Source:             criterion.Source,
 		})
 	}
 	sortPlanAcceptanceCriteria(canonical)

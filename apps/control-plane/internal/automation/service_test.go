@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/superteam/control-plane/internal/project"
+	"github.com/superteam/control-plane/internal/scenariotemplate"
 )
 
 func TestRenderTemplateUsesTimezone(t *testing.T) {
@@ -396,6 +397,7 @@ func (f *fakeProjects) IsEligibleInitiator(ctx context.Context, tenantID, projec
 type fakePlaybooks struct {
 	ceiling string
 	err     error
+	spec    scenariotemplate.SpecV2
 }
 
 func (f *fakePlaybooks) PlaybookAutonomyCeiling(ctx context.Context, tenantID uuid.UUID, templateKey string) (string, error) {
@@ -403,6 +405,13 @@ func (f *fakePlaybooks) PlaybookAutonomyCeiling(ctx context.Context, tenantID uu
 		return "", f.err
 	}
 	return f.ceiling, nil
+}
+
+func (f *fakePlaybooks) PlaybookSpec(ctx context.Context, tenantID uuid.UUID, templateKey string) (scenariotemplate.SpecV2, error) {
+	if f.err != nil {
+		return scenariotemplate.SpecV2{}, f.err
+	}
+	return f.spec, nil
 }
 
 type fakeDemands struct {
@@ -495,5 +504,67 @@ func TestCreateRuleRejectsAutonomyAbovePlaybookCeiling(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestCreateRuleRejectsFullAutoMultiExitWithoutPin(t *testing.T) {
+	tenantID := uuid.New()
+	projectID := uuid.New()
+	actorID := uuid.New()
+	repo := newFakeRepo()
+	svc := NewService(repo, &fakeProjects{eligible: true, name: "P"}, nil, nil, &fakeSchedules{})
+	key := "software_delivery"
+	svc.SetPlaybookAutonomySource(&fakePlaybooks{
+		ceiling: "full_auto",
+		spec: scenariotemplate.SpecV2{
+			Exits: []scenariotemplate.SpecExit{
+				{Deliverable: "branch_ref"},
+				{Deliverable: "release_record"},
+			},
+			DefaultAcceptanceCriteria: []scenariotemplate.SpecAcceptanceCriterion{
+				{Statement: "负责人确认发布", AppliesFromExit: "release_record", VerificationMethod: "human_judgment"},
+			},
+		},
+	})
+
+	_, err := svc.CreateRule(context.Background(), CreateRuleRequest{
+		TenantID:            tenantID,
+		ActorUserID:         actorID,
+		ProjectID:           projectID,
+		Name:                "未 pin",
+		CoordinationMode:    ModeLoop,
+		DemandTitleTemplate: strPtr("t"),
+		DemandBodyTemplate:  strPtr("b"),
+		ScenarioTemplateKey: &key,
+		ScheduleKind:        ScheduleInterval,
+		IntervalSeconds:     int32Ptr(3600),
+		Timezone:            DefaultTimezone,
+		AutonomyTier:        "full_auto",
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput for missing exit pin, got %v", err)
+	}
+
+	pin := "branch_ref"
+	created, err := svc.CreateRule(context.Background(), CreateRuleRequest{
+		TenantID:              tenantID,
+		ActorUserID:           actorID,
+		ProjectID:             projectID,
+		Name:                  "已 pin",
+		CoordinationMode:      ModeLoop,
+		DemandTitleTemplate:   strPtr("t"),
+		DemandBodyTemplate:    strPtr("b"),
+		ScenarioTemplateKey:   &key,
+		ScheduleKind:          ScheduleInterval,
+		IntervalSeconds:       int32Ptr(3600),
+		Timezone:              DefaultTimezone,
+		AutonomyTier:          "full_auto",
+		PinnedExitDeliverable: &pin,
+	})
+	if err != nil {
+		t.Fatalf("CreateRule with pin: %v", err)
+	}
+	if created.PinnedExitDeliverable == nil || *created.PinnedExitDeliverable != pin {
+		t.Fatalf("expected pinned exit %q, got %#v", pin, created.PinnedExitDeliverable)
 	}
 }

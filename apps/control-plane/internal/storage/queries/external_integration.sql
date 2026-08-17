@@ -10,6 +10,8 @@ INSERT INTO external_integrations (
     skill_ids,
     scenario_template_key,
     autonomy_tier,
+    pinned_exit_deliverable,
+    acknowledge_exit_tier_semantics,
     max_calls_per_hour,
     status,
     created_by_user_id
@@ -24,6 +26,8 @@ INSERT INTO external_integrations (
     sqlc.arg('skill_ids')::jsonb,
     sqlc.narg('scenario_template_key')::varchar,
     sqlc.arg('autonomy_tier')::varchar,
+    sqlc.narg('pinned_exit_deliverable')::varchar,
+    sqlc.arg('acknowledge_exit_tier_semantics')::boolean,
     sqlc.arg('max_calls_per_hour')::int,
     sqlc.arg('status')::varchar,
     sqlc.arg('created_by_user_id')::uuid
@@ -53,6 +57,8 @@ UPDATE external_integrations SET
     skill_ids = sqlc.arg('skill_ids')::jsonb,
     scenario_template_key = sqlc.narg('scenario_template_key')::varchar,
     autonomy_tier = sqlc.arg('autonomy_tier')::varchar,
+    pinned_exit_deliverable = sqlc.narg('pinned_exit_deliverable')::varchar,
+    acknowledge_exit_tier_semantics = sqlc.arg('acknowledge_exit_tier_semantics')::boolean,
     max_calls_per_hour = sqlc.arg('max_calls_per_hour')::int,
     status = sqlc.arg('status')::varchar,
     updated_at = NOW()

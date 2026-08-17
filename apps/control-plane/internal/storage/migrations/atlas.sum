@@ -1,4 +1,4 @@
-h1:n61L76wvArvprwMCgTnBwsKMDDPGzXwCp7P+1ztU7uk=
+h1:Peku8jlD2fm/TeHkqhE/b5EHCkdZC1HcLaBJTi9rwyE=
 001_initial.sql h1:mU5lBl3+gsvbavQL0M5KCoGkI/4ylHXegEDwy7zd6ZU=
 002_seed_dev_admin.sql h1:veEwlZhjZmZUtQ4KKyHE7tTrNjQ75pb+x961kXqzmsk=
 003_add_team_governance_config.sql h1:vCZWaO/GJyB68J0c3rkdtLeo/k8K6NN3iQpPAY3dE+U=
@@ -133,3 +133,4 @@ h1:n61L76wvArvprwMCgTnBwsKMDDPGzXwCp7P+1ztU7uk=
 20260813083533_chat_thread_title.sql h1:LQa10SLgcl5QSjM5VdEMfg4UPPKOoB0A5+UyZ9HmTCI=
 20260814022322_employee_template_default_role_keys.sql h1:LChrRGKZzDnU58Y9A8E9wlGQ9Qb32XTQAQxckfMQv4Y=
 20260816205000_project_task_cancel_reason_and_supersede.sql h1:YkraQJb5vW4LQYuEgh/al6CKIYMmiUOBNLMkjE4q6LI=
+20260817160000_autonomy_exit_pin_and_exempt_retire.sql h1:vZuRowLF+JxF+Aka4j/wpUyDQo8t3XA3BXj5/D+55Zw=
