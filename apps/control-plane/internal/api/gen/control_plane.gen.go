@@ -2270,16 +2270,34 @@ func (e ProjectTaskGraphHandoffAssessmentStatus) Valid() bool {
 
 // Defines values for ProjectTaskGraphHandoffDeliverableVerdict.
 const (
-	Delivered ProjectTaskGraphHandoffDeliverableVerdict = "delivered"
-	Missing   ProjectTaskGraphHandoffDeliverableVerdict = "missing"
+	ProjectTaskGraphHandoffDeliverableVerdictDelivered ProjectTaskGraphHandoffDeliverableVerdict = "delivered"
+	ProjectTaskGraphHandoffDeliverableVerdictMissing   ProjectTaskGraphHandoffDeliverableVerdict = "missing"
 )
 
 // Valid indicates whether the value is a known member of the ProjectTaskGraphHandoffDeliverableVerdict enum.
 func (e ProjectTaskGraphHandoffDeliverableVerdict) Valid() bool {
 	switch e {
-	case Delivered:
+	case ProjectTaskGraphHandoffDeliverableVerdictDelivered:
 		return true
-	case Missing:
+	case ProjectTaskGraphHandoffDeliverableVerdictMissing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProjectTaskGraphHandoffNoteVerdict.
+const (
+	ProjectTaskGraphHandoffNoteVerdictDelivered ProjectTaskGraphHandoffNoteVerdict = "delivered"
+	ProjectTaskGraphHandoffNoteVerdictMissing   ProjectTaskGraphHandoffNoteVerdict = "missing"
+)
+
+// Valid indicates whether the value is a known member of the ProjectTaskGraphHandoffNoteVerdict enum.
+func (e ProjectTaskGraphHandoffNoteVerdict) Valid() bool {
+	switch e {
+	case ProjectTaskGraphHandoffNoteVerdictDelivered:
+		return true
+	case ProjectTaskGraphHandoffNoteVerdictMissing:
 		return true
 	default:
 		return false
@@ -6208,7 +6226,13 @@ type ProjectDemandDossier struct {
 	// HandoffSummary unknown 表示"暂无声明,无法判定",不得渲染为失败。
 	HandoffSummary struct {
 		Assessments []struct {
-			Deliverables    []ProjectTaskGraphHandoffDeliverable                `json:"deliverables"`
+			Deliverables []ProjectTaskGraphHandoffDeliverable `json:"deliverables"`
+
+			// InputGaps 本任务带缺口完成时自行申报的输入缺口（spec 2026-08-16 交接包 §4.4）：只投影不触发补链，与 notes 同为软视图。
+			InputGaps *[]ProjectTaskGraphHandoffInputGap `json:"input_gaps,omitempty"`
+
+			// Notes 下游声明的结论槽位软条目（spec 2026-08-16 交接包）：逐条 delivered/missing，不进 status 汇总、不打回（散文不进闸）。
+			Notes           *[]ProjectTaskGraphHandoffNote                      `json:"notes,omitempty"`
 			ProjectTaskId   openapi_types.UUID                                  `json:"project_task_id"`
 			ProjectTaskName *string                                             `json:"project_task_name,omitempty"`
 			Status          ProjectDemandDossierHandoffSummaryAssessmentsStatus `json:"status"`
@@ -7013,7 +7037,13 @@ type ProjectTaskGraphEmployeeAvatarAsset struct {
 
 // ProjectTaskGraphHandoffAssessment defines model for ProjectTaskGraphHandoffAssessment.
 type ProjectTaskGraphHandoffAssessment struct {
-	Deliverables  []ProjectTaskGraphHandoffDeliverable    `json:"deliverables"`
+	Deliverables []ProjectTaskGraphHandoffDeliverable `json:"deliverables"`
+
+	// InputGaps 本任务带缺口完成时自行申报的输入缺口（spec 2026-08-16 交接包 §4.4）：只投影不触发补链，与 notes 同为软视图。
+	InputGaps *[]ProjectTaskGraphHandoffInputGap `json:"input_gaps,omitempty"`
+
+	// Notes 下游声明的结论槽位软条目（spec 2026-08-16 交接包）：逐条 delivered/missing，不进 status 汇总、不打回（散文不进闸）。
+	Notes         *[]ProjectTaskGraphHandoffNote          `json:"notes,omitempty"`
 	ProjectTaskId openapi_types.UUID                      `json:"project_task_id"`
 	Status        ProjectTaskGraphHandoffAssessmentStatus `json:"status"`
 }
@@ -7032,6 +7062,21 @@ type ProjectTaskGraphHandoffDeliverable struct {
 
 // ProjectTaskGraphHandoffDeliverableVerdict defines model for ProjectTaskGraphHandoffDeliverable.Verdict.
 type ProjectTaskGraphHandoffDeliverableVerdict string
+
+// ProjectTaskGraphHandoffInputGap 一条完成态申报的输入缺口（软条目，不触发补链）。
+type ProjectTaskGraphHandoffInputGap struct {
+	Name   string  `json:"name"`
+	Reason *string `json:"reason,omitempty"`
+}
+
+// ProjectTaskGraphHandoffNote 一条下游声明结论槽位的核对结果。声明来源为下游任务 handoff_contract.notes 的 name；delivered 判据为 result_contract. handoff_notes 中对应 name 的 value 非空。
+type ProjectTaskGraphHandoffNote struct {
+	Name    string                             `json:"name"`
+	Verdict ProjectTaskGraphHandoffNoteVerdict `json:"verdict"`
+}
+
+// ProjectTaskGraphHandoffNoteVerdict defines model for ProjectTaskGraphHandoffNote.Verdict.
+type ProjectTaskGraphHandoffNoteVerdict string
 
 // ProjectTaskGraphNode defines model for ProjectTaskGraphNode.
 type ProjectTaskGraphNode struct {
@@ -8268,27 +8313,69 @@ type TaskResultAcceptanceResult struct {
 	Status              TaskResultCriterionStatus `json:"status"`
 }
 
+// TaskResultBlocker blocked 申报。missing_inputs 白名单 = required_inputs ∪ handoff_contract. notes 声明（spec 2026-08-16 交接包 §4.4）；missing_input_reasons 逐项 原因进补做工单与澄清卡卡面。
+type TaskResultBlocker struct {
+	MissingInputReasons  *map[string]string     `json:"missing_input_reasons,omitempty"`
+	MissingInputs        *[]string              `json:"missing_inputs,omitempty"`
+	Reason               *string                `json:"reason,omitempty"`
+	RequiredBy           *string                `json:"required_by,omitempty"`
+	ResolutionPrompt     *string                `json:"resolution_prompt,omitempty"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
 // TaskResultContract defines model for TaskResultContract.
 type TaskResultContract struct {
-	AcceptanceResults  []TaskResultAcceptanceResult `json:"acceptance_results"`
-	ArtifactRefs       []TaskResultRef              `json:"artifact_refs"`
-	Blocker            *map[string]interface{}      `json:"blocker,omitempty"`
-	Cancellation       *map[string]interface{}      `json:"cancellation,omitempty"`
-	ChangesMade        *[]map[string]interface{}    `json:"changes_made,omitempty"`
-	EvidenceRefs       []TaskResultRef              `json:"evidence_refs"`
-	Failure            *map[string]interface{}      `json:"failure,omitempty"`
-	FollowUpRequests   *[]map[string]interface{}    `json:"follow_up_requests,omitempty"`
-	HumanReviewRequest *map[string]interface{}      `json:"human_review_request,omitempty"`
-	ReplanRequest      *map[string]interface{}      `json:"replan_request,omitempty"`
-	RevisionRequest    *map[string]interface{}      `json:"revision_request,omitempty"`
-	Risks              []map[string]interface{}     `json:"risks"`
-	Status             TaskResultStatus             `json:"status"`
-	Summary            string                       `json:"summary"`
-	Verification       []map[string]interface{}     `json:"verification"`
+	AcceptanceResults []TaskResultAcceptanceResult `json:"acceptance_results"`
+	ArtifactRefs      []TaskResultRef              `json:"artifact_refs"`
+
+	// Blocker blocked 申报。missing_inputs 白名单 = required_inputs ∪ handoff_contract. notes 声明（spec 2026-08-16 交接包 §4.4）；missing_input_reasons 逐项 原因进补做工单与澄清卡卡面。
+	Blocker      *TaskResultBlocker        `json:"blocker,omitempty"`
+	Cancellation *map[string]interface{}   `json:"cancellation,omitempty"`
+	ChangesMade  *[]map[string]interface{} `json:"changes_made,omitempty"`
+
+	// Deliverables 命名交付物（07-13 §8.1 typed schema）：completed 结果必须逐项覆盖 produces 名单；ref 为已物化工件的 artifact_ref_id（回写侧回填）。
+	Deliverables     *[]TaskResultDeliverable  `json:"deliverables,omitempty"`
+	EvidenceRefs     []TaskResultRef           `json:"evidence_refs"`
+	Failure          *map[string]interface{}   `json:"failure,omitempty"`
+	FollowUpRequests *[]map[string]interface{} `json:"follow_up_requests,omitempty"`
+
+	// HandoffNotes 上游为下游声明的结论槽位写的结构化散文（spec 2026-08-16 交接包 §3.5.2）：平台按下游 notes 声明按名提取合并；缺失不打回，仅投影 进 handoff assessment 软条目。
+	HandoffNotes       *[]TaskResultHandoffNote `json:"handoff_notes,omitempty"`
+	HumanReviewRequest *map[string]interface{}  `json:"human_review_request,omitempty"`
+
+	// InputGaps 带缺口完成时申报的输入缺口（spec 2026-08-16 交接包 §4.4）：只投影 进 handoff assessment 软条目，不触发补链——补链只服务 blocked 申报。
+	InputGaps       *[]TaskResultInputGap    `json:"input_gaps,omitempty"`
+	ReplanRequest   *map[string]interface{}  `json:"replan_request,omitempty"`
+	RevisionRequest *map[string]interface{}  `json:"revision_request,omitempty"`
+	Risks           []map[string]interface{} `json:"risks"`
+	Status          TaskResultStatus         `json:"status"`
+	Summary         string                   `json:"summary"`
+	Verification    []map[string]interface{} `json:"verification"`
 }
 
 // TaskResultCriterionStatus defines model for TaskResultCriterionStatus.
 type TaskResultCriterionStatus string
+
+// TaskResultDeliverable 一条命名交付物（07-13 §8.1）。有 value 或 ref 才算交付；平台在完成 回写时逐项核对 produces 名单（缺 required 项不判 completed）。
+type TaskResultDeliverable struct {
+	Kind    *string `json:"kind,omitempty"`
+	Name    string  `json:"name"`
+	Ref     *string `json:"ref,omitempty"`
+	Summary *string `json:"summary,omitempty"`
+	Value   *string `json:"value,omitempty"`
+}
+
+// TaskResultHandoffNote 一条结论槽位（spec 2026-08-16 交接包 §3.5.2）：上游按下游声明写， 平台按名提取，缺失不打回。
+type TaskResultHandoffNote struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// TaskResultInputGap 一条完成态申报的输入缺口（spec 2026-08-16 交接包 §4.4）：B 的判断权， 平台只提供可观测通道（assessment 软条目），不触发补链。
+type TaskResultInputGap struct {
+	Name   string  `json:"name"`
+	Reason *string `json:"reason,omitempty"`
+}
 
 // TaskResultRef defines model for TaskResultRef.
 type TaskResultRef struct {
@@ -9844,6 +9931,134 @@ func (a HumanTaskEvidenceItem) MarshalJSON() ([]byte, error) {
 		object["verification_method"], err = json.Marshal(a.VerificationMethod)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'verification_method': %w", err)
+		}
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
+
+// Getter for additional properties for TaskResultBlocker. Returns the specified
+// element and whether it was found
+func (a TaskResultBlocker) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for TaskResultBlocker
+func (a *TaskResultBlocker) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for TaskResultBlocker to handle AdditionalProperties
+func (a *TaskResultBlocker) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["missing_input_reasons"]; found {
+		err = json.Unmarshal(raw, &a.MissingInputReasons)
+		if err != nil {
+			return fmt.Errorf("error reading 'missing_input_reasons': %w", err)
+		}
+		delete(object, "missing_input_reasons")
+	}
+
+	if raw, found := object["missing_inputs"]; found {
+		err = json.Unmarshal(raw, &a.MissingInputs)
+		if err != nil {
+			return fmt.Errorf("error reading 'missing_inputs': %w", err)
+		}
+		delete(object, "missing_inputs")
+	}
+
+	if raw, found := object["reason"]; found {
+		err = json.Unmarshal(raw, &a.Reason)
+		if err != nil {
+			return fmt.Errorf("error reading 'reason': %w", err)
+		}
+		delete(object, "reason")
+	}
+
+	if raw, found := object["required_by"]; found {
+		err = json.Unmarshal(raw, &a.RequiredBy)
+		if err != nil {
+			return fmt.Errorf("error reading 'required_by': %w", err)
+		}
+		delete(object, "required_by")
+	}
+
+	if raw, found := object["resolution_prompt"]; found {
+		err = json.Unmarshal(raw, &a.ResolutionPrompt)
+		if err != nil {
+			return fmt.Errorf("error reading 'resolution_prompt': %w", err)
+		}
+		delete(object, "resolution_prompt")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for TaskResultBlocker to handle AdditionalProperties
+func (a TaskResultBlocker) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	if a.MissingInputReasons != nil {
+		object["missing_input_reasons"], err = json.Marshal(a.MissingInputReasons)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'missing_input_reasons': %w", err)
+		}
+	}
+
+	if a.MissingInputs != nil {
+		object["missing_inputs"], err = json.Marshal(a.MissingInputs)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'missing_inputs': %w", err)
+		}
+	}
+
+	if a.Reason != nil {
+		object["reason"], err = json.Marshal(a.Reason)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'reason': %w", err)
+		}
+	}
+
+	if a.RequiredBy != nil {
+		object["required_by"], err = json.Marshal(a.RequiredBy)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'required_by': %w", err)
+		}
+	}
+
+	if a.ResolutionPrompt != nil {
+		object["resolution_prompt"], err = json.Marshal(a.ResolutionPrompt)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'resolution_prompt': %w", err)
 		}
 	}
 

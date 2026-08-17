@@ -9628,6 +9628,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProjectTaskGraphHandoffDeliverable"
+        notes:
+          type: array
+          description: >-
+            下游声明的结论槽位软条目（spec 2026-08-16 交接包）：逐条
+            delivered/missing，不进 status 汇总、不打回（散文不进闸）。
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphHandoffNote"
+        input_gaps:
+          type: array
+          description: >-
+            本任务带缺口完成时自行申报的输入缺口（spec 2026-08-16 交接包
+            §4.4）：只投影不触发补链，与 notes 同为软视图。
+          items:
+            $ref: "#/components/schemas/ProjectTaskGraphHandoffInputGap"
     ProjectTaskGraphHandoffDeliverable:
       type: object
       description: >-
@@ -9650,6 +9664,34 @@ components:
         ref:
           type: string
         summary:
+          type: string
+    ProjectTaskGraphHandoffNote:
+      type: object
+      description: >-
+        一条下游声明结论槽位的核对结果。声明来源为下游任务
+        handoff_contract.notes 的 name；delivered 判据为 result_contract.
+        handoff_notes 中对应 name 的 value 非空。
+      required:
+        - name
+        - verdict
+      properties:
+        name:
+          type: string
+        verdict:
+          type: string
+          enum:
+            - delivered
+            - missing
+    ProjectTaskGraphHandoffInputGap:
+      type: object
+      description: >-
+        一条完成态申报的输入缺口（软条目，不触发补链）。
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        reason:
           type: string
     ProjectTaskLiveness:
       type: object
@@ -12979,6 +13021,28 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TaskResultRef"
+        deliverables:
+          type: array
+          description: >-
+            命名交付物（07-13 §8.1 typed schema）：completed 结果必须逐项覆盖
+            produces 名单；ref 为已物化工件的 artifact_ref_id（回写侧回填）。
+          items:
+            $ref: "#/components/schemas/TaskResultDeliverable"
+        handoff_notes:
+          type: array
+          description: >-
+            上游为下游声明的结论槽位写的结构化散文（spec 2026-08-16 交接包
+            §3.5.2）：平台按下游 notes 声明按名提取合并；缺失不打回，仅投影
+            进 handoff assessment 软条目。
+          items:
+            $ref: "#/components/schemas/TaskResultHandoffNote"
+        input_gaps:
+          type: array
+          description: >-
+            带缺口完成时申报的输入缺口（spec 2026-08-16 交接包 §4.4）：只投影
+            进 handoff assessment 软条目，不触发补链——补链只服务 blocked 申报。
+          items:
+            $ref: "#/components/schemas/TaskResultInputGap"
         changes_made:
           type: array
           items:
@@ -13006,8 +13070,7 @@ components:
           type: object
           additionalProperties: true
         blocker:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/TaskResultBlocker"
         failure:
           type: object
           additionalProperties: true
@@ -13017,6 +13080,71 @@ components:
         cancellation:
           type: object
           additionalProperties: true
+    TaskResultDeliverable:
+      type: object
+      description: >-
+        一条命名交付物（07-13 §8.1）。有 value 或 ref 才算交付；平台在完成
+        回写时逐项核对 produces 名单（缺 required 项不判 completed）。
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        value:
+          type: string
+        ref:
+          type: string
+        summary:
+          type: string
+    TaskResultHandoffNote:
+      type: object
+      description: >-
+        一条结论槽位（spec 2026-08-16 交接包 §3.5.2）：上游按下游声明写，
+        平台按名提取，缺失不打回。
+      required:
+        - name
+        - value
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+    TaskResultInputGap:
+      type: object
+      description: >-
+        一条完成态申报的输入缺口（spec 2026-08-16 交接包 §4.4）：B 的判断权，
+        平台只提供可观测通道（assessment 软条目），不触发补链。
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        reason:
+          type: string
+    TaskResultBlocker:
+      type: object
+      description: >-
+        blocked 申报。missing_inputs 白名单 = required_inputs ∪ handoff_contract.
+        notes 声明（spec 2026-08-16 交接包 §4.4）；missing_input_reasons 逐项
+        原因进补做工单与澄清卡卡面。
+      additionalProperties: true
+      properties:
+        reason:
+          type: string
+        resolution_prompt:
+          type: string
+        required_by:
+          type: string
+        missing_inputs:
+          type: array
+          items:
+            type: string
+        missing_input_reasons:
+          type: object
+          additionalProperties:
+            type: string
     TaskResultAcceptanceResult:
       type: object
       required:

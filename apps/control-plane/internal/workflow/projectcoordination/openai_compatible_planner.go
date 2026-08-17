@@ -364,7 +364,7 @@ func buildPlannerSystemPrompt(snapshot CoordinationSnapshot) string {
 		"When the snapshot contains scenario_template, first choose exit_deliverable: exactly one deliverable name from scenario_template.spec.exits that best matches how far the demand asks to go — prefer the SHALLOWEST exit that satisfies the demand; never go deeper than the demand explicitly requires (if snapshot.pinned_exit_deliverable is set, you MUST use it verbatim). Then instantiate ONLY the skeleton steps in the dependency-ancestor closure of the step producing that deliverable: one task per included step in order, honoring depends_on edges, seeding each task's produces from that step's produces_defaults (names verbatim) and its input_requirements.required_inputs from required_inputs_defaults; use the matching spec.roles required_capabilities as capability annotations and fold the spec.default_acceptance_criteria whose applies_from_exit is at or before your chosen exit into plan_acceptance_criteria. You may add tasks the demand genuinely needs beyond the skeleton, but never drop an included skeleton step or rename its produces names. Every skeleton-derived task is still a full task object: include ALL required task fields exactly as for any other task.",
 		"For any task you ADD beyond the skeleton, you MUST set role_key to exactly one key from the active role vocabulary injected in the user snapshot (role_vocabulary). Skeleton-derived tasks inherit role from the template step — do not invent role keys. Never invent role_key values outside that list.",
 		"Set template_key exactly to scenario_template.key when scenario_template is present; otherwise choose a short descriptive key.",
-		"input_requirements.required_inputs lists the produces keys this task consumes from upstream. Put any other context you want to record under planner_notes instead; nothing else in input_requirements is read.",
+		"input_requirements.required_inputs lists the produces keys this task consumes from upstream. Each entry is either a plain string key or an object {\"name\": <key>, \"kind\": <type hint like git_commit|branch_ref|artifact_ref>, \"required\": true|false}; the name is what must be supplied by a direct blocker's produces. Put any other context you want to record under planner_notes instead; nothing else in input_requirements is read.",
 		"task_kind must be one of the canonical platform task types: database_analysis, incident_triage, feature_development. Use database_analysis for any database query, SQL, schema, or data quality work; incident_triage for any system diagnosis, log analysis, metrics, or runtime diagnostics; feature_development for any code implementation, API, contract, migration, or build work. Do not invent custom task_kind values.",
 		"If coordination_policy.require_human_review_for_new_demands is true, still return at least one concrete task and set requires_human_review plus every task requires_human_approval to true.",
 	}
@@ -705,6 +705,12 @@ func decodeRequiredPlannerObject(raw json.RawMessage, field string) (map[string]
 // plannerRequiredInputs extracts the one key of input_requirements that decides
 // anything. Everything else in that map is free-form planner prose and must not
 // reach a gate or a validator. See the 2026-07-10 plan-phase refactor spec §4.2.
+// plannerRequiredInputs extracts the one key of input_requirements that decides
+// anything. Everything else in that map is free-form planner prose and must not
+// reach a gate or a validator. See the 2026-07-10 plan-phase refactor spec §4.2.
+// Entries take the v2 string form or the v3 object form {"name", "kind",
+// "required"} (2026-08-16 handoff package spec §3.3); only the name decides
+// graph supply, so objects are normalized to their name here.
 func plannerRequiredInputs(raw map[string]any) []string {
 	values, ok := raw["required_inputs"].([]any)
 	if !ok {
@@ -712,9 +718,14 @@ func plannerRequiredInputs(raw map[string]any) []string {
 	}
 	inputs := make([]string, 0, len(values))
 	for _, value := range values {
-		text, ok := value.(string)
-		if !ok {
-			continue
+		text := ""
+		switch typed := value.(type) {
+		case string:
+			text = typed
+		case map[string]any:
+			if name, ok := typed["name"].(string); ok {
+				text = name
+			}
 		}
 		if trimmed := strings.TrimSpace(text); trimmed != "" {
 			inputs = append(inputs, trimmed)

@@ -140,6 +140,9 @@ func (s *Service) Create(ctx context.Context, req CreateScenarioTemplateRequest)
 	if err := rejectVersionlessV2Spec(spec); err != nil {
 		return ScenarioTemplate{}, err
 	}
+	if err := rejectVersionlessV3Spec(spec); err != nil {
+		return ScenarioTemplate{}, err
+	}
 	parsedSpec, err := ParseSpec(spec)
 	if err != nil {
 		return ScenarioTemplate{}, fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
@@ -213,6 +216,9 @@ func (s *Service) CreateVersion(ctx context.Context, req CreateScenarioTemplateV
 		spec = map[string]any{}
 	}
 	if err := rejectVersionlessV2Spec(spec); err != nil {
+		return ScenarioTemplate{}, err
+	}
+	if err := rejectVersionlessV3Spec(spec); err != nil {
 		return ScenarioTemplate{}, err
 	}
 	parsedSpec, err := ParseSpec(spec)
@@ -412,6 +418,20 @@ func rejectVersionlessV2Spec(spec map[string]any) error {
 	}
 	return fmt.Errorf(
 		`%w: spec 包含 v2 字段（%s）但未声明 "spec_version": 2；v1 归一化会静默丢弃这些字段导致治理约束失效。请补 "spec_version": 2 后重试`,
+		ErrInvalidInput, strings.Join(offending, "、"))
+}
+
+// rejectVersionlessV3Spec 是 v3 形态的写侧 guardrail（spec 2026-08-16 交接包
+// 专稿 §3.3）：携带 notes_defaults / 对象形态 required_inputs_defaults 却未声明
+// "spec_version": 3 的 spec，读侧会被 sanitizePreV3Spec 收敛回 v2 语义（kind 与
+// notes 静默消失）——写侧拒绝并给出可行动的信息。
+func rejectVersionlessV3Spec(spec map[string]any) error {
+	missing, offending := MissingSpecVersionForV3Shape(spec)
+	if !missing {
+		return nil
+	}
+	return fmt.Errorf(
+		`%w: spec 包含 v3 字段（%s）但未声明 "spec_version": 3；未声明版本时这些槽位语义会在读取时被收敛丢弃。请补 "spec_version": 3 后重试`,
 		ErrInvalidInput, strings.Join(offending, "、"))
 }
 

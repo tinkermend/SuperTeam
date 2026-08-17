@@ -11523,6 +11523,36 @@ func (q *Queries) SumProjectConsumedTokens(ctx context.Context, arg SumProjectCo
 	return consumed_tokens, err
 }
 
+const SupersedeBlockedUpstreamSupplementAttempt = `-- name: SupersedeBlockedUpstreamSupplementAttempt :execrows
+UPDATE project_task_attempts
+SET status = 'cancelled',
+    finished_at = COALESCE(finished_at, NOW()),
+    failure_message = COALESCE($1::text, failure_message),
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND id = $3::uuid
+  AND status IN ('queued', 'running')
+`
+
+type SupersedeBlockedUpstreamSupplementAttemptParams struct {
+	FailureMessage pgtype.Text `json:"failure_message"`
+	TenantID       uuid.UUID   `json:"tenant_id"`
+	ID             uuid.UUID   `json:"id"`
+}
+
+// blocked_resolvable_upstream 申报后任务转 blocked 等补做:旧 attempt 必须出让
+// 活跃位(uq_project_task_attempts_active 把非终态计入活跃),否则补做完成后的
+// 重派发在插新 attempt 时撞唯一约束。终态取 cancelled(申报由补链取代,与
+// SupersedeWaitingHumanProjectTaskAttempt 同词表理由)。已被其他路径置终态时
+// 命中 0 行,属合法情形。
+func (q *Queries) SupersedeBlockedUpstreamSupplementAttempt(ctx context.Context, arg SupersedeBlockedUpstreamSupplementAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, SupersedeBlockedUpstreamSupplementAttempt, arg.FailureMessage, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const SupersedeCurrentAcceptedProjectPlanRevisions = `-- name: SupersedeCurrentAcceptedProjectPlanRevisions :exec
 UPDATE project_plan_revisions
 SET status = 'superseded',
@@ -11675,6 +11705,90 @@ func (q *Queries) TransitionProjectStatus(ctx context.Context, arg TransitionPro
 		&i.DirectoryName,
 		&i.BudgetTokenLimit,
 		&i.WorkspaceOwnership,
+	)
+	return i, err
+}
+
+const TransitionProjectTaskBlockedForUpstreamSupplement = `-- name: TransitionProjectTaskBlockedForUpstreamSupplement :one
+UPDATE project_tasks
+SET status = 'blocked',
+    current_attempt_id = NULL,
+    digital_employee_run_id = NULL,
+    runtime_task_id = NULL,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE($1::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = $2::uuid
+  AND project_id = $3::uuid
+  AND id = $4::uuid
+  AND status IN ('planned', 'pending', 'assigned', 'running', 'waiting_human')
+RETURNING id, tenant_id, project_id, demand_id, title, summary, status, assigned_digital_employee_id, runtime_task_id, digital_employee_run_id, risk_level, requires_human_approval, latest_event_id, created_at, updated_at, coordination_job_id, route_decision_id, planned_task_key, task_kind, stage_index, expected_outputs, input_requirements, handoff_contract, planner_metadata, current_attempt_id, accepted_plan_revision_id, decomposition_claim_key, attempt_count, max_attempts, retry_not_before, waiting_reason, waiting_request_id, terminal_event_id, status_changed_at, latest_dispatch_gate_result_id, revision_of_task_id, latest_task_result_id, plan_iteration, dismissed_at, dismissed_by, cancel_reason, superseded_by_task_id
+`
+
+type TransitionProjectTaskBlockedForUpstreamSupplementParams struct {
+	LatestEventID uuid.NullUUID `json:"latest_event_id"`
+	TenantID      uuid.UUID     `json:"tenant_id"`
+	ProjectID     uuid.UUID     `json:"project_id"`
+	ID            uuid.UUID     `json:"id"`
+}
+
+// blocked_resolvable_upstream 申报后任务转 blocked 等补做。run 绑定必须一并清除:
+// DispatchProjectTask 对带 run 绑定且已有 dispatched 事件的任务按"已派发"幂等
+// 短路,残留绑定会让补做完成后的重派发静默 no-op(同
+// ReleaseProjectTaskWaitingHumanForRedispatch 的注释)。
+func (q *Queries) TransitionProjectTaskBlockedForUpstreamSupplement(ctx context.Context, arg TransitionProjectTaskBlockedForUpstreamSupplementParams) (ProjectTask, error) {
+	row := q.db.QueryRow(ctx, TransitionProjectTaskBlockedForUpstreamSupplement,
+		arg.LatestEventID,
+		arg.TenantID,
+		arg.ProjectID,
+		arg.ID,
+	)
+	var i ProjectTask
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ProjectID,
+		&i.DemandID,
+		&i.Title,
+		&i.Summary,
+		&i.Status,
+		&i.AssignedDigitalEmployeeID,
+		&i.RuntimeTaskID,
+		&i.DigitalEmployeeRunID,
+		&i.RiskLevel,
+		&i.RequiresHumanApproval,
+		&i.LatestEventID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CoordinationJobID,
+		&i.RouteDecisionID,
+		&i.PlannedTaskKey,
+		&i.TaskKind,
+		&i.StageIndex,
+		&i.ExpectedOutputs,
+		&i.InputRequirements,
+		&i.HandoffContract,
+		&i.PlannerMetadata,
+		&i.CurrentAttemptID,
+		&i.AcceptedPlanRevisionID,
+		&i.DecompositionClaimKey,
+		&i.AttemptCount,
+		&i.MaxAttempts,
+		&i.RetryNotBefore,
+		&i.WaitingReason,
+		&i.WaitingRequestID,
+		&i.TerminalEventID,
+		&i.StatusChangedAt,
+		&i.LatestDispatchGateResultID,
+		&i.RevisionOfTaskID,
+		&i.LatestTaskResultID,
+		&i.PlanIteration,
+		&i.DismissedAt,
+		&i.DismissedBy,
+		&i.CancelReason,
+		&i.SupersededByTaskID,
 	)
 	return i, err
 }

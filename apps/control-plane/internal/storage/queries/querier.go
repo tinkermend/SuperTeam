@@ -1076,7 +1076,24 @@ type Querier interface {
 	UpsertSystemConfigOverride(ctx context.Context, arg UpsertSystemConfigOverrideParams) (SystemConfigOverride, error)
 	UpsertUserProjectTeamScope(ctx context.Context, arg UpsertUserProjectTeamScopeParams) (UserProjectTeamScope, error)
 	UserHasActiveProjectTeamScope(ctx context.Context, arg UserHasActiveProjectTeamScopeParams) (bool, error)
-	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)
+	ValidateRuntimeToken(ctx context.Context, arg ValidateRuntimeTokenParams) (AuthRuntimeToken, error)	// 活跃 run × 关联 attempt 已终态 的交叉核对（spec 2026-08-17 L3）：attempt 终态
+	// 是确定性死亡证据——真活跃 run 的 attempt 必然非终态，不会误扫。run→attempt 关联
+	// 走命令回执 payload 的 metadata.project_task_attempt_id（派发期 runMetadata 写入）；
+	// 老 run/非项目 run 无此路径自然不命中。waiting_human 纳入终态集（释放必走新
+	// attempt，旧 run 不会再进展），其 finished_at 可能为 NULL，宽限口径 COALESCE。
+	ListOrphanedActiveDigitalEmployeeRuns(ctx context.Context, arg ListOrphanedActiveDigitalEmployeeRunsParams) ([]ListOrphanedActiveDigitalEmployeeRunsRow, error)
+	// blocked_resolvable_upstream 申报后任务转 blocked 等补做:旧 attempt 必须出让
+	// 活跃位(uq_project_task_attempts_active 把非终态计入活跃),否则补做完成后的
+	// 重派发在插新 attempt 时撞唯一约束。终态取 cancelled(申报由补链取代,与
+	// SupersedeWaitingHumanProjectTaskAttempt 同词表理由)。已被其他路径置终态时
+	// 命中 0 行,属合法情形。
+	SupersedeBlockedUpstreamSupplementAttempt(ctx context.Context, arg SupersedeBlockedUpstreamSupplementAttemptParams) (int64, error)
+	// blocked_resolvable_upstream 申报后任务转 blocked 等补做。run 绑定必须一并清除:
+	// DispatchProjectTask 对带 run 绑定且已有 dispatched 事件的任务按"已派发"幂等
+	// 短路,残留绑定会让补做完成后的重派发静默 no-op(同
+	// ReleaseProjectTaskWaitingHumanForRedispatch 的注释)。
+	TransitionProjectTaskBlockedForUpstreamSupplement(ctx context.Context, arg TransitionProjectTaskBlockedForUpstreamSupplementParams) (ProjectTask, error)
+
 }
 
 var _ Querier = (*Queries)(nil)

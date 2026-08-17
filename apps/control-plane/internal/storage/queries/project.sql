@@ -3516,3 +3516,39 @@ ORDER BY
     ELSE cp.effective_last_activity_at
   END DESC NULLS LAST,
   cp.id DESC;
+
+-- name: TransitionProjectTaskBlockedForUpstreamSupplement :one
+-- blocked_resolvable_upstream 申报后任务转 blocked 等补做。run 绑定必须一并清除:
+-- DispatchProjectTask 对带 run 绑定且已有 dispatched 事件的任务按"已派发"幂等
+-- 短路,残留绑定会让补做完成后的重派发静默 no-op(同
+-- ReleaseProjectTaskWaitingHumanForRedispatch 的注释)。
+UPDATE project_tasks
+SET status = 'blocked',
+    current_attempt_id = NULL,
+    digital_employee_run_id = NULL,
+    runtime_task_id = NULL,
+    waiting_reason = NULL,
+    waiting_request_id = NULL,
+    latest_event_id = COALESCE(sqlc.narg('latest_event_id')::uuid, latest_event_id),
+    status_changed_at = NOW(),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND project_id = sqlc.arg('project_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('planned', 'pending', 'assigned', 'running', 'waiting_human')
+RETURNING *;
+
+-- name: SupersedeBlockedUpstreamSupplementAttempt :execrows
+-- blocked_resolvable_upstream 申报后任务转 blocked 等补做:旧 attempt 必须出让
+-- 活跃位(uq_project_task_attempts_active 把非终态计入活跃),否则补做完成后的
+-- 重派发在插新 attempt 时撞唯一约束。终态取 cancelled(申报由补链取代,与
+-- SupersedeWaitingHumanProjectTaskAttempt 同词表理由)。已被其他路径置终态时
+-- 命中 0 行,属合法情形。
+UPDATE project_task_attempts
+SET status = 'cancelled',
+    finished_at = COALESCE(finished_at, NOW()),
+    failure_message = COALESCE(sqlc.narg('failure_message')::text, failure_message),
+    updated_at = NOW()
+WHERE tenant_id = sqlc.arg('tenant_id')::uuid
+  AND id = sqlc.arg('id')::uuid
+  AND status IN ('queued', 'running');

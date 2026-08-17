@@ -115,6 +115,7 @@ type Repository interface {
 	RecordProjectTaskAttemptContextUpdate(ctx context.Context, req RecordProjectTaskAttemptContextUpdateRepositoryRequest) (ProjectTaskAttemptContextUpdate, error)
 	DecomposeAcceptedPlanRevision(ctx context.Context, req DecomposeAcceptedPlanRevisionRequest) (DecomposeAcceptedPlanRevisionResult, error)
 	UpdateProjectTaskStatus(ctx context.Context, tenantID, projectTaskID uuid.UUID, status string, eventID *uuid.UUID, currentStatuses []string) (ProjectTask, error)
+	TransitionProjectTaskBlockedForUpstreamSupplement(ctx context.Context, req TransitionProjectTaskBlockedForUpstreamSupplementRequest) (ProjectTask, error)
 	BindProjectTaskRun(ctx context.Context, req BindProjectTaskRunRequest) (ProjectTask, error)
 	AdvanceProjectDemandStatus(ctx context.Context, tenantID, projectID, demandID uuid.UUID, target ProjectDemandStatus) error
 	// RecomputeProjectDemandStatus re-derives a demand's lifecycle status
@@ -642,6 +643,15 @@ type RecoverProjectTaskDispatchFailureWritebackRequest struct {
 // from the inbox.
 type ProjectTaskHumanWaitReleaseRepository interface {
 	ReleaseProjectTaskHumanWaitForRedispatch(ctx context.Context, req ReleaseProjectTaskHumanWaitRequest) (ReleaseProjectTaskHumanWaitResult, error)
+}
+
+// TransitionProjectTaskBlockedForUpstreamSupplementRequest：blocked 申报后
+// 任务转 blocked 并清派发绑定（H1b，spec 2026-08-16 交接包 §4.4）。
+type TransitionProjectTaskBlockedForUpstreamSupplementRequest struct {
+	TenantID      uuid.UUID
+	ProjectID     uuid.UUID
+	ProjectTaskID uuid.UUID
+	EventID       *uuid.UUID
 }
 
 type ReleaseProjectTaskHumanWaitRequest struct {

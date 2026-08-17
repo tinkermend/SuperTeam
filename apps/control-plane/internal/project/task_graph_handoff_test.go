@@ -27,6 +27,7 @@ func TestBuildProjectTaskGraphHandoffAssessments(t *testing.T) {
 		got := buildProjectTaskGraphHandoffAssessments(
 			[]ProjectTask{makeTask([]any{"file-stats.json", "scan-log"})},
 			map[uuid.UUID]*TaskResultContract{taskID: contract},
+			nil,
 		)
 		if len(got) != 1 {
 			t.Fatalf("assessments = %d, want 1", len(got))
@@ -51,6 +52,7 @@ func TestBuildProjectTaskGraphHandoffAssessments(t *testing.T) {
 		got := buildProjectTaskGraphHandoffAssessments(
 			[]ProjectTask{makeTask([]any{"file-stats.json", "scan-log"})},
 			map[uuid.UUID]*TaskResultContract{taskID: contract},
+			nil,
 		)
 		if got[0].Status != ProjectTaskGraphHandoffStatusPartial {
 			t.Fatalf("status = %q, want partial", got[0].Status)
@@ -71,6 +73,7 @@ func TestBuildProjectTaskGraphHandoffAssessments(t *testing.T) {
 		got := buildProjectTaskGraphHandoffAssessments(
 			[]ProjectTask{makeTask(nil)},
 			map[uuid.UUID]*TaskResultContract{taskID: contract},
+			nil,
 		)
 		if got[0].Status != ProjectTaskGraphHandoffStatusUnfulfilled {
 			t.Fatalf("status = %q, want unfulfilled", got[0].Status)
@@ -82,6 +85,7 @@ func TestBuildProjectTaskGraphHandoffAssessments(t *testing.T) {
 		got := buildProjectTaskGraphHandoffAssessments(
 			[]ProjectTask{makeTask(nil)},
 			map[uuid.UUID]*TaskResultContract{taskID: {}},
+			nil,
 		)
 		if got[0].Status != ProjectTaskGraphHandoffStatusUnknown {
 			t.Fatalf("status = %q, want unknown", got[0].Status)
@@ -95,6 +99,7 @@ func TestBuildProjectTaskGraphHandoffAssessments(t *testing.T) {
 		got := buildProjectTaskGraphHandoffAssessments(
 			[]ProjectTask{makeTask([]any{"file-stats.json"})},
 			map[uuid.UUID]*TaskResultContract{},
+			nil,
 		)
 		if got[0].Status != ProjectTaskGraphHandoffStatusUnknown {
 			t.Fatalf("status = %q, want unknown", got[0].Status)
@@ -103,4 +108,47 @@ func TestBuildProjectTaskGraphHandoffAssessments(t *testing.T) {
 			t.Fatalf("交接未发生时不得预判逐条 missing, got %d", len(got[0].Deliverables))
 		}
 	})
+}
+
+// 结论槽位软条目（spec 2026-08-16 交接包 §4.4）：下游声明的 notes 逐条
+// delivered/missing，但不进 status 汇总——散文不进闸。
+func TestBuildProjectTaskGraphHandoffAssessmentsNotes(t *testing.T) {
+	blockerID := uuid.New()
+	dependentID := uuid.New()
+	blocker := ProjectTask{ID: blockerID}
+	dependent := ProjectTask{
+		ID:              dependentID,
+		HandoffContract: map[string]any{"notes": []any{map[string]any{"name": "risk_notes"}, map[string]any{"name": "how_to_run"}}},
+	}
+	contract := &TaskResultContract{
+		Deliverables:  []TaskResultDeliverable{{Name: "head_commit", Value: "abc"}},
+		HandoffNotes:  []TaskResultHandoffNote{{Name: "risk_notes", Value: "无风险"}},
+	}
+	got := buildProjectTaskGraphHandoffAssessments(
+		[]ProjectTask{blocker, dependent},
+		map[uuid.UUID]*TaskResultContract{blockerID: contract},
+		map[uuid.UUID][]uuid.UUID{blockerID: {dependentID}},
+	)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 assessments, got %d", len(got))
+	}
+	var blockerAssessment ProjectTaskGraphHandoffAssessment
+	for _, item := range got {
+		if item.ProjectTaskID == blockerID {
+			blockerAssessment = item
+		}
+	}
+	if len(blockerAssessment.Notes) != 2 {
+		t.Fatalf("notes: %#v", blockerAssessment.Notes)
+	}
+	if blockerAssessment.Notes[0].Verdict != ProjectTaskGraphHandoffNoteDelivered {
+		t.Fatalf("delivered note: %#v", blockerAssessment.Notes[0])
+	}
+	if blockerAssessment.Notes[1].Verdict != ProjectTaskGraphHandoffNoteMissing {
+		t.Fatalf("missing note: %#v", blockerAssessment.Notes[1])
+	}
+	// 软条目不影响 status：deliverables 全交付仍是 fulfilled，尽管 note 缺失。
+	if blockerAssessment.Status != ProjectTaskGraphHandoffStatusFulfilled {
+		t.Fatalf("notes must not affect status: %s", blockerAssessment.Status)
+	}
 }

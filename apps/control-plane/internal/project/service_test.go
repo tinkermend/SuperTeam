@@ -16669,6 +16669,19 @@ func (r *memoryRepository) ListZombieGateApprovalWaitingHumanProjectTasks(ctx co
 	return out, nil
 }
 
+func (r *memoryRepository) TransitionProjectTaskBlockedForUpstreamSupplement(ctx context.Context, req TransitionProjectTaskBlockedForUpstreamSupplementRequest) (ProjectTask, error) {
+	for index := range r.tasks {
+		if r.tasks[index].ID == req.ProjectTaskID && r.tasks[index].TenantID == req.TenantID {
+			r.tasks[index].Status = "blocked"
+			r.tasks[index].CurrentAttemptID = nil
+			r.tasks[index].DigitalEmployeeRunID = nil
+			r.tasks[index].RuntimeTaskID = nil
+			return r.tasks[index], nil
+		}
+	}
+	return ProjectTask{}, ErrProjectNotFound
+}
+
 func (r *memoryRepository) ReleaseProjectTaskHumanWaitForRedispatch(ctx context.Context, req ReleaseProjectTaskHumanWaitRequest) (ReleaseProjectTaskHumanWaitResult, error) {
 	for i, task := range r.tasks {
 		if task.TenantID != req.TenantID || task.ID != req.ProjectTaskID || task.ProjectID != req.ProjectID {

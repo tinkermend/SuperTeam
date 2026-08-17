@@ -3562,3 +3562,220 @@ func TestGetRunAttachesCapabilityProjection(t *testing.T) {
 		t.Fatalf("leaked secrets: %s", raw)
 	}
 }
+
+// ---- spec 2026-08-17-recovery-mode-and-active-run-poisoning-fix L2/L3 ----
+
+func TestAttemptTerminalRunStatusMapping(t *testing.T) {
+	cases := []struct {
+		attempt string
+		want    DigitalEmployeeRunStatus
+		ok      bool
+	}{
+		{"succeeded", DigitalEmployeeRunStatusCompleted, true},
+		// waiting_human：会话已交出最终答案等人，命令级自然终态是 completed。
+		{"waiting_human", DigitalEmployeeRunStatusCompleted, true},
+		{"failed", DigitalEmployeeRunStatusFailed, true},
+		{"lost", DigitalEmployeeRunStatusFailed, true},
+		{"timed_out", DigitalEmployeeRunStatusFailed, true},
+		{"cancelled", DigitalEmployeeRunStatusCancelled, true},
+		{"running", "", false},
+		{"queued", "", false},
+		{"", "", false},
+	}
+	for _, testCase := range cases {
+		got, ok := attemptTerminalRunStatus(testCase.attempt)
+		if got != testCase.want || ok != testCase.ok {
+			t.Fatalf("attemptTerminalRunStatus(%q) = (%s,%v), want (%s,%v)", testCase.attempt, got, ok, testCase.want, testCase.ok)
+		}
+	}
+}
+
+func TestAttemptIDFromCommandReceipt(t *testing.T) {
+	attemptID := uuid.New()
+	valid := &RuntimeCommandReceipt{Payload: map[string]any{
+		"metadata": map[string]any{"project_task_attempt_id": attemptID.String()},
+	}}
+	if got, ok := attemptIDFromCommandReceipt(valid); !ok || got != attemptID {
+		t.Fatalf("valid receipt: (%s,%v)", got, ok)
+	}
+	if _, ok := attemptIDFromCommandReceipt(&RuntimeCommandReceipt{Payload: map[string]any{}}); ok {
+		t.Fatal("missing metadata must not parse")
+	}
+	if _, ok := attemptIDFromCommandReceipt(&RuntimeCommandReceipt{Payload: map[string]any{
+		"metadata": map[string]any{"project_task_attempt_id": "not-a-uuid"},
+	}}); ok {
+		t.Fatal("invalid uuid must not parse")
+	}
+	if _, ok := attemptIDFromCommandReceipt(nil); ok {
+		t.Fatal("nil receipt must not parse")
+	}
+}
+
+type fakeRunAttemptStateChecker struct {
+	status       string
+	finishedAgo  time.Duration
+	finishedZero bool
+	called       int
+}
+
+func (c *fakeRunAttemptStateChecker) ProjectTaskAttemptTerminalState(_ context.Context, _, _ uuid.UUID) (string, time.Time, bool) {
+	c.called++
+	if c.finishedZero {
+		return c.status, time.Time{}, true
+	}
+	return c.status, time.Now().Add(-c.finishedAgo), true
+}
+
+func TestReapRunIfAttemptTerminal(t *testing.T) {
+	newRun := func() *DigitalEmployeeRun {
+		return &DigitalEmployeeRun{
+			ID:        uuid.New(),
+			TenantID:  runServiceTenantID,
+			Status:    DigitalEmployeeRunStatusRunning,
+			CommandID: "cmd-" + uuid.NewString(),
+		}
+	}
+	t.Run("终态过宽限即收口", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		run := newRun()
+		repo.run = run
+		repo.commandReceipt = &RuntimeCommandReceipt{
+			TenantID:  run.TenantID,
+			CommandID: run.CommandID,
+			Payload: map[string]any{
+				"metadata": map[string]any{"project_task_attempt_id": uuid.NewString()},
+			},
+		}
+		service := newRunServiceForTest(t, repo)
+		service.SetRunAttemptStateChecker(&fakeRunAttemptStateChecker{status: "failed", finishedAgo: 5 * time.Minute})
+		if kept := service.reapRunIfAttemptTerminal(context.Background(), run.TenantID, run); kept != nil {
+			t.Fatalf("expected run reaped (nil), got %#v", kept)
+		}
+		if len(repo.statusUpdates) != 1 || repo.statusUpdates[0].Status != DigitalEmployeeRunStatusFailed {
+			t.Fatalf("statusUpdates: %#v", repo.statusUpdates)
+		}
+	})
+	t.Run("宽限内不收口", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		run := newRun()
+		repo.run = run
+		repo.commandReceipt = &RuntimeCommandReceipt{
+			TenantID:  run.TenantID,
+			CommandID: run.CommandID,
+			Payload: map[string]any{
+				"metadata": map[string]any{"project_task_attempt_id": uuid.NewString()},
+			},
+		}
+		service := newRunServiceForTest(t, repo)
+		service.SetRunAttemptStateChecker(&fakeRunAttemptStateChecker{status: "failed", finishedAgo: 10 * time.Second})
+		if kept := service.reapRunIfAttemptTerminal(context.Background(), run.TenantID, run); kept == nil {
+			t.Fatal("run within grace must be kept")
+		}
+		if len(repo.statusUpdates) != 0 {
+			t.Fatalf("unexpected updates: %#v", repo.statusUpdates)
+		}
+	})
+	t.Run("attempt 非终态不收口", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		run := newRun()
+		repo.run = run
+		repo.commandReceipt = &RuntimeCommandReceipt{
+			TenantID:  run.TenantID,
+			CommandID: run.CommandID,
+			Payload: map[string]any{
+				"metadata": map[string]any{"project_task_attempt_id": uuid.NewString()},
+			},
+		}
+		service := newRunServiceForTest(t, repo)
+		service.SetRunAttemptStateChecker(&fakeRunAttemptStateChecker{status: "running", finishedAgo: time.Hour})
+		if kept := service.reapRunIfAttemptTerminal(context.Background(), run.TenantID, run); kept == nil {
+			t.Fatal("live attempt must keep run")
+		}
+	})
+	t.Run("未注入 checker 跳过", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		run := newRun()
+		repo.run = run
+		repo.commandReceipt = &RuntimeCommandReceipt{
+			TenantID:  run.TenantID,
+			CommandID: run.CommandID,
+			Payload: map[string]any{
+				"metadata": map[string]any{"project_task_attempt_id": uuid.NewString()},
+			},
+		}
+		service := newRunServiceForTest(t, repo)
+		if kept := service.reapRunIfAttemptTerminal(context.Background(), run.TenantID, run); kept == nil {
+			t.Fatal("nil checker must skip (keep run)")
+		}
+	})
+}
+
+type orphanRepository struct {
+	*fakeRunServiceRepository
+	orphans    []OrphanedActiveRun
+	listedWith time.Time
+}
+
+func (r *orphanRepository) ListOrphanedActiveRuns(_ context.Context, finishedBefore time.Time, _ int32) ([]OrphanedActiveRun, error) {
+	r.listedWith = finishedBefore
+	return r.orphans, nil
+}
+
+func TestSweepOrphanedActiveRuns(t *testing.T) {
+	t.Run("死亡证据命中即收口", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		run := &DigitalEmployeeRun{
+			ID:       uuid.New(),
+			TenantID: runServiceTenantID,
+			Status:   DigitalEmployeeRunStatusRunning,
+		}
+		repo.run = run
+		wrapped := &orphanRepository{fakeRunServiceRepository: repo}
+		wrapped.orphans = []OrphanedActiveRun{{
+			RunID: run.ID, TenantID: run.TenantID,
+			AttemptStatus: "failed", AttemptFinishedAt: time.Now().Add(-10 * time.Minute),
+		}}
+		service := newRunServiceForTest(t, wrapped)
+		if n := service.SweepOrphanedActiveRuns(context.Background()); n != 1 {
+			t.Fatalf("reaped = %d, want 1", n)
+		}
+		if len(repo.statusUpdates) != 1 || repo.statusUpdates[0].Status != DigitalEmployeeRunStatusFailed {
+			t.Fatalf("statusUpdates: %#v", repo.statusUpdates)
+		}
+		if wrapped.listedWith.After(time.Now().Add(-orphanedRunSweepGrace)) {
+			t.Fatalf("grace window not applied: %v", wrapped.listedWith)
+		}
+	})
+	t.Run("二次核验非活跃则跳过", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		run := &DigitalEmployeeRun{
+			ID:       uuid.New(),
+			TenantID: runServiceTenantID,
+			Status:   DigitalEmployeeRunStatusCompleted,
+		}
+		repo.run = run
+		wrapped := &orphanRepository{fakeRunServiceRepository: repo}
+		wrapped.orphans = []OrphanedActiveRun{{
+			RunID: run.ID, TenantID: run.TenantID,
+			AttemptStatus: "failed", AttemptFinishedAt: time.Now().Add(-10 * time.Minute),
+		}}
+		service := newRunServiceForTest(t, wrapped)
+		if n := service.SweepOrphanedActiveRuns(context.Background()); n != 0 {
+			t.Fatalf("reaped = %d, want 0 (already terminal)", n)
+		}
+	})
+	t.Run("仓储不支持 lister 零操作", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		service := newRunServiceForTest(t, repo)
+		if n := service.SweepOrphanedActiveRuns(context.Background()); n != 0 {
+			t.Fatalf("reaped = %d, want 0", n)
+		}
+	})
+}
+
+// newRunServiceForTest 是 L2/L3 单测的轻量构造（dispatcher/audit 为 nil，测试
+// 路径不触达它们）。
+func newRunServiceForTest(t *testing.T, repo DigitalEmployeeRunRepository) *DigitalEmployeeRunService {
+	t.Helper()
+	return mustNewRunService(t, repo, &fakeRunServiceDispatcher{}, &fakeRunServiceAuditLogger{})
+}

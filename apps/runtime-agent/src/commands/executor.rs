@@ -3153,6 +3153,16 @@ fn parsed_result_contract(
                 .and_then(serde_json::Value::as_array)
                 .cloned()
                 .unwrap_or_default(),
+            handoff_notes: contract
+                .get("handoff_notes")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
+            input_gaps: contract
+                .get("input_gaps")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
             verification: normalized_verifications(
                 contract.get("verification"),
                 runtime_attestation_ref,
@@ -3229,6 +3239,8 @@ fn synthesized_result_contract(
         artifact_refs: normalized_artifact_refs,
         changes_made: Vec::new(),
         deliverables: Vec::new(),
+        handoff_notes: Vec::new(),
+        input_gaps: Vec::new(),
         verification,
         risks: Vec::new(),
         follow_up_requests: Vec::new(),

@@ -59,7 +59,6 @@ type PlaybookCastingLister interface {
 
 type clockFunc func() time.Time
 
-
 // defaultMaxPlanIterations bounds graph extension rounds (upstream supplement
 // tasks appended to resolve a blocked task's missing inputs) when
 // projects.coordination_policy.max_plan_iterations is absent or invalid.
@@ -1352,7 +1351,7 @@ func (s *ProjectStore) CreateUpstreamSupplementTasks(ctx context.Context, input 
 			RevisionOfTaskID:          &owner.ID,
 			AcceptedPlanRevisionID:    source.AcceptedPlanRevisionID,
 			ExpectedOutputs:           append([]any(nil), owner.ExpectedOutputs...),
-			InputRequirements:         cloneAnyMap(owner.InputRequirements),
+			InputRequirements:         inputRequirements,
 			HandoffContract:           cloneAnyMap(owner.HandoffContract),
 			PlannerMetadata:           revisionPlannerMetadataForSupplement(owner, input.SourceTaskID, input.MissingInputs),
 			PlanIteration:             planIteration,
@@ -3467,7 +3466,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		IdempotencyKey:                attemptIdempotencyKey,
 		LeaseToken:                    leaseToken,
 		ExecutionContextPacket:        cloneAnyMap(executionContextPacket),
-		ExecutionContextPacketVersion: "v1",
+		ExecutionContextPacketVersion: packetVersion,
 		DispatchGateResultID:          &gate.Gate.ID,
 	})
 	if err != nil {
@@ -3527,7 +3526,7 @@ func (s *ProjectStore) DispatchProjectTask(ctx context.Context, input DispatchPr
 		RuntimeNodeID:                 run.RuntimeNodeID,
 		ProviderType:                  run.ProviderType,
 		ExecutionContextPacket:        boundExecutionContextPacket,
-		ExecutionContextPacketVersion: "v1",
+		ExecutionContextPacketVersion: packetVersion,
 	})
 	if err != nil {
 		if errors.Is(err, project.ErrProjectConflict) {
@@ -3597,7 +3596,7 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 		"project_task_id":                  task.ID.String(),
 		"project_task_attempt_id":          attempt.ID.String(),
 		"project_task_lease_token":         attempt.LeaseToken,
-		"execution_context_packet_version": nonEmptyString(attempt.ExecutionContextPacketVersion, "v1"),
+		"execution_context_packet_version": packetVersion,
 		"expected_outputs":                 append([]any(nil), task.ExpectedOutputs...),
 		"input_requirements":               cloneAnyMap(task.InputRequirements),
 		"handoff_contract":                 handoffContract,
@@ -3641,7 +3640,7 @@ func (s *ProjectStore) resumeQueuedProjectTaskRunStart(ctx context.Context, inpu
 		RuntimeNodeID:                 run.RuntimeNodeID,
 		ProviderType:                  run.ProviderType,
 		ExecutionContextPacket:        boundExecutionContextPacket,
-		ExecutionContextPacketVersion: nonEmptyString(attempt.ExecutionContextPacketVersion, "v1"),
+		ExecutionContextPacketVersion: packetVersion,
 	})
 	if err != nil {
 		if errors.Is(err, project.ErrProjectConflict) {

@@ -735,6 +735,9 @@ func NewContainerWithConfig(stores *storage.Clients, cfg config.Config) (*Contai
 	runService.SetProjectTaskNodeResolver(project.NewProjectTaskNodeResolverAdapter(projectService))
 	runService.SetChatAnchorProjectValidator(project.NewChatAnchorProjectValidatorAdapter(projectService))
 	runService.SetProjectDispatchFactsReader(project.NewProjectDispatchFactsAdapter(projectService))
+	// L2 死亡证据核对的 attempt 侧事实源（spec 2026-08-17-recovery-mode-and-
+	// active-run-poisoning-fix §2.3）。
+	runService.SetRunAttemptStateChecker(project.NewRunAttemptStateAdapter(projectService))
 	if coordinationStore != nil {
 		coordinationStore.WithProjectTaskNodeResolver(gateProjectTaskNodeResolverAdapter{service: projectService})
 	}

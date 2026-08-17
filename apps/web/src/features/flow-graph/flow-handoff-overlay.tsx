@@ -152,6 +152,15 @@ const DELIVERABLE_VERDICT_PRESENTATION: Record<string, { label: string; tone: To
   missing: { label: "缺失", tone: "danger" },
 };
 
+/**
+ * 结论槽位软条目词表（spec 2026-08-16 交接包）：缺失不打回，用中性色调提示
+ * 缺口，不得渲染为失败（danger）。
+ */
+const NOTE_VERDICT_PRESENTATION: Record<string, { label: string; tone: Tone }> = {
+  delivered: { label: "已给出", tone: "ok" },
+  missing: { label: "未给出", tone: "mute" },
+};
+
 function HandoffDeliverableVerdicts({
   assessment,
 }: {
@@ -193,6 +202,58 @@ function HandoffDeliverableVerdicts({
   );
 }
 
+/** 结论槽位软条目：下游声明的 notes 逐条核对，缺失只提示不打回。 */
+function HandoffNoteVerdicts({ assessment }: { assessment: ProjectTaskGraphHandoffAssessment }) {
+  return (
+    <div className="grid gap-1.5" data-testid="handoff-note-verdicts">
+      <p className="text-[11.5px] font-bold uppercase leading-4 tracking-wider text-ink-3">
+        结论槽位（软核对，不打回）
+      </p>
+      <ul className="grid gap-1.5">
+        {assessment.notes?.map((note, index) => {
+          const presentation =
+            NOTE_VERDICT_PRESENTATION[note.verdict] ?? NOTE_VERDICT_PRESENTATION.missing;
+          return (
+            <li
+              className="flex min-w-0 items-center justify-between gap-2 rounded-[10px] border border-line bg-card-soft px-3 py-2"
+              key={`${note.name}-${index}`}
+            >
+              <span className="min-w-0 break-words text-[12.5px] leading-5 text-ink">
+                {note.name || "未命名结论槽位"}
+              </span>
+              <StatusPill className="shrink-0" tone={presentation.tone}>
+                {presentation.label}
+              </StatusPill>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** 完成态申报的输入缺口：只投影不触发补链，中性提示。 */
+function HandoffInputGaps({ assessment }: { assessment: ProjectTaskGraphHandoffAssessment }) {
+  return (
+    <div className="grid gap-1.5" data-testid="handoff-input-gaps">
+      <p className="text-[11.5px] font-bold uppercase leading-4 tracking-wider text-ink-3">
+        申报的输入缺口（只观测，不触发补链）
+      </p>
+      <ul className="grid gap-1.5">
+        {assessment.input_gaps?.map((gap, index) => (
+          <li
+            className="rounded-[10px] border border-line bg-card-soft px-3 py-2 text-[12.5px] leading-5 text-ink-2"
+            key={`${gap.name}-${index}`}
+          >
+            <span className="break-words font-medium text-ink">{gap.name}</span>
+            {gap.reason ? <span className="ml-1.5 break-words">{gap.reason}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function HandoffActualColumn({
   assessment,
   summaries,
@@ -204,6 +265,8 @@ function HandoffActualColumn({
     <section className="grid content-start gap-2" data-testid="handoff-actual-column">
       <ColumnCaption label="实际执行" />
       {assessment ? <HandoffDeliverableVerdicts assessment={assessment} /> : null}
+      {assessment?.notes?.length ? <HandoffNoteVerdicts assessment={assessment} /> : null}
+      {assessment?.input_gaps?.length ? <HandoffInputGaps assessment={assessment} /> : null}
       {summaries.length === 0 ? (
         <p className="text-[12.5px] text-ink-3">暂无产出（上游任务尚未回写执行结论）</p>
       ) : (

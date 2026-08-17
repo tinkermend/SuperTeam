@@ -385,6 +385,25 @@ export type ProjectTaskGraphHandoffDeliverable = {
   summary?: string;
 };
 
+export type ProjectTaskGraphHandoffNoteVerdict = "delivered" | "missing";
+
+/**
+ * 结论槽位软条目（spec 2026-08-16 交接包）：下游声明的 notes 逐条核对，
+ * 缺失不打回、不进 status 汇总——只提示缺口，不得渲染为失败。
+ */
+export type ProjectTaskGraphHandoffNote = {
+  name: string;
+  verdict: ProjectTaskGraphHandoffNoteVerdict;
+};
+
+/**
+ * 完成态申报的输入缺口（同 spec §4.4）：B 的判断权，只投影不触发补链。
+ */
+export type ProjectTaskGraphHandoffInputGap = {
+  name: string;
+  reason?: string;
+};
+
 /**
  * 结构化交接 verdict（纯读投影，spec 2026-07-27 §5 P2-V）：按声明交付物逐条
  * 核对 delivered/missing；status=unknown 表示无声明数据，前端维持"暂无"呈现，
@@ -394,6 +413,8 @@ export type ProjectTaskGraphHandoffAssessment = {
   project_task_id: string;
   status: ProjectTaskGraphHandoffAssessmentStatus;
   deliverables: ProjectTaskGraphHandoffDeliverable[];
+  notes?: ProjectTaskGraphHandoffNote[];
+  input_gaps?: ProjectTaskGraphHandoffInputGap[];
 };
 
 export type ProjectTaskGraph = {
@@ -710,6 +731,8 @@ export type DemandDossierHandoffAssessment = {
   project_task_name?: string;
   status: "fulfilled" | "partial" | "unfulfilled" | "unknown";
   deliverables: ProjectTaskGraphHandoffDeliverable[];
+  notes?: ProjectTaskGraphHandoffNote[];
+  input_gaps?: ProjectTaskGraphHandoffInputGap[];
 };
 
 export type DemandContinuationReasonCode =

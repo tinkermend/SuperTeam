@@ -21,6 +21,9 @@ const (
 	ExecutionLedgerEventEvidenceLinked       = "evidence.linked"
 	ExecutionLedgerEventHandoffVerified      = "handoff.verified"
 	ExecutionLedgerEventHandoffUnfulfilled   = "handoff.unfulfilled"
+	// handoff 补链预算记账（spec 2026-08-16 交接包 §4.4：按边记账，幂等）。
+	ExecutionLedgerEventHandoffSupplementCreated = "handoff.supplement_created"
+	ExecutionLedgerEventHandoffBudgetExhausted   = "handoff.budget_exhausted"
 )
 
 type ExecutionLedgerEvent struct {

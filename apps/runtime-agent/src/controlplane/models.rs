@@ -269,6 +269,13 @@ pub struct TaskResultContract {
     pub changes_made: Vec<serde_json::Value>,
     #[serde(default)]
     pub deliverables: Vec<serde_json::Value>,
+    /// 上游为下游声明的结论槽位写的结构化散文（spec 2026-08-16 交接包 §3.5.2）。
+    /// 平台按下游 notes 声明按名提取合并；缺失不打回，仅投影进 assessment。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub handoff_notes: Vec<serde_json::Value>,
+    /// 带缺口完成时申报的输入缺口（同 spec §4.4）：只投影不触发补链。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_gaps: Vec<serde_json::Value>,
     #[serde(default)]
     pub verification: Vec<serde_json::Value>,
     #[serde(default)]

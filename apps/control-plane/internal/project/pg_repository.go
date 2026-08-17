@@ -3472,7 +3472,7 @@ func (r *PgRepository) GetProjectTaskGraph(ctx context.Context, req GetProjectTa
 	if err != nil {
 		return graph, err
 	}
-	graph.HandoffAssessments = buildProjectTaskGraphHandoffAssessments(tasks, latestContracts)
+	graph.HandoffAssessments = buildProjectTaskGraphHandoffAssessments(tasks, latestContracts, handoffDependentsMap(tasks, dependencies))
 	graph.DispatchGates, err = r.projectTaskGraphDispatchGates(ctx, req.TenantID, req.ProjectID, taskIDs)
 	if err != nil {
 		return graph, err
@@ -4250,7 +4250,9 @@ func (r *PgRepository) updateProjectTaskStatusWithQueries(ctx context.Context, q
 		CurrentStatuses: currentStatuses,
 	})
 	if err != nil {
-		return ProjectTask{}, err
+		// 守卫 UPDATE（status 窗口）：0 行 = 状态已被并发改变 → 冲突而非 500
+		//（spec 2026-08-17 L1）。
+		return ProjectTask{}, guardWritebackConflict(err)
 	}
 	return taskFromRecord(row)
 }
@@ -5173,7 +5175,7 @@ func (r *PgRepository) completeProjectTaskAttemptWritebackWithQueries(ctx contex
 	}
 	applyRawLog(&finishParams, req.RawLog)
 	if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
-		return ProjectTaskWritebackResult{}, err
+		return ProjectTaskWritebackResult{}, guardWritebackConflict(err)
 	}
 	for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req, task, event, summary, req.RequiresHumanReview) {
 		if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
@@ -5268,7 +5270,7 @@ func (r *PgRepository) completeProjectTaskAttemptAcceptanceWritebackWithQueries(
 	}
 	applyRawLog(&finishParams, req.Complete.RawLog)
 	if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
-		return ProjectTaskWritebackResult{}, err
+		return ProjectTaskWritebackResult{}, guardWritebackConflict(err)
 	}
 	for _, ledgerReq := range projectTaskAttemptCompletionLedgerEventRequests(req.Complete, req.Task, event, summary, true) {
 		if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
@@ -5338,7 +5340,7 @@ func (r *PgRepository) FailProjectTaskAttemptWriteback(ctx context.Context, req 
 		}
 		applyRawLog(&finishParams, req.RawLog)
 		if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
-			return ProjectTaskWritebackResult{}, err
+			return ProjectTaskWritebackResult{}, guardWritebackConflict(err)
 		}
 		if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, projectTaskAttemptFailureLedgerEventRequest(req, task, event)); err != nil {
 			return ProjectTaskWritebackResult{}, err
@@ -5406,7 +5408,7 @@ func (r *PgRepository) RecoverProjectTaskAttemptFailureWriteback(ctx context.Con
 		}
 		applyRawLog(&finishParams, req.Failure.RawLog)
 		if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
-			return ProjectTaskWritebackResult{}, err
+			return ProjectTaskWritebackResult{}, guardWritebackConflict(err)
 		}
 		if ledgerReq, ok := recoveredProjectTaskAttemptLedgerEventRequest(req, event); ok {
 			if _, err := r.createExecutionLedgerEventWithQueries(ctx, q, ledgerReq); err != nil {
@@ -5945,7 +5947,9 @@ func (r *PgRepository) scheduleProjectTaskRetryWithQueries(ctx context.Context, 
 		ID:               req.Task.ID,
 	})
 	if err != nil {
-		return ProjectTask{}, projectRepositoryError(err)
+		// 守卫 UPDATE：0 行 = 任务已被并发转走（如 blocked 申报的活跃位让渡）→
+		// 冲突而非 404/500（spec 2026-08-17 L1）。
+		return ProjectTask{}, guardWritebackConflict(err)
 	}
 	return taskFromRecord(row)
 }
@@ -5959,7 +5963,9 @@ func (r *PgRepository) moveProjectTaskToWaitingHumanWithQueries(ctx context.Cont
 		ID:               req.Task.ID,
 	})
 	if err != nil {
-		return ProjectTask{}, projectRepositoryError(err)
+		// 守卫 UPDATE（status 窗口）：0 行 = 并发取代 → 冲突而非 404/500
+		//（spec 2026-08-17 L1）。
+		return ProjectTask{}, guardWritebackConflict(err)
 	}
 	return taskFromRecord(row)
 }
@@ -5998,7 +6004,7 @@ func (r *PgRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Context,
 		}
 		applyRawLog(&finishParams, req.Wait.RawLog)
 		if _, err := q.FinishProjectTaskAttempt(ctx, finishParams); err != nil {
-			return ProjectTaskWritebackResult{}, err
+			return ProjectTaskWritebackResult{}, guardWritebackConflict(err)
 		}
 		decisionReq := req.Decision
 		decisionReq.CreatedEventID = &event.ID
@@ -6017,7 +6023,8 @@ func (r *PgRepository) WaitHumanProjectTaskAttemptWriteback(ctx context.Context,
 			ID:               req.Task.ID,
 		})
 		if err != nil {
-			return ProjectTaskWritebackResult{}, projectRepositoryError(err)
+			// 守卫 UPDATE：0 行 = 任务已被并发转走 → 冲突（spec 2026-08-17 L1）。
+			return ProjectTaskWritebackResult{}, guardWritebackConflict(err)
 		}
 		task, err := taskFromRecord(row)
 		if err != nil {
@@ -7467,6 +7474,19 @@ func projectRepositoryError(err error) error {
 	}
 	if isPGForeignKeyConstraint(err, "fk_project_placements_project") {
 		return ErrProjectNotFound
+	}
+	return err
+}
+
+// guardWritebackConflict 把写回事务内守卫 UPDATE（:one + WHERE status 窗口
+// AND lease_token/attempt 锚）的 0 行命中收敛为 ErrProjectConflict（409）：
+// 0 行只意味着并发取代窗口（attempt 已被终态化/租约已换/任务已让渡活跃位），
+// runtime 对 409 superseded 的处理是成熟正确的；裸 ErrNoRows 会泄漏为 500，
+// 触发 runtime 循环重试（spec 2026-08-17 L1，真链 02:50:58 实证）。
+// 只用于守卫语句——事件 append/读取路径的 no-rows 语义不同，勿套用。
+func guardWritebackConflict(err error) error {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrProjectConflict
 	}
 	return err
 }
@@ -9606,4 +9626,42 @@ func workspaceDeleteRequestFromRow(row queries.ProjectWorkspaceDeleteRequest) (W
 		item.RepoSummary = summary
 	}
 	return item, nil
+}
+
+// TransitionProjectTaskBlockedForUpstreamSupplement 把 blocked_resolvable_upstream
+// 申报后的任务转入 blocked 并清除派发绑定（run 绑定残留会让补做完成后的重派发
+// 被"已派发"幂等短路静默 no-op——spec 2026-08-16 交接包 H1b 真链发现）。
+func (r *PgRepository) TransitionProjectTaskBlockedForUpstreamSupplement(ctx context.Context, req TransitionProjectTaskBlockedForUpstreamSupplementRequest) (ProjectTask, error) {
+	return withProjectQueries(ctx, r, "project task blocked for upstream supplement", func(q *queries.Queries) (ProjectTask, error) {
+		task, err := q.GetProjectTask(ctx, queries.GetProjectTaskParams{TenantID: req.TenantID, ID: req.ProjectTaskID})
+		if err != nil {
+			return ProjectTask{}, projectRepositoryError(err)
+		}
+		if task.ProjectID != req.ProjectID {
+			return ProjectTask{}, ErrProjectNotFound
+		}
+		if task.CurrentAttemptID.Valid {
+			if _, err := q.SupersedeBlockedUpstreamSupplementAttempt(ctx, queries.SupersedeBlockedUpstreamSupplementAttemptParams{
+				TenantID:       req.TenantID,
+				ID:             task.CurrentAttemptID.UUID,
+				FailureMessage: textOrNull("blocked 申报转补链，attempt 由补做路径取代"),
+			}); err != nil {
+				return ProjectTask{}, projectRepositoryError(err)
+			}
+		}
+		latestEventID := uuid.NullUUID{}
+		if req.EventID != nil {
+			latestEventID = uuid.NullUUID{UUID: *req.EventID, Valid: true}
+		}
+		row, err := q.TransitionProjectTaskBlockedForUpstreamSupplement(ctx, queries.TransitionProjectTaskBlockedForUpstreamSupplementParams{
+			TenantID:      req.TenantID,
+			ProjectID:     req.ProjectID,
+			ID:            req.ProjectTaskID,
+			LatestEventID: latestEventID,
+		})
+		if err != nil {
+			return ProjectTask{}, projectRepositoryError(err)
+		}
+		return taskFromRecord(row)
+	})
 }

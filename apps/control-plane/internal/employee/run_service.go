@@ -22,10 +22,11 @@ import (
 )
 
 const (
-	providerRunProtocol             = "provider-run/v1"
-	runDispatchedLifecycleSequence  = -1
-	stopRequestedLifecycleSequence  = -2
-	runReapedStaleLifecycleSequence = -3
+	providerRunProtocol                = "provider-run/v1"
+	runDispatchedLifecycleSequence     = -1
+	stopRequestedLifecycleSequence     = -2
+	runReapedStaleLifecycleSequence    = -3
+	runReapedOrphanedLifecycleSequence = -4
 	// staleDispatchTTL is how long a run may sit in a pre-confirmation state
 	// (queued/dispatching) without any row update before it is treated as
 	// abandoned. A run reaches "dispatching" once the start-session command has
@@ -98,6 +99,9 @@ type DigitalEmployeeRunService struct {
 	nodeResolver             ProjectTaskNodeResolver
 	chatAnchorValidator      ChatAnchorProjectValidator
 	dispatchFacts            ProjectDispatchFactsReader
+	// attemptStateChecker 供给活跃 run 冲突路径的死亡证据核对（spec
+	// 2026-08-17 L2）；nil 时跳过该层，沿 SetProjectDispatchFactsReader 先例。
+	attemptStateChecker RunAttemptStateChecker
 }
 
 func NewDigitalEmployeeRunService(repository DigitalEmployeeRunRepository, dispatcher RuntimeCommandDispatcher, audit AuditLogger) (*DigitalEmployeeRunService, error) {
@@ -156,6 +160,95 @@ func (s *DigitalEmployeeRunService) SetChatAnchorProjectValidator(v ChatAnchorPr
 
 func (s *DigitalEmployeeRunService) SetProjectDispatchFactsReader(r ProjectDispatchFactsReader) {
 	s.dispatchFacts = r
+}
+
+// SetRunAttemptStateChecker 注入 L2 死亡证据核对的 attempt 侧事实源（app 装配
+// 用 project 域适配器；不注入即关闭该层，既有测试 fake 不必实现）。
+func (s *DigitalEmployeeRunService) SetRunAttemptStateChecker(c RunAttemptStateChecker) {
+	s.attemptStateChecker = c
+}
+
+// RunAttemptStateChecker 读取 project 任务 attempt 的终态事实（spec 2026-08-17
+// L2/L3 的死亡证据）。status 是 project 域 attempt 状态词（succeeded/failed/
+// cancelled/lost/timed_out/waiting_human/...）；finishedAt 为零值表示未知。
+type RunAttemptStateChecker interface {
+	ProjectTaskAttemptTerminalState(ctx context.Context, tenantID, attemptID uuid.UUID) (status string, finishedAt time.Time, ok bool)
+}
+
+// orphanedRunReapGrace 是 L2 派发时收口的宽限：attempt 终态→命令终态的正常窗口
+// 是秒级，大工件上传可到分钟级（spec 拍板点 3：2 分钟是下限不是定数）。
+const orphanedRunReapGrace = 2 * time.Minute
+
+// attemptTerminalRunStatus 把 attempt 终态族映射为 run 终态（spec L2：固定写
+// failed 会把"attempt 已成功、命令还在收尾"的 run 记成失败）。waiting_human 的
+// 会话已交出最终答案等人，命令级自然终态是 completed。
+func attemptTerminalRunStatus(attemptStatus string) (DigitalEmployeeRunStatus, bool) {
+	switch strings.TrimSpace(attemptStatus) {
+	case "succeeded", "waiting_human":
+		return DigitalEmployeeRunStatusCompleted, true
+	case "failed", "lost", "timed_out":
+		return DigitalEmployeeRunStatusFailed, true
+	case "cancelled":
+		return DigitalEmployeeRunStatusCancelled, true
+	default:
+		return "", false
+	}
+}
+
+// attemptIDFromCommandReceipt 从命令回执 payload 解析关联的 project attempt id
+// （派发期 runMetadata 写入；H1a 真链实证存在，老回执/非项目 run 解析不出）。
+func attemptIDFromCommandReceipt(receipt *RuntimeCommandReceipt) (uuid.UUID, bool) {
+	if receipt == nil {
+		return uuid.Nil, false
+	}
+	metadata, _ := receipt.Payload["metadata"].(map[string]any)
+	if metadata == nil {
+		return uuid.Nil, false
+	}
+	idText, _ := metadata["project_task_attempt_id"].(string)
+	id, err := uuid.Parse(strings.TrimSpace(idText))
+	if err != nil || id == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// reapRunIfAttemptTerminal 以 attempt 终态为死亡证据内联收口活跃 run（返回 nil
+// 表示已收口、调用方可继续派发）。解析不出 attempt id 是诚实边界：跳过不误伤。
+func (s *DigitalEmployeeRunService) reapRunIfAttemptTerminal(ctx context.Context, tenantID uuid.UUID, run *DigitalEmployeeRun) *DigitalEmployeeRun {
+	if s.attemptStateChecker == nil || run == nil || run.Status.IsTerminal() || strings.TrimSpace(run.CommandID) == "" {
+		return run
+	}
+	receipt, err := s.repository.GetCommandReceipt(ctx, tenantID, run.CommandID)
+	if err != nil || receipt == nil {
+		return run
+	}
+	attemptID, ok := attemptIDFromCommandReceipt(receipt)
+	if !ok {
+		return run
+	}
+	status, finishedAt, ok := s.attemptStateChecker.ProjectTaskAttemptTerminalState(ctx, tenantID, attemptID)
+	if !ok {
+		return run
+	}
+	runStatus, terminal := attemptTerminalRunStatus(status)
+	if !terminal {
+		return run
+	}
+	if finishedAt.IsZero() || time.Since(finishedAt) < orphanedRunReapGrace {
+		return run
+	}
+	message := "attempt 已终态而 run 停留活跃，按死亡证据收口（spec 2026-08-17 L2）"
+	errorCode := "orphaned_run_reaped"
+	if _, err := s.repository.UpdateRunStatus(ctx, updateOrphanedRunStatusRequest(run.ID, tenantID, runStatus, message, errorCode)); err != nil {
+		log.Printf("orphaned run reap: update %s failed: %v", run.ID, err)
+		return run
+	}
+	s.recordRunReapedOrphaned(ctx, tenantID, run, string(runStatus), attemptID)
+	log.Printf("orphaned run reap: run %s closed as %s (attempt %s terminal at %s)", run.ID, runStatus, attemptID, finishedAt.Format(time.RFC3339))
+	// 返回 nil（而非已终态的 updated 行）：调用方据此放行本次派发；返回终态行
+	// 会让后续 sameIdempotentRun/冲突分支把收口误当活跃冲突。
+	return nil
 }
 
 func (s *DigitalEmployeeRunService) CreateRun(ctx context.Context, req CreateDigitalEmployeeRunRequest) (*DigitalEmployeeRun, error) {
@@ -276,6 +369,7 @@ type chatThreadStore interface {
 	GetChatThreadRoot(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ChatThreadRoot, error)
 	UpdateChatThreadTitle(ctx context.Context, tenantID, employeeID, threadID uuid.UUID, title string) (*ChatThreadRoot, error)
 	GetActiveChatRunOnThread(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ActiveChatRunOnThread, error)
+	SoftDeleteChatThreadTasks(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (int64, error)
 }
 
 func (s *DigitalEmployeeRunService) ensureChatThreadIdle(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) error {
@@ -586,6 +680,12 @@ func (s *DigitalEmployeeRunService) createAndDispatchRun(ctx context.Context, re
 			}
 			activeRun = nil
 		}
+	}
+	if activeRun != nil {
+		// L2 死亡证据核对（spec 2026-08-17 §2.3）：回执对账失败后、同幂等 resume
+		// 之前，用关联 attempt 的终态作死亡证据内联收口 run——provider 崩溃 +
+		// 命令级终态写回丢失时，run 行停留活跃态会毒化同员工的每次新派发。
+		activeRun = s.reapRunIfAttemptTerminal(ctx, req.TenantID, activeRun)
 	}
 	if activeRun != nil {
 		if sameIdempotentRun(activeRun, idempotencyKey, fingerprint) {
@@ -1585,6 +1685,98 @@ func (s *DigitalEmployeeRunService) SweepStalePreConfirmationRuns(ctx context.Co
 	return reaped
 }
 
+// orphanedRunSweepGrace 是 L3 看门狗的宽限（挂 attempt 终态时刻），与滞留看门狗
+// 5 分钟口径对齐（spec 2026-08-17 拍板点 3）。
+const orphanedRunSweepGrace = 5 * time.Minute
+
+// updateOrphanedRunStatusRequest 组装孤儿收口请求：说明与 error_code 恒带（观测
+// 可解释），error_family 只在 failed 收口时带——completed/cancelled 的收口带失败
+// 族会误导 run 列表的错误归因（spec 2026-08-17 拍板点 2：复用现有词表）。
+func updateOrphanedRunStatusRequest(runID, tenantID uuid.UUID, status DigitalEmployeeRunStatus, message, errorCode string) UpdateRunStatusRequest {
+	req := UpdateRunStatusRequest{
+		TenantID:     tenantID,
+		RunID:        runID,
+		Status:       status,
+		ErrorMessage: &message,
+		ErrorCode:    &errorCode,
+	}
+	if status == DigitalEmployeeRunStatusFailed {
+		family := "execution_failed"
+		req.ErrorFamily = &family
+	}
+	return req
+}
+
+// recordRunReapedOrphaned 记孤儿 run 收口的观测事件与审计（对齐 reapStaleRun 先例；
+// spec §2.3 L2/L3）。attemptID 为空表示清扫路径（死亡证据在扫描行里，未单查）。
+func (s *DigitalEmployeeRunService) recordRunReapedOrphaned(ctx context.Context, tenantID uuid.UUID, run *DigitalEmployeeRun, runStatus string, attemptID uuid.UUID) {
+	if run == nil {
+		return
+	}
+	payload := map[string]any{
+		"prior_status": string(run.Status),
+		"command_id":   run.CommandID,
+		"run_status":   runStatus,
+		"source":       "spec/2026-08-17-recovery-mode-and-active-run-poisoning-fix",
+	}
+	if attemptID != uuid.Nil {
+		payload["project_task_attempt_id"] = attemptID.String()
+	}
+	_, _ = s.repository.CreateTaskEventIfAbsent(ctx, CreateRunEventRecordRequest{
+		TenantID:       tenantID,
+		TaskID:         run.TaskID,
+		RunID:          run.ID,
+		EventType:      "run_reaped_orphaned",
+		SequenceNumber: runReapedOrphanedLifecycleSequence,
+		Payload:        payload,
+		Metadata:       map[string]any{"source": "control-plane"},
+	})
+	_ = s.logAudit(ctx, "digital_employee_run_reaped_orphaned", uuid.Nil, run.ID, "employee.run.reap_orphaned")
+}
+
+// SweepOrphanedActiveRuns 以 attempt 终态为死亡证据收口毒化的活跃 run 行（spec
+// 2026-08-17 L3）。真活跃 run 的 attempt 必然非终态，不会被误扫——判定靠死亡
+// 证据而非时钟。二次核验重读 run 行（列出结果是快照），复用 L2 的终态族映射。
+func (s *DigitalEmployeeRunService) SweepOrphanedActiveRuns(ctx context.Context) int {
+	lister, ok := s.repository.(OrphanedActiveRunLister)
+	if !ok {
+		return 0
+	}
+	orphans, err := lister.ListOrphanedActiveRuns(ctx, time.Now().Add(-orphanedRunSweepGrace), staleSweepBatchLimit)
+	if err != nil {
+		log.Printf("orphaned run watchdog: list failed: %v", err)
+		return 0
+	}
+	reaped := 0
+	for _, orphan := range orphans {
+		runStatus, terminal := attemptTerminalRunStatus(orphan.AttemptStatus)
+		if !terminal {
+			continue
+		}
+		// 二次核验：重读 run 行，仍活跃才收口（列出后可能已被对账/写回终态化）。
+		fresh, err := s.repository.GetRunByID(ctx, orphan.TenantID, orphan.RunID)
+		if err != nil {
+			log.Printf("orphaned run watchdog: refresh %s failed: %v", orphan.RunID, err)
+			continue
+		}
+		if fresh == nil || !fresh.Status.IsActive() {
+			continue
+		}
+		message := "attempt 已终态而 run 停留活跃，看门狗按死亡证据收口（spec 2026-08-17 L3）"
+		errorCode := "orphaned_run_reaped"
+		if _, err := s.repository.UpdateRunStatus(ctx, updateOrphanedRunStatusRequest(orphan.RunID, orphan.TenantID, runStatus, message, errorCode)); err != nil {
+			log.Printf("orphaned run watchdog: reap %s failed: %v", orphan.RunID, err)
+			continue
+		}
+		s.recordRunReapedOrphaned(ctx, orphan.TenantID, fresh, string(runStatus), uuid.Nil)
+		reaped++
+	}
+	if reaped > 0 {
+		log.Printf("orphaned run watchdog: reaped %d orphaned active runs", reaped)
+	}
+	return reaped
+}
+
 // StartStaleRunWatchdog 启动看门狗循环,ctx 取消即退出。interval 建议 1 分钟:
 // staleDispatchTTL(5 分钟)的判定精度足够,又不给数据库添扫描压力。
 func (s *DigitalEmployeeRunService) StartStaleRunWatchdog(ctx context.Context, interval time.Duration) {
@@ -1596,6 +1788,7 @@ func (s *DigitalEmployeeRunService) StartStaleRunWatchdog(ctx context.Context, i
 			return
 		case <-ticker.C:
 			s.SweepStalePreConfirmationRuns(ctx)
+			s.SweepOrphanedActiveRuns(ctx)
 		}
 	}
 }
@@ -2202,6 +2395,37 @@ func (s *DigitalEmployeeRunService) RenameChatThread(ctx context.Context, tenant
 		InitiatorUserID:      root.InitiatorUserID,
 		InitiatorDisplayName: root.InitiatorDisplayName,
 	}, nil
+}
+
+func (s *DigitalEmployeeRunService) DeleteChatThread(ctx context.Context, tenantID, employeeID, threadID, actorUserID uuid.UUID) error {
+	if tenantID == uuid.Nil || employeeID == uuid.Nil || threadID == uuid.Nil || actorUserID == uuid.Nil {
+		return fmt.Errorf("%w: tenant_id, digital_employee_id, thread_id, and actor are required", ErrInvalidInput)
+	}
+	threads, ok := s.repository.(chatThreadStore)
+	if !ok {
+		return fmt.Errorf("%w: chat thread store is required", ErrInvalidInput)
+	}
+	root, err := threads.GetChatThreadRoot(ctx, tenantID, employeeID, threadID)
+	if err != nil {
+		return err
+	}
+	if root == nil {
+		return ErrNotFound
+	}
+	if root.InitiatorUserID != actorUserID {
+		return fmt.Errorf("%w: only the thread initiator may delete", ErrForbidden)
+	}
+	if err := s.ensureChatThreadIdle(ctx, tenantID, employeeID, threadID); err != nil {
+		return err
+	}
+	affected, err := threads.SoftDeleteChatThreadTasks(ctx, tenantID, employeeID, threadID)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func stringPtr(value string) *string {

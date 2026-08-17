@@ -2933,6 +2933,8 @@ type projectTaskGraphHandoffAssessmentResponse struct {
 	ProjectTaskID string                                       `json:"project_task_id"`
 	Status        string                                       `json:"status"`
 	Deliverables  []projectTaskGraphHandoffDeliverableResponse `json:"deliverables"`
+	Notes         []projectTaskGraphHandoffNoteResponse         `json:"notes,omitempty"`
+	InputGaps     []projectTaskGraphInputGapResponse            `json:"input_gaps,omitempty"`
 }
 
 type projectTaskGraphHandoffDeliverableResponse struct {
@@ -2941,6 +2943,20 @@ type projectTaskGraphHandoffDeliverableResponse struct {
 	Verdict string `json:"verdict"`
 	Ref     string `json:"ref,omitempty"`
 	Summary string `json:"summary,omitempty"`
+}
+
+// projectTaskGraphHandoffNoteResponse 是结论槽位软条目（spec 2026-08-16 交接包
+// §4.4）：不进 status 汇总、不打回，验收视图可见缺口。
+type projectTaskGraphHandoffNoteResponse struct {
+	Name    string `json:"name"`
+	Verdict string `json:"verdict"`
+}
+
+// projectTaskGraphInputGapResponse 是完成态申报的输入缺口软条目（同 spec §4.4）：
+// 只投影不触发补链。
+type projectTaskGraphInputGapResponse struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type projectTaskLivenessResponse struct {
@@ -3520,6 +3536,8 @@ type demandDossierHandoffAssessmentRes struct {
 	ProjectTaskName string                                       `json:"project_task_name,omitempty"`
 	Status          string                                       `json:"status"`
 	Deliverables    []projectTaskGraphHandoffDeliverableResponse `json:"deliverables"`
+	Notes           []projectTaskGraphHandoffNoteResponse         `json:"notes,omitempty"`
+	InputGaps       []projectTaskGraphInputGapResponse            `json:"input_gaps,omitempty"`
 }
 
 type demandDossierAcceptanceResponse struct {
@@ -4079,10 +4097,26 @@ func taskGraphHandoffAssessmentResponses(items []ProjectTaskGraphHandoffAssessme
 				Summary: deliverable.Summary,
 			})
 		}
+		notes := make([]projectTaskGraphHandoffNoteResponse, 0, len(item.Notes))
+		for _, note := range item.Notes {
+			notes = append(notes, projectTaskGraphHandoffNoteResponse{
+				Name:    note.Name,
+				Verdict: note.Verdict,
+			})
+		}
+		inputGaps := make([]projectTaskGraphInputGapResponse, 0, len(item.InputGaps))
+		for _, gap := range item.InputGaps {
+			inputGaps = append(inputGaps, projectTaskGraphInputGapResponse{
+				Name:   gap.Name,
+				Reason: gap.Reason,
+			})
+		}
 		responses = append(responses, projectTaskGraphHandoffAssessmentResponse{
 			ProjectTaskID: item.ProjectTaskID.String(),
 			Status:        item.Status,
 			Deliverables:  deliverables,
+			Notes:         notes,
+			InputGaps:     inputGaps,
 		})
 	}
 	return responses
@@ -4866,11 +4900,27 @@ func demandDossierResponseFromDomain(dossier DemandDossier) demandDossierRespons
 				Summary: deliverable.Summary,
 			})
 		}
+		notes := make([]projectTaskGraphHandoffNoteResponse, 0, len(assessment.Notes))
+		for _, note := range assessment.Notes {
+			notes = append(notes, projectTaskGraphHandoffNoteResponse{
+				Name:    note.Name,
+				Verdict: note.Verdict,
+			})
+		}
+		inputGaps := make([]projectTaskGraphInputGapResponse, 0, len(assessment.InputGaps))
+		for _, gap := range assessment.InputGaps {
+			inputGaps = append(inputGaps, projectTaskGraphInputGapResponse{
+				Name:   gap.Name,
+				Reason: gap.Reason,
+			})
+		}
 		response.HandoffSummary.Assessments = append(response.HandoffSummary.Assessments, demandDossierHandoffAssessmentRes{
 			ProjectTaskID:   assessment.ProjectTaskID.String(),
 			ProjectTaskName: assessment.ProjectTaskName,
 			Status:          assessment.Status,
 			Deliverables:    deliverables,
+			Notes:           notes,
+			InputGaps:       inputGaps,
 		})
 	}
 

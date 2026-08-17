@@ -4898,6 +4898,17 @@ func (s *Service) signalUpstreamSupplementResolvable(ctx context.Context, req Su
 	if err != nil {
 		return err
 	}
+	// 任务转入 blocked 并清派发绑定（同 ReleaseProjectTaskWaitingHumanForRedispatch
+	// 的理由：run 绑定残留会让补做完成后的重派发被"已派发"幂等短路静默 no-op；
+	// 且 ResolveReadyDownstream 只放行"阻塞在补做上"的任务，停在 running 的申报
+	// 方是僵尸态——spec 2026-08-16 交接包 H1b 真链发现）。
+	if _, err := s.repository.TransitionProjectTaskBlockedForUpstreamSupplement(ctx, TransitionProjectTaskBlockedForUpstreamSupplementRequest{
+		TenantID:      req.TenantID,
+		ProjectID:     task.ProjectID,
+		ProjectTaskID: task.ID,
+	}); err != nil && !errors.Is(err, ErrProjectConflict) {
+		return err
+	}
 	event, err := s.repository.AppendProjectEvent(ctx, AppendProjectEventRequest{
 		TenantID:     req.TenantID,
 		ProjectID:    task.ProjectID,

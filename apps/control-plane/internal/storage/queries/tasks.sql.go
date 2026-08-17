@@ -1712,6 +1712,67 @@ func (q *Queries) ListDigitalEmployeeRunsDetailed(ctx context.Context, arg ListD
 	return items, nil
 }
 
+const ListOrphanedActiveDigitalEmployeeRuns = `-- name: ListOrphanedActiveDigitalEmployeeRuns :many
+SELECT tr.id AS run_id,
+       tr.tenant_id,
+       tr.command_id,
+       pta.status AS attempt_status,
+       COALESCE(pta.finished_at, pta.updated_at) AS attempt_finished_at
+FROM task_runs tr
+JOIN runtime_command_receipts rcr
+  ON rcr.tenant_id = tr.tenant_id AND rcr.command_id = tr.command_id
+JOIN project_task_attempts pta
+  ON pta.id::text = rcr.payload->'metadata'->>'project_task_attempt_id'
+WHERE tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+  AND pta.status IN ('succeeded', 'failed', 'cancelled', 'lost', 'timed_out', 'waiting_human')
+  AND COALESCE(pta.finished_at, pta.updated_at) < $1
+LIMIT $2
+`
+
+type ListOrphanedActiveDigitalEmployeeRunsParams struct {
+	FinishedBefore pgtype.Timestamptz `json:"finished_before"`
+	LimitCount     int32              `json:"limit_count"`
+}
+
+type ListOrphanedActiveDigitalEmployeeRunsRow struct {
+	RunID             uuid.UUID          `json:"run_id"`
+	TenantID          uuid.UUID          `json:"tenant_id"`
+	CommandID         pgtype.Text        `json:"command_id"`
+	AttemptStatus     string             `json:"attempt_status"`
+	AttemptFinishedAt pgtype.Timestamptz `json:"attempt_finished_at"`
+}
+
+// 活跃 run × 关联 attempt 已终态 的交叉核对（spec 2026-08-17 L3）：attempt 终态
+// 是确定性死亡证据——真活跃 run 的 attempt 必然非终态，不会误扫。run→attempt 关联
+// 走命令回执 payload 的 metadata.project_task_attempt_id（派发期 runMetadata 写入）；
+// 老 run/非项目 run 无此路径自然不命中。waiting_human 纳入终态集（释放必走新
+// attempt，旧 run 不会再进展），其 finished_at 可能为 NULL，宽限口径 COALESCE。
+func (q *Queries) ListOrphanedActiveDigitalEmployeeRuns(ctx context.Context, arg ListOrphanedActiveDigitalEmployeeRunsParams) ([]ListOrphanedActiveDigitalEmployeeRunsRow, error) {
+	rows, err := q.db.Query(ctx, ListOrphanedActiveDigitalEmployeeRuns, arg.FinishedBefore, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrphanedActiveDigitalEmployeeRunsRow{}
+	for rows.Next() {
+		var i ListOrphanedActiveDigitalEmployeeRunsRow
+		if err := rows.Scan(
+			&i.RunID,
+			&i.TenantID,
+			&i.CommandID,
+			&i.AttemptStatus,
+			&i.AttemptFinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListStalePreConfirmationDigitalEmployeeRuns = `-- name: ListStalePreConfirmationDigitalEmployeeRuns :many
 SELECT tr.id, tr.tenant_id, tr.task_id, tr.node_id, tr.runtime_node_id, tr.provider_session_id, tr.status, tr.started_at, tr.completed_at, tr.finished_at, tr.result, tr.error_message, tr.created_at, tr.updated_at, tr.command_id, tr.digital_employee_id, tr.execution_instance_id, tr.idempotency_key, tr.idempotency_fingerprint, tr.timeout_sec, tr.grace_sec, tr.diagnostic, tr.log_ref, tr.raw_result_ref, tr.work_products, tr.session_state, tr.error_code, tr.error_family, tr.exit_code, tr.signal, tr.timed_out, tr.provider_type, tr.provider_session_external_id, tr.failure_acknowledged_at, tr.failure_acknowledged_by, tr.project_id
 FROM task_runs tr

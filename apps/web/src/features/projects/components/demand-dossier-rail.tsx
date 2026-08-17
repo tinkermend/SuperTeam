@@ -88,31 +88,63 @@ export function DemandDossierRail({
               <ul className="mt-2 grid gap-1.5">
                 {handoffSummary.assessments.map((assessment) => (
                   <li
-                    className="flex items-start justify-between gap-2 rounded-inner bg-card-soft px-2.5 py-2"
+                    className="grid gap-1 rounded-inner bg-card-soft px-2.5 py-2"
                     key={assessment.project_task_id}
                   >
-                    <span className="min-w-0 truncate text-[12px] text-ink-2">
-                      {assessment.project_task_name || "未命名任务"}
-                    </span>
-                    <StatusPill
-                      tone={
-                        assessment.status === "fulfilled"
-                          ? "ok"
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="min-w-0 truncate text-[12px] text-ink-2">
+                        {assessment.project_task_name || "未命名任务"}
+                      </span>
+                      <StatusPill
+                        tone={
+                          assessment.status === "fulfilled"
+                            ? "ok"
+                            : assessment.status === "partial"
+                              ? "warn"
+                              : assessment.status === "unfulfilled"
+                                ? "danger"
+                                : "mute"
+                        }
+                      >
+                        {assessment.status === "fulfilled"
+                          ? "已交付"
                           : assessment.status === "partial"
-                            ? "warn"
+                            ? "部分交付"
                             : assessment.status === "unfulfilled"
-                              ? "danger"
-                              : "mute"
-                      }
-                    >
-                      {assessment.status === "fulfilled"
-                        ? "已交付"
-                        : assessment.status === "partial"
-                          ? "部分交付"
-                          : assessment.status === "unfulfilled"
-                            ? "未交付"
-                            : "暂无声明"}
-                    </StatusPill>
+                              ? "未交付"
+                              : "暂无声明"}
+                      </StatusPill>
+                    </div>
+                    {assessment.notes?.length ? (
+                      /* 结论槽位软条目（spec 2026-08-16 交接包）：缺失不打回，
+                          mute 提示缺口，不得渲染为失败。 */
+                      <p className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] leading-4 text-ink-3">
+                        <span className="shrink-0">结论槽位：</span>
+                        {assessment.notes.map((note) => (
+                          <span
+                            className={
+                              note.verdict === "delivered" ? "text-ink-2" : "text-ink-3"
+                            }
+                            key={note.name}
+                          >
+                            {note.name}
+                            {note.verdict === "delivered" ? "✓" : "（未给出）"}
+                          </span>
+                        ))}
+                      </p>
+                    ) : null}
+                    {assessment.input_gaps?.length ? (
+                      /* 完成态申报的输入缺口：只观测不触发补链。 */
+                      <p className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] leading-4 text-ink-3">
+                        <span className="shrink-0">申报缺口：</span>
+                        {assessment.input_gaps.map((gap) => (
+                          <span key={gap.name}>
+                            {gap.name}
+                            {gap.reason ? `（${gap.reason}）` : ""}
+                          </span>
+                        ))}
+                      </p>
+                    ) : null}
                   </li>
                 ))}
               </ul>

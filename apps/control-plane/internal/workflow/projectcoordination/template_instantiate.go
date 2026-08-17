@@ -83,6 +83,20 @@ func InstantiatePlanFromTemplate(snapshot CoordinationSnapshot) (RouteDecisionPl
 		if title == "" {
 			title = step.Step
 		}
+		handoffContract := map[string]any{"completion_path": "project_task_attempt_writeback"}
+		if len(step.NotesDefaults) > 0 {
+			notes := make([]map[string]any, 0, len(step.NotesDefaults))
+			noteNames := make([]string, 0, len(step.NotesDefaults))
+			for _, note := range step.NotesDefaults {
+				notes = append(notes, map[string]any{
+					"name":        note.Name,
+					"description": note.Description,
+				})
+				noteNames = append(noteNames, note.Name)
+			}
+			handoffContract["notes"] = notes
+			handoffContract["consumer_view"] = fmt.Sprintf("以「%s」视角消费上游结论（关注：%s）", title, strings.Join(noteNames, "、"))
+		}
 		task := PlannedTask{
 			Key:                      step.Step,
 			Title:                    demandTitle + " · " + title,
@@ -102,14 +116,22 @@ func InstantiatePlanFromTemplate(snapshot CoordinationSnapshot) (RouteDecisionPl
 			ExpectedOutputs:          append([]string{}, produces...),
 			Produces:                 produces,
 			InputRequirements:        map[string]any{},
-			HandoffContract:          map[string]any{"completion_path": "project_task_attempt_writeback"},
+			HandoffContract:          handoffContract,
 			RoleKey:                  strings.TrimSpace(step.Role),
 		}
 		if task.Summary == "" {
 			task.Summary = task.Title
 		}
 		if len(step.RequiredInputsDefaults) > 0 {
-			task.InputRequirements["required_inputs"] = append([]string{}, step.RequiredInputsDefaults...)
+			inputs := make([]map[string]any, 0, len(step.RequiredInputsDefaults))
+			for _, input := range step.RequiredInputsDefaults {
+				entry := map[string]any{"name": input.Name, "required": input.Required == nil || *input.Required}
+				if input.Kind != "" {
+					entry["kind"] = input.Kind
+				}
+				inputs = append(inputs, entry)
+			}
+			task.InputRequirements["required_inputs"] = inputs
 		}
 		tasks = append(tasks, task)
 		taskByStep[step.Step] = task.Key
@@ -142,9 +164,12 @@ func InstantiatePlanFromTemplate(snapshot CoordinationSnapshot) (RouteDecisionPl
 			ID:                 id,
 			Statement:          criterion.Statement,
 			SatisfiedBy:        satisfied,
-			VerificationMethod: VerificationMethodAutomatedTest,
-			Severity:           "blocking",
+			VerificationMethod: criterion.VerificationMethod,
+			Severity:           criterion.Severity,
 		})
+	}
+	for i := range criteria {
+		normalizeCriterionDefaults(&criteria[i])
 	}
 	exits := make([]PlanExitOption, 0, len(spec.Exits))
 	for _, item := range spec.Exits {
@@ -179,5 +204,6 @@ func finalizeInstantiatedPlan(snapshot CoordinationSnapshot, plan RouteDecisionP
 	}
 	AnnotateAndValidateExtraTaskRoles(snapshot, &plan)
 	ensureHumanJudgmentCriterion(&plan, snapshot.CoordinationPolicy)
+	stripPlannerOnlyRiskFlags(&plan)
 	return plan, nil
 }

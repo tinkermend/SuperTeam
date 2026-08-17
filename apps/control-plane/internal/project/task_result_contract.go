@@ -75,6 +75,8 @@ type TaskResultContract struct {
 	ArtifactRefs       []TaskResultRef               `json:"artifact_refs,omitempty"`
 	ChangesMade        []TaskResultChange            `json:"changes_made,omitempty"`
 	Deliverables       []TaskResultDeliverable       `json:"deliverables,omitempty"`
+	HandoffNotes       []TaskResultHandoffNote       `json:"handoff_notes,omitempty"`
+	InputGaps          []TaskResultInputGap          `json:"input_gaps,omitempty"`
 	Verification       []TaskResultVerification      `json:"verification,omitempty"`
 	Risks              []TaskResultRisk              `json:"risks,omitempty"`
 	FollowUpRequests   []TaskResultFollowUpRequest   `json:"follow_up_requests,omitempty"`
@@ -110,6 +112,55 @@ type TaskResultDeliverable struct {
 	Value   string `json:"value,omitempty"`
 	Ref     string `json:"ref,omitempty"`
 	Summary string `json:"summary,omitempty"`
+}
+
+// TaskResultHandoffNote 是上游为下游声明的结论槽位写的一条结构化散文
+// （spec 2026-08-16 交接包 §3.5.2）。平台按下游 notes 声明按名提取合并；
+// 缺失不打回（散文不进闸，2026-08-16 拍板 8），仅投影进 handoff assessment。
+type TaskResultHandoffNote struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// UnmarshalJSON 对 value 做与 TaskResultDeliverable 相同的类型宽容：非字符串
+// JSON 紧凑序列化为字符串存储，不让"结论写成了对象"把整张契约拒收。
+// TaskResultInputGap 是 B **带缺口完成**时申报的输入缺口（spec 2026-08-16 交接包
+// §4.4）：只投影进 handoff assessment 软条目，不触发补链——补链只服务"缺到
+// 干不下去"的 blocked 申报。是 B 的判断权，平台只提供可观测通道。
+type TaskResultInputGap struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason,omitempty"`
+}
+
+func (n *TaskResultHandoffNote) UnmarshalJSON(data []byte) error {
+	type noteAlias struct {
+		Name  string          `json:"name"`
+		Value json.RawMessage `json:"value,omitempty"`
+	}
+	var alias noteAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	n.Name = alias.Name
+	n.Value = ""
+	if len(alias.Value) == 0 {
+		return nil
+	}
+	var asString string
+	if err := json.Unmarshal(alias.Value, &asString); err == nil {
+		n.Value = asString
+		return nil
+	}
+	trimmed := strings.TrimSpace(string(alias.Value))
+	if trimmed == "null" {
+		return nil
+	}
+	compact := &bytes.Buffer{}
+	if err := json.Compact(compact, alias.Value); err != nil {
+		return fmt.Errorf("handoff note value is not valid json: %w", err)
+	}
+	n.Value = compact.String()
+	return nil
 }
 
 // UnmarshalJSON 对 value 做类型宽容(调度韧性缺陷家族#4):执行者交付结构化
@@ -269,10 +320,15 @@ type TaskResultBlocker struct {
 	RequiredBy       string `json:"required_by,omitempty"`
 	// MissingInputs are produces-keys the employee declares it needs but did not
 	// receive. Each must appear in this task's input_requirements.required_inputs
-	// (Plan 3); the platform resolves the owner by lookup, never by asking a model
-	// who is at fault. See the 2026-07-10 plan-phase refactor spec §4.6(a).
-	MissingInputs []string        `json:"missing_inputs,omitempty"`
-	ContextRefs   []TaskResultRef `json:"context_refs,omitempty"`
+	// OR in its handoff_contract.notes declarations (spec 2026-08-16 交接包 §4.4:
+	// 结论槽位同属可申报缺口); the platform resolves the owner by lookup, never by
+	// asking a model who is at fault. See the 2026-07-10 plan-phase refactor
+	// spec §4.6(a).
+	MissingInputs []string `json:"missing_inputs,omitempty"`
+	// MissingInputReasons 是逐项申报原因（name → reason），进补做工单与澄清卡
+	// 卡面，让上游知道"为什么缺这个就不往下走"。
+	MissingInputReasons map[string]string `json:"missing_input_reasons,omitempty"`
+	ContextRefs         []TaskResultRef   `json:"context_refs,omitempty"`
 }
 
 type TaskResultFailure struct {
@@ -779,6 +835,67 @@ func stringRefIsAttestation(ref string) bool {
 	return strings.HasPrefix(strings.TrimSpace(ref), "attestation:")
 }
 
+// requiredInputNameSet 从 input_requirements.required_inputs 提取声明的槽位名
+// 集合，兼容 v2 字符串形态与 v3 对象形态（内存态 []map[string]any 与 JSON
+// round-trip 后的 []any 混排都可能出现）。
+func requiredInputNameSet(raw any) map[string]bool {
+	set := map[string]bool{}
+	switch typed := raw.(type) {
+	case []string:
+		for _, value := range typed {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				set[trimmed] = true
+			}
+		}
+	case []any:
+		for _, value := range typed {
+			mergeRequiredInputName(set, value)
+		}
+	case []map[string]any:
+		for _, value := range typed {
+			mergeRequiredInputName(set, value)
+		}
+	}
+	return set
+}
+
+func mergeRequiredInputName(set map[string]bool, value any) {
+	switch typed := value.(type) {
+	case string:
+		if trimmed := strings.TrimSpace(typed); trimmed != "" {
+			set[trimmed] = true
+		}
+	case map[string]any:
+		if name, ok := typed["name"].(string); ok {
+			if trimmed := strings.TrimSpace(name); trimmed != "" {
+				set[trimmed] = true
+			}
+		}
+	}
+}
+
+// handoffNoteNameSet 提取任务 handoff_contract.notes 声明的结论槽位名集合
+// （blocked 申报白名单的 notes 扩展，spec 2026-08-16 交接包 §4.4）。
+func handoffNoteNameSet(contract map[string]any) map[string]struct{} {
+	set := map[string]struct{}{}
+	entries, ok := contract["notes"].([]any)
+	if !ok {
+		return set
+	}
+	for _, entry := range entries {
+		entryMap, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if name, ok := entryMap["name"].(string); ok {
+			if trimmed := strings.TrimSpace(name); trimmed != "" {
+				set[trimmed] = struct{}{}
+			}
+		}
+	}
+	return set
+}
+
 func mapTaskResultDecision(task ProjectTask, result TaskResultContract) TaskResultDecision {
 	switch result.Status {
 	case TaskResultStatusCompleted:
@@ -792,16 +909,14 @@ func mapTaskResultDecision(task ProjectTask, result TaskResultContract) TaskResu
 		}
 		return TaskResultDecisionRevisionAttempt
 	case TaskResultStatusBlocked:
-		// Every missing input must be one this task declared in required_inputs.
-		// An undeclared name is a contract violation -> human.
+		// Every missing input must be one this task declared in required_inputs
+		// or notes (spec 2026-08-16 交接包 §4.4 白名单扩展). An undeclared name is
+		// a contract violation -> human.
 		if result.Blocker != nil && len(result.Blocker.MissingInputs) > 0 {
-			var requiredInputs []any
-			if raw, ok := task.InputRequirements["required_inputs"]; ok {
-				if slice, ok := raw.([]any); ok {
-					requiredInputs = slice
-				}
+			declared := requiredInputNameSet(task.InputRequirements["required_inputs"])
+			for name := range handoffNoteNameSet(task.HandoffContract) {
+				declared[name] = true
 			}
-			declared := stringSetFromAny(requiredInputs)
 			allDeclared := true
 			for _, missing := range result.Blocker.MissingInputs {
 				if !declared[missing] {

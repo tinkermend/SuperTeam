@@ -235,7 +235,11 @@ func (s *Service) GetDemandDossier(ctx context.Context, req GetDemandDossierRequ
 	if err != nil {
 		return nil, err
 	}
-	assessments := buildProjectTaskGraphHandoffAssessments(facts.ProjectTasks, contracts)
+	dependencies, err := s.repository.ListProjectTaskDependencies(ctx, req.TenantID, facts.Project.ID, facts.TaskIDs)
+	if err != nil {
+		return nil, err
+	}
+	assessments := buildProjectTaskGraphHandoffAssessments(facts.ProjectTasks, contracts, handoffDependentsMap(facts.ProjectTasks, dependencies))
 
 	evidence, err := s.repository.ListEvidenceRefsByTaskIDs(ctx, req.TenantID, facts.Project.ID, facts.TaskIDs)
 	if err != nil {

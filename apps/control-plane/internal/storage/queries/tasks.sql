@@ -685,3 +685,24 @@ WHERE tr.tenant_id = sqlc.arg('tenant_id')::uuid
   AND (t.chat_thread_id = sqlc.arg('thread_id')::uuid OR tr.id = sqlc.arg('thread_id')::uuid)
 ORDER BY tr.created_at DESC
 LIMIT 1;
+
+-- name: ListOrphanedActiveDigitalEmployeeRuns :many
+-- 活跃 run × 关联 attempt 已终态 的交叉核对（spec 2026-08-17 L3）：attempt 终态
+-- 是确定性死亡证据——真活跃 run 的 attempt 必然非终态，不会误扫。run→attempt 关联
+-- 走命令回执 payload 的 metadata.project_task_attempt_id（派发期 runMetadata 写入）；
+-- 老 run/非项目 run 无此路径自然不命中。waiting_human 纳入终态集（释放必走新
+-- attempt，旧 run 不会再进展），其 finished_at 可能为 NULL，宽限口径 COALESCE。
+SELECT tr.id AS run_id,
+       tr.tenant_id,
+       tr.command_id,
+       pta.status AS attempt_status,
+       COALESCE(pta.finished_at, pta.updated_at) AS attempt_finished_at
+FROM task_runs tr
+JOIN runtime_command_receipts rcr
+  ON rcr.tenant_id = tr.tenant_id AND rcr.command_id = tr.command_id
+JOIN project_task_attempts pta
+  ON pta.id::text = rcr.payload->'metadata'->>'project_task_attempt_id'
+WHERE tr.status IN ('queued', 'dispatching', 'running', 'cancelling')
+  AND pta.status IN ('succeeded', 'failed', 'cancelled', 'lost', 'timed_out', 'waiting_human')
+  AND COALESCE(pta.finished_at, pta.updated_at) < sqlc.arg('finished_before')
+LIMIT sqlc.arg('limit_count');

@@ -28,12 +28,48 @@ type SpecRole struct {
 }
 
 type SpecSkeletonStep struct {
-	Step                   string        `json:"step"`
-	Role                   string        `json:"role"`
-	Title                  string        `json:"title,omitempty"`
-	DependsOn              []string      `json:"depends_on,omitempty"`
-	ProducesDefaults       []SpecProduce `json:"produces_defaults,omitempty"`
-	RequiredInputsDefaults []string      `json:"required_inputs_defaults,omitempty"`
+	Step                   string              `json:"step"`
+	Role                   string              `json:"role"`
+	Title                  string              `json:"title,omitempty"`
+	DependsOn              []string            `json:"depends_on,omitempty"`
+	ProducesDefaults       []SpecProduce       `json:"produces_defaults,omitempty"`
+	RequiredInputsDefaults []SpecRequiredInput `json:"required_inputs_defaults,omitempty"`
+	NotesDefaults          []SpecNote          `json:"notes_defaults,omitempty"`
+}
+
+// SpecRequiredInput 是下游步骤声明的一个平台槽位（spec v3，2026-08-16 交接包
+// 专稿 §3.3）。v2 的字符串形态（"head_commit"）在解析时归一为
+// {name, required: true}；kind 走开放注册表，非封闭枚举。
+type SpecRequiredInput struct {
+	Name     string `json:"name"`
+	Kind     string `json:"kind,omitempty"`
+	Required *bool  `json:"required,omitempty"` // 缺省 true
+}
+
+// UnmarshalJSON 接受 v2 字符串形态与 v3 对象形态，归一到同一结构。
+func (i *SpecRequiredInput) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		i.Name = strings.TrimSpace(text)
+		i.Required = boolPtr(true)
+		return nil
+	}
+	type alias SpecRequiredInput
+	var object alias
+	if err := json.Unmarshal(data, &object); err != nil {
+		return fmt.Errorf("required_inputs_defaults 条目须为字符串或 {name, kind, required} 对象: %w", err)
+	}
+	*i = SpecRequiredInput(object)
+	i.Name = strings.TrimSpace(i.Name)
+	return nil
+}
+
+// SpecNote 是下游步骤声明的一个结论槽位：由上游按 name 写入
+// result_contract.handoff_notes，平台按下游声明提取合并。散文不进闸
+// （2026-08-16 拍板 8），缺失只投影不打回。
+type SpecNote struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 }
 
 type SpecExit struct {
@@ -62,6 +98,10 @@ type SpecCollapseRule struct {
 type SpecAcceptanceCriterion struct {
 	Statement       string `json:"statement"`
 	AppliesFromExit string `json:"applies_from_exit,omitempty"`
+	// VerificationMethod / Severity: optional; empty keeps today's defaults
+	// (automated_test / blocking) via normalizeCriterionDefaults (F5 / §6.5.2).
+	VerificationMethod string `json:"verification_method,omitempty"`
+	Severity           string `json:"severity,omitempty"`
 }
 
 type SpecV2 struct {
@@ -137,6 +177,46 @@ func MissingSpecVersionForV2Shape(raw map[string]any) (bool, []string) {
 	return len(offending) > 0, offending
 }
 
+// MissingSpecVersionForV3Shape reports whether raw carries v3-only skeleton
+// shapes (notes_defaults, or object-shaped required_inputs_defaults entries)
+// while declaring spec_version < 3 — the write-time guardrail for the 2026-08-16
+// handoff package spec §3.3, mirroring MissingSpecVersionForV2Shape: registering
+// such a spec without the version declaration would silently drop the v3
+// semantics on read (see sanitizePreV3Spec).
+func MissingSpecVersionForV3Shape(raw map[string]any) (bool, []string) {
+	if specVersion(raw) >= 3 {
+		return false, nil
+	}
+	var offending []string
+	hasObjectInput := false
+	hasNotes := false
+	for _, stepAny := range toAnySlice(raw["skeleton"]) {
+		stepMap, ok := stepAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		if !hasNotes && len(toAnySlice(stepMap["notes_defaults"])) > 0 {
+			hasNotes = true
+		}
+		if hasObjectInput {
+			continue
+		}
+		for _, entry := range toAnySlice(stepMap["required_inputs_defaults"]) {
+			if _, isObject := entry.(map[string]any); isObject {
+				hasObjectInput = true
+				break
+			}
+		}
+	}
+	if hasNotes {
+		offending = append(offending, "skeleton.notes_defaults")
+	}
+	if hasObjectInput {
+		offending = append(offending, "skeleton.required_inputs_defaults(对象条目)")
+	}
+	return len(offending) > 0, offending
+}
+
 // ParseSpec parses a scenario template's raw JSONB spec into a typed SpecV2.
 // specs with spec_version < 2 (or absent, e.g. nil/empty raw) are normalized
 // from the legacy v1 shape. ParseSpec(nil) returns a zero-value SpecV2 with
@@ -154,10 +234,19 @@ func ParseSpec(raw map[string]any) (SpecV2, error) {
 	if err := json.Unmarshal(data, &spec); err != nil {
 		return SpecV2{}, fmt.Errorf("unmarshal spec: %w", err)
 	}
+	if specVersion(raw) < 3 {
+		sanitizePreV3Spec(&spec)
+	}
+	if err := validateSkeletonSlots(spec); err != nil {
+		return SpecV2{}, err
+	}
 	if err := validateConstraints(spec, false); err != nil {
 		return SpecV2{}, err
 	}
 	if err := validateAutonomyFields(spec); err != nil {
+		return SpecV2{}, err
+	}
+	if err := validateAcceptanceCriteria(spec); err != nil {
 		return SpecV2{}, err
 	}
 	return spec, nil
@@ -224,7 +313,7 @@ func normalizeV1(raw map[string]any) (SpecV2, error) {
 			Role:                   asString(stepMap["role"]),
 			Title:                  asString(stepMap["title"]),
 			DependsOn:              toStringSlice(stepMap["depends_on"]),
-			RequiredInputsDefaults: toStringSlice(stepMap["required_inputs_defaults"]),
+			RequiredInputsDefaults: requiredInputsFromStrings(toStringSlice(stepMap["required_inputs_defaults"])),
 		}
 		for _, produceAny := range toAnySlice(stepMap["produces_defaults"]) {
 			produceMap, ok := produceAny.(map[string]any)
@@ -275,7 +364,75 @@ func normalizeV1(raw map[string]any) (SpecV2, error) {
 	if err := validateConstraints(spec, true); err != nil {
 		return SpecV2{}, err
 	}
+	if err := validateSkeletonSlots(spec); err != nil {
+		return SpecV2{}, err
+	}
 	return spec, nil
+}
+
+// requiredInputsFromStrings 把 v1/v2 的字符串形态归一为 {name, required: true}。
+func requiredInputsFromStrings(names []string) []SpecRequiredInput {
+	if len(names) == 0 {
+		return nil
+	}
+	inputs := make([]SpecRequiredInput, 0, len(names))
+	for _, name := range names {
+		inputs = append(inputs, SpecRequiredInput{Name: strings.TrimSpace(name), Required: boolPtr(true)})
+	}
+	return inputs
+}
+
+// sanitizePreV3Spec 把声明 spec_version < 3 却携带 v3 形态的 spec 收敛回 v2
+// 语义：对象条目降为 name（kind 丢弃），notes_defaults 清空。写侧
+// MissingSpecVersionForV3Shape 会拒绝注册这种 spec，这里是读侧兜底——
+// 防止 v3 语义在未声明版本时被静默启用（对齐 v2OnlyTopLevelKeys 的哲学）。
+func sanitizePreV3Spec(spec *SpecV2) {
+	for i := range spec.Skeleton {
+		step := &spec.Skeleton[i]
+		step.NotesDefaults = nil
+		if step.RequiredInputsDefaults == nil {
+			continue
+		}
+		names := make([]string, 0, len(step.RequiredInputsDefaults))
+		for _, input := range step.RequiredInputsDefaults {
+			if input.Name != "" {
+				names = append(names, input.Name)
+			}
+		}
+		step.RequiredInputsDefaults = requiredInputsFromStrings(names)
+	}
+}
+
+// validateSkeletonSlots 校验槽位声明的形态：required_inputs 与 notes 的 name
+// 非空、步骤内不重名（同名会让运行期槽位解析歧义）。
+func validateSkeletonSlots(spec SpecV2) error {
+	for _, step := range spec.Skeleton {
+		inputs := map[string]struct{}{}
+		for _, input := range step.RequiredInputsDefaults {
+			if input.Name == "" {
+				return fmt.Errorf("skeleton step %q: required_inputs_defaults 含空 name", step.Step)
+			}
+			if _, exists := inputs[input.Name]; exists {
+				return fmt.Errorf("skeleton step %q: required_inputs_defaults 重名 %q", step.Step, input.Name)
+			}
+			inputs[input.Name] = struct{}{}
+		}
+		notes := map[string]struct{}{}
+		for _, note := range step.NotesDefaults {
+			if strings.TrimSpace(note.Name) == "" {
+				return fmt.Errorf("skeleton step %q: notes_defaults 含空 name", step.Step)
+			}
+			if _, exists := notes[note.Name]; exists {
+				return fmt.Errorf("skeleton step %q: notes_defaults 重名 %q", step.Step, note.Name)
+			}
+			notes[note.Name] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 // validateConstraints checks that every constraint's kind is registered in
@@ -355,6 +512,38 @@ func validateAutonomyFields(spec SpecV2) error {
 	}
 	if def != "" && ceil != "" && autonomypolicy.Rank(def) > autonomypolicy.Rank(ceil) {
 		return fmt.Errorf("autonomy_default %q exceeds autonomy_ceiling %q", def, ceil)
+	}
+	return nil
+}
+
+// knownAcceptanceVerificationMethods / severities mirror
+// projectcoordination.knownVerificationMethods (F5). Empty values are allowed
+// and mean "use platform defaults" at instantiate time.
+var knownAcceptanceVerificationMethods = map[string]bool{
+	"automated_test":     true,
+	"human_judgment":     true,
+	"adversarial_review": true,
+	"review_gate":        true,
+}
+
+var knownAcceptanceSeverities = map[string]bool{
+	"blocking":     true,
+	"non_blocking": true,
+}
+
+func validateAcceptanceCriteria(spec SpecV2) error {
+	for i, c := range spec.DefaultAcceptanceCriteria {
+		method := strings.TrimSpace(c.VerificationMethod)
+		if method != "" && !knownAcceptanceVerificationMethods[method] {
+			return fmt.Errorf("default_acceptance_criteria[%d]: unknown verification_method %q", i, method)
+		}
+		severity := strings.TrimSpace(c.Severity)
+		if severity != "" && !knownAcceptanceSeverities[severity] {
+			return fmt.Errorf("default_acceptance_criteria[%d]: unknown severity %q", i, severity)
+		}
+		if exit := strings.TrimSpace(c.AppliesFromExit); exit != "" && spec.ExitIndex(exit) == -1 {
+			return fmt.Errorf("default_acceptance_criteria[%d]: applies_from_exit %q does not match a declared exit", i, exit)
+		}
 	}
 	return nil
 }

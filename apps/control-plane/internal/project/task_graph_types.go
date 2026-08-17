@@ -50,6 +50,9 @@ const (
 
 	ProjectTaskGraphHandoffDeliverableDelivered = "delivered"
 	ProjectTaskGraphHandoffDeliverableMissing   = "missing"
+
+	ProjectTaskGraphHandoffNoteDelivered = "delivered"
+	ProjectTaskGraphHandoffNoteMissing   = "missing"
 )
 
 // ProjectTaskGraphHandoffAssessment 是单个任务(交接边的 blocker 侧)的结构化
@@ -58,6 +61,26 @@ type ProjectTaskGraphHandoffAssessment struct {
 	ProjectTaskID uuid.UUID
 	Status        string
 	Deliverables  []ProjectTaskGraphHandoffDeliverable
+	// Notes 是下游声明的结论槽位软条目（spec 2026-08-16 交接包 §4.4）：
+	// 逐条 delivered/missing，不进 Status 汇总、不打回。
+	Notes []ProjectTaskGraphHandoffNote
+	// InputGaps 是本任务**带缺口完成**时自行申报的输入缺口（同 spec §4.4）：
+	// 只投影不触发补链，与 Notes 同为软视图。
+	InputGaps []ProjectTaskGraphHandoffInputGap
+}
+
+// ProjectTaskGraphHandoffNote 是一条下游声明结论槽位的核对结果。声明来源:
+// 下游任务 handoff_contract.notes 的 name；delivered 判据与 deliverables 一致
+// (result_contract.handoff_notes 里对应 name 的 value 非空)。
+type ProjectTaskGraphHandoffNote struct {
+	Name    string
+	Verdict string
+}
+
+// ProjectTaskGraphHandoffInputGap 是一条完成态申报的输入缺口（软条目）。
+type ProjectTaskGraphHandoffInputGap struct {
+	Name   string
+	Reason string
 }
 
 // ProjectTaskGraphHandoffDeliverable 是一条声明交付物的核对结果。声明来源:

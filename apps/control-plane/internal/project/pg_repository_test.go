@@ -5372,3 +5372,57 @@ func TestCreateConfigRevisionTakesItsAdvisoryLockInsideATransaction(t *testing.T
 	require.True(t, txDB.ran("pg_advisory_xact_lock"), "advisory lock must run on the transaction")
 	require.False(t, poolDB.ran("pg_advisory_xact_lock"), "advisory lock must not run on the pool")
 }
+
+// TestFailWritebackGuardConflictOnSupersededAttempt（spec 2026-08-17 R1③）：
+// 失败写回事务在"校验已过、守卫 UPDATE 命中 0 行"的并发取代窗口（attempt 已被
+// 终态化）必须收敛为 ErrProjectConflict（HTTP 409），不得把 pgx.ErrNoRows 裸传
+// 成 500（真链 02:50:58 实证）。只造窗口本身，不经 service 校验层（TOCTOU 在
+// 校验之后、事务之内）。夹具走原始 SQL：任务/attempt 的仓储创建 API 形态与
+// 写回请求所需最小字段不必对齐，SQL 更直接。
+func TestFailWritebackGuardConflictOnSupersededAttempt(t *testing.T) {
+	repo, tenantID := newProjectRepositoryTestStore(t)
+	ctx := context.Background()
+
+	databaseURL := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL"))
+	pool, err := pgxpool.New(ctx, databaseURL)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	projectID, taskID, attemptID, employeeID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO projects (tenant_id, id, name, directory_name, status, human_owner_user_id, coordination_workflow_id, coordination_status, coordination_policy, created_at, updated_at)
+		VALUES ($1, $2, 'guard-probe', 'guard-probe', 'running', $3, 'wf:guard', 'registered', '{}', now(), now())`, tenantID, projectID, uuid.New())
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO project_tasks (tenant_id, project_id, id, title, status, assigned_digital_employee_id, created_at, updated_at)
+		VALUES ($1, $2, $3, 'guard-probe-task', 'running', $4, now(), now())`, tenantID, projectID, taskID, employeeID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO project_task_attempts (tenant_id, project_task_id, id, attempt_no, status, lease_token, idempotency_key, created_at, updated_at)
+		VALUES ($1, $2, $3, 1, 'running', 'lease-guard', 'idem-guard', now(), now())`, tenantID, taskID, attemptID)
+	require.NoError(t, err)
+	// 指回当前轮后再终态化 attempt：制造"校验会放行、守卫 UPDATE 0 行"的窗口。
+	_, err = pool.Exec(ctx, `UPDATE project_tasks SET current_attempt_id=$2 WHERE id=$1`, taskID, attemptID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE project_task_attempts SET status='cancelled', finished_at=now() WHERE id=$1`, attemptID)
+	require.NoError(t, err)
+
+	task := ProjectTask{ID: taskID, TenantID: tenantID, ProjectID: projectID, Status: "running", CurrentAttemptID: &attemptID, AssignedDigitalEmployeeID: &employeeID}
+	attempt := ProjectTaskAttempt{ID: attemptID, TenantID: tenantID, ProjectTaskID: taskID, Status: ProjectTaskAttemptStatusCancelled, LeaseToken: "lease-guard"}
+	writebackRepo, ok := repo.(ProjectTaskAttemptWritebackRepository)
+	require.True(t, ok, "PgRepository must implement writeback repository")
+	_, err = writebackRepo.RecoverProjectTaskAttemptFailureWriteback(ctx, RecoverProjectTaskAttemptFailureWritebackRequest{
+		Task:    task,
+		Attempt: attempt,
+		Failure: FailProjectTaskAttemptRequest{
+			ProjectTaskAttemptRuntimeRequest: ProjectTaskAttemptRuntimeRequest{
+				TenantID: tenantID, ProjectTaskID: taskID, AttemptID: attemptID,
+				RuntimeNodeID: uuid.New(), LeaseToken: "lease-guard", IdempotencyKey: "idem-guard-fail",
+			},
+			DigitalEmployeeID: employeeID,
+			FailureSummary:    "provider crash",
+			FailureFamily:     "provider_crashed",
+		},
+		AttemptTerminalStatus: ProjectTaskAttemptStatusFailed,
+		TaskTargetStatus:      ProjectTaskStatusFailed,
+	})
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrProjectConflict, "取代窗口必须收敛为 409 冲突语义，got: %v", err)
+}

@@ -2192,7 +2192,11 @@ func TestInspectTaskResultDecisionResolvesCoordinationMode(t *testing.T) {
 			name:                   "no accepted plan revision",
 			acceptedPlanRevisionID: nil,
 			revisionCoordMode:      nil,
-			wantMode:               project.CoordinationModeLoop,
+			// spec 2026-08-17-recovery-mode-and-active-run-poisoning-fix §1.3
+			// 决策表规则 5：指针 nil 且本夹具无 DemandID/CoordinationJobID（无法
+			// 判需求与图）→ catch-all 保守 plan。可判图的指针 nil 任务见
+			// TestResolveTaskCoordinationModeDecisionTable（r3/r4）。
+			wantMode: project.CoordinationModePlan,
 		},
 	}
 
@@ -4797,7 +4801,8 @@ func TestProjectStoreDispatchProjectTaskStartsRunAndQueuesTask(t *testing.T) {
 	require.Equal(t, map[string]any{"required_context": []any{"test_report", "rollback_plan"}}, req.Metadata["input_requirements"])
 	require.Equal(t, attemptID.String(), req.Metadata["project_task_attempt_id"])
 	require.Equal(t, leaseToken, req.Metadata["project_task_lease_token"])
-	require.Equal(t, "v1", req.Metadata["execution_context_packet_version"])
+	// v2 交接包（spec 2026-08-16）：编译成功即升版，无依赖任务也带空包信封。
+	require.Equal(t, "v2", req.Metadata["execution_context_packet_version"])
 	require.Equal(t, map[string]any{"completion_path": "project_task_attempt_writeback", "required_refs": []any{"test_report"}}, req.Metadata["handoff_contract"])
 	require.Empty(t, repo.bindRequests)
 	require.Len(t, repo.queueRequests, 1)
@@ -6366,13 +6371,14 @@ func TestDispatchErrorRetryableClassification(t *testing.T) {
 type projectStoreMemoryRepository struct {
 	project.Repository
 
-	projectRecord  project.Project
-	demand         project.ProjectDemand
-	demands        []project.ProjectDemand
-	members        []project.ProjectMember
-	tasks          []project.ProjectTask
-	approvalID     uuid.UUID
-	consumedTokens int64
+	ledgerEventRequests []project.CreateExecutionLedgerEventRequest
+	projectRecord       project.Project
+	demand              project.ProjectDemand
+	demands             []project.ProjectDemand
+	members             []project.ProjectMember
+	tasks               []project.ProjectTask
+	approvalID          uuid.UUID
+	consumedTokens      int64
 
 	bindRequests                          []project.BindProjectTaskRunRequest
 	bindAttemptRunRequests                []project.BindProjectTaskAttemptRunRequest
@@ -8425,6 +8431,7 @@ func upstreamDispatchFixture(t *testing.T, blockerSummary string, blockerDeliver
 	blockerTaskID := uuid.New()
 	employeeID := uuid.New()
 	resultID := uuid.New()
+	planRevisionID := uuid.New()
 
 	blocker := project.ProjectTask{
 		ID:                        blockerTaskID,
@@ -8467,6 +8474,7 @@ func upstreamDispatchFixture(t *testing.T, blockerSummary string, blockerDeliver
 			ID: taskID, TenantID: tenantID, ProjectID: projectID, DemandID: &demandID,
 			Title: "下游消费", Summary: strPtr("使用上游产出"), Status: "planned",
 			AssignedDigitalEmployeeID: &employeeID,
+			AcceptedPlanRevisionID:    &planRevisionID,
 			ExpectedOutputs:           []any{"execution_summary"},
 			InputRequirements:         map[string]any{"required_inputs": []any{"head_commit"}},
 			HandoffContract:           map[string]any{},
@@ -8492,19 +8500,32 @@ func TestDispatchProjectTaskInjectsDirectBlockerResults(t *testing.T) {
 	require.NoError(t, store.DispatchProjectTask(context.Background(), input))
 	require.Len(t, starter.requests, 1)
 
+	// v2 交接包（spec 2026-08-16）：prompt 呈现 resolved_inputs 槽位段，
+	// 不再有 v1 的整包 upstream_results JSON。
 	prompt := starter.requests[0].Prompt
-	require.Contains(t, prompt, "upstream_results")
+	require.Contains(t, prompt, "resolved_inputs")
 	require.Contains(t, prompt, "head_commit")
 	require.Contains(t, prompt, "abc123")
-	require.Contains(t, prompt, blockerTaskID.String())
 	require.Contains(t, prompt, `produces: ["final_report"]`)
 	require.Contains(t, prompt, "deliverables")
+	require.NotContains(t, prompt, "upstream_results: ")
 
 	require.Len(t, repo.queueRequests, 1)
-	packetUpstream, ok := repo.queueRequests[0].ExecutionContextPacket["upstream_results"].([]map[string]any)
-	require.True(t, ok, "packet upstream_results type: %#v", repo.queueRequests[0].ExecutionContextPacket["upstream_results"])
-	require.Len(t, packetUpstream, 1)
-	require.Equal(t, blockerTaskID.String(), packetUpstream[0]["task_id"])
+	queued := repo.queueRequests[0]
+	pkg, ok := queued.ExecutionContextPacket["handoff_package"].(map[string]any)
+	require.True(t, ok, "packet handoff_package type: %#v", queued.ExecutionContextPacket["handoff_package"])
+	inputs, ok := pkg["resolved_inputs"].([]map[string]any)
+	require.True(t, ok, "resolved_inputs type: %#v", pkg["resolved_inputs"])
+	require.Len(t, inputs, 1)
+	require.Equal(t, "head_commit", inputs[0]["name"])
+	require.Equal(t, "abc123", inputs[0]["value"])
+	require.Equal(t, blockerTaskID.String(), inputs[0]["source_task_id"])
+	require.Equal(t, true, inputs[0]["verified"])
+	index, ok := pkg["upstream_index"].([]map[string]any)
+	require.True(t, ok, "upstream_index type: %#v", pkg["upstream_index"])
+	require.Len(t, index, 1)
+	require.Equal(t, blockerTaskID.String(), index[0]["task_id"])
+	require.Equal(t, "v2", queued.ExecutionContextPacketVersion)
 }
 
 func TestDispatchProjectTaskTruncatesUpstreamSummary(t *testing.T) {
@@ -8514,7 +8535,9 @@ func TestDispatchProjectTaskTruncatesUpstreamSummary(t *testing.T) {
 
 	require.NoError(t, store.DispatchProjectTask(context.Background(), input))
 	require.Len(t, starter.requests, 1)
-	require.Contains(t, starter.requests[0].Prompt, "summary_truncated")
+	// v2 交接包不再注入 summary 全文（spec §3.2 索引层：深挖按 log_ref 取），
+	// 长摘要不进 prompt 是设计行为而非截断兜底。
+	require.NotContains(t, starter.requests[0].Prompt, longSummary)
 	require.Less(t, len(starter.requests[0].Prompt), 9000)
 }
 

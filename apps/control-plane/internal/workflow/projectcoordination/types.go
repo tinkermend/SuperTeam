@@ -334,6 +334,9 @@ type CreateUpstreamSupplementInput struct {
 	ProjectID     uuid.UUID
 	SourceTaskID  uuid.UUID
 	MissingInputs []string
+	// MissingInputReasons 是逐项申报原因（name → reason），注入补做工单
+	// （spec 2026-08-16 交接包 §4.4 预算补链）。
+	MissingInputReasons map[string]string
 }
 
 // CreateUpstreamSupplementResult reports the owner tasks appended to supply the
@@ -342,6 +345,10 @@ type CreateUpstreamSupplementInput struct {
 type CreateUpstreamSupplementResult struct {
 	TaskIDs   []uuid.UUID
 	Exhausted bool
+	// EdgeExhausted 列出按边预算（同一条 owner→申报方边只补一次，spec
+	// 2026-08-16 交接包 §4.4）已用尽的缺口名：本轮不建补做，调用方应升级
+	// 人类澄清卡而非继续自动补链。
+	EdgeExhausted []string
 }
 
 type IsProjectAcceptanceReadyInput struct {
@@ -383,6 +390,11 @@ type RequestUpstreamSupplementReviewInput struct {
 	ResultID         uuid.UUID
 	CompletedEventID uuid.UUID
 	MissingInputs    []string
+	// MissingInputReasons 逐项原因（卡面展示）。
+	MissingInputReasons map[string]string
+	// EdgeBudgetExhausted 为 true 时卡面注明"该边已自动补做一轮仍未解决"
+	// 并附本轮缺口清单（spec 2026-08-16 交接包 §4.4 / H1b 验收 ②③）。
+	EdgeBudgetExhausted bool
 }
 
 type ApplyProjectAcceptanceDecisionInput struct {

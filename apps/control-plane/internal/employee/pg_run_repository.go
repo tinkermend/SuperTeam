@@ -1519,3 +1519,43 @@ func timeFromAny(value any) time.Time {
 	}
 	return time.Time{}
 }
+
+// OrphanedActiveRun 是 L3 交叉核对的扫描结果（spec 2026-08-17 L3）：活跃 run 行
+// 与其关联 attempt 的终态事实。
+type OrphanedActiveRun struct {
+	RunID             uuid.UUID
+	TenantID          uuid.UUID
+	CommandID         string
+	AttemptStatus     string
+	AttemptFinishedAt time.Time
+}
+
+// OrphanedActiveRunLister 是 L3 看门狗的可选仓储能力（沿
+// StalePreConfirmationRunLister 先例，测试 fake 不必实现）。
+type OrphanedActiveRunLister interface {
+	ListOrphanedActiveRuns(ctx context.Context, finishedBefore time.Time, limit int32) ([]OrphanedActiveRun, error)
+}
+
+func (r *PgRunRepository) ListOrphanedActiveRuns(ctx context.Context, finishedBefore time.Time, limit int32) ([]OrphanedActiveRun, error) {
+	rows, err := r.q.ListOrphanedActiveDigitalEmployeeRuns(ctx, queries.ListOrphanedActiveDigitalEmployeeRunsParams{
+		FinishedBefore: pgtype.Timestamptz{Time: finishedBefore, Valid: true},
+		LimitCount:     limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OrphanedActiveRun, 0, len(rows))
+	for _, row := range rows {
+		item := OrphanedActiveRun{
+			RunID:         row.RunID,
+			TenantID:      row.TenantID,
+			CommandID:     row.CommandID.String,
+			AttemptStatus: row.AttemptStatus,
+		}
+		if row.AttemptFinishedAt.Valid {
+			item.AttemptFinishedAt = row.AttemptFinishedAt.Time
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}

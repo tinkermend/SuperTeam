@@ -857,7 +857,7 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 		if workflow.GetVersion(ctx, "coordination-mode-branch", workflow.DefaultVersion, 1) != workflow.DefaultVersion &&
 			decision.CoordinationMode == project.CoordinationModePlan {
 			review, err := requestUpstreamSupplementReview(ctx, input.TenantID, input.ProjectID,
-				signal.ProjectTaskID, decision.ResultID, signal.CompletedEventID, decision.Blocker.MissingInputs)
+				signal.ProjectTaskID, decision.ResultID, signal.CompletedEventID, decision.Blocker.MissingInputs, decision.Blocker.MissingInputReasons, false)
 			if err != nil || review.ID == uuid.Nil {
 				return taskCompletionPending{}, err
 			}
@@ -866,8 +866,37 @@ func handleEmployeeTaskCompleted(ctx workflow.Context, input ProjectCoordinatorI
 				ProjectID:         input.ProjectID,
 			}}, nil
 		}
-		// loop 模式:以下为既有自动补链路径,原样保留
-		supplement, err := createUpstreamSupplementTasks(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.Blocker.MissingInputs)
+		// loop 模式:以下为既有自动补链路径。H1b（2026-08-16 交接包 §4.4）加
+		// 按边预算：同一条 owner→申报方 边只自动补一次，再申报升级人类澄清卡。
+		if workflow.GetVersion(ctx, "handoff-edge-budget", workflow.DefaultVersion, 1) != workflow.DefaultVersion {
+			supplement, err := createUpstreamSupplementTasks(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.Blocker.MissingInputs, decision.Blocker.MissingInputReasons)
+			if err != nil {
+				return taskCompletionPending{}, err
+			}
+			if len(supplement.EdgeExhausted) > 0 {
+				review, err := requestUpstreamSupplementReview(ctx, input.TenantID, input.ProjectID,
+					signal.ProjectTaskID, decision.ResultID, signal.CompletedEventID, supplement.EdgeExhausted, decision.Blocker.MissingInputReasons, true)
+				if err != nil || review.ID == uuid.Nil {
+					return taskCompletionPending{}, err
+				}
+				return taskCompletionPending{FailureRecovery: &pendingTaskFailureRecovery{
+					DecisionRequestID: review.ID,
+					ProjectID:         input.ProjectID,
+				}}, nil
+			}
+			if supplement.Exhausted {
+				exhaustedDecision, err := requestProjectTaskIterationExhaustedReview(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.ResultID, signal.CompletedEventID)
+				if err != nil || exhaustedDecision.ID == uuid.Nil {
+					return taskCompletionPending{}, err
+				}
+				return taskCompletionPending{FailureRecovery: &pendingTaskFailureRecovery{
+					DecisionRequestID: exhaustedDecision.ID,
+					ProjectID:         input.ProjectID,
+				}}, nil
+			}
+			return taskCompletionPending{}, dispatchProjectTasks(ctx, input.TenantID, input.ProjectID, supplement.TaskIDs, project.DispatchReasonRetry)
+		}
+		supplement, err := createUpstreamSupplementTasks(ctx, input.TenantID, input.ProjectID, signal.ProjectTaskID, decision.Blocker.MissingInputs, nil)
 		if err != nil {
 			return taskCompletionPending{}, err
 		}
@@ -1276,13 +1305,14 @@ func createRevisionTaskForResult(ctx workflow.Context, tenantID, projectID, sour
 	return result, nil
 }
 
-func createUpstreamSupplementTasks(ctx workflow.Context, tenantID, projectID, sourceTaskID uuid.UUID, missingInputs []string) (CreateUpstreamSupplementResult, error) {
+func createUpstreamSupplementTasks(ctx workflow.Context, tenantID, projectID, sourceTaskID uuid.UUID, missingInputs []string, missingInputReasons map[string]string) (CreateUpstreamSupplementResult, error) {
 	var result CreateUpstreamSupplementResult
 	if err := workflow.ExecuteActivity(ctx, (*Activities).CreateUpstreamSupplementTasks, CreateUpstreamSupplementInput{
-		TenantID:      tenantID,
-		ProjectID:     projectID,
-		SourceTaskID:  sourceTaskID,
-		MissingInputs: missingInputs,
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		SourceTaskID:        sourceTaskID,
+		MissingInputs:       missingInputs,
+		MissingInputReasons: missingInputReasons,
 	}).Get(ctx, &result); err != nil {
 		return CreateUpstreamSupplementResult{}, err
 	}
@@ -1350,15 +1380,17 @@ func requestProjectTaskIterationExhaustedReview(ctx workflow.Context, tenantID, 
 	return decision, nil
 }
 
-func requestUpstreamSupplementReview(ctx workflow.Context, tenantID, projectID, projectTaskID, resultID, completedEventID uuid.UUID, missingInputs []string) (DecisionRequestResult, error) {
+func requestUpstreamSupplementReview(ctx workflow.Context, tenantID, projectID, projectTaskID, resultID, completedEventID uuid.UUID, missingInputs []string, missingInputReasons map[string]string, edgeBudgetExhausted bool) (DecisionRequestResult, error) {
 	var result DecisionRequestResult
 	if err := workflow.ExecuteActivity(ctx, (*Activities).RequestUpstreamSupplementReview, RequestUpstreamSupplementReviewInput{
-		TenantID:         tenantID,
-		ProjectID:        projectID,
-		ProjectTaskID:    projectTaskID,
-		ResultID:         resultID,
-		CompletedEventID: completedEventID,
-		MissingInputs:    missingInputs,
+		TenantID:            tenantID,
+		ProjectID:           projectID,
+		ProjectTaskID:       projectTaskID,
+		ResultID:            resultID,
+		CompletedEventID:    completedEventID,
+		MissingInputs:       missingInputs,
+		MissingInputReasons: missingInputReasons,
+		EdgeBudgetExhausted: edgeBudgetExhausted,
 	}).Get(ctx, &result); err != nil {
 		return DecisionRequestResult{}, err
 	}
