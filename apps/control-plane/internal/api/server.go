@@ -420,6 +420,7 @@ func (s *Server) registerRoutes() {
 				r.Get("/digital-employees/{employeeId}/runs", s.employeeHandler.ListDigitalEmployeeRuns)
 				r.Get("/digital-employees/{employeeId}/chat-threads", s.employeeHandler.ListDigitalEmployeeChatThreads)
 				r.Patch("/digital-employees/{employeeId}/chat-threads/{threadId}", s.employeeHandler.PatchDigitalEmployeeChatThread)
+				r.Delete("/digital-employees/{employeeId}/chat-threads/{threadId}", s.employeeHandler.DeleteDigitalEmployeeChatThread)
 				r.Get("/digital-employees/{employeeId}/run-stats", s.employeeHandler.GetDigitalEmployeeRunStats)
 				r.Get("/digital-employees/{employeeId}/run-calendar", s.employeeHandler.GetDigitalEmployeeRunCalendar)
 				r.Get("/digital-employees/{employeeId}/runs/{runId}", s.employeeHandler.GetDigitalEmployeeRun)

@@ -1484,6 +1484,14 @@ func (r *PgRunRepository) UpdateChatThreadTitle(ctx context.Context, tenantID, e
 	}, nil
 }
 
+func (r *PgRunRepository) SoftDeleteChatThreadTasks(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (int64, error) {
+	return r.q.SoftDeleteDigitalEmployeeChatThreadTasks(ctx, queries.SoftDeleteDigitalEmployeeChatThreadTasksParams{
+		TenantID:          tenantID,
+		DigitalEmployeeID: employeeID,
+		ThreadID:          threadID,
+	})
+}
+
 func (r *PgRunRepository) GetActiveChatRunOnThread(ctx context.Context, tenantID, employeeID, threadID uuid.UUID) (*ActiveChatRunOnThread, error) {
 	row, err := r.q.GetActiveChatRunOnThread(ctx, queries.GetActiveChatRunOnThreadParams{
 		TenantID:          tenantID,

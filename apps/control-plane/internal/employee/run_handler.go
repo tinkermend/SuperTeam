@@ -20,6 +20,7 @@ type RunHandlerService interface {
 	ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter DigitalEmployeeRunListFilter) (*DigitalEmployeeRunListResult, error)
 	ListChatThreads(ctx context.Context, tenantID, employeeID, projectID uuid.UUID) ([]DigitalEmployeeChatThread, error)
 	RenameChatThread(ctx context.Context, tenantID, employeeID, threadID, actorUserID uuid.UUID, title string) (*DigitalEmployeeChatThread, error)
+	DeleteChatThread(ctx context.Context, tenantID, employeeID, threadID, actorUserID uuid.UUID) error
 	GetRunCalendar(ctx context.Context, tenantID, employeeID uuid.UUID, from, to time.Time) (*DigitalEmployeeRunCalendarResult, error)
 	GetRun(ctx context.Context, tenantID, employeeID, runID uuid.UUID) (*DigitalEmployeeRun, error)
 	ListRunEvents(ctx context.Context, tenantID, employeeID, runID uuid.UUID, limit, offset int32) ([]RuntimeCommandEventWriteback, error)
@@ -182,6 +183,31 @@ func (h *HTTPHandler) PatchDigitalEmployeeChatThread(w http.ResponseWriter, r *h
 		return
 	}
 	writeJSON(w, http.StatusOK, chatThreadResponseFromDomain(thread))
+}
+
+func (h *HTTPHandler) DeleteDigitalEmployeeChatThread(w http.ResponseWriter, r *http.Request) {
+	employeeID, ok := employeeIDFromRequest(w, r)
+	if !ok {
+		return
+	}
+	tenantID, ok := h.authorizeDigitalEmployeeManagement(w, r, authz.ActionEmployeeRunCreate, &employeeID, "digital employee chat thread delete")
+	if !ok {
+		return
+	}
+	service, ok := h.runServiceFromRequest(w)
+	if !ok {
+		return
+	}
+	threadID, err := uuid.Parse(chi.URLParam(r, "threadId"))
+	if err != nil || threadID == uuid.Nil {
+		http.Error(w, "threadId must be a valid uuid", http.StatusBadRequest)
+		return
+	}
+	if err := service.DeleteChatThread(r.Context(), tenantID, employeeID, threadID, middleware.GetUserID(r.Context())); err != nil {
+		writeHandlerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // parseRunListFilter parses the run list query parameters: pagination (limit/offset),

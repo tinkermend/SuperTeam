@@ -17,8 +17,10 @@ import {
   MessageSquarePlus,
   SendHorizontal,
   Square,
+  Trash2,
   UserRound
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState, ErrorState, LoadingState, SoftDialog, SoftDialogBody, SoftDialogContent, SoftDialogDescription, SoftDialogFooter, SoftDialogHeader, SoftDialogTitle, Button, MarkdownProse } from "@/components/superteam";
 import { EmployeeAvatar } from "@/features/employees/avatar";
 import { employeeAvatarAsset } from "@/features/employees/avatar-library";
@@ -28,6 +30,7 @@ import { ApiRequestError, type ApiClientOptions } from "@/lib/api/client";
 import { getCurrentUser } from "@/lib/api/auth";
 import {
   createDigitalEmployeeRun,
+  deleteDigitalEmployeeChatThread,
   getDigitalEmployeeRun,
   listDigitalEmployeeChatThreads,
   listDigitalEmployeeRuns,
@@ -374,6 +377,7 @@ export function ChatPanel({
   const [extraRevealed, setExtraRevealed] = useState(0);
   /** 发送中/新会话尚未挂上 thread 时仍要立刻画出这一轮，避免空窗直到刷新。 */
   const [pendingEntries, setPendingEntries] = useState<ChatEntry[]>([]);
+  const [pendingDeleteThread, setPendingDeleteThread] = useState<DigitalEmployeeChatThread | null>(null);
 
   const queryClient = useQueryClient();
   const threadRef = useRef<HTMLDivElement | null>(null);
@@ -790,6 +794,21 @@ export function ChatPanel({
     setPendingEntries([]);
   }
 
+  const deleteThreadMutation = useMutation({
+    mutationFn: (threadId: string) =>
+      deleteDigitalEmployeeChatThread(apiOptions, employeeId, threadId),
+    onSuccess: (_data, threadId) => {
+      setPendingDeleteThread(null);
+      if (selectedThreadId === threadId) {
+        setExplicitNewSession(true);
+        setSelectedThreadId(null);
+        setPendingEntries([]);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["chat-threads", employeeId, projectId] });
+      void queryClient.invalidateQueries({ queryKey: ["chat-restore", employeeId, projectId] });
+    },
+  });
+
   function speakerName() {
     const user = currentUserQuery.data?.user;
     return user?.display_name?.trim() || user?.username?.trim() || undefined;
@@ -1039,13 +1058,18 @@ export function ChatPanel({
               <ul className="hub-session-list">
                 {chatThreads.map((item: DigitalEmployeeChatThread) => {
                   const active = item.chat_thread_id === selectedThreadId;
+                  const canDelete =
+                    Boolean(currentUserId) && item.initiator_user_id === currentUserId;
                   const speakerLine =
                     item.last_speaker_display_name &&
                     item.last_speaker_display_name !== item.initiator_display_name
                       ? `${item.initiator_display_name} · ${item.last_speaker_display_name}`
                       : item.initiator_display_name;
                   return (
-                    <li key={item.chat_thread_id}>
+                    <li
+                      key={item.chat_thread_id}
+                      className={active ? "hub-session-row is-active" : "hub-session-row"}
+                    >
                       <button
                         type="button"
                         className={active ? "hub-session is-active" : "hub-session"}
@@ -1069,6 +1093,24 @@ export function ChatPanel({
                           <span className="hub-session-sum">{item.last_prompt}</span>
                         ) : null}
                       </button>
+                      {canDelete ? (
+                        <button
+                          type="button"
+                          className="hub-session-delete"
+                          aria-label={`删除会话 ${item.title}`}
+                          disabled={item.has_active_run || deleteThreadMutation.isPending}
+                          title={item.has_active_run ? "请先停止进行中的对话" : "删除会话"}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (item.has_active_run) {
+                              return;
+                            }
+                            setPendingDeleteThread(item);
+                          }}
+                        >
+                          <Trash2 aria-hidden className="size-3.5" />
+                        </button>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -1421,6 +1463,29 @@ export function ChatPanel({
           </SoftDialogFooter>
         </SoftDialogContent>
       </SoftDialog>
+      <ConfirmDialog
+        open={Boolean(pendingDeleteThread)}
+        onOpenChange={(open) => {
+          if (!open && !deleteThreadMutation.isPending) {
+            setPendingDeleteThread(null);
+          }
+        }}
+        title="删除会话"
+        desc={
+          pendingDeleteThread
+            ? `将从任务中枢移除「${pendingDeleteThread.title}」。不会删除 Claude Code / OpenCode 里的对应会话。`
+            : "将从任务中枢移除这条会话。不会删除 Claude Code / OpenCode 里的对应会话。"
+        }
+        confirmText="删除"
+        destructive
+        isLoading={deleteThreadMutation.isPending}
+        handleConfirm={() => {
+          if (!pendingDeleteThread) {
+            return;
+          }
+          deleteThreadMutation.mutate(pendingDeleteThread.chat_thread_id);
+        }}
+      />
     </div>
   );
 }

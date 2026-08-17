@@ -1902,6 +1902,80 @@ func TestDigitalEmployeeRunServiceRenameChatThread(t *testing.T) {
 	})
 }
 
+func TestDigitalEmployeeRunServiceDeleteChatThread(t *testing.T) {
+	initiatorID := uuid.New()
+	threadID := uuid.New()
+
+	t.Run("initiator can soft-delete idle thread", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		repo.chatThreadRoot = &ChatThreadRoot{
+			RootRunID:       threadID,
+			ProjectID:       runServiceProjectID,
+			InitiatorUserID: initiatorID,
+		}
+		service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+		if err := service.DeleteChatThread(context.Background(), runServiceTenantID, runServiceEmployeeID, threadID, initiatorID); err != nil {
+			t.Fatalf("delete by initiator: %v", err)
+		}
+		if len(repo.softDeleteChatThreadCalls) != 1 || repo.softDeleteChatThreadCalls[0] != threadID {
+			t.Fatalf("expected SoftDeleteChatThreadTasks, got %#v", repo.softDeleteChatThreadCalls)
+		}
+	})
+
+	t.Run("non-initiator forbidden", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		repo.chatThreadRoot = &ChatThreadRoot{
+			RootRunID:       threadID,
+			ProjectID:       runServiceProjectID,
+			InitiatorUserID: initiatorID,
+		}
+		service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+		err := service.DeleteChatThread(context.Background(), runServiceTenantID, runServiceEmployeeID, threadID, uuid.New())
+		if !errors.Is(err, ErrForbidden) {
+			t.Fatalf("expected ErrForbidden, got %v", err)
+		}
+		if len(repo.softDeleteChatThreadCalls) != 0 {
+			t.Fatalf("expected no delete for forbidden actor, got %#v", repo.softDeleteChatThreadCalls)
+		}
+	})
+
+	t.Run("active run conflict", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		repo.chatThreadRoot = &ChatThreadRoot{
+			RootRunID:       threadID,
+			ProjectID:       runServiceProjectID,
+			InitiatorUserID: initiatorID,
+		}
+		repo.activeChatRunOnThread = &ActiveChatRunOnThread{
+			RunID:             uuid.New(),
+			RunnerUserID:      initiatorID,
+			RunnerDisplayName: "Ada",
+			Status:            DigitalEmployeeRunStatusRunning,
+		}
+		service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+		err := service.DeleteChatThread(context.Background(), runServiceTenantID, runServiceEmployeeID, threadID, initiatorID)
+		if !errors.Is(err, ErrConflict) {
+			t.Fatalf("expected ErrConflict, got %v", err)
+		}
+		if len(repo.softDeleteChatThreadCalls) != 0 {
+			t.Fatalf("expected no delete while active, got %#v", repo.softDeleteChatThreadCalls)
+		}
+	})
+
+	t.Run("missing thread not found", func(t *testing.T) {
+		repo := newFakeRunServiceRepository()
+		service := mustNewRunService(t, repo, newFakeRunServiceDispatcher())
+
+		err := service.DeleteChatThread(context.Background(), runServiceTenantID, runServiceEmployeeID, threadID, initiatorID)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
+		}
+	})
+}
+
 func TestRunServiceListRunEventsReturnsPersistedEvents(t *testing.T) {
 	repo := newFakeRunServiceRepository()
 	repo.run = validRunServiceRun(DigitalEmployeeRunStatusRunning)
@@ -2771,6 +2845,8 @@ type fakeRunServiceRepository struct {
 	activeChatRunOnThread      *ActiveChatRunOnThread
 	chatThreads                []DigitalEmployeeChatThread
 	updateChatThreadTitleCalls []updateChatThreadTitleCall
+	softDeleteChatThreadCalls  []uuid.UUID
+	softDeleteChatThreadN      int64
 }
 
 type updateChatThreadTitleCall struct {
@@ -2942,6 +3018,14 @@ func (f *fakeRunServiceRepository) UpdateChatThreadTitle(_ context.Context, _, _
 
 func (f *fakeRunServiceRepository) GetActiveChatRunOnThread(_ context.Context, _, _, _ uuid.UUID) (*ActiveChatRunOnThread, error) {
 	return f.activeChatRunOnThread, nil
+}
+
+func (f *fakeRunServiceRepository) SoftDeleteChatThreadTasks(_ context.Context, _, _, threadID uuid.UUID) (int64, error) {
+	f.softDeleteChatThreadCalls = append(f.softDeleteChatThreadCalls, threadID)
+	if f.softDeleteChatThreadN != 0 {
+		return f.softDeleteChatThreadN, nil
+	}
+	return 1, nil
 }
 
 func (f *fakeRunServiceRepository) UpdateRunStatus(_ context.Context, req UpdateRunStatusRequest) (*DigitalEmployeeRun, error) {

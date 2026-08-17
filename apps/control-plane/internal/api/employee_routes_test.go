@@ -2099,6 +2099,10 @@ func (s *routeEmployeeRunService) RenameChatThread(context.Context, uuid.UUID, u
 	return nil, employee.ErrNotFound
 }
 
+func (s *routeEmployeeRunService) DeleteChatThread(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	return employee.ErrNotFound
+}
+
 func (s *routeEmployeeRunService) ListRunsDetailed(ctx context.Context, tenantID, employeeID uuid.UUID, filter employee.DigitalEmployeeRunListFilter) (*employee.DigitalEmployeeRunListResult, error) {
 	s.listCalled = true
 	s.listTenantID = tenantID

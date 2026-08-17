@@ -1193,3 +1193,15 @@ export function patchDigitalEmployeeChatThread(
     "rename digital employee chat thread",
   );
 }
+
+export function deleteDigitalEmployeeChatThread(
+  options: ApiClientOptions,
+  employeeId: string,
+  threadId: string,
+): Promise<void> {
+  return deleteJson(
+    options,
+    `/api/v1/digital-employees/${encodePathSegment(employeeId)}/chat-threads/${encodePathSegment(threadId)}`,
+    "delete digital employee chat thread",
+  );
+}

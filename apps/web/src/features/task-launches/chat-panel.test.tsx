@@ -607,6 +607,7 @@ type RestoreThreadItem = Partial<DigitalEmployeeRun> & {
 function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
   const employees = [makeEmployee()];
   let runCounter = 100;
+  let threads = [...threadItemsAsc];
 
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -627,11 +628,11 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
     }
 
     if (path.match(/^\/api\/v1\/digital-employees\/[^/]+\/chat-threads$/) && method === "GET") {
-      const root = threadItemsAsc[0];
+      const root = threads[0];
       if (!root) {
         return jsonResponse({ items: [] });
       }
-      const last = threadItemsAsc[threadItemsAsc.length - 1]!;
+      const last = threads[threads.length - 1]!;
       return jsonResponse({
         items: [
           {
@@ -643,7 +644,7 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
             last_speaker_display_name: "负责人",
             last_prompt: last.task_title,
             last_active_at: "2026-08-13T00:00:00Z",
-            has_active_run: threadItemsAsc.some((item) =>
+            has_active_run: threads.some((item) =>
               ["queued", "dispatching", "running", "cancelling"].includes(String(item.status ?? "")),
             ),
           },
@@ -651,10 +652,19 @@ function createRestoreFetcher(threadItemsAsc: RestoreThreadItem[]) {
       });
     }
 
+    const deleteThreadMatch = path.match(
+      /^\/api\/v1\/digital-employees\/[^/]+\/chat-threads\/([^/]+)$/,
+    );
+    if (deleteThreadMatch && method === "DELETE") {
+      const threadId = deleteThreadMatch[1];
+      threads = threads.filter((item) => String(item.chat_thread_id ?? item.id) !== threadId);
+      return new Response(null, { status: 204 });
+    }
+
     const runsMatch = path.match(/^\/api\/v1\/digital-employees\/([^/]+)\/runs$/);
     if (runsMatch && method === "GET") {
       const employeeId = runsMatch[1];
-      const desc = [...threadItemsAsc]
+      const desc = [...threads]
         .reverse()
         .map((item) => ({ ...baseRunFields(String(item.id), employeeId), ...item }));
       const items = url.searchParams.get("chat_thread_id") ? desc : desc.slice(0, 1);
@@ -1595,6 +1605,53 @@ describe("ChatPanel", () => {
       await queryClient.refetchQueries();
     });
     await waitFor(() => expect(chatThread().textContent).toContain("轮询回答-run-a"));
+  });
+
+  it("deletes a restored session from the hub list after confirming", async () => {
+    const { fetcher } = createRestoreFetcher([
+      {
+        chat_thread_id: "run-a",
+        id: "run-a",
+        result: { output: "历史回答一" },
+        status: "completed",
+        task_title: "历史问题一",
+      },
+    ]);
+    const onConvertToTask = vi.fn();
+    const { queryClient } = await renderWithQueryClient(
+      <ControlledChatPanel
+        apiOptions={{ baseUrl: "http://control-plane.local", fetcher }}
+        onConvertToTask={onConvertToTask}
+        projects={[makeProject()]}
+      />,
+    );
+
+    await waitFor(() => expect(getByText("Ada")).toBeTruthy());
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await waitFor(() => expect(chatThread().textContent).toContain("历史问题一"));
+
+    await clickButton("删除会话 历史问题一");
+    await waitFor(() => expect(getByText("删除会话")).toBeTruthy());
+    await clickButton("删除");
+
+    await waitFor(() => {
+      const deleted = fetcher.mock.calls.some(([url, init]) => {
+        const path = new URL(String(url)).pathname;
+        return (
+          path === "/api/v1/digital-employees/emp-1/chat-threads/run-a" &&
+          ((init as RequestInit | undefined)?.method ?? "GET") === "DELETE"
+        );
+      });
+      expect(deleted).toBe(true);
+    });
+    await waitFor(() => {
+      expect(chatThread().textContent).not.toContain("历史问题一");
+      expect(document.querySelector('[data-testid="chat-session-list"]')?.textContent).not.toContain(
+        "历史问题一",
+      );
+    });
   });
 
   it("does not treat an empty project list as no-projects while the parent is still loading", async () => {
