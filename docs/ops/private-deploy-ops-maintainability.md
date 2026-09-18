@@ -54,7 +54,7 @@ Agents.md 分层约束对交付同样成立：Runtime 不承载业务策略；Co
 | 类别 | 路径 / 能力 | 对私有化的含义 |
 |---|---|---|
 | **Compose（仅 dev 依赖）** | `docker-compose.dev.yml` | postgres:16、redis:7、minio(+mc 建桶 `superteam-artifacts` 且 **anonymous download**)、openfga(+migrate, **sqlite 卷**)。**无** CP/Web/Runtime/Temporal 服务定义 |
-| **本地启停** | `scripts/dev-services.sh` | 启停 temporal / control-plane / web / runtime-agent / feishu-connector；迁移 atlas；OpenFGA 可 compose 或 local；pid/log 在 `.scratch/`。**明确是开发脚本**，非客户交付入口 |
+| **本地启停** | `scripts/dev-services.sh` | 启停 temporal / control-plane / web / runtime-agent / feishu-connector；迁移 atlas；起 CP 前对象存储就绪闸门（`object-store-init --check --skip-cors`，可 `SUPERTEAM_DEV_SKIP_OBJECT_STORE_CHECK=1` 跳过）；OpenFGA 可 compose 或 local；pid/log 在 `.scratch/`。**明确是开发脚本**，非客户交付入口 |
 | **对象存储初始化** | `scripts/ops/init-object-store.sh` / `cmd/object-store-init` | 读 CP `objectStore`（yaml + `S3_*`）幂等建桶 + CORS；`--check` / `--skip-cors`。**不**代替站点 bootstrap（migrate/管理员仍是 P0-4） |
 | **CP 配置样例** | `apps/control-plane/config/config.example.yaml` | `environment`、`http`（含 CORS）、`postgres`、`redis`、`objectStore`、`employeeEnv`、`temporal`、`authz`、`auth`、`planner` |
 | **Runtime 配置样例** | `apps/runtime-agent/config.example.yaml` | `control_plane_url`、`bootstrap_key`、`http.addr`、workspace、providers、logging；**对象存储凭证不在 Runtime 配置中**——上传/下载走 CP presign（见 `src/artifacts.rs` / `raw_log.rs` / `skills.rs` 与 `config.rs` 说明） |

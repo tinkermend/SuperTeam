@@ -30,6 +30,25 @@ export SUPERTEAM_DEV_WEB_WAIT_URL=""
 export SUPERTEAM_DEV_RUNTIME_AGENT_CMD="sleep 60"
 export SUPERTEAM_DEV_FEISHU_CONNECTOR_CMD="sleep 60"
 
+# 对象存储就绪检查用桩替掉真 go 命令：脚本测试不该依赖本机 RustFS/凭据/网络，
+# 但要能演练"存储不可用 → 起服中止"这条真实故障路径。
+FAKE_OS_BIN="$TMP_DIR/osbin"
+mkdir -p "$FAKE_OS_BIN"
+cat >"$FAKE_OS_BIN/object-store-init" <<'FAKE_OBJECT_STORE'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "$*" >>"$SUPERTEAM_FAKE_OBJECT_STORE_LOG"
+echo "endpoint=http://127.0.0.1:9000 bucket=superteam-artifacts region=us-east-1 forcePathStyle=true"
+if [ "${FAKE_OBJECT_STORE_DOWN:-0}" = "1" ]; then
+    echo 'object-store-init: head bucket "superteam-artifacts": dial tcp 127.0.0.1:9000: connect: connection refused' >&2
+    exit 1
+fi
+echo "bucket: exists"
+FAKE_OBJECT_STORE
+chmod +x "$FAKE_OS_BIN/object-store-init"
+export SUPERTEAM_DEV_OBJECT_STORE_INIT_CMD="$FAKE_OS_BIN/object-store-init"
+export SUPERTEAM_FAKE_OBJECT_STORE_LOG="$TMP_DIR/object-store.log"
+
 run_script() {
     bash "$SCRIPT" "$@"
 }
@@ -37,7 +56,7 @@ run_script() {
 assert_contains() {
     local file="$1"
     local expected="$2"
-    if ! grep -Fq "$expected" "$file"; then
+    if ! grep -Fq -- "$expected" "$file"; then
         echo "expected $file to contain: $expected" >&2
         echo "actual:" >&2
         cat "$file" >&2
@@ -91,6 +110,30 @@ assert_contains "$TMP_DIR/status-stopped.out" "control-plane: stopped"
 assert_contains "$TMP_DIR/status-stopped.out" "web: stopped"
 assert_contains "$TMP_DIR/status-stopped.out" "runtime-agent: stopped"
 assert_contains "$TMP_DIR/status-stopped.out" "feishu-connector: stopped"
+
+# 起 control-plane 前必须复核对象存储，且只为读（--check）：起服不该顺手改桶状态。
+assert_contains "$SUPERTEAM_FAKE_OBJECT_STORE_LOG" "--check --skip-cors"
+
+# 存储不可用时必须中止启动，而不是起一个 /health 恒 503 的 CP。
+export FAKE_OBJECT_STORE_DOWN=1
+if run_script start control-plane >"$TMP_DIR/start-cp-store-down.out" 2>&1; then
+    echo "expected 'start control-plane' to fail while object store is unreachable" >&2
+    cat "$TMP_DIR/start-cp-store-down.out" >&2
+    exit 1
+fi
+assert_contains "$TMP_DIR/start-cp-store-down.out" "对象存储未就绪"
+if [ -f "$SUPERTEAM_DEV_PID_DIR/control-plane.pid" ]; then
+    echo "expected no control-plane pid file after failed object store check" >&2
+    exit 1
+fi
+
+# 逃生舱：存储确认无误但仍要起服时，跳过检查必须真的放行。
+export SUPERTEAM_DEV_SKIP_OBJECT_STORE_CHECK=1
+run_script start control-plane >"$TMP_DIR/start-cp-store-skipped.out" 2>&1
+assert_pid_running control-plane
+assert_contains "$TMP_DIR/start-cp-store-skipped.out" "跳过对象存储就绪检查"
+unset SUPERTEAM_DEV_SKIP_OBJECT_STORE_CHECK FAKE_OBJECT_STORE_DOWN
+run_script stop control-plane >"$TMP_DIR/stop-cp.out"
 
 FAKE_BIN="$TMP_DIR/bin"
 mkdir -p "$FAKE_BIN"

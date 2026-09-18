@@ -26,6 +26,10 @@ RUNTIME_AGENT_CONFIG="${SUPERTEAM_DEV_RUNTIME_AGENT_CONFIG:-$PROJECT_ROOT/apps/r
 # 迁移在 control-plane 启动前自动执行；置 1 可跳过（例如 CI 已单独迁移）。
 SKIP_MIGRATIONS="${SUPERTEAM_DEV_SKIP_MIGRATIONS:-0}"
 ATLAS_CMD="${SUPERTEAM_DEV_ATLAS_CMD:-atlas}"
+# 对象存储就绪检查（见 run_object_store_check）：起 control-plane 前读同一份配置复核
+# endpoint/凭据/桶。置 1 可跳过（例如本轮验证不涉及对象存储、桶暂不可达仍要起服）。
+SKIP_OBJECT_STORE_CHECK="${SUPERTEAM_DEV_SKIP_OBJECT_STORE_CHECK:-0}"
+OBJECT_STORE_INIT_CMD="${SUPERTEAM_DEV_OBJECT_STORE_INIT_CMD:-go run ./apps/control-plane/cmd/object-store-init}"
 
 TEMPORAL_CMD="${SUPERTEAM_DEV_TEMPORAL_CMD:-temporal server start-dev}"
 TEMPORAL_WAIT_URL="${SUPERTEAM_DEV_TEMPORAL_WAIT_URL-http://127.0.0.1:8233/}"
@@ -128,6 +132,8 @@ Environment overrides:
   SUPERTEAM_DEV_CONTROL_PLANE_CMD
   SUPERTEAM_DEV_CONTROL_PLANE_WAIT_URL
   SUPERTEAM_DEV_CONTROL_PLANE_CONFIG
+  SUPERTEAM_DEV_SKIP_OBJECT_STORE_CHECK
+  SUPERTEAM_DEV_OBJECT_STORE_INIT_CMD
   SUPERTEAM_DEV_WEB_CMD
   SUPERTEAM_DEV_WEB_WAIT_URL
   SUPERTEAM_DEV_RUNTIME_AGENT_CMD
@@ -427,6 +433,51 @@ run_control_plane_migrations() {
     return 0
 }
 
+# 起 control-plane 前复核对象存储：endpoint 可达、凭据有效、桶已存在。
+# CP 只探桶不建桶，探失败时 /health 恒 503：脚本会干等到 30s 超时，并把一个 503 的
+# 半死进程留在端口上（restart 场景更糟——服务已被停掉却起不回来）。这里用与 CP 同源的
+# 配置（yaml + S3_* 覆盖）提前拦下，代价一次 HeadBucket。
+# 只判桶，不判 CORS：CORS 归云厂商控制台或 init-object-store.sh 管，与 CP 健康无关。
+run_object_store_check() {
+    if [ "$SKIP_OBJECT_STORE_CHECK" = "1" ]; then
+        log_warn "SUPERTEAM_DEV_SKIP_OBJECT_STORE_CHECK=1，跳过对象存储就绪检查"
+        return 0
+    fi
+
+    local check_bin="${OBJECT_STORE_INIT_CMD%% *}"
+    if ! command -v "$check_bin" >/dev/null 2>&1; then
+        log_warn "未找到 $check_bin，跳过对象存储就绪检查"
+        return 0
+    fi
+
+    local log
+    log="$(log_file "control-plane")"
+    {
+        echo ""
+        echo "===== $(date '+%Y-%m-%d %H:%M:%S') object-store check control-plane ====="
+        echo "config: $CONTROL_PLANE_CONFIG"
+    } >>"$log"
+
+    local check_cmd
+    check_cmd="$(shell_join $OBJECT_STORE_INIT_CMD --config "$CONTROL_PLANE_CONFIG" --check --skip-cors)"
+
+    log_info "checking object store (endpoint / credentials / bucket)"
+    local output
+    if ! output="$(cd "$PROJECT_ROOT" && bash -lc "$check_cmd" 2>&1)"; then
+        printf '%s\n' "$output" >>"$log"
+        log_error "对象存储未就绪，control-plane 起来后 /health 会恒 503"
+        printf '%s\n' "$output" | sed 's/^/    /' >&2
+        log_error "本机 RustFS/MinIO 没跑：podman start superteam-rustfs-dev（或 docker compose -f docker-compose.rustfs.dev.yml up -d）"
+        log_error "桶不存在：./scripts/ops/init-object-store.sh"
+        log_error "确认对象存储无误仍要起服：SUPERTEAM_DEV_SKIP_OBJECT_STORE_CHECK=1"
+        return 1
+    fi
+
+    printf '%s\n' "$output" >>"$log"
+    log_success "object store ready: ${output%%$'\n'*}"
+    return 0
+}
+
 start_service() {
     local service="$1"
     ensure_dirs
@@ -439,9 +490,6 @@ start_service() {
         runtime-agent)
             # Runtime 上传走 CP 预签名，不应继承过期的 S3_*（会静默覆盖 yaml）。
             unset S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY S3_FORCE_PATH_STYLE || true
-            ;;
-        control-plane)
-            log_info "object store: 起服前可用 ./scripts/ops/init-object-store.sh --check 核对桶（CP 不会 CreateBucket）"
             ;;
     esac
 
@@ -472,6 +520,10 @@ start_service() {
     fi
 
     if [ "$service" = "control-plane" ]; then
+        # 顺序：对象存储先于迁移——存储不可用是更常见的起服失败原因，且失败更快、更便宜。
+        if ! run_object_store_check; then
+            return 1
+        fi
         if ! run_control_plane_migrations; then
             return 1
         fi

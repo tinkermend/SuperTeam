@@ -53,6 +53,18 @@ objectStore:
 ./scripts/ops/init-object-store.sh --check
 ```
 
+**`dev-services.sh` 已把这一步内置成起服闸门**：`start` / `restart control-plane` 会先用与 CP 同一份配置
+（`SUPERTEAM_DEV_CONTROL_PLANE_CONFIG`，yaml + `S3_*` 覆盖）跑一次 `object-store-init --check --skip-cors`，
+endpoint/凭据/桶任一不可用就**中止启动并打印修法**，不再干等 30s 超时后留一个 `/health` 恒 503 的半死进程。
+
+```bash
+# 只判桶不判 CORS：CORS 归云厂商控制台或本文件 §2.3 管，与 CP 健康无关
+# 存储确实不可用、但本轮验证不涉及对象存储时：
+SUPERTEAM_DEV_SKIP_OBJECT_STORE_CHECK=1 ./scripts/dev-services.sh start control-plane
+# 换用别的检查实现（测试桩/预编译二进制）：
+SUPERTEAM_DEV_OBJECT_STORE_INIT_CMD=./bin/object-store-init ./scripts/dev-services.sh start control-plane
+```
+
 ### 2.2 新环境初始化（建桶 + CORS）
 
 Control Plane **不会**在启动时 CreateBucket。系统设置页也没有桶名——桶名只在 `objectStore.bucket`（或 `S3_BUCKET` 覆盖）里。
@@ -195,6 +207,7 @@ mc cat rustfs/superteam-artifacts/smoke/hello.txt
 |---|---|
 | 端口占用 | `lsof -nP -iTCP:9000 -sTCP:LISTEN`；停掉 minio 或其它占用者 |
 | 容器反复退出 | `docker logs superteam-rustfs-dev`；确认未误挂只读目录 |
+| 机器重启后 `dev-services.sh start` 报「对象存储未就绪」 | 容器没被拉回：`podman start superteam-rustfs-dev`（compose 路径为 `docker compose -f docker-compose.rustfs.dev.yml up -d`），再 `./scripts/ops/init-object-store.sh --check` |
 | CP 连不上 | 确认 `forcePathStyle: true`、endpoint 无尾斜杠、密钥与桶名一致 |
 | HeadBucket 404 / 技能上传 NoSuchBucket | 桶未建：`./scripts/ops/init-object-store.sh`（CP 启动不会自动建桶） |
 | 连的是云桶而 yaml 写的是本机 | 检查环境里是否还有 `S3_ENDPOINT`/`S3_BUCKET`；init 命令会告警覆盖 |
